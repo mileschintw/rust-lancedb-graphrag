@@ -12,10 +12,12 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::GraphSettings;
+use crate::config::{ChunkPrecision, GraphSettings};
 use crate::db::DatabaseManager;
 use crate::graph::index::GraphIndex;
-use crate::graph::paths::{build_paths, EdgeRow, PathSettings, DEGREE_CAP, MAX_PATH_FACTS};
+use crate::graph::paths::{
+    build_paths, ChunkSelection, EdgeRow, PathSettings, DEGREE_CAP, MAX_PATH_FACTS,
+};
 use crate::graph::seeding::{MatchKind, MentionVectorSearch, Seed};
 use crate::graph::tests::seed_paths::{
     id, temp_path, write_store_edges, write_store_entities, StoreEntity,
@@ -421,6 +423,8 @@ fn graph_settings_select_the_seed_and_path_settings() {
         degree_cap: 20,
         max_path_facts: 5,
         max_graph_chunk_candidates: 6,
+        graph_v2_chunk_precision: ChunkPrecision::All,
+        chunk_selection: ChunkSelection::All,
     };
 
     let seeds = configured.seed_settings();
@@ -750,6 +754,7 @@ fn two_hop_fact(names: [&str; 3], relations: [&str; 2], along: [bool; 2]) -> Gra
             degree_cap: DEGREE_CAP,
             max_path_facts: MAX_PATH_FACTS,
             max_graph_chunk_candidates: 8,
+            chunk_selection: ChunkSelection::All,
         },
     );
     let fact = result.facts.into_iter().next().expect("one path joins the seeds");

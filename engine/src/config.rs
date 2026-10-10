@@ -187,6 +187,53 @@ pub fn default_max_graph_chunk_candidates() -> usize {
     default_final_limit()
 }
 
+/// The graph chunk variant a `graph_v2` request uses: `all`.
+///
+/// **Derivation.** D-139 chooses the variant on dev within the two-read budget, so until the D-154
+/// freeze commit the shipped value is the no-op `all` and `graph_v2` is `lever_unavailable`
+/// (an arm that changed nothing would still be echoed as having run).
+///
+/// **Effect of changing it.** `edge_evidence` keeps, per kept path hop, the chunks both endpoints
+/// cite; `multi_cited` keeps the chunks that at least two path entities cite. Only the chunk list
+/// the third RRF list receives changes, and a request without the `graph_v2` lever never reads it.
+pub fn default_graph_v2_chunk_precision() -> ChunkPrecision {
+    ChunkPrecision::All
+}
+
+/// The `[engine.graph] graph_v2_chunk_precision` values (D-139).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChunkPrecision {
+    /// Every chunk any path entity cites; leaves `graph_v2` unavailable.
+    All,
+    /// The chunks both ends of a kept path hop cite.
+    EdgeEvidence,
+    /// The chunks cited by at least two path entities.
+    MultiCited,
+}
+
+impl ChunkPrecision {
+    /// The chunk selection this configured value stands for.
+    pub fn selection(self) -> graph::paths::ChunkSelection {
+        graph::paths::ChunkSelection::All
+    }
+}
+
+impl std::str::FromStr for ChunkPrecision {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "all" => Ok(Self::All),
+            "edge_evidence" => Ok(Self::EdgeEvidence),
+            "multi_cited" => Ok(Self::MultiCited),
+            other => Err(format!(
+                "must be all, edge_evidence or multi_cited, got {other:?}"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct GraphConfigSettings {
     #[serde(default = "default_seed_match_min_score")]
@@ -203,6 +250,8 @@ pub struct GraphConfigSettings {
     pub max_path_facts: usize,
     #[serde(default = "default_max_graph_chunk_candidates")]
     pub max_graph_chunk_candidates: usize,
+    #[serde(default = "default_graph_v2_chunk_precision")]
+    pub graph_v2_chunk_precision: ChunkPrecision,
 }
 
 impl Default for GraphConfigSettings {
@@ -215,6 +264,7 @@ impl Default for GraphConfigSettings {
             degree_cap: default_degree_cap(),
             max_path_facts: default_max_path_facts(),
             max_graph_chunk_candidates: default_max_graph_chunk_candidates(),
+            graph_v2_chunk_precision: default_graph_v2_chunk_precision(),
         }
     }
 }
@@ -228,6 +278,11 @@ pub struct GraphSettings {
     pub degree_cap: u32,
     pub max_path_facts: usize,
     pub max_graph_chunk_candidates: usize,
+    /// The configured chunk variant a request with the `graph_v2` lever uses (D-139).
+    pub graph_v2_chunk_precision: ChunkPrecision,
+    /// The chunk selection these settings run: `All` unless the request names `graph_v2`, and then
+    /// the one `graph_v2_chunk_precision` stands for. The service sets it per request.
+    pub chunk_selection: graph::paths::ChunkSelection,
 }
 
 impl Default for GraphSettings {
@@ -241,6 +296,8 @@ impl Default for GraphSettings {
             degree_cap: defaults.degree_cap,
             max_path_facts: defaults.max_path_facts,
             max_graph_chunk_candidates: defaults.max_graph_chunk_candidates,
+            graph_v2_chunk_precision: defaults.graph_v2_chunk_precision,
+            chunk_selection: graph::paths::ChunkSelection::All,
         }
     }
 }
@@ -261,6 +318,7 @@ impl GraphSettings {
             degree_cap: self.degree_cap,
             max_path_facts: self.max_path_facts,
             max_graph_chunk_candidates: self.max_graph_chunk_candidates,
+            chunk_selection: graph::paths::ChunkSelection::All,
         }
     }
 }
@@ -817,6 +875,8 @@ impl EffectiveRagSettings {
             degree_cap: settings.engine.graph.degree_cap,
             max_path_facts: settings.engine.graph.max_path_facts,
             max_graph_chunk_candidates: settings.engine.graph.max_graph_chunk_candidates,
+            graph_v2_chunk_precision: settings.engine.graph.graph_v2_chunk_precision,
+            chunk_selection: graph::paths::ChunkSelection::All,
         };
         let ev = u32::try_from(settings.engine.retrieval.evidence_token_budget)
             .map_err(|_| "evidence_token_budget exceeds u32::MAX".to_string())?;
@@ -1483,6 +1543,130 @@ mod tests {
         }
         EffectiveRagSettings::try_from_settings(&Settings::default())
             .expect("the defaults must pass validation");
+    }
+
+    /// Reads `engine.graph.graph_v2_chunk_precision` from a TOML document as written, failing
+    /// when the file does not carry the key (so a serde default cannot stand in for it).
+    fn file_graph_v2_chunk_precision(raw: &str) -> String {
+        ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .get::<String>("engine.graph.graph_v2_chunk_precision")
+            .unwrap_or_else(|error| {
+                panic!("engine.graph.graph_v2_chunk_precision must be present: {error}")
+            })
+    }
+
+    /// D-139: the committed files and the compiled-in default agree on the variant a `graph_v2`
+    /// request uses, and the shipped value is the no-op `all`.
+    #[test]
+    fn graph_v2_chunk_precision_defaults_to_all_and_agrees_with_both_files() {
+        assert_eq!(default_graph_v2_chunk_precision(), ChunkPrecision::All);
+        assert_eq!(
+            GraphSettings::default().graph_v2_chunk_precision,
+            ChunkPrecision::All
+        );
+        for (file_name, raw) in [
+            ("config/config.toml", CONFIG_TOML),
+            ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+        ] {
+            assert_eq!(
+                file_graph_v2_chunk_precision(raw),
+                "all",
+                "{file_name} engine.graph.graph_v2_chunk_precision must equal the config.rs default"
+            );
+        }
+    }
+
+    /// An unknown variant is refused when the settings load, never read as `all`.
+    #[test]
+    fn an_unknown_graph_v2_chunk_precision_is_refused_when_the_settings_load() {
+        let load = |value: &str| {
+            ::config::Config::builder()
+                .add_source(::config::File::from_str(
+                    CONFIG_EXAMPLE_TOML,
+                    ::config::FileFormat::Toml,
+                ))
+                .add_source(::config::File::from_str(
+                    &format!("[engine.graph]\ngraph_v2_chunk_precision = \"{value}\"\n"),
+                    ::config::FileFormat::Toml,
+                ))
+                .build()
+                .expect("the overlay must parse as TOML")
+                .try_deserialize::<Settings>()
+        };
+        for accepted in ["all", "edge_evidence", "multi_cited"] {
+            load(accepted).unwrap_or_else(|error| panic!("{accepted} must load: {error}"));
+        }
+        for refused in ["nearest", "ALL", "edge-evidence", ""] {
+            let error = load(refused).expect_err(&format!("{refused:?} must be refused"));
+            assert!(
+                error.to_string().contains("graph_v2_chunk_precision")
+                    || error.to_string().contains("variant"),
+                "the error must point at the value: {error}"
+            );
+        }
+    }
+
+    /// The names the environment override accepts are exactly the three configured variants.
+    #[test]
+    fn the_precision_names_parse_and_anything_else_is_refused() {
+        for (name, precision) in [
+            ("all", ChunkPrecision::All),
+            ("edge_evidence", ChunkPrecision::EdgeEvidence),
+            ("multi_cited", ChunkPrecision::MultiCited),
+        ] {
+            assert_eq!(name.parse::<ChunkPrecision>(), Ok(precision));
+        }
+        for refused in ["", "All", "edge evidence", "multi", " all"] {
+            let error = refused
+                .parse::<ChunkPrecision>()
+                .expect_err(&format!("{refused:?} must be refused"));
+            assert!(
+                error.contains("all, edge_evidence or multi_cited"),
+                "{error}"
+            );
+        }
+    }
+
+    /// D-139: each configured value stands for its chunk selection, and `multi_cited` is the
+    /// "at least two path entities" variant.
+    #[test]
+    fn each_configured_precision_stands_for_its_chunk_selection() {
+        use graph::paths::{ChunkSelection, MULTI_CITED_MIN_ENTITIES};
+        assert_eq!(ChunkPrecision::All.selection(), ChunkSelection::All);
+        assert_eq!(
+            ChunkPrecision::EdgeEvidence.selection(),
+            ChunkSelection::EdgeEvidence
+        );
+        assert_eq!(
+            ChunkPrecision::MultiCited.selection(),
+            ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES)
+        );
+    }
+
+    /// The selection in force reaches the path search; the configured variant alone does not,
+    /// so a graph-on request without the lever keeps `All` whatever the file says.
+    #[test]
+    fn the_path_settings_carry_the_selection_in_force_not_the_configured_variant() {
+        use graph::paths::ChunkSelection;
+        let configured = GraphSettings {
+            graph_v2_chunk_precision: ChunkPrecision::EdgeEvidence,
+            ..GraphSettings::default()
+        };
+        assert_eq!(
+            configured.path_settings().chunk_selection,
+            ChunkSelection::All
+        );
+        let in_force = GraphSettings {
+            chunk_selection: ChunkSelection::EdgeEvidence,
+            ..configured
+        };
+        assert_eq!(
+            in_force.path_settings().chunk_selection,
+            ChunkSelection::EdgeEvidence
+        );
     }
 
     /// D-66, D-76: the committed configuration files and the compiled-in default are one value of

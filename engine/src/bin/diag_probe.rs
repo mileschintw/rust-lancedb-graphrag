@@ -71,7 +71,9 @@ use engine::db::DatabaseManager;
 use engine::graph::escape_sql_literal;
 use engine::graph::context_strategy::{ContextAssemblyStrategy, GraphFact};
 use engine::graph::index::GraphIndex;
-use engine::graph::paths::{find_seed_paths, seed_chunk_candidates, PathSettings, DEGREE_CAP};
+use engine::graph::paths::{
+    find_seed_paths, seed_chunk_candidates, ChunkSelection, PathSettings, DEGREE_CAP,
+};
 use engine::graph::seeding::{
     extract_mentions, match_seeds, LanceMentionVectorSearch, Seed, SeedSettings,
 };
@@ -973,6 +975,7 @@ async fn run_graph_seeds(
         // inform the cap. Production applies `MAX_PATH_FACTS`.
         max_path_facts: usize::MAX,
         max_graph_chunk_candidates: effective_settings.retrieval.final_limit,
+        chunk_selection: ChunkSelection::All,
     };
 
     let questions = load_questions(questions_path)?;

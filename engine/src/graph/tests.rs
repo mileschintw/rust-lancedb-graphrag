@@ -703,7 +703,7 @@ fn validate_extraction_output_logs_confidence_field_on_out_of_range_failure() {
 
 /// OI-01 (06.3.4.1-13): `GraphIndex`, mention seeding and seed-to-seed paths.
 pub(crate) mod seed_paths {
-    use std::collections::HashMap;
+    use std::collections::{BTreeSet, HashMap};
     use std::sync::{Arc, Mutex};
 
     use arrow_array::builder::{ListBuilder, StringBuilder};
@@ -716,8 +716,9 @@ pub(crate) mod seed_paths {
     use crate::db::DatabaseManager;
     use crate::graph::index::{casefold_name, normalize_name, EntityRecord, GraphIndex};
     use crate::graph::paths::{
-        build_paths, derive_max_path_facts, find_seed_paths, seed_chunk_candidates, EdgeRow,
-        PathSettings, MAX_PATH_FACTS, MAX_PATH_FACTS_CEILING,
+        build_paths, chunk_candidates, derive_max_path_facts, find_seed_paths,
+        seed_chunk_candidates, ChunkSelection, EdgeRow, PathSettings, SeedPathResult,
+        MAX_PATH_FACTS, MAX_PATH_FACTS_CEILING, MULTI_CITED_MIN_ENTITIES,
     };
     use crate::graph::seeding::{
         extract_mentions, match_seeds, LanceMentionVectorSearch, MatchKind, MentionVectorSearch,
@@ -772,6 +773,7 @@ pub(crate) mod seed_paths {
             degree_cap: cap,
             max_path_facts: max_facts,
             max_graph_chunk_candidates: max_chunks,
+            chunk_selection: ChunkSelection::All,
         }
     }
 
@@ -1489,6 +1491,389 @@ pub(crate) mod seed_paths {
         assert!(
             MAX_PATH_FACTS < MAX_PATH_FACTS_CEILING,
             "the ceiling must not be what sets the cap at the measured fact size"
+        );
+    }
+
+    // ---- graph chunk precision (D-139) ------------------------------------------------------
+
+    fn settings_with(selection: ChunkSelection, max_chunks: usize) -> PathSettings {
+        PathSettings {
+            chunk_selection: selection,
+            ..path_settings(33, 16, max_chunks)
+        }
+    }
+
+    fn chunk_ids(result: &SeedPathResult) -> Vec<&str> {
+        result
+            .candidate_chunk_ids
+            .iter()
+            .map(String::as_str)
+            .collect()
+    }
+
+    /// `Alpha - Bridge - Beta`, with Alpha and Beta as the seeds, so the one kept path has two hops.
+    ///
+    /// The path entities in order are Alpha, Bridge, Beta. Each chunk is cited by:
+    /// `c1` Alpha; `c2` Alpha and Bridge (the first hop's evidence); `c3` Alpha and Beta, who are
+    /// not the two ends of one hop; `c4` Bridge and Beta (the second hop's evidence); `c5` Bridge;
+    /// `c6` Beta. Entities cite more than one chunk, so the order keys are exercised too.
+    fn bridge_fixture() -> (GraphIndex, Vec<EdgeRow>) {
+        graph(
+            vec![
+                ent(1, "Alpha", &["c1", "c2", "c3"]),
+                ent(2, "Beta", &["c3", "c4", "c6"]),
+                ent(3, "Bridge", &["c2", "c4", "c5"]),
+            ],
+            &[(1, 3, "owns", 1.0), (3, 2, "uses", 1.0)],
+        )
+    }
+
+    fn bridge_paths(selection: ChunkSelection, max_chunks: usize) -> SeedPathResult {
+        let (index, edges) = bridge_fixture();
+        let seeds = [seed_of(&index, 1), seed_of(&index, 2)];
+        build_paths(
+            &index,
+            &seeds,
+            &edges,
+            &settings_with(selection, max_chunks),
+        )
+    }
+
+    #[test]
+    fn all_keeps_every_chunk_of_the_path_entities_in_rank_order() {
+        let result = bridge_paths(ChunkSelection::All, 8);
+        assert_eq!(chunk_ids(&result), ["c2", "c3", "c4", "c1", "c5", "c6"]);
+    }
+
+    #[test]
+    fn multi_cited_keeps_the_chunks_that_at_least_two_path_entities_cite() {
+        let result = bridge_paths(ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES), 8);
+        assert_eq!(chunk_ids(&result), ["c2", "c3", "c4"]);
+    }
+
+    #[test]
+    fn edge_evidence_keeps_the_chunks_that_both_ends_of_a_kept_hop_cite() {
+        let result = bridge_paths(ChunkSelection::EdgeEvidence, 8);
+        assert_eq!(
+            chunk_ids(&result),
+            ["c2", "c4"],
+            "c3 is cited by both seeds but they are not the two ends of one hop"
+        );
+    }
+
+    #[test]
+    fn a_threshold_of_one_equals_all_and_a_threshold_above_the_citations_keeps_nothing() {
+        let all = bridge_paths(ChunkSelection::All, 8);
+        assert_eq!(bridge_paths(ChunkSelection::MultiCited(1), 8), all);
+        assert_eq!(bridge_paths(ChunkSelection::MultiCited(0), 8), all);
+        let none = bridge_paths(ChunkSelection::MultiCited(3), 8);
+        assert!(none.candidate_chunk_ids.is_empty());
+        assert!(
+            none.path_found,
+            "the paths are kept whatever the chunk list holds"
+        );
+    }
+
+    #[test]
+    fn the_variant_changes_the_chunk_list_and_nothing_else() {
+        let strip = |mut result: SeedPathResult| {
+            result.candidate_chunk_ids.clear();
+            result
+        };
+        let all = bridge_paths(ChunkSelection::All, 8);
+        assert!(all.path_found && all.paths.len() == 1 && all.facts.len() == 1);
+        for selection in [
+            ChunkSelection::EdgeEvidence,
+            ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES),
+        ] {
+            let other = bridge_paths(selection, 8);
+            assert_ne!(
+                other.candidate_chunk_ids, all.candidate_chunk_ids,
+                "{selection:?}"
+            );
+            assert_eq!(
+                strip(other),
+                strip(all.clone()),
+                "{selection:?}: paths, facts and counts are the same"
+            );
+        }
+    }
+
+    /// The capped lists of two variants need not nest: the top two of the smaller candidate set can
+    /// hold a chunk that ranks below the larger set's top two.
+    #[test]
+    fn a_capped_edge_evidence_list_can_hold_a_chunk_the_capped_multi_cited_list_lacks() {
+        let multi = bridge_paths(ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES), 2);
+        let edge = bridge_paths(ChunkSelection::EdgeEvidence, 2);
+        assert_eq!(chunk_ids(&multi), ["c2", "c3"]);
+        assert_eq!(chunk_ids(&edge), ["c2", "c4"]);
+        assert!(!multi.candidate_chunk_ids.contains(&"c4".to_string()));
+    }
+
+    #[test]
+    fn edge_evidence_reads_only_the_hops_of_the_kept_paths() {
+        // Alpha - Beta is the better path (weight 1.0 against 0.1 over the same endpoint degrees).
+        let (index, edges) = graph(
+            vec![
+                ent(1, "Alpha", &["x", "y"]),
+                ent(2, "Beta", &["y", "z"]),
+                ent(3, "Gamma", &["x", "w"]),
+            ],
+            &[(1, 2, "r", 1.0), (1, 3, "r", 0.1)],
+        );
+        let seeds = [seed_of(&index, 1), seed_of(&index, 2), seed_of(&index, 3)];
+        let run = |max_facts: usize| {
+            build_paths(
+                &index,
+                &seeds,
+                &edges,
+                &PathSettings {
+                    chunk_selection: ChunkSelection::EdgeEvidence,
+                    ..path_settings(33, max_facts, 8)
+                },
+            )
+        };
+
+        assert_eq!(
+            chunk_ids(&run(1)),
+            ["y"],
+            "the dropped Alpha - Gamma hop adds nothing"
+        );
+        assert_eq!(chunk_ids(&run(2)), ["x", "y"]);
+    }
+
+    #[test]
+    fn a_hop_whose_ends_share_no_chunk_leaves_edge_evidence_empty_and_the_path_kept() {
+        let (index, edges) = graph(
+            vec![ent(1, "Alpha", &["a1"]), ent(2, "Beta", &["b1"])],
+            &[(1, 2, "r", 1.0)],
+        );
+        let seeds = [seed_of(&index, 1), seed_of(&index, 2)];
+        let run = |selection| build_paths(&index, &seeds, &edges, &settings_with(selection, 8));
+
+        let edge = run(ChunkSelection::EdgeEvidence);
+        assert!(edge.path_found && edge.candidate_chunk_ids.is_empty());
+        assert_eq!(chunk_ids(&run(ChunkSelection::All)), ["a1", "b1"]);
+    }
+
+    #[test]
+    fn multi_cited_counts_each_entity_once_however_often_it_lists_a_chunk() {
+        let (index, edges) = graph(
+            vec![ent(1, "Alpha", &["c", "c"]), ent(2, "Beta", &["d"])],
+            &[(1, 2, "r", 1.0)],
+        );
+        let seeds = [seed_of(&index, 1), seed_of(&index, 2)];
+        let result = build_paths(
+            &index,
+            &seeds,
+            &edges,
+            &settings_with(ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES), 8),
+        );
+        assert!(
+            result.candidate_chunk_ids.is_empty(),
+            "{:?}",
+            result.candidate_chunk_ids
+        );
+    }
+
+    /// A seeded generator, so the property test needs no dependency and replays exactly.
+    struct XorShift(u64);
+
+    impl XorShift {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, bound: usize) -> usize {
+            (self.next() % bound as u64) as usize
+        }
+    }
+
+    /// A random graph over 5 to 10 entities, each citing up to four of eight chunks (a chunk may be
+    /// listed twice), with random edges, and the number of seeds (the first entities).
+    fn random_graph(rng: &mut XorShift) -> (GraphIndex, Vec<EdgeRow>, usize) {
+        let entity_count = 5 + rng.below(6);
+        let entities: Vec<EntityRecord> = (1..=entity_count)
+            .map(|n| {
+                let chunks: Vec<String> = (0..rng.below(5))
+                    .map(|_| format!("c{}", rng.below(8)))
+                    .collect();
+                let refs: Vec<&str> = chunks.iter().map(String::as_str).collect();
+                ent(n as u128, &format!("E{n}"), &refs)
+            })
+            .collect();
+        let edges: Vec<EdgeSpec> = (0..entity_count + rng.below(2 * entity_count))
+            .map(|_| {
+                let source = 1 + rng.below(entity_count) as u128;
+                let target = 1 + rng.below(entity_count) as u128;
+                (source, target, "r", 0.1 + rng.below(10) as f64 / 10.0)
+            })
+            .collect();
+        let (index, rows) = graph(entities, &edges);
+        (index, rows, 2 + rng.below(3))
+    }
+
+    /// The order keys that `rank_chunks` documents, computed from the index alone: citing path
+    /// entities first, then the earliest position in an entity's own list, then the best entity
+    /// rank, then the chunk ID.
+    fn reference_ranking(
+        index: &GraphIndex,
+        entities: &[&str],
+        candidates: &BTreeSet<&str>,
+        cap: usize,
+    ) -> Vec<String> {
+        let mut keyed: Vec<(std::cmp::Reverse<usize>, usize, usize, &str)> = candidates
+            .iter()
+            .map(|chunk| {
+                let citing: Vec<(usize, usize)> = entities
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(rank, entity)| {
+                        index
+                            .source_chunk_ids(entity)
+                            .iter()
+                            .position(|c| c.as_str() == *chunk)
+                            .map(|position| (rank, position))
+                    })
+                    .collect();
+                let earliest = citing.iter().map(|(_, position)| *position).min().unwrap();
+                let best_rank = citing.iter().map(|(rank, _)| *rank).min().unwrap();
+                (std::cmp::Reverse(citing.len()), earliest, best_rank, *chunk)
+            })
+            .collect();
+        keyed.sort();
+        keyed
+            .into_iter()
+            .take(cap)
+            .map(|(_, _, _, chunk)| chunk.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_variants_nest_before_the_cap_and_each_capped_list_follows_the_rank_keys() {
+        let mut rng = XorShift(0x9E37_79B9_7F4A_7C15);
+        let (mut edge_found, mut multi_beyond_edge, mut all_beyond_multi) = (0, 0, 0);
+        for round in 0..300 {
+            let (index, edges, seed_count) = random_graph(&mut rng);
+            let seeds: Vec<Seed> = (1..=seed_count as u128)
+                .map(|n| seed_of(&index, n))
+                .collect();
+            let cap = 1 + rng.below(6);
+            let facts = 1 + rng.below(6);
+            let run = |selection| {
+                build_paths(
+                    &index,
+                    &seeds,
+                    &edges,
+                    &PathSettings {
+                        chunk_selection: selection,
+                        ..path_settings(33, facts, cap)
+                    },
+                )
+            };
+            let all_run = run(ChunkSelection::All);
+
+            // The entities and hops of the kept paths, which no variant changes.
+            let mut order: Vec<&str> = Vec::new();
+            let mut hops: Vec<(&str, &str)> = Vec::new();
+            for path in &all_run.paths {
+                for entity in &path.entities {
+                    if !order.contains(&entity.as_str()) {
+                        order.push(entity.as_str());
+                    }
+                }
+                hops.extend(
+                    path.entities
+                        .windows(2)
+                        .map(|pair| (pair[0].as_str(), pair[1].as_str())),
+                );
+            }
+            for (a, b) in &hops {
+                assert!(
+                    a != b && order.contains(a) && order.contains(b),
+                    "round {round}: a hop joins two distinct members of the entity order"
+                );
+            }
+
+            let variants = [
+                ChunkSelection::All,
+                ChunkSelection::MultiCited(MULTI_CITED_MIN_ENTITIES),
+                ChunkSelection::EdgeEvidence,
+            ];
+            let [all, multi, edge] =
+                variants.map(|selection| chunk_candidates(&index, &order, &hops, selection));
+            assert!(
+                edge.is_subset(&multi),
+                "round {round}: edge evidence in multi cited"
+            );
+            assert!(multi.is_subset(&all), "round {round}: multi cited in all");
+            let expected_edge: BTreeSet<&str> = hops
+                .iter()
+                .flat_map(|(a, b)| {
+                    let (a_chunks, b_chunks) =
+                        (index.source_chunk_ids(a), index.source_chunk_ids(b));
+                    a_chunks
+                        .iter()
+                        .filter(move |c| b_chunks.contains(c))
+                        .map(String::as_str)
+                })
+                .collect();
+            assert_eq!(edge, expected_edge, "round {round}: the hop intersections");
+            edge_found += usize::from(!edge.is_empty());
+            multi_beyond_edge += usize::from(multi.len() > edge.len());
+            all_beyond_multi += usize::from(all.len() > multi.len());
+
+            for (selection, candidates) in variants.into_iter().zip([&all, &multi, &edge]) {
+                let result = run(selection);
+                assert_eq!(
+                    result.paths, all_run.paths,
+                    "round {round}: {selection:?} keeps the paths"
+                );
+                assert_eq!(
+                    result.candidate_chunk_ids.len(),
+                    cap.min(candidates.len()),
+                    "round {round}: {selection:?} length"
+                );
+                assert_eq!(
+                    result.candidate_chunk_ids,
+                    reference_ranking(&index, &order, candidates, cap),
+                    "round {round}: {selection:?} follows the rank keys"
+                );
+            }
+
+            // `All` is what the ranking returned before the variants existed, which
+            // `seed_chunk_candidates` still computes over a list of entities.
+            let entity_seeds: Vec<Seed> = order
+                .iter()
+                .map(|entity| Seed {
+                    entity_id: (*entity).to_string(),
+                    name: String::new(),
+                    match_kind: MatchKind::Exact,
+                    score: 1.0,
+                    degree: 0,
+                })
+                .collect();
+            assert_eq!(
+                all_run.candidate_chunk_ids,
+                seed_chunk_candidates(&index, &entity_seeds, cap),
+                "round {round}: All reproduces the unfiltered ranking"
+            );
+        }
+        // Without these the inclusions above could hold because every set is empty or equal.
+        assert!(
+            edge_found >= 20,
+            "edge evidence found chunks in only {edge_found} rounds"
+        );
+        assert!(
+            multi_beyond_edge >= 20,
+            "multi cited exceeded edge evidence in only {multi_beyond_edge} rounds"
+        );
+        assert!(
+            all_beyond_multi >= 20,
+            "all exceeded multi cited in only {all_beyond_multi} rounds"
         );
     }
 

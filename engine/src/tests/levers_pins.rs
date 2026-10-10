@@ -11,9 +11,10 @@ use std::time::Duration;
 use prost::Message;
 use uuid::Uuid;
 
-use engine::config::EffectiveRagSettings;
+use engine::config::{ChunkPrecision, EffectiveRagSettings, GraphSettings};
 use engine::db::DatabaseManager;
 use engine::generation;
+use engine::graph::paths::ChunkSelection;
 use engine::ingest::{process_job, read_staged_jobs};
 use engine::pb::lancet::v1::{Lever, QueryRagRequest, RerankOutcome};
 use engine::rerank;
@@ -22,7 +23,7 @@ use engine::testkit::test_query_request;
 use engine::workflow::LeverSet;
 
 use crate::doc_meta::{DocMeta, DocMetaMap};
-use crate::service::LeverResources;
+use crate::service::{request_graph_settings, LeverResources};
 use crate::workflow::nodes::retrieve::{rerank_allowance, RERANK_NODE_RESERVE_MS};
 use crate::workflow::ports::FakeReranker;
 use crate::workflow::WorkflowContext;
@@ -1097,5 +1098,181 @@ async fn a_degraded_rebuild_keeps_the_prior_metadata_map() {
     let current = Arc::clone(&*service.corpus_store.read().await);
     assert!(current.rebuild_degraded);
     assert!(Arc::ptr_eq(&current.doc_meta, &map), "graph index failure");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// The graph_v2 lever and its chunk precision (Phase 06.3.6 plan 12 Task 1, D-139, D-140, D-165)
+// ---------------------------------------------------------------------------
+
+const GRAPH_V2: &[i32] = &[Lever::GraphV2 as i32];
+
+/// D-139: `graph_v2` serves a variant only when one is configured. The shipped `all` is a no-op the
+/// snapshot echo would still claim, so it leaves the lever unavailable.
+#[tokio::test]
+async fn graph_v2_is_available_only_when_a_chunk_precision_is_configured() {
+    let (path, mut service) = reranker_query_fixture(
+        "levers-graph-v2-availability",
+        3,
+        RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+    let snapshot = Arc::clone(&*service.corpus_store.read().await);
+    assert_eq!(
+        service.effective_settings.graph.graph_v2_chunk_precision,
+        ChunkPrecision::All
+    );
+    assert!(!service
+        .lever_availability(&snapshot)
+        .is_available(Lever::GraphV2));
+
+    for precision in [ChunkPrecision::EdgeEvidence, ChunkPrecision::MultiCited] {
+        service.effective_settings.graph.graph_v2_chunk_precision = precision;
+        let availability = service.lever_availability(&snapshot);
+        assert!(availability.is_available(Lever::GraphV2), "{precision:?}");
+        assert!(
+            !availability.is_available(Lever::Rerank)
+                && !availability.is_available(Lever::EvidenceMetadata),
+            "{precision:?}: the precision serves no other lever"
+        );
+    }
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
+    assert!(!service
+        .lever_availability(&snapshot)
+        .is_available(Lever::GraphV2));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// D-139, D-140: a request with the lever runs the configured variant; every other graph-on request,
+/// the `hybrid+graph` control arm included, runs `All`, and nothing else in the settings changes.
+#[test]
+fn a_graph_v2_request_runs_the_configured_chunk_selection_and_every_other_request_runs_all() {
+    let wire = |levers: &[i32]| LeverSet::try_from_wire(levers).expect("a valid lever list");
+    for (precision, selection) in [
+        (ChunkPrecision::EdgeEvidence, ChunkSelection::EdgeEvidence),
+        (
+            ChunkPrecision::MultiCited,
+            ChunkPrecision::MultiCited.selection(),
+        ),
+        (ChunkPrecision::All, ChunkSelection::All),
+    ] {
+        let configured = GraphSettings {
+            graph_v2_chunk_precision: precision,
+            ..GraphSettings::default()
+        };
+        let with_lever = request_graph_settings(&configured, &wire(GRAPH_V2));
+        assert_eq!(with_lever.chunk_selection, selection, "{precision:?}");
+        assert_eq!(with_lever.path_settings().chunk_selection, selection);
+        assert_eq!(
+            GraphSettings {
+                chunk_selection: ChunkSelection::All,
+                ..with_lever
+            },
+            configured,
+            "{precision:?}: only the selection in force differs"
+        );
+
+        let beside_another = request_graph_settings(
+            &configured,
+            &wire(&[Lever::BinaryAnswerFormat as i32, Lever::GraphV2 as i32]),
+        );
+        assert_eq!(beside_another.chunk_selection, selection, "{precision:?}");
+
+        for other in [&[][..], &[Lever::BinaryAnswerFormat as i32][..]] {
+            let control = request_graph_settings(&configured, &wire(other));
+            assert_eq!(
+                control.path_settings().chunk_selection,
+                ChunkSelection::All,
+                "{precision:?}: a request without graph_v2 keeps All"
+            );
+        }
+    }
+
+    // The selection in force is decided by the request alone, never inherited from the base.
+    let stale = GraphSettings {
+        graph_v2_chunk_precision: ChunkPrecision::EdgeEvidence,
+        chunk_selection: ChunkSelection::EdgeEvidence,
+        ..GraphSettings::default()
+    };
+    assert_eq!(
+        request_graph_settings(&stale, &wire(&[])).chunk_selection,
+        ChunkSelection::All
+    );
+}
+
+/// The production workflow builds its graph port from the per-request settings, so the choice above
+/// is the one a request runs under and not a copy that bypasses it.
+#[test]
+fn the_production_workflow_builds_its_graph_port_from_the_per_request_settings() {
+    let service = include_str!("../service.rs");
+    let from = service
+        .find("pub fn build_production_workflow_with_levers(")
+        .expect("the lever-aware workflow builder must exist");
+    let body = &service[from..];
+    let body = &body[..body
+        .find("let deps = workflow::WorkflowDependencies")
+        .expect("the dependencies follow the adapters")];
+    assert!(
+        body.contains("request_graph_settings(&self.effective_settings.graph, levers)"),
+        "the graph port must take the per-request settings"
+    );
+    assert!(
+        !body.contains("effective_settings.graph.clone()"),
+        "the graph port must not take the service settings unchanged"
+    );
+}
+
+/// Through the real service: `graph_v2` is refused on the shipped config, admitted and echoed once
+/// a variant is configured, and still refused beside `disable_graph_context` (D-165).
+#[tokio::test]
+async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_configured() {
+    let (path, mut service) = reranker_query_fixture(
+        "levers-graph-v2-admission",
+        3,
+        RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+    let request = |session: &str| QueryRagRequest {
+        levers: GRAPH_V2.to_vec(),
+        ..test_query_request("reranker evidence", session)
+    };
+    let error_kind = |status: &tonic::Status| {
+        status
+            .metadata()
+            .get("x-lancet-error-kind")
+            .expect("an error-kind trailer")
+            .to_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    let refused =
+        super::execute_query_rag(&service, request("00000000-0000-4000-8000-0000000000f4"))
+            .await
+            .expect_err("the shipped `all` leaves graph_v2 unavailable");
+    assert_eq!(error_kind(&refused), "lever_unavailable");
+
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::EdgeEvidence;
+    let response =
+        super::execute_query_rag(&service, request("00000000-0000-4000-8000-0000000000f5"))
+            .await
+            .expect("graph_v2 is admitted once a variant is configured");
+    assert_eq!(
+        response.snapshot.expect("a snapshot").levers,
+        vec![Lever::GraphV2 as i32]
+    );
+
+    let contradiction = super::execute_query_rag(
+        &service,
+        QueryRagRequest {
+            disable_graph_context: Some(true),
+            ..request("00000000-0000-4000-8000-0000000000f6")
+        },
+    )
+    .await
+    .expect_err("graph_v2 with the graph off is a contradiction");
+    assert_eq!(error_kind(&contradiction), "invalid_lever_combination");
     let _ = std::fs::remove_dir_all(path);
 }

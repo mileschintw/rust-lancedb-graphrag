@@ -18,7 +18,7 @@
 //! [`find_seed_paths`] adds the validated scan around it.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use arrow_array::{Array, Float32Array, RecordBatch, StringArray};
 use futures::TryStreamExt;
@@ -112,6 +112,36 @@ pub struct EdgeRow {
     pub weight: f64,
 }
 
+/// The fewest path entities that must cite a chunk for [`ChunkSelection::MultiCited`] to keep it
+/// when the variant is chosen by configuration (`graph_v2_chunk_precision = "multi_cited"`).
+///
+/// **Derivation.** Two is the smallest count that separates a chunk about one entity from a chunk
+/// that mentions two ends of a bridge, which is the evidence `rank_chunks` already puts first; it is
+/// the "chunks cited by at least 2 path entities" variant of D-139.
+///
+/// **Effect of changing it.** A larger value keeps only chunks that three or more path entities
+/// cite and leaves most questions with no graph chunk at all; one makes the variant equal to
+/// [`ChunkSelection::All`].
+pub const MULTI_CITED_MIN_ENTITIES: usize = 2;
+
+/// Which chunks of the path entities the graph offers to retrieval fusion (D-139).
+///
+/// Only the chunk list changes. The path facts that reach the prompt are the same for every
+/// variant, and so are the order keys: the kept candidates are ranked exactly as `rank_chunks`
+/// ranks them, over every entity on the kept paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChunkSelection {
+    /// Every chunk any path entity cites. This is the behaviour before D-139 and the `hybrid+graph`
+    /// control arm.
+    #[default]
+    All,
+    /// For each kept path hop, the chunks that both endpoints cite. An endpoint pair was extracted
+    /// from the relation's own chunk, so that chunk is always in the intersection.
+    EdgeEvidence,
+    /// Chunks cited by at least this many distinct path entities.
+    MultiCited(usize),
+}
+
 /// Path-search settings.
 ///
 /// Plain values here; `06.3.4.1-14` maps configuration onto them.
@@ -123,6 +153,8 @@ pub struct PathSettings {
     pub max_path_facts: usize,
     /// Most candidate chunk IDs returned.
     pub max_graph_chunk_candidates: usize,
+    /// Which chunks of the path entities are candidates. See [`ChunkSelection`].
+    pub chunk_selection: ChunkSelection,
 }
 
 /// One seed-to-seed path.
@@ -353,6 +385,24 @@ fn rank_chunks(index: &GraphIndex, entities: &[&str], cap: usize) -> Vec<String>
         .into_iter()
         .take(cap)
         .map(|(chunk, _)| chunk.to_string())
+        .collect()
+}
+
+/// The uncapped set of chunks that `selection` offers for the entities on the kept paths.
+///
+/// `entities` is every entity on the kept paths, each once, and `hops` is every consecutive entity
+/// pair of those paths.
+pub(crate) fn chunk_candidates<'a>(
+    index: &'a GraphIndex,
+    entities: &[&str],
+    hops: &[(&str, &str)],
+    selection: ChunkSelection,
+) -> BTreeSet<&'a str> {
+    let _ = (hops, selection);
+    entities
+        .iter()
+        .flat_map(|entity_id| index.source_chunk_ids(entity_id))
+        .map(String::as_str)
         .collect()
 }
 

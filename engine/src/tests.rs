@@ -90,6 +90,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.graph.degree_cap",
     "engine.graph.max_path_facts",
     "engine.graph.max_graph_chunk_candidates",
+    "engine.graph.graph_v2_chunk_precision",
     "engine.workflow.reformulate_timeout_ms",
     "engine.workflow.query_embedding_timeout_ms",
     "engine.workflow.retrieve_timeout_ms",
@@ -194,6 +195,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "engine.graph.max_graph_chunk_candidates",
         "unit=count; range=any count; keep equal to final_limit",
+    ),
+    (
+        "engine.graph.graph_v2_chunk_precision",
+        "unit=variant name; range=all | edge_evidence | multi_cited",
     ),
     (
         "engine.workflow.reformulate_timeout_ms",
@@ -619,6 +624,66 @@ fn config_openrouter_model_env_overrides_match_contract() {
         .expect("effective settings from overridden openrouter model settings");
     assert_eq!(effective.generation_model, "custom/generation-model-test");
     assert_eq!(effective.embedding_model, "custom/embedding-model-test");
+}
+
+/// Sets `name` to `value` under the caller's `ENV_MUTEX` guard, runs `load_settings`, and restores
+/// the prior value before returning the result.
+fn load_settings_with_env(name: &str, value: &str) -> Result<Settings, ::config::ConfigError> {
+    let original = std::env::var(name).ok();
+    std::env::set_var(name, value);
+    let result = load_settings();
+    match original {
+        Some(prior) => std::env::set_var(name, prior),
+        None => std::env::remove_var(name),
+    }
+    result
+}
+
+#[test]
+fn config_graph_v2_chunk_precision_env_override_matches_contract() {
+    use engine::config::ChunkPrecision;
+    let _guard = ENV_MUTEX.lock().unwrap();
+    let name = "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION";
+
+    let settings = load_settings_with_env(name, "edge_evidence")
+        .expect("load_settings with the graph precision override");
+    assert_eq!(
+        settings.engine.graph.graph_v2_chunk_precision,
+        ChunkPrecision::EdgeEvidence
+    );
+    let effective = EffectiveRagSettings::try_from_settings(&settings)
+        .expect("effective settings from the overridden graph precision");
+    assert_eq!(
+        effective.graph.graph_v2_chunk_precision,
+        ChunkPrecision::EdgeEvidence
+    );
+    assert_eq!(
+        effective.graph.chunk_selection,
+        engine::graph::paths::ChunkSelection::All,
+        "the override picks the variant a graph_v2 request uses and never the one in force"
+    );
+
+    let unset = load_settings().expect("load_settings without the override");
+    assert_eq!(
+        unset.engine.graph.graph_v2_chunk_precision,
+        ChunkPrecision::All,
+        "the committed file ships the no-op variant"
+    );
+}
+
+#[test]
+fn config_graph_v2_chunk_precision_env_override_refuses_an_unknown_variant() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+    let name = "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION";
+    for bad in ["nearest", "EDGE_EVIDENCE", "edge-evidence"] {
+        let error = load_settings_with_env(name, bad)
+            .expect_err(&format!("{bad:?} must refuse startup"))
+            .to_string();
+        assert!(
+            error.contains(name),
+            "the error must name the variable for {bad:?}: {error}"
+        );
+    }
 }
 
 #[tokio::test]

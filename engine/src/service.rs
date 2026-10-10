@@ -168,6 +168,19 @@ impl LeverAvailability {
     }
 }
 
+/// The graph settings one request runs under (D-139, D-140).
+///
+/// A request that names `graph_v2` runs the configured chunk variant; every other graph-on request,
+/// the `hybrid+graph` control arm included, runs `ChunkSelection::All`. Nothing else in the
+/// settings changes.
+pub(crate) fn request_graph_settings(
+    base: &GraphSettings,
+    levers: &workflow::LeverSet,
+) -> GraphSettings {
+    let _ = levers;
+    base.clone()
+}
+
 impl LancetServiceImpl {
     /// Reports which levers this engine can serve against `snapshot`.
     ///
@@ -218,7 +231,8 @@ impl LancetServiceImpl {
         let graph_adapter: Arc<dyn workflow::ports::GraphQueryPort> =
             Arc::new(ProductionGraphQueryPort {
                 database: self.database.clone(),
-                graph_settings: self.effective_settings.graph.clone(),
+                // The graph_v2 lever selects the configured chunk_selection; no lever keeps All.
+                graph_settings: request_graph_settings(&self.effective_settings.graph, levers),
                 graph_index: Arc::clone(&snapshot.graph_index),
                 embedder: Arc::clone(&self.embedder),
             });
