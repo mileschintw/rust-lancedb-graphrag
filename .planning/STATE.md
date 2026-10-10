@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Completed 06.3.6-20 (held-out drive); next wave 16 plan 21"
+stopped_at: "Completed 06.3.6-21 (run of record); next wave 17 plan 22"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6-20 held-out drive 2457 records"
+last_activity_desc: "06.3.6-21 run of record, SC-2 miss disclosed (D-192)"
 ---
 
 # Project State
@@ -34,6 +34,7 @@ Total Plans in Phase: 22
 - **2026-10-10: 06.3.6 wave 13 (18)** — D-154 freeze e472a2d4 (rerank 2286, retrieve 3080 via D-184/O11-A, graph-v2 edge_evidence, ceiling 3.0804e-04, PREREGISTRATION_06_3_6 7 arms m=4); preflight rerank mirror e2572f93; pytest 2174.
 - **2026-10-10: 06.3.6 wave 14 (19)** — rehearsal 21 records, provenance gate PASS on frozen system (Rehearsal HEAD 7d3da37a); all Sail; settled spend $0.010; drive projection ~$2.23 / ~6.4 h.
 - **2026-10-10: 06.3.6 wave 15 (20)** — held-out drive 2457/2457 (4 uncited-answer errors), lance-703, all Sail, no resume; spend est $1.927/$5.00, settled $0.522; rerank 702 calls 2 degraded (429); GRAPH_UNAVAILABLE on 447 graph-arm records.
+- **2026-10-10: 06.3.6 wave 16 (21)** — held-out readings: rerank +0.081 (Holm p .003), metadata +0.062 (p .008) significant; graph-v2, answer-format off; SC-2 MISS on rerank arms (provider latency drift) disclosed per D-192; rerank default-on per D-193.
 - **2026-10-09: 06.3.6 wave 9 COMPLETE.** 14: THE schema commit `e620a0b2` (nodes 22 columns; the 19-column eval store now fails closed until plan 15 Task 4's backfill), DocMetaMap scan at startup and rebuild, `backfill_evidence_metadata` bin with COPY verification. Gate green: cargo 908, go 124, pytest 2166.
 - **2026-10-09: 06.3.6 wave 8 COMPLETE.** 13: branch A (entity resolution) not-applicable under selection graph_list_precision; SUMMARY only (`86a73e45`), no code, so the gate was not re-run.
 - **2026-10-09: 06.3.6 wave 7 COMPLETE.** 12: graph chunk precision variants (All / EdgeEvidence / MultiCited), `[engine.graph] graph_v2_chunk_precision` (default all, so graph_v2 is lever_unavailable until set), per-request dispatch. Owed later: launcher refusal of LANCET_ENGINE__GRAPH__* (plans 19, 20); the variant is not on the wire, so dev reads must record it. Gate green: cargo 857.
