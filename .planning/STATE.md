@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "06.3.6 gap plan 23 planned (D-194 degrade-with-notice, D-197 legacy store migration); next /gsd-execute-phase 06.3.6 --gaps-only"
-last_updated: "2026-10-10T22:18:41.653Z"
+stopped_at: "06.3.6 gap plan 23 executing (/gsd-execute-phase 06.3.6 --gaps-only, sequential on main)"
+last_updated: "2026-10-10T22:36:02.646Z"
 last_activity: 2026-10-10
-state_head: 8e3740a92c7bbd1a7f63cd3d60ca69e2b825bc0f
+state_head: 8e2730f7bcbdfdc4e5fb9768ff70744992ea73ee
 progress:
   total_phases: 18
   completed_phases: 10
   total_plans: 233
-  completed_plans: 210
+  completed_plans: 232
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 gap plan 23 planned and checked"
+last_activity_desc: "06.3.6 gap plan 23 execution started"
 ---
 
 # Project State
