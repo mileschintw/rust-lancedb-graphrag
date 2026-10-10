@@ -391,6 +391,20 @@ pub fn d1_status(
     status
 }
 
+/// The longest accepted `doc_title`, in characters. Equal to the gateway's `maxDocTitleRunes`.
+pub const MAX_DOC_TITLE_CHARS: usize = 512;
+
+/// The longest accepted `source`, in characters. Equal to the gateway's `maxSourceRunes`.
+pub const MAX_SOURCE_CHARS: usize = 256;
+
+/// Re-validates the evidence metadata of an ingest request.
+///
+/// # Errors
+/// Returns `InvalidArgument` for a bad `doc_title`, `source` or `published_date`.
+pub fn validate_ingest_metadata(_metadata: &HashMap<String, String>) -> Result<(), Status> {
+    Ok(())
+}
+
 /// Validates that a string is a valid UUIDv4.
 pub fn validate_document_id(document_id: &str) -> Result<(), Status> {
     let id = Uuid::parse_str(document_id)

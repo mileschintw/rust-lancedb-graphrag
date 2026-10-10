@@ -3,6 +3,8 @@ use std::{collections::HashSet, sync::Arc};
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use lancedb::{Connection, Table};
 
+pub mod backfill;
+
 const EMBEDDING_DIMENSIONS: i32 = 2048;
 
 #[derive(Clone)]
@@ -301,6 +303,19 @@ pub fn legacy_staged_documents_v2_schema() -> SchemaRef {
         Field::new("chunk_strategy", DataType::Utf8, false),
         Field::new("chunk_size", DataType::Int32, false),
         Field::new("chunk_overlap", DataType::Int32, false),
+    ]))
+}
+
+/// The staging schema before the evidence-metadata columns: the 6-column legacy form plus `generation`.
+pub fn staged_documents_v2_pre_metadata_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("document_id", DataType::Utf8, false),
+        Field::new("filename", DataType::Utf8, false),
+        Field::new("raw_content", DataType::Binary, false),
+        Field::new("chunk_strategy", DataType::Utf8, false),
+        Field::new("chunk_size", DataType::Int32, false),
+        Field::new("chunk_overlap", DataType::Int32, false),
+        Field::new("generation", DataType::Int64, false),
     ]))
 }
 
