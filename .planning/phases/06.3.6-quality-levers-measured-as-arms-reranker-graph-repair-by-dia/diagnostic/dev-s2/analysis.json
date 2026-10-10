@@ -1,0 +1,109 @@
+{
+  "arms": [
+    {
+      "arm": "hybrid+graph",
+      "ci_hi": 0.011111111111111112,
+      "ci_label": "unadjusted, estimation only",
+      "ci_lo": -0.12222222222222222,
+      "comparison_shares": {
+        "arm": {
+          "insufficient_information": 0.4166666666666667,
+          "no": 0.16666666666666666,
+          "other": 0.05555555555555555,
+          "yes": 0.3611111111111111
+        },
+        "hybrid": {
+          "insufficient_information": 0.3333333333333333,
+          "no": 0.1388888888888889,
+          "other": 0.1388888888888889,
+          "yes": 0.3888888888888889
+        },
+        "n": 36
+      },
+      "delta": -0.05555555555555547,
+      "hits_at_4": null,
+      "levers": [],
+      "mean_arm": 0.5222222222222223,
+      "mean_hybrid": 0.5777777777777777,
+      "mean_prompt_tokens": 2467.1666666666665,
+      "n_neg": 7,
+      "n_pairs": 90,
+      "n_pos": 2,
+      "no_p_value": true,
+      "null_pairs": {
+        "b": 0,
+        "c": 0,
+        "n": 10
+      },
+      "query_embedding_retries": 0,
+      "records": 100,
+      "records_with_retries": 0,
+      "rerank_outcomes": {}
+    },
+    {
+      "arm": "hybrid+graph-v2",
+      "ci_hi": 0.0,
+      "ci_label": "unadjusted, estimation only",
+      "ci_lo": -0.12222222222222222,
+      "comparison_shares": {
+        "arm": {
+          "insufficient_information": 0.3611111111111111,
+          "no": 0.1388888888888889,
+          "other": 0.05555555555555555,
+          "yes": 0.4444444444444444
+        },
+        "hybrid": {
+          "insufficient_information": 0.3333333333333333,
+          "no": 0.1388888888888889,
+          "other": 0.1388888888888889,
+          "yes": 0.3888888888888889
+        },
+        "n": 36
+      },
+      "delta": -0.05555555555555547,
+      "hits_at_4": {
+        "available": true,
+        "ci_hi": 0.022222222222222223,
+        "ci_label": "unadjusted, estimation only",
+        "ci_lo": -0.06666666666666667,
+        "delta": -0.022222222222222254,
+        "mean_arm": 0.7333333333333333,
+        "mean_hybrid": 0.7555555555555555,
+        "n": 90,
+        "note": null
+      },
+      "levers": [
+        "graph_v2"
+      ],
+      "mean_arm": 0.5222222222222223,
+      "mean_hybrid": 0.5777777777777777,
+      "mean_prompt_tokens": 2476.366666666667,
+      "n_neg": 7,
+      "n_pairs": 90,
+      "n_pos": 2,
+      "no_p_value": true,
+      "null_pairs": {
+        "b": 0,
+        "c": 0,
+        "n": 10
+      },
+      "query_embedding_retries": 0,
+      "records": 100,
+      "records_with_retries": 0,
+      "rerank_outcomes": {}
+    }
+  ],
+  "corpus": "multihop_rag_levers_dev2",
+  "decides": "nothing on held-out; chooses between a lever's two dev readings",
+  "n_records": 300,
+  "population": {
+    "dev_g": 90,
+    "dev_null": 10
+  },
+  "reference_arm": "hybrid",
+  "run": "2026-10-10-levers-s2-multihop_rag_levers_dev2",
+  "schema_version": 1,
+  "session": "s2",
+  "spend_is_lower_bound": false,
+  "spend_usd": 0.21180842
+}
