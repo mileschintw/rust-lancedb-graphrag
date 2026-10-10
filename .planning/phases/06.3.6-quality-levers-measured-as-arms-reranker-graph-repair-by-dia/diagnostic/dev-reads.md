@@ -1,6 +1,6 @@
 # Dev reads ledger (D-154)
 
-Rendered from `dev-reads.jsonl`: 7 entries, in file order. The jsonl is the record; this file is derived from it.
+Rendered from `dev-reads.jsonl`: 8 entries, in file order. The jsonl is the record; this file is derived from it.
 
 ## 1. rule [dev-protocol-o7-o12-o13]
 
@@ -177,3 +177,15 @@ Rendered from `dev-reads.jsonl`: 7 entries, in file order. The jsonl is the reco
 - freeze_rule: the read with the larger dev delta against its own session hybrid; a tie keeps read 1 (EdgeEvidence)
 - written_before_read_2: true
 - other_levers: rerank, metadata and answer-format take no read 2 (see their read entries), so session 2 carries no revised sentence and no rerank override
+
+## 8. read2_reason: graph-v2
+
+- entry_id: `read2_reason-aa7e770329ed`
+- lever: graph-v2
+- launch_intent: true
+- is_new_trigger: false
+- note: read-2 launch-intent copy (plan 06.3.6-17 Task 1 step 4), not a new trigger. The ledger has no kind for a pre-session intent note (a read entry needs a finished run_dir journal, and Task 3 writes the one read-2 entry), so it is recorded as a read2_reason carrying the settings actually in force at launch.
+- copies_read2_reason: read2_reason-073ce4ad04de
+- read2_settings: {"chunk_selection": "MultiCited(2)", "generation_provider_pin": "D-191 order [\"sail-research\"], allow_fallbacks false", "no_other_override": true, "override": "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION=multi_cited", "reference": "session 2 own hybrid (O13)", "rerank_timeout_ms": 1706, "retrieve_timeout_ms": 2500, "session_2_arms": ["hybrid", "hybrid+graph", "hybrid+graph-v2"]}
+- in_force_at_launch: {"engine_pid": 21244, "engine_start_time_utc": "2026-10-10T07:13:01.4840129Z", "expected_records": 300, "gateway_pid": 3348, "gateway_start_time_utc": "2026-10-10T07:13:03.9235874Z", "generation": "lance-703", "head_at_launch": "28a4a75585b19a15e23fb2b78c4df58f1a571ae5", "override": "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION=multi_cited", "preflight": "PASS 9 of 9 arm canaries, generation_served Sail Research", "run_dir": "eval/runs/2026-10-10-levers-s2-multihop_rag_levers_dev2", "stage_cap_derivation": "2.00 - 0.44445306", "stage_cap_usd": 1.55554694}
+- written_before_read_2: true
