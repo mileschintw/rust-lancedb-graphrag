@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "All 22 plans of 06.3.6 complete; next code review, regression, verification"
+stopped_at: "06.3.6 verified 8/8 (human_needed); UAT 3/4 pass, 1 gap (D-194 degrade-with-notice); next /gsd-plan-phase 06.3.6 --gaps"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6-22 default flip 3d765ea3 + closeout"
+last_activity_desc: "06.3.6 verification + UAT; gap D-194 open"
 ---
 
 # Project State
@@ -36,6 +36,7 @@ Total Plans in Phase: 22
 - **2026-10-10: 06.3.6 wave 15 (20)** — held-out drive 2457/2457 (4 uncited-answer errors), lance-703, all Sail, no resume; spend est $1.927/$5.00, settled $0.522; rerank 702 calls 2 degraded (429); GRAPH_UNAVAILABLE on 447 graph-arm records.
 - **2026-10-10: 06.3.6 wave 16 (21)** — held-out readings: rerank +0.081 (Holm p .003), metadata +0.062 (p .008) significant; graph-v2, answer-format off; SC-2 MISS on rerank arms (provider latency drift) disclosed per D-192; rerank default-on per D-193.
 - **2026-10-10: 06.3.6 wave 17 (22)** — D-157 flip 3d765ea3: [engine.levers] defaults = [rerank, evidence_metadata]; closeout 5bb30939; open items: eval no-lever arms now get defaults, empty-metadata store fails startup; cargo 927.
+- **2026-10-10: 06.3.6 gates** — review 0C/17W/22I (c73dbe3c), verification 8/8 human_needed, UAT 3 pass + 1 gap (D-194: missing default-lever resource degrades with notice); D-195 control arms carried forward; D-196 SC-3 code-level.
 - **2026-10-09: 06.3.6 wave 9 COMPLETE.** 14: THE schema commit `e620a0b2` (nodes 22 columns; the 19-column eval store now fails closed until plan 15 Task 4's backfill), DocMetaMap scan at startup and rebuild, `backfill_evidence_metadata` bin with COPY verification. Gate green: cargo 908, go 124, pytest 2166.
 - **2026-10-09: 06.3.6 wave 8 COMPLETE.** 13: branch A (entity resolution) not-applicable under selection graph_list_precision; SUMMARY only (`86a73e45`), no code, so the gate was not re-run.
 - **2026-10-09: 06.3.6 wave 7 COMPLETE.** 12: graph chunk precision variants (All / EdgeEvidence / MultiCited), `[engine.graph] graph_v2_chunk_precision` (default all, so graph_v2 is lever_unavailable until set), per-request dispatch. Owed later: launcher refusal of LANCET_ENGINE__GRAPH__* (plans 19, 20); the variant is not on the wire, so dev reads must record it. Gate green: cargo 857.
