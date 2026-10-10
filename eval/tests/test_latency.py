@@ -339,3 +339,93 @@ def test_extract_durations_ignores_node_timer_expiry(
     assert len(result.by_node["RetrieveHybrid"]) == 10
     assert result.dropped_at_ceiling["RetrieveHybrid"] == 40
     assert census.node_counts["RetrieveHybrid"]["CENSORED_NODE_TIMEOUT"] == 5
+
+
+# ---- 06.3.6 plan 10: the rerank and D-152 nesting relations --------------------------
+
+
+def test_the_rerank_relation_fits_at_1706_and_not_at_1707():
+    """retrieve >= rerank + 294 + slack: 2500 holds a 1706 ms rerank, not 1707."""
+    from lancet_eval.latency import RETRIEVE_SEARCH_ALLOWANCE_MS
+
+    assert RETRIEVE_SEARCH_ALLOWANCE_MS == 294
+    fits = check_nesting_invariants(
+        {"retrieve_timeout_ms": 2500, "rerank_timeout_ms": 1706},
+        required_slack_ms=500.0,
+    )
+    rerank = [g for g in fits.groups if "rerank_timeout_ms" in g.inner_budgets]
+    assert len(rerank) == 1
+    assert rerank[0].outer_name == "retrieve_timeout_ms"
+    assert rerank[0].inner_sum_ms == 1706 + 294
+    assert rerank[0].slack_ms == 500
+    assert rerank[0].is_violation is False
+
+    over = check_nesting_invariants(
+        {"retrieve_timeout_ms": 2500, "rerank_timeout_ms": 1707},
+        required_slack_ms=500.0,
+    )
+    group = next(g for g in over.groups if "rerank_timeout_ms" in g.inner_budgets)
+    assert group.is_violation is True
+    assert group.adjusted_outer_ms == 1707 + 294 + 500
+    assert over.has_violations is True
+    # the enclosing budget is raised, the inner one is never shaved
+    assert over.resolved_budgets["retrieve_timeout_ms"] == 2501
+    assert over.resolved_budgets["rerank_timeout_ms"] == 1707
+
+
+def test_the_rerank_relation_is_skipped_without_its_key():
+    """No `rerank_timeout_ms`: the relation is skipped, never filled in."""
+    with_key = check_nesting_invariants(
+        {"retrieve_timeout_ms": 2500, "rerank_timeout_ms": 100}
+    )
+    without = check_nesting_invariants({"retrieve_timeout_ms": 2500})
+    assert len(without.groups) == len(with_key.groups) - 1
+    assert "rerank_timeout_ms" not in without.resolved_budgets
+
+
+def test_the_d152_relation_is_opt_in_and_legacy_budgets_are_unchanged():
+    """The D-152 graph relation never moves a 06.3.3 derivation unless asked for."""
+    budgets = {
+        "graph_node_timeout_ms": 15000,
+        "query_embedding_timeout_ms": 10000,
+        "graph_operation_timeout_ms": 4000,
+        "retrieve_timeout_ms": 15000,
+    }
+    legacy = check_nesting_invariants(budgets, required_slack_ms=500.0)
+    assert legacy.has_violations is False
+    assert len(legacy.groups) == 2
+    assert legacy.resolved_budgets["graph_node_timeout_ms"] == 15000
+
+
+def test_the_d152_relation_holds_two_embedding_attempts_the_jitter_and_the_graph_op():
+    """graph_node >= 2 x query_embedding + 250 + graph_operation + slack (D-152)."""
+    # config/config.toml: 2 x 2000 + 250 + 2424 = 6674 (+ 500 slack) <= 15000
+    good = {
+        "graph_node_timeout_ms": 15000,
+        "query_embedding_timeout_ms": 2000,
+        "graph_operation_timeout_ms": 2424,
+    }
+    rep = check_nesting_invariants(good, required_slack_ms=500.0, retry_aware=True)
+    group = [g for g in rep.groups if g.inner_sum_ms == 2 * 2000 + 250 + 2424]
+    assert len(group) == 1 and group[0].is_violation is False
+    # the verify overlay before D-188: 2 x 10000 + 250 + 4000 = 24250, node 15000
+    before = {
+        "graph_node_timeout_ms": 15000,
+        "query_embedding_timeout_ms": 10000,
+        "graph_operation_timeout_ms": 4000,
+    }
+    rep = check_nesting_invariants(before, required_slack_ms=0.0, retry_aware=True)
+    assert rep.has_violations is True
+    assert rep.resolved_budgets["graph_node_timeout_ms"] == 24250
+    # after D-188 (25000) it holds with no slack
+    after = {**before, "graph_node_timeout_ms": 25000}
+    rep = check_nesting_invariants(after, required_slack_ms=0.0, retry_aware=True)
+    assert rep.has_violations is False
+
+
+def test_the_d152_relation_is_skipped_when_a_key_is_absent():
+    rep = check_nesting_invariants(
+        {"graph_node_timeout_ms": 100, "query_embedding_timeout_ms": 10},
+        retry_aware=True,
+    )
+    assert all(g.inner_sum_ms != 2 * 10 + 250 for g in rep.groups)

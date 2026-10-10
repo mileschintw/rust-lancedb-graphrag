@@ -74,7 +74,13 @@ from lancet_eval.measure import (
     compute_spend,
     estimate_judge_cost_per_question,
 )
-from lancet_eval.arms import ARM_REGISTRY, arm_slug, canonical_arm, resolve_arm
+from lancet_eval.arms import (
+    ARM_REGISTRY,
+    LEGACY_ARM_LABELS,
+    arm_slug,
+    canonical_arm,
+    resolve_arm,
+)
 from lancet_eval.metrics import (
     abstention_leak,
     abstention_rate,
@@ -610,11 +616,12 @@ def _provenance_scan(
     """Counts every provenance code over the records; lists the zero-tolerance failures.
 
     Returns:
-        `(counts, failing)`: the number of records failing each code `a` to `g`, and
+        `(counts, failing)`: the number of records failing each code `a` to `j` (the
+        06.3.6 clauses h, i and j are emitted by `provenance_failures` too), and
         `(question_id, arm_label, codes)` for each record with a zero-tolerance
-        failure (clauses a, b, c, d, f), sorted by question and arm.
+        failure (clauses a, b, c, d, f, h, j), sorted by question and arm.
     """
-    counts = dict.fromkeys("abcdefg", 0)
+    counts = dict.fromkeys("abcdefghij", 0)
     failing: list[tuple[str, str, str]] = []
     for rec in records:
         codes = sorted({f.code for f in provenance.provenance_failures(rec)})
@@ -628,6 +635,17 @@ def _provenance_scan(
 
 
 _PROVENANCE_REFUSAL_LISTED = 20
+
+# 06.3.6 D-161: `score` builds P_all, the set of held-out G questions with an ok record
+# on every configured arm, for its per-arm cells. With lever arms in the corpus it is
+# not the population any decision reads (`compare-levers` reads one pairwise population
+# per comparison), and it must never stop the report being written.
+P_ALL_LABEL = "all-arm P_all, not the decisional population"
+
+
+def has_lever_arms(config: Any) -> bool:
+    """Whether a corpus runs an arm outside the four 06.3.5 labels (06.3.6)."""
+    return any(canonical_arm(a) not in LEGACY_ARM_LABELS for a in config.arms)
 
 
 def _prompt_tokens(rec: RunRecord) -> float:
@@ -860,7 +878,12 @@ def _four_arm_dimensions(
             status="ok",
             score=1.0,
             detail={
-                **{f"code_{c}": float(provenance_counts[c]) for c in "abcdefg"},
+                # 06.3.6: the lever clauses are published only for a lever corpus, so a
+                # 06.3.5 report keeps its recorded keys.
+                **{
+                    f"code_{c}": float(provenance_counts[c])
+                    for c in ("abcdefghij" if has_lever_arms(config) else "abcdefg")
+                },
                 "records_checked": float(len(records)),
                 "records_failing_zero_tolerance": 0.0,
             },
@@ -3155,6 +3178,7 @@ def score_run(
     )
 
     judged_result: JudgedResult | None = None
+    p_all_note = ""
     if split_inputs is not None:
         four_arm = _four_arm_dimensions(
             records=records,
@@ -3165,6 +3189,16 @@ def score_run(
             provenance_counts=provenance_counts,
         )
         dimensions.extend(four_arm)
+        if has_lever_arms(config):
+            size = next(d for d in four_arm if d.name == "p4_size")
+            p_all_note = (
+                f"{P_ALL_LABEL}: |P_all| = {size.n} of "
+                f"{int(size.detail['n_heldout_g'])} held-out G questions (coverage "
+                f"{size.detail['coverage']:.3f}). The per-arm cells are on this "
+                "population; below any coverage floor they are labelled, never "
+                "refused, and compare-levers reads one pairwise population per "
+                "comparison (D-161)."
+            )
         if judged and judged_cache is not None:
             judged_dims, judged_result = _judged_dimensions(
                 records=records,
@@ -3242,6 +3276,10 @@ def score_run(
             f"{final_notes} {missing_units_note}".strip()
             if final_notes
             else missing_units_note
+        )
+    if p_all_note:
+        final_notes = (
+            f"{final_notes} {p_all_note}".strip() if final_notes else p_all_note
         )
 
     metadata = RunMetadata(

@@ -1016,6 +1016,66 @@ def compare_benchmark(
         line(f"Wrote {run / name}")
 
 
+@app.command("compare-levers")
+def compare_levers(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Run directory that `score --no-judge` has scored (report.json)",
+        ),
+    ],
+) -> None:
+    """Write the no-judge lever comparison of a scored 06.3.6 run (D-150, D-158).
+
+    Offline. It refuses unless the corpus's pre-registration token was committed before
+    the journal's `created_at` on a clean tree with its value unchanged (D-73), needs no
+    judged result (D-153), and writes lever-comparison.json and lever-comparison.md
+    into the run directory without touching report.json.
+    """
+    from lancet_eval.lever_comparison import OUTPUT_FILES, write_lever_comparison
+
+    def line(text: str, **kwargs: Any) -> None:
+        console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
+
+    try:
+        payload = write_lever_comparison(run)
+    except Exception as exc:
+        line(f"Compare-levers refused: {exc}", style="bold red")
+        raise typer.Exit(code=1) from exc
+    pops = payload["populations"]
+    line(
+        f"Lever comparison of {payload['run']['corpus']}: "
+        f"|H_G| = {pops['n_heldout_g']}, |H_N| = {pops['n_heldout_null']}."
+    )
+    for family in payload["families"]:
+        reads = ", ".join(f"{c['arm']}: {c['decision']}" for c in family["comparisons"])
+        line(f"Holm family {family['primary']} ({family['role']}): {reads}")
+    for row in payload["default_decisions"]:
+        line(f"Default decision {row['lever']}: {row['decision']}")
+    for name in OUTPUT_FILES:
+        line(f"Wrote {run / name}")
+
+
+@app.command(
+    "dev-reads",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def dev_reads_command(ctx: typer.Context) -> None:
+    """Dev-read analysis, the rerank timeout derivation and the dev-read ledger.
+
+    Mirrors `python -m lancet_eval.dev_reads`: `analyse`, `derive-rerank-timeout`,
+    `ledger-add`, `render-ledger` and `lint-ledger` (D-135, D-154). `lint-ledger`
+    exits non-zero on any violation of the dev protocol.
+    """
+    from lancet_eval.dev_reads import main as dev_reads_main
+
+    code = dev_reads_main(list(ctx.args))
+    if code:
+        raise typer.Exit(code=code)
+
+
 def _normalize_ws(text: str) -> str:
     """Whitespace and case normalization for containment matching."""
     return " ".join(text.split()).lower()
