@@ -819,3 +819,190 @@ def test_a_lever_preregistration_is_resolvable_and_names_its_arms() -> None:
         "hybrid+all",
         "hybrid+graph",
     )
+
+
+# --- the 06.3.6 freeze (plan 06.3.6-18, D-154): the one real lever pre-registration ---
+
+FREEZE_TOKEN = "PREREGISTRATION_06_3_6"
+PHASE_DIR = next(
+    (Path(__file__).resolve().parents[2] / ".planning" / "phases").glob("06.3.6-*")
+)
+LEDGER = PHASE_DIR / "diagnostic" / "dev-reads.jsonl"
+REPO = Path(__file__).resolve().parents[2]
+
+
+def _freeze_entry() -> dict[str, object]:
+    entries = [
+        json.loads(line)
+        for line in LEDGER.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    return entries[-1]
+
+
+def _built_lever_arms() -> tuple[str, ...]:
+    from lancet_eval.arms import ARM_REGISTRY
+
+    return tuple(
+        label
+        for label, spec in ARM_REGISTRY.items()
+        if spec.levers and label != "hybrid+all"
+    )
+
+
+def test_the_frozen_preregistration_families_equal_the_built_lever_arms() -> None:
+    from lancet_eval import preregistration
+
+    pre = preregistration.resolve(FREEZE_TOKEN)
+    assert isinstance(pre, thresholds.LeverPreRegistration)
+    built = _built_lever_arms()
+    assert len(built) == 4, "branch B built graph-v2: four lever arms, m = 4"
+    decisional, supporting = pre.families
+    assert (decisional.primary, decisional.role) == ("answer_usable", "decisional")
+    assert set(decisional.arms) == set(built)
+    assert len(decisional.arms) == len(set(decisional.arms)) == 4
+    assert (supporting.primary, supporting.role) == ("paper_hits_at_4", "supporting")
+    assert set(supporting.arms) == {"hybrid+rerank", "hybrid+graph-v2"}
+    assert decisional.alpha == supporting.alpha == 0.05
+    assert pre.reference_arm == "hybrid"
+    assert set(pre.descriptive_arms) == {"hybrid+all", "hybrid+graph"}
+    assert set(pre.null_guard_arms) == {"hybrid+metadata", "hybrid+answer-format"}
+    assert (pre.null_guard_margin, pre.null_guard_min_pair_fraction) == (0.10, 0.80)
+    assert pre.sc2_timeout_rate_floor == 0.025
+    assert pre.complete_case_floor == 0.80
+    assert (pre.bootstrap_b, pre.bootstrap_seed) == (10_000, 42)
+    assert pre.population == "pairwise_per_comparison"
+    assert pre.non_evaluable_rule == "p=1_m_unchanged"
+    for owner_decision in (
+        "D-150",
+        "D-161",
+        "D-162",
+        "D-163",
+        "D-164",
+        "D-174",
+        "D-177",
+    ):
+        assert owner_decision in pre.provenance
+    assert "0.10" in pre.provenance and "never changed after data" in pre.provenance
+
+
+@pytest.mark.parametrize(
+    ("corpus_name", "role", "n_questions"),
+    [
+        ("multihop_rag_levers_rehearsal", "rehearsal", 3),
+        ("multihop_rag_levers_heldout", "heldout", 351),
+    ],
+)
+def test_the_lever_corpora_carry_the_preregistered_arms_and_no_judge(
+    corpus_name: str, role: str, n_questions: int
+) -> None:
+    from lancet_eval import corpus, preregistration
+    from lancet_eval.arms import ARM_REGISTRY
+
+    config = corpus.load_corpus(corpus_name)
+    pre = preregistration.resolve(config.preregistration_token)
+    assert config.preregistration_token == FREEZE_TOKEN
+    assert config.split_role == role
+    assert config.has_judge is False
+    assert set(config.arms) == set(preregistration.arms_of(pre))
+    assert len(config.arms) == 7
+    assert list(config.arms) == [a for a in ARM_REGISTRY if a in config.arms]
+    assert len(config.questions) == n_questions
+    assert config.legacy_canaries is False
+
+
+def test_a_moved_preregistered_number_fails_the_ast_gate(tmp_path: Path) -> None:
+    root = tmp_path / "throwaway"
+    root.mkdir()
+    (tmp_path / "empty.gitconfig").write_text("", encoding="utf-8")
+    _git(root, "init", "-q")
+    source = Path(thresholds.__file__).read_text(encoding="utf-8")
+    _write(root, THRESHOLDS, source.encode("utf-8"))
+    sha = _commit(root, "freeze", T0)
+    assert gitcheck.introducing_commit(FREEZE_TOKEN, THRESHOLDS, repo=root) == sha
+    assert gitcheck.preregistered_value_problem(FREEZE_TOKEN, sha, repo=root) is None
+
+    head = "PREREGISTRATION_06_3_6 = LeverPreRegistration("
+    commented = source.replace(head, "# a comment is not a difference\n" + head)
+    _write(root, THRESHOLDS, commented.encode("utf-8"))
+    assert gitcheck.preregistered_value_problem(FREEZE_TOKEN, sha, repo=root) is None
+
+    block = source[source.index(head) :]
+    assert block.count("null_guard_margin=0.10,") == 1
+    moved_block = block.replace("null_guard_margin=0.10,", "null_guard_margin=0.11,")
+    _write(root, THRESHOLDS, source.replace(block, moved_block).encode("utf-8"))
+    problem = gitcheck.preregistered_value_problem(FREEZE_TOKEN, sha, repo=root)
+    assert problem is not None and "differs from its value" in problem
+
+
+def test_the_frozen_sentences_equal_the_ledger_freeze_entry_verbatim() -> None:
+    import re
+
+    prompt = (REPO / "engine" / "src" / "prompt.rs").read_text(encoding="utf-8")
+
+    def constant(name: str) -> str:
+        found = re.search(rf'pub const {name}: &str = "([^"]*)";', prompt)
+        assert found is not None, name
+        return found.group(1)
+
+    freeze = _freeze_entry()
+    assert freeze["kind"] == "freeze" and not freeze.get("candidate")
+    frozen = freeze["frozen"]
+    assert isinstance(frozen, dict)
+    assert frozen["evidence_metadata_policy_sentence"]["value"] == constant(
+        "EVIDENCE_METADATA_POLICY_SENTENCE"
+    )
+    assert frozen["binary_answer_format_rules"]["value"] == constant(
+        "BINARY_ANSWER_FORMAT_RULES"
+    )
+
+
+def test_the_frozen_budgets_agree_across_the_four_places_and_the_ledger() -> None:
+    import re
+    import tomllib
+
+    frozen = _freeze_entry()["frozen"]
+    assert isinstance(frozen, dict)
+    rust = (REPO / "engine" / "src" / "config.rs").read_text(encoding="utf-8")
+
+    def default_ms(name: str) -> int:
+        found = re.search(rf"pub fn {name}\(\) -> u64 \{{\s*(\d+)\s*\}}", rust)
+        assert found is not None, name
+        return int(found.group(1))
+
+    def workflow_file(name: str) -> dict[str, object]:
+        raw = tomllib.loads((REPO / "config" / name).read_text(encoding="utf-8"))
+        return raw["engine"]
+
+    for key, fn in (
+        ("rerank_timeout_ms", "default_rerank_timeout_ms"),
+        ("retrieve_timeout_ms", "default_retrieve_timeout_ms"),
+    ):
+        want = frozen[key]["value"]
+        assert default_ms(fn) == want, key
+        for name in ("config.toml", "config.example.toml"):
+            assert workflow_file(name)["workflow"][key] == want, (name, key)
+    assert (
+        frozen["retrieve_timeout_ms"]["value"]
+        == 294 + frozen["rerank_timeout_ms"]["value"] + 500
+    )
+    precision = frozen["graph_v2_chunk_precision"]["value"]
+    assert precision == "edge_evidence"
+    for name in ("config.toml", "config.example.toml"):
+        assert workflow_file(name)["graph"]["graph_v2_chunk_precision"] == precision
+    default_fn = rust.split("pub fn default_graph_v2_chunk_precision")[1][:80]
+    assert "ChunkPrecision::EdgeEvidence" in default_fn
+    assert not (PHASE_DIR / "graph_v2_manifest.json").exists(), "branch B: no manifest"
+
+
+def test_the_freeze_entry_names_the_o11_reply_and_every_source() -> None:
+    freeze = _freeze_entry()
+    assert freeze["kind"] == "freeze" and not freeze.get("candidate")
+    o11 = freeze["o11"]
+    assert isinstance(o11, dict)
+    assert o11["decision"] == "D-184" and o11["reply"] == "o11-rule"
+    assert o11["applied"].startswith("A")
+    frozen = freeze["frozen"]
+    assert isinstance(frozen, dict)
+    for name, row in frozen.items():
+        assert row.get("source"), f"{name} names no dev read or owner decision (D-129)"

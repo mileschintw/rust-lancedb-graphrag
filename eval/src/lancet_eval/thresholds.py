@@ -518,3 +518,83 @@ class LeverPreRegistration:
     rerank_consecutive_degrade_halt: int
     default_rule: str
     provenance: str
+
+
+
+# 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single
+# freeze commit that also holds every frozen lever parameter (prompt sentences, rerank and
+# retrieve budgets, the graph-v2 precision variant, the unreported rerank-call cost ceiling,
+# the dev ledger's final entry and the rehearsal and held-out corpus configs), before the
+# rehearsal, which is the first paid held-out-side request. Every number a decision reads is
+# INSIDE this assignment: the D-73 gate compares this assignment's AST only (gitcheck.py), so
+# a loose constant beside it would not be protected. A corpus selects it through
+# `[preregistration] token`, never through the 06.3.5 module constant. Nothing here changes
+# after data is seen. Branch B of D-137 (graph_list_precision) built graph-v2, so the shape
+# is the seven-arm one: m = 4 for answer_usable and m = 2 for paper_hits_at_4.
+PREREGISTRATION_06_3_6 = LeverPreRegistration(
+    reference_arm="hybrid",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "hybrid+rerank",
+                "hybrid+graph-v2",
+                "hybrid+metadata",
+                "hybrid+answer-format",
+            ),
+            alpha=0.05,
+        ),
+        FamilySpec(
+            primary="paper_hits_at_4",
+            role="supporting",
+            arms=("hybrid+rerank", "hybrid+graph-v2"),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("hybrid+all", "hybrid+graph"),
+    test="paired_sign_flip_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=("hybrid+metadata", "hybrid+answer-format"),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "default(X) iff X is in the decisional family; the run passed the post-drive "
+        "provenance block; SC-1 and SC-2 (with sc2_timeout_rate_floor) read PASS on "
+        "hybrid and on X; |P_X| / |H_G| >= complete_case_floor; Holm rejects X at FWER "
+        "alpha with m fixed; delta(X) > 0; and, if X is in null_guard_arms, the null "
+        "guard is evaluable and passes. If only the SC-1/SC-2 condition fails after "
+        "D-110, X's default is an owner disposition, disclosed, never mechanical"
+    ),
+    provenance=(
+        "06.3.6 D-150 (two Holm families with per-family arms; the paper Hits@4 family "
+        "supports a retrieval claim only), D-161 (population pairwise per comparison "
+        "and the 0.80 coverage floor, owner decision 2026-10-09), D-148 and D-162 (null "
+        "guard: count rule, margin 0.10, at least 0.80 of the 43 null pairs, fail "
+        "closed), D-163 (guard arms hybrid+metadata and hybrid+answer-format; "
+        "Yes-share disclosure reported only), D-164 (SC-2 timeout-rate floor "
+        "1/40 = (1 - 0.95) x 1/2 from COMMITTED_THRESHOLDS and "
+        "COMMITTED_DECAY_THRESHOLDS_06341), D-174 (O10 rerank degrade tripwire: rate "
+        "0.20 after 50 attempts, or 5 consecutive degrades), D-177 (O16 gate "
+        "precondition of a default), D-123 (exact paired sign-flip test), D-73, D-129 "
+        "(no held-out number motivates any value) and D-154 (frozen with every lever "
+        "parameter in one commit). The arm set follows the committed D-137 selection "
+        "graph_list_precision (commit 81f1b414), which built graph-v2: m = 4 and m = 2. "
+        "Across both families the family-wise error rate can reach 0.10 (Bonferroni "
+        "over two families); defaults read only the decisional family (at most 0.05), "
+        "and the guards can only veto a rejection. Frozen on 2026-10-10, before the "
+        "held-out cap checkpoint and the rehearsal, and never changed after data is "
+        "seen."
+    ),
+)

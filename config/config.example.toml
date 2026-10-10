@@ -38,7 +38,7 @@ deployment_environment = "dev"
 # Runner-level (top-level) node budgets enforced by WorkflowRunner around a whole node:
 # - reformulate_timeout_ms (ReformulateQuery) — carried at 5000; never derived
 # - graph_node_timeout_ms (ExtractGraphContext outer envelope)
-# - retrieve_timeout_ms (RetrieveHybrid)
+# - retrieve_timeout_ms (RetrieveHybrid; also holds the rerank call, rerank_timeout_ms below)
 # - prompt_timeout_ms (AssemblePrompt)
 # - generation_node_timeout_ms (GenerateAnswer)
 #
@@ -49,12 +49,13 @@ deployment_environment = "dev"
 # Nesting (slack 500ms is the committed rule's margin; engine startup requires only >=):
 # query_embedding (2000) + graph_operation (2424) = 4424 nests inside graph_node (12500), slack 8076ms
 # (graph_node is kept at pass A's value; nesting needs only 4924).
-# retrieve (2500) is lifted to query_embedding (2000) + 500ms, slack 500ms.
+# retrieve (3080) holds the search allowance (294) + rerank (2286) + 500ms slack exactly, and so also clears
+# query_embedding (2000) + 500ms.
 # Which fires first: the embedding call runs inside ExtractGraphContext, so query_embedding (2000)
 # fires first on an embedding overrun and fails the node, which cancels the query. graph_operation
 # (2424) fires first on a traversal overrun and degrades to chunk-only context (non-fatal
 # GRAPH_TIMEOUT). The outer graph_node (12500) fires only if the whole envelope exceeds 12500ms.
-# RetrieveHybrid reads the precomputed embedding, so retrieve (2500) bounds its own search alone.
+# RetrieveHybrid reads the precomputed embedding, so retrieve (3080) bounds its own search and the rerank call.
 #
 # Provenance (06.3.4.1-BUDGETS.md): 06.3.3's committed rule (p95 x 1.5, ceil, lifted by nesting)
 # run on pass A of 2026-09-28 (320 measured records) with the two inner budgets and the prompt floor
@@ -65,7 +66,7 @@ deployment_environment = "dev"
 #   p95 1616ms x 1.5 of the graph-on ExtractGraphContext node duration, an upper-bound proxy that
 #   includes the query embedding, adopted by the user's decision (was 10000).
 # - retrieve 2500 (rule 294) and graph_node 12500 (rule 1062) are pass A's rule values raised by nesting;
-#   pass B left both unchanged.
+#   pass B left both unchanged. 06.3.6 (D-154, O11-A) then raised retrieve to 3080 to hold the derived rerank 2286.
 # - prompt 120 is the user's floor as amended by D-93 (was 65, 1.5 x pass A's 43ms maximum): a fresh engine's first query took 78.6ms; the rule alone writes 11ms.
 # - generation_node 65000 is the provider contract: 2 x 30s attempts + 5s slack.
 # Pass A ran with unfiltered logging, so the measured maxima are slightly generous, which is
@@ -76,10 +77,12 @@ reformulate_timeout_ms = 5000
 # unit=milliseconds; range=>0
 query_embedding_timeout_ms = 2000
 # unit=milliseconds; range=>0
-retrieve_timeout_ms = 2500
-# provisional (D-135): the largest value that nests, 2500 - 294 - 500; the derived value replaces it in the D-154 freeze commit
+retrieve_timeout_ms = 3080
+# frozen (D-135, D-154, O11-A via D-184): T = ceil(1.5 x 1524 ms p95), the censoring-aware D-135 derivation of dev read 1
+# (censored_above_p95_rank(1), n 99, k 1); it nests only in retrieve 3080 = ceil(294 + 2286 + 500), which is why
+# retrieve_timeout_ms moved from 2500 to 3080 for every arm. It was provisionally 1706, the room 2500 left.
 # unit=milliseconds; range=>0
-rerank_timeout_ms = 1706
+rerank_timeout_ms = 2286
 # unit=milliseconds; range=>0
 graph_operation_timeout_ms = 2424
 # unit=milliseconds; range=>0
@@ -153,9 +156,9 @@ degree_cap = 33
 max_path_facts = 8
 # unit=count; range=any count; keep equal to final_limit
 max_graph_chunk_candidates = 8
-# D-139: the variant is chosen on dev and frozen in the D-154 commit
+# D-139: the variant was chosen on dev (read 1 EdgeEvidence beat read 2 MultiCited(2)) and frozen in the D-154 commit
 # unit=variant name; range=all | edge_evidence | multi_cited
-graph_v2_chunk_precision = "all"
+graph_v2_chunk_precision = "edge_evidence"
 
 [openrouter]
 # unit=URL string; range=nonblank

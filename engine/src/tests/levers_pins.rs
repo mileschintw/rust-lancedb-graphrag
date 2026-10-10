@@ -887,13 +887,16 @@ async fn a_metadata_arm_citation_title_equals_the_hybrid_arms_for_the_same_chunk
 /// one entry admits it; `binary_answer_format` needs nothing.
 #[tokio::test]
 async fn the_metadata_lever_is_available_only_when_the_snapshot_holds_metadata() {
-    let (path, service) = reranker_query_fixture(
+    let (path, mut service) = reranker_query_fixture(
         "levers-metadata-availability",
         3,
         RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
+    // The shipped variant (`edge_evidence`, frozen at D-154) serves graph_v2; this test reads that
+    // the metadata serves no other lever, so graph_v2 is held at the no-op `all`.
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
     let empty = Arc::clone(&*service.corpus_store.read().await);
     assert!(empty.doc_meta.is_empty());
     let availability = service.lever_availability(&empty);
@@ -906,7 +909,7 @@ async fn the_metadata_lever_is_available_only_when_the_snapshot_holds_metadata()
     assert!(availability.is_available(Lever::BinaryAnswerFormat));
     assert!(
         !availability.is_available(Lever::GraphV2),
-        "the metadata does not serve another lever"
+        "the metadata does not serve another lever (graph_v2 is held at the no-op `all`)"
     );
     let _ = std::fs::remove_dir_all(path);
 }
@@ -1113,8 +1116,9 @@ async fn a_degraded_rebuild_keeps_the_prior_metadata_map() {
 
 const GRAPH_V2: &[i32] = &[Lever::GraphV2 as i32];
 
-/// D-139: `graph_v2` serves a variant only when one is configured. The shipped `all` is a no-op the
-/// snapshot echo would still claim, so it leaves the lever unavailable.
+/// D-139: `graph_v2` serves a variant only when one is configured. The no-op `all` is a value the
+/// snapshot echo would still claim, so it leaves the lever unavailable; the shipped default is the
+/// frozen dev winner `edge_evidence` (D-154), which makes the lever available.
 #[tokio::test]
 async fn graph_v2_is_available_only_when_a_chunk_precision_is_configured() {
     let (path, mut service) = reranker_query_fixture(
@@ -1127,8 +1131,13 @@ async fn graph_v2_is_available_only_when_a_chunk_precision_is_configured() {
     let snapshot = Arc::clone(&*service.corpus_store.read().await);
     assert_eq!(
         service.effective_settings.graph.graph_v2_chunk_precision,
-        ChunkPrecision::All
+        ChunkPrecision::EdgeEvidence,
+        "the service starts on the shipped, frozen variant"
     );
+    assert!(service
+        .lever_availability(&snapshot)
+        .is_available(Lever::GraphV2));
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
     assert!(!service
         .lever_availability(&snapshot)
         .is_available(Lever::GraphV2));
@@ -1229,8 +1238,8 @@ fn the_production_workflow_builds_its_graph_port_from_the_per_request_settings()
     );
 }
 
-/// Through the real service: `graph_v2` is refused on the shipped config, admitted and echoed once
-/// a variant is configured, and still refused beside `disable_graph_context` (D-165).
+/// Through the real service: `graph_v2` is refused on the no-op `all`, admitted and echoed once a
+/// variant is configured, and still refused beside `disable_graph_context` (D-165).
 #[tokio::test]
 async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_configured() {
     let (path, mut service) = reranker_query_fixture(
@@ -1240,6 +1249,9 @@ async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_con
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
+    // The shipped variant (`edge_evidence`, frozen at D-154) would admit the request, so the
+    // refusal is read on the no-op `all` set here.
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
     // A filter that names no ingested document leaves zero evidence, so the run stops before the
     // prompt is built: admission and the echo are what this test reads, not an answer.
     let request = |session: &str| QueryRagRequest {
@@ -1263,7 +1275,7 @@ async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_con
     let refused =
         super::execute_query_rag(&service, request("00000000-0000-4000-8000-0000000000f4"))
             .await
-            .expect_err("the shipped `all` leaves graph_v2 unavailable");
+            .expect_err("the no-op `all` leaves graph_v2 unavailable");
     assert_eq!(error_kind(&refused), "lever_unavailable");
 
     service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::EdgeEvidence;

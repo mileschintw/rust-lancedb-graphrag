@@ -311,6 +311,12 @@ impl PromptOptions {
 ///
 /// Appended after the base policy and the graph sentence. It is a separate constant so that
 /// [`base_system_policy`] and its byte-identical prefix tests stay untouched.
+///
+/// **Frozen (D-154, 2026-10-10).** Dev read 1 (`hybrid+metadata`, answer_usable delta +0.10 against
+/// the same-session `hybrid`) is the only read, so this text is the one that read used. The
+/// `freeze` entry of `diagnostic/dev-reads.jsonl` records it byte for byte, and the pin test
+/// `the_lever_constants_say_what_the_decisions_fix` and the harness test over that entry both fail
+/// when it changes. A change after the freeze is a quality change after data and needs a new token.
 pub const EVIDENCE_METADATA_POLICY_SENTENCE: &str = "Evidence blocks may carry SOURCE, DOC_TITLE and PUBLISHED headers that name the publication, the article title and its publication date. They describe the evidence. Use them when the question refers to a source, an article or a point in time.";
 
 /// The answer-format rules of the `binary_answer_format` lever (06.3.6 D-146, D-147).
@@ -319,6 +325,13 @@ pub const EVIDENCE_METADATA_POLICY_SENTENCE: &str = "Evidence blocks may carry S
 /// `final_answer` field, which is the field the engine renders as the last line. The abstention
 /// rule of the base policy stays in force: only evidence that covers both parts of the claim and
 /// contradicts it turns an abstention into `No`.
+///
+/// **Frozen (D-154, 2026-10-10).** Dev read 1 (`hybrid+answer-format`, answer_usable delta
+/// -0.0333, CI -0.111 to 0.044) is the only read, so this text is the one that read used. The
+/// held-out result decides whether the lever wins; a dev delta below zero does not reopen the
+/// wording, because the freeze rule keeps read 1 when there is no second read. The `freeze`
+/// entry of `diagnostic/dev-reads.jsonl` records the text byte for byte, and the pin test and the
+/// harness test over that entry both fail when it changes.
 pub const BINARY_ANSWER_FORMAT_RULES: &str = "If the question can be answered with yes or no, the Answer line and the JSON `final_answer` field must each be exactly Yes or No, with nothing else on them. For such a question, decide from the evidence: when the evidence covers both parts of the claim and they do not match it, answer No rather than Insufficient information. Evidence that does not cover both parts is still insufficient, and the instruction above for insufficient evidence applies unchanged.";
 
 /// Returns the system policy string for model-only answer generation.

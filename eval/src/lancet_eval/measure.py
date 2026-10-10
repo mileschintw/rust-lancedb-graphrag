@@ -70,12 +70,16 @@ MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 GENERATION_INPUT_PRICE_PER_1M = 0.14
 GENERATION_OUTPUT_PRICE_PER_1M = 1.28
 # 06.3.6 O15 / D-176: the charge for one rerank call whose response carried no
-# `usage.cost` (`workflow_meta.rerank.cost_reported` is False). Provisional value from
-# the plan 06.3.6-01 live probe (06.3.6-PROBE.md, C13): 1.5 x the largest per-call cost
-# the probe reported (4.4e-07 USD; one credit is one USD, as the probe read it). The
-# D-154 freeze may replace it. Pinned to PROBE.md by a test; a ceiling is never lowered
-# below the largest reported cost.
-RERANK_UNREPORTED_CALL_CEILING_USD = 6.6e-07
+# `usage.cost` (`workflow_meta.rerank.cost_reported` is False). Frozen in the D-154 freeze
+# commit (2026-10-10) as 1.5 x the largest per-call cost reported by the two sources AI-SPEC
+# 5 names: the plan 06.3.6-01 live probe (06.3.6-PROBE.md: 4.4e-07 USD per call on two tiny
+# documents) and dev read 1 (eval/runs/2026-10-10-levers-s1-multihop_rag_levers_dev: 98 reported
+# `usage.cost` values, largest 2.0536e-04 USD on a real chunk list). Dev read 1 is the larger,
+# so 1.5 x 2.0536e-04 = 3.0804e-04. One credit is one USD (the probe's account reconciliation).
+# It replaces the provisional 6.6e-07, which was 1.5 x the probe alone and sat below what
+# a real call costs. A test re-derives it from the committed journal, the probe and the ledger's
+# freeze entry; a ceiling is never lowered below the largest reported cost.
+RERANK_UNREPORTED_CALL_CEILING_USD = 3.0804e-04
 # Voyage 4 large pricing per million tokens (not in the /models listing, which carries
 # no embedding models; the committed figure was kept on 2026-09-29).
 EMBEDDING_PRICE_PER_1M = 0.12

@@ -389,14 +389,14 @@ fn config_workflow_timeout_overlays_match_contract() {
         "generation_node_timeout_ms",
     ];
 
-    // D-135: the two base files carry the provisional rerank budget. The verify overlay does not
+    // D-135, D-154: the two base files carry the frozen rerank budget. The verify overlay does not
     // restate it; it inherits the default, which nests in the overlay's 10000 ms retrieve budget.
     for base_name in ["config.toml", "config.example.toml"] {
         let content = std::fs::read_to_string(repo_root.join("config").join(base_name))
             .unwrap_or_else(|_| panic!("read {base_name}"));
         assert!(
-            content.contains("rerank_timeout_ms = 1706"),
-            "{base_name} must carry the provisional rerank budget (D-135)"
+            content.contains("rerank_timeout_ms = 2286"),
+            "{base_name} must carry the frozen rerank budget (D-135, D-154)"
         );
     }
 
@@ -721,8 +721,8 @@ fn config_graph_v2_chunk_precision_env_override_matches_contract() {
     let unset = load_settings().expect("load_settings without the override");
     assert_eq!(
         unset.engine.graph.graph_v2_chunk_precision,
-        ChunkPrecision::All,
-        "the committed file ships the no-op variant"
+        ChunkPrecision::EdgeEvidence,
+        "the committed file ships the variant frozen on dev (D-139, D-154)"
     );
 }
 

@@ -1,0 +1,50 @@
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.rehearsal.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 3
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[models]
+judge_model = "meta-llama/llama-3.3-70b-instruct"
+judge_temperature = 0.0
+judge_max_tokens = 400
+judge_prompt_version = "v1"
+
+[arms]
+# 06.3.6-18 (D-154, D-149, D-141): the arm set of the pre-registration below, in registry order.
+# Branch B built graph-v2, so there are seven arms: the same-day reference, the v1 graph control,
+# the four lever arms and the descriptive all-levers arm. The drive refuses any other set (D-73).
+arms = [
+  "hybrid",
+  "hybrid+graph",
+  "hybrid+rerank",
+  "hybrid+metadata",
+  "hybrid+answer-format",
+  "hybrid+graph-v2",
+  "hybrid+all",
+]
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "rehearsal"
+
+# D-73: the gates read this constant's introducing commit, not the 06.3.5 token. No [judge]
+# table: a 06.3.6 corpus issues no judge call (D-153).
+[preregistration]
+token = "PREREGISTRATION_06_3_6"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"

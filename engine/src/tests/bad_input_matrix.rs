@@ -29,12 +29,12 @@
 //! | `lever_unspecified_member` | `levers` holds `LEVER_UNSPECIFIED` (0) | `InvalidArgument` | `invalid_levers` | — |
 //! | `lever_unavailable_rerank` | `levers` names `rerank` and this service holds no lever reranker (D-131; `levers_pins` admits it once one is wired) | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_evidence_metadata` | `levers` names `evidence_metadata` while the snapshot's `DocMetaMap` is empty (D-136; the `levers_metadata_admitted` check below admits it once the snapshot holds metadata) | `InvalidArgument` | `lever_unavailable` | — |
-//! | `lever_unavailable_graph_v2` | `levers` names `graph_v2` while `[engine.graph] graph_v2_chunk_precision` is the shipped no-op `all` (D-139; the `levers_graph_v2_admitted` check below admits it once a variant is configured) | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_graph_v2` | `levers` names `graph_v2` while `[engine.graph] graph_v2_chunk_precision` is held at the no-op `all` by the test (D-139, D-154: the shipped default is the frozen `edge_evidence`; the `levers_graph_v2_admitted` check below admits it once a variant is configured) | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_when_mixed_with_an_available_lever` | `levers` names `binary_answer_format` and `rerank` with no lever reranker wired | `InvalidArgument` | `lever_unavailable` | — |
 //! | `graph_v2_with_graph_disabled` | `levers` names `graph_v2` and `disable_graph_context` is true (D-165) | `InvalidArgument` | `invalid_lever_combination` | — |
 //! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
 //! | `levers_metadata_admitted` | `levers` names `evidence_metadata`, unmatched filter, after the service's snapshot is replaced by one whose `DocMetaMap` holds an entry | success (not rejected) | n/a | Run after the table above, on the same service, so the one request is refused on the empty map and admitted on the non-empty one. |
-//! | `levers_graph_v2_admitted` | `levers` names `graph_v2`, unmatched filter, after the service's `graph_v2_chunk_precision` is set to `edge_evidence` | success (not rejected) | n/a | Run after the two checks above, on the same service, so the one request is refused on the shipped `all` and admitted once a variant is configured; with `disable_graph_context` it is still refused as `invalid_lever_combination` (D-165). |
+//! | `levers_graph_v2_admitted` | `levers` names `graph_v2`, unmatched filter, after the service's `graph_v2_chunk_precision` is set to `edge_evidence` | success (not rejected) | n/a | Run after the two checks above, on the same service, so the one request is refused on the no-op `all` and admitted once a variant is configured; with `disable_graph_context` it is still refused as `invalid_lever_combination` (D-165). |
 //!
 //! **Negative filter bound (not a request-level row).** D-15's enumeration mentions a negative
 //! filter bound, but [`DocumentFilter`] carries only two repeated string lists and no numeric
@@ -161,6 +161,9 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
         reranker,
     )
     .await;
+    // The matrix reads the no-op `all` first: the shipped variant (`edge_evidence`, frozen at
+    // D-154) would admit `graph_v2`, so the row `lever_unavailable_graph_v2` pins `all` itself.
+    service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
 
     let oversized_query = "a".repeat(query_max_bytes + 1);
     let too_many_document_ids: Vec<String> = (0..=max_document_ids)
@@ -566,7 +569,7 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
         "row 'levers_metadata_admitted' must carry the zero-evidence notice"
     );
 
-    // `levers_graph_v2_admitted`: the request refused on the shipped `all` above (row
+    // `levers_graph_v2_admitted`: the request refused on the configured no-op `all` above (row
     // `lever_unavailable_graph_v2`) is admitted once a variant is configured (D-139), and the
     // D-165 combination with `disable_graph_context` is still refused.
     service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::EdgeEvidence;

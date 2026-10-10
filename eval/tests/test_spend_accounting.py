@@ -589,17 +589,55 @@ def _without_rerank(records: list[RunRecord]) -> list[RunRecord]:
     return out
 
 
-def test_the_unreported_call_ceiling_is_the_probe_value() -> None:
-    """C13: the provisional ceiling is the value plan 06.3.6-01 recorded."""
+DEV_READ_1_RUN = (
+    REPO_ROOT / "eval" / "runs" / "2026-10-10-levers-s1-multihop_rag_levers_dev"
+)
+
+
+def test_the_unreported_call_ceiling_is_one_and_a_half_times_the_largest_reported_cost() -> (
+    None
+):
+    """D-154, AI-SPEC 5: the frozen ceiling is 1.5 x the largest per-call cost reported in
+    the probe and in dev read 1, never below it, and the ledger's freeze entry names it."""
+    import json
     import re
+
+    from lancet_eval.journal import load_records
 
     text = PROBE_FILE.read_text(encoding="utf-8")
     match = re.search(
         r"Provisional RERANK_UNREPORTED_CALL_CEILING_USD:\s*([0-9.eE+-]+)", text
     )
     assert match is not None
-    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD == float(match.group(1))
-    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD == pytest.approx(6.6e-07)
+    probe_largest = float(match.group(1)) / 1.5
+
+    reported = [
+        r.workflow_meta.rerank.cost_credits
+        for r in load_records(DEV_READ_1_RUN / "journal.jsonl")
+        if r.workflow_meta is not None
+        and r.workflow_meta.rerank is not None
+        and r.workflow_meta.rerank.cost_reported
+    ]
+    assert len(reported) == 98, "dev read 1: 98 rerank calls reported a usage.cost"
+    largest = max(probe_largest, max(reported))
+    assert max(reported) == pytest.approx(2.0536e-04, abs=1e-12)
+    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD == pytest.approx(
+        1.5 * largest, abs=1e-15
+    )
+    assert measure.RERANK_UNREPORTED_CALL_CEILING_USD >= largest
+
+    ledger = REPO_ROOT / ".planning" / "phases"
+    ledger_file = next(ledger.glob("06.3.6-*/diagnostic/dev-reads.jsonl"))
+    entries = [
+        json.loads(line)
+        for line in ledger_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    freeze = entries[-1]
+    assert freeze["kind"] == "freeze" and not freeze.get("candidate")
+    assert freeze["frozen"]["rerank_unreported_call_ceiling_usd"]["value"] == (
+        measure.RERANK_UNREPORTED_CALL_CEILING_USD
+    )
 
 
 def test_every_committed_journal_prices_byte_identically() -> None:

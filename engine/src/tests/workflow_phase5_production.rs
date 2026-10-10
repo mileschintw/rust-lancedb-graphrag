@@ -45,7 +45,7 @@ async fn workflow_phase5_production_five_node() {
         runner.timeout_for_node("ExtractGraphContext").as_millis(),
         12500
     );
-    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 2500);
+    assert_eq!(runner.timeout_for_node("RetrieveHybrid").as_millis(), 3080);
     assert_eq!(runner.timeout_for_node("AssemblePrompt").as_millis(), 120);
     assert_eq!(runner.timeout_for_node("GenerateAnswer").as_millis(), 65000);
 

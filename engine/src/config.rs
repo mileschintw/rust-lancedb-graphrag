@@ -187,17 +187,20 @@ pub fn default_max_graph_chunk_candidates() -> usize {
     default_final_limit()
 }
 
-/// The graph chunk variant a `graph_v2` request uses: `all`.
+/// The graph chunk variant a `graph_v2` request uses: `edge_evidence`.
 ///
-/// **Derivation.** D-139 chooses the variant on dev within the two-read budget, so until the D-154
-/// freeze commit the shipped value is the no-op `all` and `graph_v2` is `lever_unavailable`
-/// (an arm that changed nothing would still be echoed as having run).
+/// **Derivation.** D-139 chose the variant on dev within the two-read budget and D-154 froze it:
+/// read 1 (`edge_evidence`, answer_usable delta -0.0111) beat read 2 (`multi_cited(2)`, delta
+/// -0.0556) under the pre-written rule, a tie keeping read 1. `all` stays a valid value, but it
+/// is the no-op that leaves `graph_v2` `lever_unavailable` (an arm that changed nothing would
+/// still be echoed as having run), so it can no longer be the shipped default. The freeze entry
+/// of `diagnostic/dev-reads.jsonl` names both readings.
 ///
 /// **Effect of changing it.** `edge_evidence` keeps, per kept path hop, the chunks both endpoints
 /// cite; `multi_cited` keeps the chunks that at least two path entities cite. Only the chunk list
 /// the third RRF list receives changes, and a request without the `graph_v2` lever never reads it.
 pub fn default_graph_v2_chunk_precision() -> ChunkPrecision {
-    ChunkPrecision::All
+    ChunkPrecision::EdgeEvidence
 }
 
 /// The `[engine.graph] graph_v2_chunk_precision` values (D-139).
@@ -350,10 +353,13 @@ pub fn default_query_embedding_timeout_ms() -> u64 {
 }
 /// Budget for the `RetrieveHybrid` node, in milliseconds.
 ///
-/// The committed rule (p95 x 1.5 over pass A) writes 294 ms, which nesting lifts to
-/// `query_embedding_timeout_ms` + 500. See `06.3.4.1-BUDGETS.md`.
+/// The committed rule (p95 x 1.5 over pass A) writes 294 ms, which nesting lifted to 2500 ms
+/// (`query_embedding_timeout_ms` + 500; `06.3.4.1-BUDGETS.md`). The 06.3.6 freeze (D-154) raised
+/// it to 3080 ms for every arm (O11 option A, pre-answered by D-184): the derived rerank budget
+/// of 2286 ms does not nest in 2500, and 294 + 2286 + 500 = 3080 is the smallest node budget
+/// that holds it. Lowering it again fails startup validation while the rerank budget is 2286.
 pub fn default_retrieve_timeout_ms() -> u64 {
-    2500
+    3080
 }
 /// Time `RetrieveHybrid` needs for its own search, in milliseconds: the committed rule value of
 /// budget pass A (p95 x 1.5 over 320 records, `06.3.4.1-BUDGETS.md`). The rerank call runs after
@@ -365,13 +371,15 @@ pub const RETRIEVE_SEARCH_ALLOWANCE_MS: u64 = 294;
 pub const NESTING_SLACK_MS: u64 = 500;
 /// Budget for the rerank call inside `RetrieveHybrid`, in milliseconds.
 ///
-/// **Provisional (D-135).** The largest value that nests in the node budget:
-/// `retrieve_timeout_ms` 2500 - [`RETRIEVE_SEARCH_ALLOWANCE_MS`] 294 - [`NESTING_SLACK_MS`] 500 =
-/// 1706. It is a ceiling, not a measurement; the value derived from dev read 1 replaces it in the
-/// D-154 freeze commit. A rerank that exceeds it degrades to the fused order with a notice, so a
-/// tighter value hides lost rerank yield and a looser one lets a slow provider eat the node.
+/// **Frozen (D-135, D-154).** Derived from dev read 1 by the censoring-aware 06.3.3 rule: the p95
+/// of `rerank.latency_ms` over the 99 rerank attempts that gave a latency was 1524 ms (exact, with
+/// one timeout censored above the p95 rank), and 1.5 x 1524 = 2286 ms. It replaces the provisional
+/// 1706 ms, which was only the room the old 2500 ms node budget left. It nests in
+/// `retrieve_timeout_ms` 3080 = [`RETRIEVE_SEARCH_ALLOWANCE_MS`] 294 + 2286 + [`NESTING_SLACK_MS`]
+/// 500. A rerank that exceeds it degrades to the fused order with a notice, so a tighter value
+/// hides lost rerank yield and a looser one lets a slow provider eat the node.
 pub fn default_rerank_timeout_ms() -> u64 {
-    1706
+    2286
 }
 /// Budget for the graph traversal inside `ExtractGraphContext`, in milliseconds.
 ///
@@ -1342,8 +1350,8 @@ mod tests {
             [
                 ("reformulate_timeout_ms", 5000),
                 ("query_embedding_timeout_ms", 2000),
-                ("retrieve_timeout_ms", 2500),
-                ("rerank_timeout_ms", 1706),
+                ("retrieve_timeout_ms", 3080),
+                ("rerank_timeout_ms", 2286),
                 ("graph_operation_timeout_ms", 2424),
                 ("graph_node_timeout_ms", 12500),
                 ("prompt_timeout_ms", 120),
@@ -1377,11 +1385,11 @@ mod tests {
             "retrieve must contain query_embedding with {NESTING_SLACK_MS} ms slack"
         );
         // D-135: the rerank call runs after the search inside the node budget, so the node holds
-        // the search allowance, the rerank budget and the slack: 294 + 1706 + 500 = 2500.
+        // the search allowance, the rerank budget and the slack: 294 + 2286 + 500 = 3080.
         assert_eq!(
             settings.retrieve_timeout_ms,
             RETRIEVE_SEARCH_ALLOWANCE_MS + settings.rerank_timeout_ms + NESTING_SLACK_MS,
-            "the provisional rerank budget is the largest value that nests in retrieve"
+            "the frozen rerank budget is the largest value that nests in retrieve (O11 option A)"
         );
     }
 
@@ -1623,14 +1631,17 @@ mod tests {
             })
     }
 
-    /// D-139: the committed files and the compiled-in default agree on the variant a `graph_v2`
-    /// request uses, and the shipped value is the no-op `all`.
+    /// D-139, D-154: the committed files and the compiled-in default agree on the variant a
+    /// `graph_v2` request uses, and it is the frozen dev winner `edge_evidence`, never the no-op.
     #[test]
-    fn graph_v2_chunk_precision_defaults_to_all_and_agrees_with_both_files() {
-        assert_eq!(default_graph_v2_chunk_precision(), ChunkPrecision::All);
+    fn graph_v2_chunk_precision_defaults_to_the_frozen_variant_and_agrees_with_both_files() {
+        assert_eq!(
+            default_graph_v2_chunk_precision(),
+            ChunkPrecision::EdgeEvidence
+        );
         assert_eq!(
             GraphSettings::default().graph_v2_chunk_precision,
-            ChunkPrecision::All
+            ChunkPrecision::EdgeEvidence
         );
         for (file_name, raw) in [
             ("config/config.toml", CONFIG_TOML),
@@ -1638,7 +1649,7 @@ mod tests {
         ] {
             assert_eq!(
                 file_graph_v2_chunk_precision(raw),
-                "all",
+                "edge_evidence",
                 "{file_name} engine.graph.graph_v2_chunk_precision must equal the config.rs default"
             );
         }
