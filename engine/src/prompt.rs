@@ -92,7 +92,7 @@ impl EvidenceBlock {
             .into_iter()
             .flatten()
             .any(|value| detect_suspicious_text(value));
-        let _ = flagged;
+        self.suspicious = self.suspicious || flagged;
         self.evidence_meta = Some(meta);
     }
 }
@@ -123,7 +123,16 @@ impl EncodedEvidence {
     /// `<SOURCE>`, `<DOC_TITLE>`, `<PUBLISHED>`. A block with no metadata renders the bytes it
     /// always did.
     pub fn render_prompt_block(&self) -> String {
-        let meta_headers = String::new();
+        let mut meta_headers = String::new();
+        if let Some(value) = &self.source {
+            meta_headers.push_str(&format!("<SOURCE>{value}</SOURCE>\n"));
+        }
+        if let Some(value) = &self.doc_title {
+            meta_headers.push_str(&format!("<DOC_TITLE>{value}</DOC_TITLE>\n"));
+        }
+        if let Some(value) = &self.published_date {
+            meta_headers.push_str(&format!("<PUBLISHED>{value}</PUBLISHED>\n"));
+        }
         format!(
             "<EVIDENCE id=\"{}\" suspicious=\"{}\">\n<TITLE>{}</TITLE>\n{}<SECTION>{}</SECTION>\n<PROVENANCE>{}</PROVENANCE>\n<CONTENT_TYPE>{}</CONTENT_TYPE>\n<TEXT>\n{}\n</TEXT>\n</EVIDENCE>\n\n",
             self.id, self.suspicious, self.title, meta_headers, self.section_path, self.provenance, self.content_type, self.text
@@ -145,9 +154,21 @@ pub fn encode_evidence_block(block: &EvidenceBlock) -> EncodedEvidence {
         content_type: encode_field_value(content_type),
         text: encode_field_value(&block.text),
         suspicious: block.suspicious,
-        source: None,
-        doc_title: None,
-        published_date: None,
+        source: block
+            .evidence_meta
+            .as_ref()
+            .and_then(|meta| meta.source.as_deref())
+            .map(encode_field_value),
+        doc_title: block
+            .evidence_meta
+            .as_ref()
+            .and_then(|meta| meta.doc_title.as_deref())
+            .map(encode_field_value),
+        published_date: block
+            .evidence_meta
+            .as_ref()
+            .and_then(|meta| meta.published_date.as_deref())
+            .map(encode_field_value),
     }
 }
 
@@ -280,8 +301,8 @@ impl PromptOptions {
     /// The options the admitted `levers` select; the empty set selects none.
     pub fn from_levers(levers: LeverSet) -> Self {
         Self {
-            evidence_metadata: false && levers.contains(Lever::EvidenceMetadata),
-            binary_answer_format: false && levers.contains(Lever::BinaryAnswerFormat),
+            evidence_metadata: levers.contains(Lever::EvidenceMetadata),
+            binary_answer_format: levers.contains(Lever::BinaryAnswerFormat),
         }
     }
 }
@@ -290,7 +311,7 @@ impl PromptOptions {
 ///
 /// Appended after the base policy and the graph sentence. It is a separate constant so that
 /// [`base_system_policy`] and its byte-identical prefix tests stay untouched.
-pub const EVIDENCE_METADATA_POLICY_SENTENCE: &str = "";
+pub const EVIDENCE_METADATA_POLICY_SENTENCE: &str = "Evidence blocks may carry SOURCE, DOC_TITLE and PUBLISHED headers that name the publication, the article title and its publication date. They describe the evidence. Use them when the question refers to a source, an article or a point in time.";
 
 /// The answer-format rules of the `binary_answer_format` lever (06.3.6 D-146, D-147).
 ///
@@ -298,7 +319,7 @@ pub const EVIDENCE_METADATA_POLICY_SENTENCE: &str = "";
 /// `final_answer` field, which is the field the engine renders as the last line. The abstention
 /// rule of the base policy stays in force: only evidence that covers both parts of the claim and
 /// contradicts it turns an abstention into `No`.
-pub const BINARY_ANSWER_FORMAT_RULES: &str = "";
+pub const BINARY_ANSWER_FORMAT_RULES: &str = "If the question can be answered with yes or no, the Answer line and the JSON `final_answer` field must each be exactly Yes or No, with nothing else on them. For such a question, decide from the evidence: when the evidence covers both parts of the claim and they do not match it, answer No rather than Insufficient information. Evidence that does not cover both parts is still insufficient, and the instruction above for insufficient evidence applies unchanged.";
 
 /// Returns the system policy string for model-only answer generation.
 ///

@@ -3662,9 +3662,14 @@ async fn the_provider_messages_carry_the_lever_sentences_the_request_selects() {
         binary_answer_format: true,
     })
     .await;
-    let metadata_at = both.find(EVIDENCE_METADATA_POLICY_SENTENCE).expect("metadata");
+    let metadata_at = both
+        .find(EVIDENCE_METADATA_POLICY_SENTENCE)
+        .expect("metadata");
     let format_at = both.find(BINARY_ANSWER_FORMAT_RULES).expect("format");
-    assert!(metadata_at < format_at, "metadata sentence precedes the format rules");
+    assert!(
+        metadata_at < format_at,
+        "metadata sentence precedes the format rules"
+    );
 }
 
 /// The hand-written `PartialEq` of the request compares `prompt_options`, so two requests that

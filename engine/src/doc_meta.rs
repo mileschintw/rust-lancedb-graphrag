@@ -92,7 +92,10 @@ mod tests {
         ]);
         assert_eq!(map.len(), 1);
         assert!(!map.is_empty());
-        assert_eq!(map.get("doc-a").unwrap().doc_title.as_deref(), Some("A title"));
+        assert_eq!(
+            map.get("doc-a").unwrap().doc_title.as_deref(),
+            Some("A title")
+        );
         assert!(map.get("doc-b").is_none(), "a blank entry carries nothing");
         assert!(map.get("doc-missing").is_none());
     }

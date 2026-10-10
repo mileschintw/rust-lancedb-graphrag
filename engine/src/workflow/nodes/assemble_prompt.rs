@@ -7,8 +7,7 @@ use super::super::{
 use crate::pb::lancet::v1::NodeErrorKind;
 use crate::prompt::{
     pack_evidence_and_graph_prompt_with, PromptAssemblyError, PromptOptions,
-    DEFAULT_ANSWER_TOKEN_BUDGET,
-    DEFAULT_MAX_PROMPT_TOKENS,
+    DEFAULT_ANSWER_TOKEN_BUDGET, DEFAULT_MAX_PROMPT_TOKENS,
 };
 
 pub struct AssemblePromptNode {
