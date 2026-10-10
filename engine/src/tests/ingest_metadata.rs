@@ -15,17 +15,21 @@ use lancedb::query::{ExecutableQuery, QueryBase, Select};
 use uuid::Uuid;
 
 use crate::chunker::Chunk;
+use crate::config::EffectiveRagSettings;
 use crate::db::backfill::legacy_nodes_schema_v19;
 use crate::db::{
     legacy_staged_documents_v2_schema, nodes_schema, staged_documents_v2_pre_metadata_schema,
     staged_documents_v2_schema, DatabaseManager,
 };
+use crate::doc_meta::{DocMeta, DocMetaMap};
 use crate::ingest::{
-    persist_raw_with_boundary, process_job, read_staged_jobs, replace_document, IngestionJob,
-    LanceDbReplacementMutationBoundary,
+    load_doc_meta, persist_raw_with_boundary, process_job, read_staged_jobs, replace_document,
+    IngestionJob, LanceDbReplacementMutationBoundary,
 };
+use crate::pb::lancet::v1::Lever;
+use crate::rerank;
 use crate::service::{validate_ingest_metadata, MAX_DOC_TITLE_CHARS, MAX_SOURCE_CHARS};
-use crate::tests::FakeEmbedder;
+use crate::tests::{configured_service, FakeEmbedder, RecordingGenerator};
 
 const DOC: &str = "00000000-0000-4000-8000-0000000000e1";
 const METADATA_COLUMNS: [&str; 3] = ["doc_title", "source", "published_date"];
@@ -628,4 +632,232 @@ async fn a_nineteen_column_nodes_table_fails_initialize_and_open_closed_and_leav
     );
     assert_eq!(after.version().await.unwrap(), version_before);
     let _ = std::fs::remove_dir_all(path);
+}
+
+// ---- the production DocMetaMap scan (Task 2, D-142, D-145) ----------------------------------
+
+const DOC_PLAIN: &str = "00000000-0000-4000-8000-0000000000e2";
+const DOC_LATER: &str = "00000000-0000-4000-8000-0000000000e3";
+
+async fn ingest(database: &DatabaseManager, document_id: &str, extra: &[(&str, &str)]) {
+    replace_document(
+        database,
+        &job_with(document_id, extra),
+        &two_chunks(),
+        &vec![vec![0.5; 2048]; 2],
+        "model-x",
+    )
+    .await
+    .unwrap();
+}
+
+async fn scan(database: &DatabaseManager) -> DocMetaMap {
+    let nodes = database.nodes_table().await.unwrap();
+    let version = nodes.version().await.unwrap();
+    load_doc_meta(&nodes, version).await.unwrap()
+}
+
+fn expected_meta() -> DocMeta {
+    DocMeta {
+        doc_title: Some("Hamas' surprise attack: \"intel failure\"".to_owned()),
+        source: Some("The Verge".to_owned()),
+        published_date: Some("2023-10-07".to_owned()),
+    }
+}
+
+async fn service_over(database: &DatabaseManager) -> crate::service::LancetServiceImpl {
+    let settings = EffectiveRagSettings::default();
+    configured_service(
+        database,
+        settings.clone(),
+        Arc::new(FakeEmbedder),
+        RecordingGenerator::from_effective_settings(&settings),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn the_scan_holds_one_entry_for_the_document_with_metadata_and_none_for_the_other() {
+    let path = store_path("scan-two");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    ingest(&database, DOC_PLAIN, &[]).await;
+
+    let map = scan(&database).await;
+    assert_eq!(map.len(), 1, "only the document with metadata has an entry");
+    assert_eq!(map.get(DOC), Some(&expected_meta()));
+    assert!(map.get(DOC_PLAIN).is_none());
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_store_without_any_metadata_scans_to_an_empty_map_and_the_lever_stays_unavailable() {
+    let path = store_path("scan-none");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC_PLAIN, &[]).await;
+    let service = service_over(&database).await;
+
+    let map = scan(&database).await;
+    assert!(map.is_empty());
+    let prior = Arc::clone(&*service.corpus_store.read().await);
+    let snapshot = (*prior).clone().with_doc_meta(Arc::new(map));
+    assert!(!service
+        .lever_availability(&snapshot)
+        .is_available(Lever::EvidenceMetadata));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_scanned_snapshot_admits_the_metadata_lever_when_the_store_has_metadata() {
+    let path = store_path("scan-available");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    let service = service_over(&database).await;
+
+    let prior = Arc::clone(&*service.corpus_store.read().await);
+    let snapshot = (*prior)
+        .clone()
+        .with_doc_meta(Arc::new(scan(&database).await));
+    assert!(service
+        .lever_availability(&snapshot)
+        .is_available(Lever::EvidenceMetadata));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn the_scan_refuses_a_handle_that_is_not_at_the_named_version() {
+    let path = store_path("scan-version");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    let nodes = database.nodes_table().await.unwrap();
+    let version = nodes.version().await.unwrap();
+
+    let error = load_doc_meta(&nodes, version + 1)
+        .await
+        .expect_err("a map for another generation is never built");
+    assert!(error.contains("version"), "{error}");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn the_scan_leaves_the_shared_handle_unpinned() {
+    let path = store_path("scan-unpinned");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    let nodes = database.nodes_table().await.unwrap();
+    let version = nodes.version().await.unwrap();
+    load_doc_meta(&nodes, version).await.unwrap();
+    // A write through the same handle still succeeds: a checkout would have pinned it.
+    nodes.delete("document_id = 'none'").await.unwrap();
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn an_ingest_rebuild_scans_the_store_so_the_new_document_joins_the_map() {
+    let _lock = crate::ingest::REBUILD_TEST_MUTEX.lock().await;
+    let path = store_path("rebuild-scan");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    let service = service_over(&database).await;
+    let bm25 = service.effective_settings.retrieval.bm25.clone();
+
+    let first = crate::ingest::rebuild_and_swap(&database, &service.corpus_store, bm25.clone())
+        .await
+        .expect("the first rebuild succeeds");
+    assert_eq!(first.doc_meta.len(), 1);
+    assert_eq!(first.doc_meta.get(DOC), Some(&expected_meta()));
+
+    ingest(
+        &database,
+        DOC_LATER,
+        &[("doc_title", "Later title"), ("source", "Wired")],
+    )
+    .await;
+    let second = crate::ingest::rebuild_and_swap(&database, &service.corpus_store, bm25)
+        .await
+        .expect("the second rebuild succeeds");
+    assert_eq!(second.doc_meta.len(), 2);
+    assert_eq!(second.doc_meta.get(DOC), Some(&expected_meta()));
+    let later = second.doc_meta.get(DOC_LATER).expect("the new document");
+    assert_eq!(later.doc_title.as_deref(), Some("Later title"));
+    assert_eq!(later.source.as_deref(), Some("Wired"));
+    assert_eq!(later.published_date, None);
+    assert_eq!(
+        first.doc_meta.len(),
+        1,
+        "the earlier snapshot keeps its own map"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_failed_metadata_scan_degrades_the_rebuild_and_keeps_the_prior_snapshot_whole() {
+    let _lock = crate::ingest::REBUILD_TEST_MUTEX.lock().await;
+    let path = store_path("rebuild-scan-fail");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    ingest(&database, DOC, &full_metadata()).await;
+    let service = service_over(&database).await;
+    let bm25 = service.effective_settings.retrieval.bm25.clone();
+    let prior = crate::ingest::rebuild_and_swap(&database, &service.corpus_store, bm25.clone())
+        .await
+        .unwrap();
+
+    crate::ingest::arm_rebuild_doc_meta_fail_next();
+    let error = crate::ingest::rebuild_and_swap(&database, &service.corpus_store, bm25)
+        .await
+        .expect_err("a failed metadata scan fails the rebuild");
+    assert!(error.contains("metadata"), "{error}");
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    assert!(current.rebuild_degraded);
+    assert!(
+        Arc::ptr_eq(&current.doc_meta, &prior.doc_meta),
+        "never an empty map swapped in"
+    );
+    assert_eq!(current.generation, prior.generation);
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn main_builds_the_metadata_map_once_after_the_graph_and_before_the_first_snapshot() {
+    let main = include_str!("../main.rs");
+    let graph = main
+        .find("GraphIndex::build(&database)")
+        .expect("main builds the graph index");
+    let scan = main
+        .find("load_doc_meta(")
+        .expect("main scans the document metadata");
+    let snapshot = main
+        .find("CorpusSnapshot::new(")
+        .expect("main builds the first snapshot");
+    assert_eq!(main.matches("load_doc_meta(").count(), 1);
+    assert!(graph < scan, "the scan follows the graph build");
+    assert!(scan < snapshot, "the scan precedes the first snapshot");
+    assert!(
+        main.contains(".with_doc_meta("),
+        "the first snapshot holds the scanned map"
+    );
+}
+
+#[test]
+fn the_rebuild_path_attaches_a_freshly_scanned_map() {
+    let source = include_str!("../ingest.rs");
+    let start = source
+        .find("pub async fn rebuild_and_swap_with_graph_builder(")
+        .expect("the rebuild function exists");
+    let body = &source[start..];
+    let scan = body
+        .find("load_doc_meta(&nodes_latest, nodes_version)")
+        .expect("the rebuild scans at the version it just read");
+    let success = body
+        .find("rebuild_degraded: false")
+        .expect("the success snapshot literal exists");
+    let swap = body
+        .find("// Swap under a short write lock")
+        .expect("the swap follows the success literal");
+    assert!(scan < success, "the scan precedes the success snapshot");
+    assert!(
+        !body[success..swap].contains("Arc::clone(&prior.doc_meta)"),
+        "the success snapshot no longer carries the prior map forward"
+    );
 }

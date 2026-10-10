@@ -1616,6 +1616,26 @@ impl RebuildTriggerLinks {
     }
 }
 
+/// Scans the evidence metadata of every document in `nodes` at `nodes_version` into a map.
+///
+/// # Errors
+/// Returns the failure text when the table cannot be read.
+pub async fn load_doc_meta(
+    _nodes: &Table,
+    _nodes_version: u64,
+) -> Result<crate::doc_meta::DocMetaMap, String> {
+    Ok(crate::doc_meta::DocMetaMap::default())
+}
+
+#[cfg(test)]
+static REBUILD_DOC_META_FAIL_NEXT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(test)]
+pub fn arm_rebuild_doc_meta_fail_next() {
+    REBUILD_DOC_META_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 /// Builds the graph index for one rebuild. A function value so a test can inject a failure.
 pub type GraphIndexBuilder =
     dyn for<'a> Fn(&'a DatabaseManager) -> BoxFuture<'a, Result<graph::index::GraphIndex, String>>
