@@ -378,6 +378,23 @@ fi
 #         the service, and the map carried through a successful and through each degraded rebuild),
 #         738 lib, 827->836. `engine (bin)`/inspect_lancedb/reconcile_eval_store/config_startup
 #         unchanged (0/58/18/22).
+#   857 -- Phase 06.3.6 plan 12 Task 1: lever 2 branch B (graph-list precision, D-139). Ten
+#         `graph::tests::seed_paths` tests (the exact ranked list of `All`, `MultiCited(2)` and
+#         `EdgeEvidence` over one bridge fixture, a threshold of one equal to `All` and a threshold
+#         above the citations empty, the variant changing only the chunk list, a capped edge-evidence
+#         list holding a chunk the capped multi-cited list lacks, edge evidence read from the kept
+#         paths only, a hop with no shared chunk, each entity counted once, and the nesting property
+#         over 300 seeded random graphs with each capped list checked against the rank keys and `All`
+#         against `seed_chunk_candidates`), five `config::tests` (default and both files agree on
+#         `graph_v2_chunk_precision`, an unknown variant refused at load, the name parser, the
+#         variant-to-selection mapping, the path settings carrying the selection in force), two
+#         `tests` env-override tests (`LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION` applied and an
+#         unknown value refused) and four `tests::levers_pins` tests (`graph_v2` availability, the
+#         per-request selection, the workflow builder taking the per-request settings, and admission
+#         and echo through the service with D-165 still refusing the combination), 836->857. The
+#         `levers_graph_v2_admitted` check is part of the existing `bad_input_matrix` test and does not
+#         move the count. lib rises 738->759; `engine (bin)`/inspect_lancedb/reconcile_eval_store/
+#         config_startup unchanged (0/58/18/22).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -417,18 +434,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (8 named assertions)
-if [ "$TOTAL" -ne 836 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 836, got $TOTAL" >&2
+if [ "$TOTAL" -ne 857 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 857, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 738 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 738, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 759 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 759, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 738 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 738, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 759 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 759, got $LIB_COUNT" >&2
   exit 1
 fi
 

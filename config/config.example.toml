@@ -153,6 +153,9 @@ degree_cap = 33
 max_path_facts = 8
 # unit=count; range=any count; keep equal to final_limit
 max_graph_chunk_candidates = 8
+# D-139: the variant is chosen on dev and frozen in the D-154 commit
+# unit=variant name; range=all | edge_evidence | multi_cited
+graph_v2_chunk_precision = "all"
 
 [openrouter]
 # unit=URL string; range=nonblank

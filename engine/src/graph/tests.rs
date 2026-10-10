@@ -1864,15 +1864,15 @@ pub(crate) mod seed_paths {
         }
         // Without these the inclusions above could hold because every set is empty or equal.
         assert!(
-            edge_found >= 20,
+            edge_found >= 50,
             "edge evidence found chunks in only {edge_found} rounds"
         );
         assert!(
-            multi_beyond_edge >= 20,
+            multi_beyond_edge >= 50,
             "multi cited exceeded edge evidence in only {multi_beyond_edge} rounds"
         );
         assert!(
-            all_beyond_multi >= 20,
+            all_beyond_multi >= 50,
             "all exceeded multi cited in only {all_beyond_multi} rounds"
         );
     }

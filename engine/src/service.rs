@@ -27,9 +27,10 @@ use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
-use crate::config::{EffectiveRagSettings, GraphSettings};
+use crate::config::{ChunkPrecision, EffectiveRagSettings, GraphSettings};
 use crate::db::DatabaseManager;
 use crate::generation;
+use crate::graph::paths::ChunkSelection;
 use crate::graph::{self, escape_sql_literal};
 use crate::ingest::{
     parse_chunk_settings, persist_raw_with_boundary, EmbeddingProvider, IngestionJob,
@@ -177,8 +178,15 @@ pub(crate) fn request_graph_settings(
     base: &GraphSettings,
     levers: &workflow::LeverSet,
 ) -> GraphSettings {
-    let _ = levers;
-    base.clone()
+    let chunk_selection = if levers.contains(v1::Lever::GraphV2) {
+        base.graph_v2_chunk_precision.selection()
+    } else {
+        ChunkSelection::All
+    };
+    GraphSettings {
+        chunk_selection,
+        ..base.clone()
+    }
 }
 
 impl LancetServiceImpl {
@@ -186,8 +194,9 @@ impl LancetServiceImpl {
     ///
     /// `binary_answer_format` needs no resource and is available. `rerank` is available when
     /// the lever reranker is wired (D-131). `evidence_metadata` is available when the snapshot
-    /// holds metadata for at least one document (D-136). `graph_v2` stays unavailable until the
-    /// plan that implements it wires its resource (the graph repair).
+    /// holds metadata for at least one document (D-136). `graph_v2` is available when a graph chunk
+    /// variant other than the no-op `all` is configured (D-139): with `all` the lever would change
+    /// nothing while the echo still claimed it.
     pub fn lever_availability(
         &self,
         snapshot: &workflow::ports::CorpusSnapshot,
@@ -196,7 +205,7 @@ impl LancetServiceImpl {
             rerank: self.lever_resources.reranker.is_some(),
             evidence_metadata: !snapshot.doc_meta.is_empty(),
             binary_answer_format: true,
-            graph_v2: false,
+            graph_v2: self.effective_settings.graph.graph_v2_chunk_precision != ChunkPrecision::All,
         }
     }
 

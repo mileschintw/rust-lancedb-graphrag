@@ -215,7 +215,13 @@ pub enum ChunkPrecision {
 impl ChunkPrecision {
     /// The chunk selection this configured value stands for.
     pub fn selection(self) -> graph::paths::ChunkSelection {
-        graph::paths::ChunkSelection::All
+        match self {
+            Self::All => graph::paths::ChunkSelection::All,
+            Self::EdgeEvidence => graph::paths::ChunkSelection::EdgeEvidence,
+            Self::MultiCited => {
+                graph::paths::ChunkSelection::MultiCited(graph::paths::MULTI_CITED_MIN_ENTITIES)
+            }
+        }
     }
 }
 
@@ -318,7 +324,7 @@ impl GraphSettings {
             degree_cap: self.degree_cap,
             max_path_facts: self.max_path_facts,
             max_graph_chunk_candidates: self.max_graph_chunk_candidates,
-            chunk_selection: graph::paths::ChunkSelection::All,
+            chunk_selection: self.chunk_selection,
         }
     }
 }
@@ -1113,6 +1119,20 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                     )));
                 }
             }
+        }
+    }
+    // D-139: the dev reads pick the graph chunk variant here. The frozen variant lives in
+    // `config.toml`; the rehearsal and drive launchers (plans 06.3.6-19 and -20) refuse
+    // `LANCET_ENGINE__GRAPH__*`, so this override reaches dev reads only (T-06.3.6-42).
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.graph.graph_v2_chunk_precision =
+                trimmed.parse::<ChunkPrecision>().map_err(|reason| {
+                    ::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION {reason}"
+                    ))
+                })?;
         }
     }
     if let Ok(raw) = std::env::var("LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT") {

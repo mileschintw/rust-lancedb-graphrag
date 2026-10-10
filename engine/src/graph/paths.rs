@@ -360,6 +360,20 @@ fn make_path(
 /// hundreds of chunks from filling the cap alone), then to the higher-priority entity, then to
 /// the chunk ID.
 fn rank_chunks(index: &GraphIndex, entities: &[&str], cap: usize) -> Vec<String> {
+    rank_chunks_among(index, entities, None, cap)
+}
+
+/// [`rank_chunks`] restricted to `candidates` when it is given.
+///
+/// The order keys are computed over every entity in `entities`, whatever `candidates` holds, so a
+/// chunk keeps the same relative order in every variant; the restriction only removes chunks before
+/// the cap is applied. `None` keeps every chunk, which is [`rank_chunks`] exactly.
+fn rank_chunks_among(
+    index: &GraphIndex,
+    entities: &[&str],
+    candidates: Option<&BTreeSet<&str>>,
+    cap: usize,
+) -> Vec<String> {
     if cap == 0 {
         return Vec::new();
     }
@@ -377,7 +391,10 @@ fn rank_chunks(index: &GraphIndex, entities: &[&str], cap: usize) -> Vec<String>
             entry.2 = entry.2.min(rank);
         }
     }
-    let mut ranked: Vec<(&str, (u32, usize, usize))> = stats.into_iter().collect();
+    let mut ranked: Vec<(&str, (u32, usize, usize))> = stats
+        .into_iter()
+        .filter(|(chunk, _)| candidates.is_none_or(|set| set.contains(chunk)))
+        .collect();
     ranked.sort_by(|a, b| {
         (Reverse(a.1 .0), a.1 .1, a.1 .2, a.0).cmp(&(Reverse(b.1 .0), b.1 .1, b.1 .2, b.0))
     });
@@ -391,19 +408,59 @@ fn rank_chunks(index: &GraphIndex, entities: &[&str], cap: usize) -> Vec<String>
 /// The uncapped set of chunks that `selection` offers for the entities on the kept paths.
 ///
 /// `entities` is every entity on the kept paths, each once, and `hops` is every consecutive entity
-/// pair of those paths.
+/// pair of those paths, so each hop joins two distinct members of `entities`. For that reason the
+/// sets nest: a chunk both ends of a hop cite is cited by at least two entities of `entities`, and
+/// every such chunk is cited by some entity of `entities`. That is
+/// [`ChunkSelection::EdgeEvidence`] within [`ChunkSelection::MultiCited`] of
+/// [`MULTI_CITED_MIN_ENTITIES`] within [`ChunkSelection::All`]. The nesting holds before the cap only:
+/// the top `cap` of a smaller set can hold a chunk that ranks below the larger set's top `cap`.
 pub(crate) fn chunk_candidates<'a>(
     index: &'a GraphIndex,
     entities: &[&str],
     hops: &[(&str, &str)],
     selection: ChunkSelection,
 ) -> BTreeSet<&'a str> {
-    let _ = (hops, selection);
-    entities
-        .iter()
-        .flat_map(|entity_id| index.source_chunk_ids(entity_id))
-        .map(String::as_str)
-        .collect()
+    match selection {
+        ChunkSelection::All => entities
+            .iter()
+            .flat_map(|entity_id| index.source_chunk_ids(entity_id))
+            .map(String::as_str)
+            .collect(),
+        ChunkSelection::MultiCited(least) => {
+            // An entity that lists a chunk twice still cites it once.
+            let mut citing: HashMap<&str, usize> = HashMap::new();
+            for entity_id in entities {
+                let distinct: HashSet<&str> = index
+                    .source_chunk_ids(entity_id)
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
+                for chunk in distinct {
+                    *citing.entry(chunk).or_insert(0) += 1;
+                }
+            }
+            citing
+                .into_iter()
+                .filter(|(_, count)| *count >= least)
+                .map(|(chunk, _)| chunk)
+                .collect()
+        }
+        ChunkSelection::EdgeEvidence => hops
+            .iter()
+            .flat_map(|(first, second)| {
+                let second_chunks: HashSet<&str> = index
+                    .source_chunk_ids(second)
+                    .iter()
+                    .map(String::as_str)
+                    .collect();
+                index
+                    .source_chunk_ids(first)
+                    .iter()
+                    .map(String::as_str)
+                    .filter(move |chunk| second_chunks.contains(chunk))
+            })
+            .collect(),
+    }
 }
 
 /// Source chunks of the seeds themselves, ranked and capped: the candidates of a length-0 path.
@@ -436,7 +493,10 @@ pub fn seed_chunk_candidates(index: &GraphIndex, seeds: &[Seed], cap: usize) -> 
 /// Paths are ranked by score, then by fewer hops, then by entity IDs, so the order is
 /// deterministic. The path score is the sum over its hops of `weight / ln(2 + d)`, where `d` is
 /// the larger degree of the hop's two ends. The ranked list is cut to `settings.max_path_facts`,
-/// and the candidate chunks are those of the entities on the kept paths.
+/// and the candidate chunks are those of the entities on the kept paths that
+/// `settings.chunk_selection` keeps (every one for [`ChunkSelection::All`]), ranked over all those
+/// entities and cut to `settings.max_graph_chunk_candidates`. The selection changes only the chunk
+/// list, never the paths or the facts.
 pub fn build_paths(
     index: &GraphIndex,
     seeds: &[Seed],
@@ -533,8 +593,22 @@ pub fn build_paths(
             }
         }
     }
-    let candidate_chunk_ids =
-        rank_chunks(index, &entity_order, settings.max_graph_chunk_candidates);
+    // Every consecutive entity pair of the kept paths: the hops whose evidence `EdgeEvidence` reads.
+    let hops: Vec<(&str, &str)> = found
+        .iter()
+        .flat_map(|(path, _)| {
+            path.entities
+                .windows(2)
+                .map(|pair| (pair[0].as_str(), pair[1].as_str()))
+        })
+        .collect();
+    let candidates = chunk_candidates(index, &entity_order, &hops, settings.chunk_selection);
+    let candidate_chunk_ids = rank_chunks_among(
+        index,
+        &entity_order,
+        Some(&candidates),
+        settings.max_graph_chunk_candidates,
+    );
 
     let (paths, facts): (Vec<PathFact>, Vec<GraphFact>) = found.into_iter().unzip();
     SeedPathResult {

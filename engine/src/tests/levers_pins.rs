@@ -16,7 +16,7 @@ use engine::db::DatabaseManager;
 use engine::generation;
 use engine::graph::paths::ChunkSelection;
 use engine::ingest::{process_job, read_staged_jobs};
-use engine::pb::lancet::v1::{Lever, QueryRagRequest, RerankOutcome};
+use engine::pb::lancet::v1::{DocumentFilter, Lever, QueryRagRequest, RerankOutcome};
 use engine::rerank;
 use engine::testkit::test_query_request;
 
@@ -1234,8 +1234,14 @@ async fn a_graph_v2_request_is_admitted_and_echoed_once_a_chunk_precision_is_con
         Arc::new(rerank::NoOpReranker::new()),
     )
     .await;
+    // A filter that names no ingested document leaves zero evidence, so the run stops before the
+    // prompt is built: admission and the echo are what this test reads, not an answer.
     let request = |session: &str| QueryRagRequest {
         levers: GRAPH_V2.to_vec(),
+        filter: Some(DocumentFilter {
+            document_ids: vec![Uuid::new_v4().to_string()],
+            content_types: vec![],
+        }),
         ..test_query_request("reranker evidence", session)
     };
     let error_kind = |status: &tonic::Status| {
