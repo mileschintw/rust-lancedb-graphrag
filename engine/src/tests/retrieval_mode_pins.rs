@@ -23,6 +23,7 @@ use prost::Message;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::doc_meta::DocMetaMap;
 use crate::generation::{AnswerBasis, FakeGenerator, ModelOutput};
 use crate::pb::lancet::v1::{
     workflow_event::Event, QueryRagRequest, RetrievalMode, RetrievalSnapshot,
@@ -45,8 +46,8 @@ use crate::workflow::ports::{
 };
 use crate::workflow::{LeverSet, WorkflowContext, WorkflowEventSink, WorkflowRunner};
 
-const DOC_A: &str = "00000000-0000-4000-8000-0000000000d1";
-const DOC_B: &str = "00000000-0000-4000-8000-0000000000d2";
+pub(super) const DOC_A: &str = "00000000-0000-4000-8000-0000000000d1";
+pub(super) const DOC_B: &str = "00000000-0000-4000-8000-0000000000d2";
 
 fn row(doc: &str, index: i32, score: f64) -> Candidate {
     Candidate {
@@ -118,7 +119,7 @@ fn settings() -> RetrievalSettings {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
@@ -248,6 +249,8 @@ pub(super) struct Fixture {
     reranker: Option<Arc<dyn Reranker>>,
     /// The `rerank` lever reranker, its own time limit and the node budget it nests in.
     lever: Option<(Arc<dyn Reranker>, Duration, Duration)>,
+    /// The snapshot's per-document metadata (06.3.6 D-142); `None` is the recorded fixture.
+    doc_meta: Option<Arc<DocMetaMap>>,
 }
 
 impl Fixture {
@@ -261,6 +264,15 @@ impl Fixture {
             variants: Vec::new(),
             reranker: None,
             lever: None,
+            doc_meta: None,
+        }
+    }
+
+    /// The same fixture over a snapshot that holds `doc_meta`.
+    pub(super) fn with_doc_meta(self, doc_meta: Arc<DocMetaMap>) -> Self {
+        Self {
+            doc_meta: Some(doc_meta),
+            ..self
         }
     }
 
@@ -307,6 +319,10 @@ impl Fixture {
             self.settings.clone(),
         )
         .with_snapshot_metadata("lance-1", "test-model");
+        let node = match &self.doc_meta {
+            Some(doc_meta) => node.with_doc_meta(Arc::clone(doc_meta)),
+            None => node,
+        };
         match &self.lever {
             Some((reranker, timeout, budget)) => {
                 node.with_rerank_lever(Some(reranker.clone()), *timeout, *budget)

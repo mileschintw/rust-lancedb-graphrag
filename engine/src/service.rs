@@ -289,6 +289,7 @@ impl LancetServiceImpl {
             )
             .with_rebuild_degraded(snapshot.rebuild_degraded)
             .with_excerpt_max_chars(self.effective_settings.citation_excerpt_max_chars)
+            .with_doc_meta(Arc::clone(&snapshot.doc_meta))
             .with_rerank_lever(
                 lever_reranker,
                 std::time::Duration::from_millis(wf.rerank_timeout_ms),

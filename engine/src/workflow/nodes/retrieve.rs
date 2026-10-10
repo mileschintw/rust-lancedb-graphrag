@@ -9,6 +9,7 @@ use super::super::{
     ports::{Bm25RetrievalPort, DenseRetrievalPort},
     WorkflowContext,
 };
+use crate::doc_meta::DocMetaMap;
 use crate::pb::lancet::v1::RankedCandidate;
 use crate::pb::lancet::v1::{
     Lever, NodeErrorKind, NoticeCode, NoticeSeverity, RerankMetadata, RerankOutcome,
@@ -105,6 +106,9 @@ pub struct RetrieveHybridNode {
     embedding_model: String,
     rebuild_degraded: bool,
     excerpt_max_chars: usize,
+    /// The snapshot's per-document metadata, read only for a request that names
+    /// `evidence_metadata` (D-142, D-145); `None` leaves every block without metadata.
+    doc_meta: Option<Arc<DocMetaMap>>,
     /// Not read by production code. A `Mutex`, not a `Cell`, because `Node: Send + Sync`
     /// requires `Sync` even though in practice each instance serves exactly one request
     /// (`build_production_workflow` constructs a fresh node per `query_rag` call).
@@ -128,6 +132,7 @@ impl RetrieveHybridNode {
             embedding_model: String::new(),
             rebuild_degraded: false,
             excerpt_max_chars: DEFAULT_RETRIEVED_EXCERPT_MAX_CHARS,
+            doc_meta: None,
             substage_report: Arc::new(Mutex::new(RetrieveSubStageReport::default())),
         }
     }
@@ -175,6 +180,15 @@ impl RetrieveHybridNode {
 
     pub fn with_excerpt_max_chars(mut self, max_chars: usize) -> Self {
         self.excerpt_max_chars = max_chars;
+        self
+    }
+
+    /// Sets the snapshot's per-document metadata that the `evidence_metadata` lever attaches.
+    ///
+    /// The map is held but not read unless the request names the lever, so retrieval, the
+    /// citations and the result hash are computed exactly as they are without it.
+    pub fn with_doc_meta(mut self, doc_meta: Arc<DocMetaMap>) -> Self {
+        self.doc_meta = Some(doc_meta);
         self
     }
 

@@ -1620,6 +1620,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
                 generation: prior.generation.clone(),
                 nodes_version: prior.nodes_version,
                 rebuild_degraded: true,
+                doc_meta: Arc::new(crate::doc_meta::DocMetaMap::default()),
             });
             let mut write_guard = corpus_store.write().await;
             *write_guard = degraded_snapshot;
@@ -1665,6 +1666,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
             generation: prior.generation.clone(),
             nodes_version: prior.nodes_version,
             rebuild_degraded: true,
+            doc_meta: Arc::new(crate::doc_meta::DocMetaMap::default()),
         });
         let mut write_guard = corpus_store.write().await;
         *write_guard = degraded_snapshot;
@@ -1701,6 +1703,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
                 generation: prior.generation.clone(),
                 nodes_version: prior.nodes_version,
                 rebuild_degraded: true,
+                doc_meta: Arc::new(crate::doc_meta::DocMetaMap::default()),
             });
             let mut write_guard = corpus_store.write().await;
             *write_guard = degraded_snapshot;
@@ -1726,6 +1729,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
                 generation: prior.generation.clone(),
                 nodes_version: prior.nodes_version,
                 rebuild_degraded: true,
+                doc_meta: Arc::new(crate::doc_meta::DocMetaMap::default()),
             });
             let mut write_guard = corpus_store.write().await;
             *write_guard = degraded_snapshot;
@@ -1746,6 +1750,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
         generation: crate::workflow::ports::corpus_generation_from_nodes_version(nodes_version),
         nodes_version,
         rebuild_degraded: false,
+        doc_meta: Arc::new(crate::doc_meta::DocMetaMap::default()),
     });
 
     // Swap under a short write lock

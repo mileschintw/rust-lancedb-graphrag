@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use prost::Message;
 use uuid::Uuid;
 
 use engine::config::EffectiveRagSettings;
@@ -20,12 +21,15 @@ use engine::testkit::test_query_request;
 
 use engine::workflow::LeverSet;
 
+use crate::doc_meta::{DocMeta, DocMetaMap};
 use crate::service::LeverResources;
 use crate::workflow::nodes::retrieve::{rerank_allowance, RERANK_NODE_RESERVE_MS};
 use crate::workflow::ports::FakeReranker;
 use crate::workflow::WorkflowContext;
 
-use super::retrieval_mode_pins::{render_scenarios, run_chain, run_runner, Fixture, Variation};
+use super::retrieval_mode_pins::{
+    hex, render_scenarios, run_chain, run_runner, Fixture, Variation, DOC_A, DOC_B,
+};
 use super::{
     configured_service, database_path, reranker_query_fixture, stage_document, FailingReranker,
     FakeEmbedder, FakeGenerator, RecordingGenerator, RecordingReranker,
@@ -664,5 +668,413 @@ async fn a_rerank_request_uses_the_lever_reranker_and_a_plain_request_uses_the_s
         1,
         "a plain request never calls the lever reranker"
     );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// The evidence metadata and binary answer format levers (Phase 06.3.6 plan 11 Task 2,
+// D-136, D-142, D-145)
+// ---------------------------------------------------------------------------
+
+const METADATA: &[i32] = &[Lever::EvidenceMetadata as i32];
+const BINARY: &[i32] = &[Lever::BinaryAnswerFormat as i32];
+
+fn headline_meta() -> DocMeta {
+    DocMeta {
+        doc_title: Some("A real headline".to_owned()),
+        source: Some("The Example Times".to_owned()),
+        published_date: Some("2023-10-07".to_owned()),
+    }
+}
+
+/// Metadata for document A of the `retrieval_mode_pins` fixture only; document B has none.
+fn fixture_doc_meta() -> Arc<DocMetaMap> {
+    Arc::new(DocMetaMap::from_entries([(
+        DOC_A.to_owned(),
+        headline_meta(),
+    )]))
+}
+
+/// The text of one `== name ==` section of a recorded golden, up to the next section header.
+fn golden_section<'a>(golden: &'a str, name: &str) -> &'a str {
+    let header = format!("== {name} ==\n");
+    let from = golden.find(&header).expect("the golden has the section") + header.len();
+    let to = golden[from..]
+        .find("\n== ")
+        .map_or(golden.len(), |offset| from + offset);
+    &golden[from..to]
+}
+
+/// D-145: `evidence_metadata` alone and `binary_answer_format` alone change only the prompt, so
+/// the dense and BM25 lists, the final list and the snapshot (the result hash and the cited
+/// chunks included) equal the recorded default-request golden, with the lever echo zeroed. The
+/// prompt is the one thing that differs, so it is not compared here. The fixture holds metadata
+/// for document A, so the lever has something to attach.
+#[tokio::test]
+async fn a_prompt_lever_alone_leaves_retrieval_equal_to_the_recorded_default_request_output() {
+    let golden =
+        include_str!("../retrieval/testdata/retrieve_node_default.golden").replace("\r\n", "\n");
+    let section = golden_section(&golden, "graph_on_node_chain");
+    let line = |prefix: &str| {
+        section
+            .lines()
+            .find(|candidate| candidate.starts_with(prefix))
+            .unwrap_or_else(|| panic!("the golden section has a {prefix} line"))
+            .to_owned()
+    };
+    for levers in [METADATA, BINARY] {
+        let fixture = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+        let ctx = run_chain(&fixture, false, Variation::DEFAULT.with_levers(levers)).await;
+        let mut snapshot = ctx.snapshot.clone().expect("a snapshot");
+        assert_eq!(snapshot.levers, levers.to_vec(), "the echo names the lever");
+        snapshot.levers.clear();
+        assert_eq!(
+            format!("dense: {}", ctx.vector_results.join(",")),
+            line("dense: "),
+            "{levers:?}"
+        );
+        assert_eq!(
+            format!("bm25: {}", ctx.bm25_results.join(",")),
+            line("bm25: "),
+            "{levers:?}"
+        );
+        assert_eq!(
+            format!("final: {}", ctx.final_candidates.join(",")),
+            line("final: "),
+            "{levers:?}"
+        );
+        assert_eq!(
+            format!("snapshot: {}", hex(&snapshot.encode_to_vec())),
+            line("snapshot: "),
+            "the snapshot, result hash and citations equal the golden for {levers:?}"
+        );
+    }
+}
+
+/// D-145: the pre-truncation ranking and the result hash equal the lever-free run's.
+#[tokio::test]
+async fn a_prompt_lever_alone_leaves_the_ranking_and_the_result_hash_unchanged() {
+    let fixture = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+    let ranked = Variation::DEFAULT.with_ranking();
+    let free = run_chain(&fixture, false, ranked).await;
+    let free_snapshot = free.snapshot.as_ref().expect("a snapshot");
+    assert!(!free_snapshot.pre_truncation_ranking.is_empty());
+    for levers in [METADATA, BINARY] {
+        let ctx = run_chain(&fixture, false, ranked.with_levers(levers)).await;
+        let snapshot = ctx.snapshot.as_ref().expect("a snapshot");
+        assert_eq!(ctx.final_candidates, free.final_candidates, "{levers:?}");
+        assert_eq!(snapshot.result_hash, free_snapshot.result_hash, "{levers:?}");
+        assert_eq!(
+            snapshot.pre_truncation_ranking, free_snapshot.pre_truncation_ranking,
+            "{levers:?}"
+        );
+    }
+}
+
+/// D-142, D-145: under the lever each block of a document with an entry carries that entry,
+/// blocks of other documents carry `None`, and the headers reach the prompt for the first only.
+#[tokio::test]
+async fn the_metadata_lever_attaches_the_entry_of_each_blocks_document_and_nothing_else() {
+    let fixture = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+    let ctx = run_chain(&fixture, true, Variation::DEFAULT.with_levers(METADATA)).await;
+
+    let from_a = ctx
+        .evidence_blocks
+        .iter()
+        .filter(|block| block.document_id == DOC_A)
+        .count();
+    let from_b = ctx
+        .evidence_blocks
+        .iter()
+        .filter(|block| block.document_id == DOC_B)
+        .count();
+    assert!(from_a > 0 && from_b > 0, "the fixture serves both documents");
+    for block in &ctx.evidence_blocks {
+        if block.document_id == DOC_A {
+            assert_eq!(block.evidence_meta.as_ref(), Some(&headline_meta()));
+        } else {
+            assert!(
+                block.evidence_meta.is_none(),
+                "a document without an entry carries no metadata"
+            );
+        }
+    }
+    assert_eq!(
+        ctx.assembled_prompt
+            .matches("<DOC_TITLE>A real headline</DOC_TITLE>")
+            .count(),
+        from_a
+    );
+    assert_eq!(
+        ctx.assembled_prompt
+            .matches("<SOURCE>The Example Times</SOURCE>")
+            .count(),
+        from_a
+    );
+    assert_eq!(
+        ctx.assembled_prompt
+            .matches("<PUBLISHED>2023-10-07</PUBLISHED>")
+            .count(),
+        from_a
+    );
+    assert!(ctx
+        .assembled_prompt
+        .contains(crate::prompt::EVIDENCE_METADATA_POLICY_SENTENCE));
+}
+
+/// With the lever off, even a snapshot that holds metadata attaches none and the prompt shows no
+/// header; `binary_answer_format` alone attaches none either.
+#[tokio::test]
+async fn without_the_metadata_lever_no_block_carries_metadata_and_the_prompt_has_no_header() {
+    let fixture = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+    for levers in [&[][..], BINARY] {
+        let ctx = run_chain(&fixture, true, Variation::DEFAULT.with_levers(levers)).await;
+        assert!(!ctx.evidence_blocks.is_empty());
+        assert!(
+            ctx.evidence_blocks
+                .iter()
+                .all(|block| block.evidence_meta.is_none()),
+            "{levers:?}"
+        );
+        for tag in ["<DOC_TITLE>", "<SOURCE>", "<PUBLISHED>"] {
+            assert!(!ctx.assembled_prompt.contains(tag), "{levers:?} {tag}");
+        }
+        assert!(!ctx
+            .assembled_prompt
+            .contains(crate::prompt::EVIDENCE_METADATA_POLICY_SENTENCE));
+    }
+}
+
+/// D-145: the citation of a chunk keeps its filename title under the metadata lever, both in the
+/// snapshot's retrieved chunks and on the evidence block.
+#[tokio::test]
+async fn a_metadata_arm_citation_title_equals_the_hybrid_arms_for_the_same_chunk() {
+    let fixture = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+    let titles = |ctx: &WorkflowContext| -> Vec<(String, String)> {
+        ctx.snapshot
+            .as_ref()
+            .expect("a snapshot")
+            .retrieved_chunks
+            .iter()
+            .map(|chunk| (chunk.chunk_id.clone(), chunk.title.clone()))
+            .collect()
+    };
+    let hybrid = run_chain(&fixture, false, Variation::DEFAULT).await;
+    let metadata = run_chain(&fixture, false, Variation::DEFAULT.with_levers(METADATA)).await;
+    assert!(!titles(&hybrid).is_empty());
+    assert_eq!(titles(&metadata), titles(&hybrid));
+    assert!(
+        titles(&metadata).iter().all(|(_, title)| title == "Title"),
+        "the real document title never replaces the citation title"
+    );
+    let block_titles = |ctx: &WorkflowContext| -> Vec<Option<String>> {
+        ctx.evidence_blocks
+            .iter()
+            .map(|block| block.title.clone())
+            .collect()
+    };
+    assert_eq!(block_titles(&metadata), block_titles(&hybrid));
+}
+
+/// D-136: `evidence_metadata` needs metadata in the snapshot. An empty map refuses it; a map with
+/// one entry admits it; `binary_answer_format` needs nothing.
+#[tokio::test]
+async fn the_metadata_lever_is_available_only_when_the_snapshot_holds_metadata() {
+    let (path, service) = reranker_query_fixture(
+        "levers-metadata-availability",
+        3,
+        RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+    let empty = Arc::clone(&*service.corpus_store.read().await);
+    assert!(empty.doc_meta.is_empty());
+    let availability = service.lever_availability(&empty);
+    assert!(!availability.is_available(Lever::EvidenceMetadata));
+    assert!(availability.is_available(Lever::BinaryAnswerFormat));
+
+    let with_metadata = (*empty).clone().with_doc_meta(fixture_doc_meta());
+    let availability = service.lever_availability(&with_metadata);
+    assert!(availability.is_available(Lever::EvidenceMetadata));
+    assert!(availability.is_available(Lever::BinaryAnswerFormat));
+    assert!(
+        !availability.is_available(Lever::GraphV2),
+        "the metadata does not serve another lever"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// Through the real service: the lever reaches the generation request as a prompt option and as
+/// metadata on the evidence, and a request without the levers carries neither.
+#[tokio::test]
+async fn the_prompt_levers_reach_the_generation_request_through_the_service() {
+    let generator = RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default());
+    let (path, service) = reranker_query_fixture(
+        "levers-prompt-options",
+        3,
+        generator.clone(),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    // A lever-free request first, to learn which documents the corpus serves.
+    super::execute_query_rag(
+        &service,
+        test_query_request("reranker evidence", "00000000-0000-4000-8000-0000000000f1"),
+    )
+    .await
+    .expect("a lever-free request completes");
+    let first = generator.requests().remove(0);
+    assert_eq!(first.prompt_options, crate::prompt::PromptOptions::default());
+    assert!(first.evidence.iter().all(|block| block.evidence_meta.is_none()));
+    let ids: Vec<String> = first
+        .evidence
+        .iter()
+        .map(|block| block.document_id.clone())
+        .collect();
+    assert!(!ids.is_empty());
+
+    // `binary_answer_format` needs nothing from the snapshot.
+    super::execute_query_rag(
+        &service,
+        QueryRagRequest {
+            levers: BINARY.to_vec(),
+            ..test_query_request("reranker evidence", "00000000-0000-4000-8000-0000000000f2")
+        },
+    )
+    .await
+    .expect("binary_answer_format completes");
+    let binary = generator.requests().remove(1);
+    assert_eq!(
+        binary.prompt_options,
+        crate::prompt::PromptOptions {
+            evidence_metadata: false,
+            binary_answer_format: true
+        }
+    );
+    assert!(binary.evidence.iter().all(|block| block.evidence_meta.is_none()));
+
+    // `evidence_metadata` is refused until the snapshot holds metadata, then admitted.
+    let metadata_request = || QueryRagRequest {
+        levers: vec![Lever::EvidenceMetadata as i32, Lever::BinaryAnswerFormat as i32],
+        ..test_query_request("reranker evidence", "00000000-0000-4000-8000-0000000000f3")
+    };
+    assert!(super::execute_query_rag(&service, metadata_request())
+        .await
+        .is_err());
+    let prior = Arc::clone(&*service.corpus_store.read().await);
+    let map = DocMetaMap::from_entries(ids.iter().map(|id| (id.clone(), headline_meta())));
+    *service.corpus_store.write().await =
+        Arc::new((*prior).clone().with_doc_meta(Arc::new(map)));
+
+    let response = super::execute_query_rag(&service, metadata_request())
+        .await
+        .expect("the metadata lever is admitted once the snapshot holds metadata");
+    assert_eq!(
+        response.snapshot.expect("a snapshot").levers,
+        vec![Lever::EvidenceMetadata as i32, Lever::BinaryAnswerFormat as i32]
+    );
+    let both = generator.requests().remove(2);
+    assert_eq!(
+        both.prompt_options,
+        crate::prompt::PromptOptions {
+            evidence_metadata: true,
+            binary_answer_format: true
+        }
+    );
+    assert!(!both.evidence.is_empty());
+    assert!(both
+        .evidence
+        .iter()
+        .all(|block| block.evidence_meta.as_ref() == Some(&headline_meta())));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+// ---------------------------------------------------------------------------
+// The metadata map across an index rebuild (Phase 06.3.6 plan 11 Task 2, D-142)
+// ---------------------------------------------------------------------------
+
+/// A service over an empty store whose snapshot already holds metadata, and that map.
+async fn service_holding_metadata(
+    name: &str,
+) -> (String, crate::service::LancetServiceImpl, Arc<DocMetaMap>) {
+    let path = database_path(name);
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        RecordingGenerator::from_effective_settings(&EffectiveRagSettings::default()),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+    let map = fixture_doc_meta();
+    {
+        let mut store = service.corpus_store.write().await;
+        let prior = Arc::clone(&*store);
+        *store = Arc::new((*prior).clone().with_doc_meta(Arc::clone(&map)));
+    }
+    (path, service, map)
+}
+
+/// A snapshot that holds a non-empty map keeps that same map after a rebuild that succeeds, so an
+/// ingest never silently turns `evidence_metadata` unavailable.
+#[tokio::test]
+async fn a_successful_rebuild_carries_the_metadata_map_forward() {
+    let _lock = crate::ingest::REBUILD_TEST_MUTEX.lock().await;
+    let (path, service, map) = service_holding_metadata("levers-meta-rebuild-ok").await;
+    let swapped = crate::ingest::rebuild_and_swap(
+        &service.database,
+        &service.corpus_store,
+        service.effective_settings.retrieval.bm25.clone(),
+    )
+    .await
+    .expect("the rebuild succeeds");
+    assert!(!swapped.rebuild_degraded);
+    assert!(!swapped.doc_meta.is_empty());
+    assert!(Arc::ptr_eq(&swapped.doc_meta, &map));
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    assert!(Arc::ptr_eq(&current.doc_meta, &map));
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// The degraded paths keep the prior snapshot whole, the metadata map included.
+#[tokio::test]
+async fn a_degraded_rebuild_keeps_the_prior_metadata_map() {
+    let _lock = crate::ingest::REBUILD_TEST_MUTEX.lock().await;
+    let (path, service, map) = service_holding_metadata("levers-meta-rebuild-degraded").await;
+    let bm25 = service.effective_settings.retrieval.bm25.clone();
+
+    // The injected fault at the head of the rebuild.
+    crate::ingest::arm_rebuild_fail_next();
+    let failure = crate::ingest::rebuild_and_swap(&service.database, &service.corpus_store, bm25.clone())
+        .await
+        .expect_err("the armed fault fails the rebuild");
+    assert!(failure.contains("injected"), "{failure}");
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    assert!(current.rebuild_degraded);
+    assert!(Arc::ptr_eq(&current.doc_meta, &map), "injected fault");
+
+    // The latest table version cannot be read.
+    crate::ingest::arm_rebuild_checkout_fail_next();
+    crate::ingest::rebuild_and_swap(&service.database, &service.corpus_store, bm25.clone())
+        .await
+        .expect_err("the armed checkout failure fails the rebuild");
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    assert!(current.rebuild_degraded);
+    assert!(Arc::ptr_eq(&current.doc_meta, &map), "checkout failure");
+
+    // The graph index build fails.
+    crate::ingest::rebuild_and_swap_with_graph_builder(
+        &service.database,
+        &service.corpus_store,
+        bm25,
+        &|_db| Box::pin(async { Err("injected graph index failure".to_string()) }),
+    )
+    .await
+    .expect_err("the failing graph builder fails the rebuild");
+    let current = Arc::clone(&*service.corpus_store.read().await);
+    assert!(current.rebuild_degraded);
+    assert!(Arc::ptr_eq(&current.doc_meta, &map), "graph index failure");
     let _ = std::fs::remove_dir_all(path);
 }

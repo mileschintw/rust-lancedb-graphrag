@@ -3,6 +3,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::node::{BoxFuture, NodeError};
+use crate::doc_meta::DocMetaMap;
 use crate::graph::index::GraphIndex;
 use crate::pb::lancet::v1::DocumentFilter;
 use crate::prompt::GraphFactBlock;
@@ -28,6 +29,13 @@ pub struct CorpusSnapshot {
     pub generation: String,
     pub nodes_version: u64,
     pub rebuild_degraded: bool,
+    /// The publication, document title and date of each document that has them (06.3.6 D-142).
+    ///
+    /// Immutable for the life of the snapshot, so a query reads one consistent generation and
+    /// needs no per-query store read. An empty map means the corpus carries no metadata and the
+    /// `evidence_metadata` lever is unavailable. A rebuild carries the prior map forward until a
+    /// fresh one replaces it, so an ingest never silently empties it.
+    pub doc_meta: Arc<DocMetaMap>,
 }
 
 impl CorpusSnapshot {
@@ -43,7 +51,14 @@ impl CorpusSnapshot {
             generation: corpus_generation_from_nodes_version(nodes_version),
             nodes_version,
             rebuild_degraded,
+            doc_meta: Arc::new(DocMetaMap::default()),
         }
+    }
+
+    /// The same snapshot holding `doc_meta` as its per-document evidence metadata.
+    pub fn with_doc_meta(mut self, doc_meta: Arc<DocMetaMap>) -> Self {
+        self.doc_meta = doc_meta;
+        self
     }
 }
 

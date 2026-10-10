@@ -28,11 +28,12 @@
 //! | `duplicate_lever` | `levers` names `binary_answer_format` twice | `InvalidArgument` | `invalid_levers` | — |
 //! | `lever_unspecified_member` | `levers` holds `LEVER_UNSPECIFIED` (0) | `InvalidArgument` | `invalid_levers` | — |
 //! | `lever_unavailable_rerank` | `levers` names `rerank` and this service holds no lever reranker (D-131; `levers_pins` admits it once one is wired) | `InvalidArgument` | `lever_unavailable` | — |
-//! | `lever_unavailable_evidence_metadata` | `levers` names `evidence_metadata`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
+//! | `lever_unavailable_evidence_metadata` | `levers` names `evidence_metadata` while the snapshot's `DocMetaMap` is empty (D-136; the `levers_metadata_admitted` check below admits it once the snapshot holds metadata) | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_graph_v2` | `levers` names `graph_v2`, whose resource is not wired yet | `InvalidArgument` | `lever_unavailable` | — |
 //! | `lever_unavailable_when_mixed_with_an_available_lever` | `levers` names `binary_answer_format` and `rerank` with no lever reranker wired | `InvalidArgument` | `lever_unavailable` | — |
 //! | `graph_v2_with_graph_disabled` | `levers` names `graph_v2` and `disable_graph_context` is true (D-165) | `InvalidArgument` | `invalid_lever_combination` | — |
 //! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
+//! | `levers_metadata_admitted` | `levers` names `evidence_metadata`, unmatched filter, after the service's snapshot is replaced by one whose `DocMetaMap` holds an entry | success (not rejected) | n/a | Run after the table above, on the same service, so the one request is refused on the empty map and admitted on the non-empty one. |
 //!
 //! **Negative filter bound (not a request-level row).** D-15's enumeration mentions a negative
 //! filter bound, but [`DocumentFilter`] carries only two repeated string lists and no numeric
@@ -76,6 +77,7 @@ use uuid::Uuid;
 
 use engine::config::EffectiveRagSettings;
 use engine::db::DatabaseManager;
+use engine::doc_meta::{DocMeta, DocMetaMap};
 use engine::generation;
 use engine::ingest::{process_job, read_staged_jobs};
 use engine::pb::lancet::v1::{
@@ -524,6 +526,44 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
             }
         }
     }
+
+    // `levers_metadata_admitted`: the request refused on the empty map above (row
+    // `lever_unavailable_evidence_metadata`) is admitted once the snapshot holds metadata.
+    {
+        let mut store = service.corpus_store.write().await;
+        let prior = Arc::clone(&*store);
+        let map = DocMetaMap::from_entries([(
+            Uuid::new_v4().to_string(),
+            DocMeta {
+                doc_title: Some("A real headline".to_owned()),
+                source: None,
+                published_date: None,
+            },
+        )]);
+        *store = Arc::new((*prior).clone().with_doc_meta(Arc::new(map)));
+    }
+    let admitted = super::execute_query_rag(
+        &service,
+        QueryRagRequest {
+            query: "valid query".into(),
+            session_id: String::new(),
+            filter: Some(DocumentFilter {
+                document_ids: vec![Uuid::new_v4().to_string()],
+                content_types: vec![],
+            }),
+            levers: vec![Lever::EvidenceMetadata as i32],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("row 'levers_metadata_admitted' must succeed once the snapshot holds metadata");
+    assert!(
+        admitted
+            .notices
+            .iter()
+            .any(|n| n.typed_code == NoticeCode::NoEvidence as i32),
+        "row 'levers_metadata_admitted' must carry the zero-evidence notice"
+    );
 
     assert_eq!(
         fake_gen.calls(),
