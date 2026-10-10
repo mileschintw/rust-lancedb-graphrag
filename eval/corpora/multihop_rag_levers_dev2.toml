@@ -1,0 +1,40 @@
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.diag.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 100
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[models]
+judge_model = "meta-llama/llama-3.3-70b-instruct"
+judge_temperature = 0.0
+judge_max_tokens = 400
+judge_prompt_version = "v1"
+
+[arms]
+# 06.3.6-17 (D-154, D-179): dev session 2 is read 2 of graph-v2 only (O12 triggered it: read2_reason-073ce4ad04de),
+# beside the session's own `hybrid` reference and the `hybrid+graph` v1 control (O13). Registry order.
+arms = [
+  "hybrid",
+  "hybrid+graph",
+  "hybrid+graph-v2",
+]
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "dev"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"
