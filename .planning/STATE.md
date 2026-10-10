@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 executing: waves 1-7 of 17 done (plans 01-12); wave 8 (06.3.6-13, main) next"
+stopped_at: "Phase 06.3.6 executing: waves 1-8 of 17 done (plans 01-13; 13 not-applicable); wave 9 (06.3.6-14, main) next"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,19 +15,20 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 wave 7 complete (12: graph chunk precision variants, lever 2 branch B); gate green (cargo 857, go 124, pytest 2166); wave 8 (13) next."
+last_activity_desc: "06.3.6 wave 8 complete (13: branch A not-applicable, no code); wave 9 (14) next."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 13
+Current Plan: 14
 Total Plans in Phase: 22
 
 ## Current Status
 
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
+- **2026-10-09: 06.3.6 wave 8 COMPLETE.** 13: branch A (entity resolution) not-applicable under selection graph_list_precision; SUMMARY only (`86a73e45`), no code, so the gate was not re-run.
 - **2026-10-09: 06.3.6 wave 7 COMPLETE.** 12: graph chunk precision variants (All / EdgeEvidence / MultiCited), `[engine.graph] graph_v2_chunk_precision` (default all, so graph_v2 is lever_unavailable until set), per-request dispatch. Owed later: launcher refusal of LANCET_ENGINE__GRAPH__* (plans 19, 20); the variant is not on the wire, so dev reads must record it. Gate green: cargo 857.
 - **2026-10-09: 06.3.6 wave 6 COMPLETE.** 11: PromptOptions, metadata headers, lever policy sentences, per-snapshot DocMetaMap (evidence_metadata stays lever_unavailable until plan 14 builds the map). Gate green: cargo 836, go 124, pytest 2166.
 - **2026-10-09: 06.3.6 wave 5 COMPLETE.** 09: OpenRouter rerank adapter and the rerank lever in RetrieveHybrid (D-186 model rule, provisional `rerank_timeout_ms` 1706); deferred: eval `preflight.py` does not mirror `rerank_timeout_ms`. 10 (worktree, merged `486d893a`): `compare-levers`, `dev_reads`, latency nesting relations (the D-152 relation is opt-in `retry_aware=True`; plan 18 must pass it). Gate green: cargo 810, go 124, pytest 2166.
