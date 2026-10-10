@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "Phase 06.3.6 executing: waves 1-9 of 17 done (plans 01-14); wave 10 (06.3.6-15 live store backfill, main) next; eval store fails closed until 15 Task 4"
+stopped_at: "Phase 06.3.6 executing: waves 1-10 of 17 done (plans 01-15; live store at lance-703); wave 11 (06.3.6-16 dev reads, main, live) next"
 last_updated: "2026-10-09T19:34:09.078Z"
 last_activity: 2026-10-09
 state_head: aef1e9333ecce39b6fa1d6882fec5da1e63c30cf
@@ -15,19 +15,20 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 wave 9 complete (14: 22-column nodes schema, DocMetaMap scan, backfill bin); gate green (cargo 908, go 124, pytest 2166); wave 10 (15, live) next."
+last_activity_desc: "06.3.6 wave 10 complete (15: live metadata backfill, generation lance-703 recorded once, D-189 corroboration 2/3 + retrieval evidence); gate green; wave 11 (16) next."
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 15
+Current Plan: 16
 Total Plans in Phase: 22
 
 ## Current Status
 
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
+- **2026-10-10: 06.3.6 wave 10 COMPLETE.** 15: live metadata backfill (nodes 702 -> 703; staging 766 -> 767 at first start), engine `generation=lance-703 doc_meta_documents=346`, generation recorded once (`0250d160`), D-61 coverage identical. Corroboration closed under owner D-189: 2/3 exact; mhr-325f99830534 retrieval completes but generation fails deterministically (OpenInference finish_reason 'error' at 701 tokens, 4 sends). Pre-backfill restore source: data/store-snapshots/pre-backfill-2026-10-10/. Gate green.
 - **2026-10-09: 06.3.6 wave 9 COMPLETE.** 14: THE schema commit `e620a0b2` (nodes 22 columns; the 19-column eval store now fails closed until plan 15 Task 4's backfill), DocMetaMap scan at startup and rebuild, `backfill_evidence_metadata` bin with COPY verification. Gate green: cargo 908, go 124, pytest 2166.
 - **2026-10-09: 06.3.6 wave 8 COMPLETE.** 13: branch A (entity resolution) not-applicable under selection graph_list_precision; SUMMARY only (`86a73e45`), no code, so the gate was not re-run.
 - **2026-10-09: 06.3.6 wave 7 COMPLETE.** 12: graph chunk precision variants (All / EdgeEvidence / MultiCited), `[engine.graph] graph_v2_chunk_precision` (default all, so graph_v2 is lever_unavailable until set), per-request dispatch. Owed later: launcher refusal of LANCET_ENGINE__GRAPH__* (plans 19, 20); the variant is not on the wire, so dev reads must record it. Gate green: cargo 857.
