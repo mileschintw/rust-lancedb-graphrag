@@ -169,19 +169,19 @@ impl LeverAvailability {
 }
 
 impl LancetServiceImpl {
-    /// Reports which levers this engine can serve against `_snapshot`.
+    /// Reports which levers this engine can serve against `snapshot`.
     ///
     /// `binary_answer_format` needs no resource and is available. `rerank` is available when
-    /// the lever reranker is wired (D-131). `evidence_metadata` and `graph_v2` stay unavailable
-    /// until the plans that implement them wire their resource (the evidence metadata columns of
-    /// the corpus snapshot, the graph repair).
+    /// the lever reranker is wired (D-131). `evidence_metadata` is available when the snapshot
+    /// holds metadata for at least one document (D-136). `graph_v2` stays unavailable until the
+    /// plan that implements it wires its resource (the graph repair).
     pub fn lever_availability(
         &self,
-        _snapshot: &workflow::ports::CorpusSnapshot,
+        snapshot: &workflow::ports::CorpusSnapshot,
     ) -> LeverAvailability {
         LeverAvailability {
             rerank: self.lever_resources.reranker.is_some(),
-            evidence_metadata: false,
+            evidence_metadata: !snapshot.doc_meta.is_empty(),
             binary_answer_format: true,
             graph_v2: false,
         }

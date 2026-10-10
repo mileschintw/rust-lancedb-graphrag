@@ -192,6 +192,21 @@ impl RetrieveHybridNode {
         self
     }
 
+    /// Attaches the snapshot's metadata entry of each block's document to the block.
+    ///
+    /// A block whose document has no entry keeps `None`, so it renders the same bytes as it does
+    /// without the lever.
+    fn attach_doc_meta(&self, blocks: &mut [crate::prompt::EvidenceBlock]) {
+        let Some(doc_meta) = &self.doc_meta else {
+            return;
+        };
+        for block in blocks {
+            if let Some(meta) = doc_meta.get(&block.document_id) {
+                block.attach_evidence_meta(meta.clone());
+            }
+        }
+    }
+
     /// Reorders the fused list with the reranker this request selected.
     ///
     /// A request that names `rerank` and has a lever reranker takes the lever path; any other
@@ -587,6 +602,12 @@ impl RetrieveHybridNode {
         }
 
         ctx.evidence_blocks = crate::prompt::assemble_evidence_blocks(&taken_candidates);
+        // D-142, D-145: the metadata reaches the prompt blocks and nothing else. It is attached
+        // after the final list, the result hash and the ranking are fixed, and only for a request
+        // that names the lever; the citations below keep their filename title.
+        if ctx.levers.contains(Lever::EvidenceMetadata) {
+            self.attach_doc_meta(&mut ctx.evidence_blocks);
+        }
         ctx.final_candidates = ctx
             .evidence_blocks
             .iter()

@@ -763,7 +763,10 @@ async fn a_prompt_lever_alone_leaves_the_ranking_and_the_result_hash_unchanged()
         let ctx = run_chain(&fixture, false, ranked.with_levers(levers)).await;
         let snapshot = ctx.snapshot.as_ref().expect("a snapshot");
         assert_eq!(ctx.final_candidates, free.final_candidates, "{levers:?}");
-        assert_eq!(snapshot.result_hash, free_snapshot.result_hash, "{levers:?}");
+        assert_eq!(
+            snapshot.result_hash, free_snapshot.result_hash,
+            "{levers:?}"
+        );
         assert_eq!(
             snapshot.pre_truncation_ranking, free_snapshot.pre_truncation_ranking,
             "{levers:?}"
@@ -788,7 +791,10 @@ async fn the_metadata_lever_attaches_the_entry_of_each_blocks_document_and_nothi
         .iter()
         .filter(|block| block.document_id == DOC_B)
         .count();
-    assert!(from_a > 0 && from_b > 0, "the fixture serves both documents");
+    assert!(
+        from_a > 0 && from_b > 0,
+        "the fixture serves both documents"
+    );
     for block in &ctx.evidence_blocks {
         if block.document_id == DOC_A {
             assert_eq!(block.evidence_meta.as_ref(), Some(&headline_meta()));
@@ -925,8 +931,14 @@ async fn the_prompt_levers_reach_the_generation_request_through_the_service() {
     .await
     .expect("a lever-free request completes");
     let first = generator.requests().remove(0);
-    assert_eq!(first.prompt_options, crate::prompt::PromptOptions::default());
-    assert!(first.evidence.iter().all(|block| block.evidence_meta.is_none()));
+    assert_eq!(
+        first.prompt_options,
+        crate::prompt::PromptOptions::default()
+    );
+    assert!(first
+        .evidence
+        .iter()
+        .all(|block| block.evidence_meta.is_none()));
     let ids: Vec<String> = first
         .evidence
         .iter()
@@ -952,11 +964,17 @@ async fn the_prompt_levers_reach_the_generation_request_through_the_service() {
             binary_answer_format: true
         }
     );
-    assert!(binary.evidence.iter().all(|block| block.evidence_meta.is_none()));
+    assert!(binary
+        .evidence
+        .iter()
+        .all(|block| block.evidence_meta.is_none()));
 
     // `evidence_metadata` is refused until the snapshot holds metadata, then admitted.
     let metadata_request = || QueryRagRequest {
-        levers: vec![Lever::EvidenceMetadata as i32, Lever::BinaryAnswerFormat as i32],
+        levers: vec![
+            Lever::EvidenceMetadata as i32,
+            Lever::BinaryAnswerFormat as i32,
+        ],
         ..test_query_request("reranker evidence", "00000000-0000-4000-8000-0000000000f3")
     };
     assert!(super::execute_query_rag(&service, metadata_request())
@@ -964,15 +982,17 @@ async fn the_prompt_levers_reach_the_generation_request_through_the_service() {
         .is_err());
     let prior = Arc::clone(&*service.corpus_store.read().await);
     let map = DocMetaMap::from_entries(ids.iter().map(|id| (id.clone(), headline_meta())));
-    *service.corpus_store.write().await =
-        Arc::new((*prior).clone().with_doc_meta(Arc::new(map)));
+    *service.corpus_store.write().await = Arc::new((*prior).clone().with_doc_meta(Arc::new(map)));
 
     let response = super::execute_query_rag(&service, metadata_request())
         .await
         .expect("the metadata lever is admitted once the snapshot holds metadata");
     assert_eq!(
         response.snapshot.expect("a snapshot").levers,
-        vec![Lever::EvidenceMetadata as i32, Lever::BinaryAnswerFormat as i32]
+        vec![
+            Lever::EvidenceMetadata as i32,
+            Lever::BinaryAnswerFormat as i32
+        ]
     );
     let both = generator.requests().remove(2);
     assert_eq!(
@@ -1047,9 +1067,10 @@ async fn a_degraded_rebuild_keeps_the_prior_metadata_map() {
 
     // The injected fault at the head of the rebuild.
     crate::ingest::arm_rebuild_fail_next();
-    let failure = crate::ingest::rebuild_and_swap(&service.database, &service.corpus_store, bm25.clone())
-        .await
-        .expect_err("the armed fault fails the rebuild");
+    let failure =
+        crate::ingest::rebuild_and_swap(&service.database, &service.corpus_store, bm25.clone())
+            .await
+            .expect_err("the armed fault fails the rebuild");
     assert!(failure.contains("injected"), "{failure}");
     let current = Arc::clone(&*service.corpus_store.read().await);
     assert!(current.rebuild_degraded);
