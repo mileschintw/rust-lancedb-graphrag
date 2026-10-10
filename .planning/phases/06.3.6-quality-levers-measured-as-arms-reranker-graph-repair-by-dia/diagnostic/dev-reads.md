@@ -1,0 +1,20 @@
+# Dev reads ledger (D-154)
+
+Rendered from `dev-reads.jsonl`: 1 entry, in file order. The jsonl is the record; this file is derived from it.
+
+## 1. rule [dev-protocol-o7-o12-o13]
+
+- entry_id: `rule-dcec22e856f9`
+- rule_id: dev-protocol-o7-o12-o13
+- plan: 06.3.6-16
+- decisions: ["D-178", "D-179", "D-180"]
+- reply: all-recommended (06.3.6-16 Task 1 checkpoint:decision, pre-answered by D-178, D-179 and D-180 in 06.3.6-CONTEXT.md 'Pre-answered checkpoints'; quoted, not waited for)
+- written_before_read_1: true
+- branch: B (lever 2 selection graph_list_precision; graph-v2 is the chunk-precision variant)
+- o7_blanket_cap: {"cap_usd": 2.0, "decision": "D-178", "estimate_for_1200_records": "mean $0.98, all-max $4.63 (research/cost_caps_06_3_6_dev1200.out); one 100-record lever read is about $0.07; the cap is about 2.0x the mean", "output_price_decision": "D-173 (plan 06.3.6-03 raised GENERATION_OUTPUT_PRICE_PER_1M from 0.32 to 1.28), so the $2.00 figure applies, not $1.50", "output_price_per_1m": 1.28, "preflight": "the dev arm-canary preflight (about $0.005) runs uncapped before each session and is acknowledged by D-178; a RERANK_DEGRADED canary is counted and reported per arm, not failed alone; the preflight fails when a rerank-bearing arm has no successful rerank canary or when the degraded canaries over the rerank-bearing arms reach PREFLIGHT_RERANK_DEGRADE_HALT (the dev corpus has no pre-registration)", "record_bound": "100 x each session's arm count, at most 600 per session, so at most 1,200 dev records over both sessions", "scope": "every dev read, sessions 1 and 2, under one cap; session 2 runs under the remainder; a resume keeps the same whole-session --stage-cap and a different cap needs a new D-86 checkpoint", "unit": "harness-estimate dollars (run.py caps against compute_spend, which includes the rerank line, D-176)"}
+- o13_session_reference: {"decision": "D-179", "rule": "each dev session runs its own hybrid (and hybrid+graph when graph-v2 is read) on the same 100 dev questions, at --workers 1 --retries 0, in a new run directory; drive-2 dev records are not reused", "session_1_arms": ["hybrid", "hybrid+graph", "hybrid+rerank", "hybrid+metadata", "hybrid+answer-format", "hybrid+graph-v2"], "session_1_records_at_most": 600}
+- o12_precision_read_2: {"decision": "D-180", "rule": "graph-v2 (branch B): read 1 runs ChunkSelection EdgeEvidence; read 2 (MultiCited(2)) runs iff read 1's dev paired delta of answer_usable (hybrid+graph-v2 minus the same-session hybrid) is <= 0", "session_1_override": "LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION=edge_evidence"}
+- read2_triggers: {"answer_format": "one revised sentence at the implementer's discretion; the reason is written first (D-147); the dev Yes/No/abstain shares and the dev null pairs (n = 10) are disclosed beside each reading and no wording is chosen for moving them", "graph_v2_branch_A_er": "not applicable on this branch (the next lower sweep threshold if the dev delta <= 0, the next higher if the merge audit found more than 2 false merges of 20)", "graph_v2_branch_B": "O12 above", "metadata": "one revised policy sentence at the implementer's discretion; the reason is written to the ledger first (D-143)", "rerank": "only the D-135 lower-bound case (derive-rerank-timeout label lower_bound); read 2 then runs with rerank_timeout_ms = max(3412, ceil(2 x lower bound)) and retrieve_timeout_ms = 294 + that + 500 through the dev-only overrides LANCET_ENGINE__WORKFLOW__RERANK_TIMEOUT_MS and LANCET_ENGINE__WORKFLOW__RETRIEVE_TIMEOUT_MS"}
+- freeze_choice: for every lever the read with the larger dev delta against its own session's hybrid; a tie keeps read 1 (D-154)
+- limits: at most 2 paid dev reads per lever overall (D-154); dev IDs only through the dev split role (D-170, D-106); no held-out number is read or quoted to set a parameter (D-129)
+- mechanical: each trigger is applied as written to the session's measured numbers; none is revised after read 1
