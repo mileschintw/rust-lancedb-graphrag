@@ -1360,7 +1360,8 @@ def test_split_marker_check_accepts_every_tracked_journal_under_eval_runs() -> N
             checked_with_split += 1
         else:
             _require_matching_split_marker(journal, None)
-    assert checked_with_split == 3
+    # Three closed pre-06.3.6 split journals, plus any 06.3.6 lever dev sessions since.
+    assert checked_with_split >= 3
 
 
 # --- 06.3.6-03: the D-73 gate on the configured token, and the D-170 dev role ---

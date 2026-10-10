@@ -370,6 +370,9 @@ def test_every_committed_journal_parses_with_the_new_defaulted_fields() -> None:
                 except ValidationError as err:
                     pytest.fail(f"{path} holds a record the model refuses: {err}")
             parsed += 1
+            if "-levers-" in path.parent.name:
+                # 06.3.6 lever sessions legitimately carry levers and rerank metadata.
+                continue
             if rec.snapshot is not None:
                 assert rec.snapshot.levers == [], path
             if rec.workflow_meta is not None:
