@@ -1152,7 +1152,7 @@ Plans:
 
 **Out of Scope:** community summaries (999.1/999.5/999.4), query reformulation strategies (999.3 — a v1.1 arm), local inference endpoint (999.11 — v1.1), deeper traversal, new corpora.
 
-**Plans:** 8/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
+**Plans:** 10/22 plans executed in 17 waves (12 offline code plans, worktree-safe: 02, 03, 05-14; 7 live-stack plans that touch the paid endpoint or the gitignored store and run sequentially on main, never in a worktree: 01, 04, 15, 16, 17, 19, 20; 3 plans that also run on main: 18 freeze, 21 scoring with the store-reading cross-check, 22 closeout. Plans 12, 13 and 17 are conditional by design and may end `outcome: not-applicable`; 22's default flip is conditional. Decisions in `06.3.6-CONTEXT.md` D-127..D-171)
 
 Plans:
 
@@ -1178,8 +1178,8 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06.3.6-09-PLAN.md — Lever 1: the query-taking `Reranker` port, the OpenRouter rerank adapter, D-133 capture, D-134 degrade, D-166 overwrite, the provisional D-135 budget and per-request selection
-- [ ] 06.3.6-10-PLAN.md — `compare-levers` (families on P_X, fixed-m Holm, guards, default rows), `dev_reads.py` with the censoring-aware rerank derivation and ledger linter, and the 6/7-arm scoring proof
+- [x] 06.3.6-09-PLAN.md — Lever 1: the query-taking `Reranker` port, the OpenRouter rerank adapter, D-133 capture, D-134 degrade, D-166 overwrite, the provisional D-135 budget and per-request selection
+- [x] 06.3.6-10-PLAN.md — `compare-levers` (families on P_X, fixed-m Holm, guards, default rows), `dev_reads.py` with the censoring-aware rerank derivation and ledger linter, and the 6/7-arm scoring proof
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
