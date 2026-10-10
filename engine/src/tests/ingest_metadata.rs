@@ -8,7 +8,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow_array::{Array, BinaryArray, Int32Array, Int64Array, RecordBatch, StringArray};
+use arrow_array::types::Float32Type;
+use arrow_array::{
+    Array, BinaryArray, FixedSizeListArray, Int32Array, Int64Array, RecordBatch, StringArray,
+};
 use arrow_schema::DataType;
 use futures::TryStreamExt;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
@@ -16,7 +19,10 @@ use uuid::Uuid;
 
 use crate::chunker::Chunk;
 use crate::config::EffectiveRagSettings;
-use crate::db::backfill::legacy_nodes_schema_v19;
+use crate::db::backfill::{
+    backfill_nodes_metadata, backfill_with, classify_nodes_schema, column_digest, data_file_hashes,
+    legacy_nodes_schema_v19, verify_backfill_on_copy, NodesSchemaState, Sidecar, SidecarRow,
+};
 use crate::db::{
     legacy_staged_documents_v2_schema, nodes_schema, staged_documents_v2_pre_metadata_schema,
     staged_documents_v2_schema, DatabaseManager,
@@ -860,4 +866,611 @@ fn the_rebuild_path_attaches_a_freshly_scanned_map() {
         !body[success..swap].contains("Arc::clone(&prior.doc_meta)"),
         "the success snapshot no longer carries the prior map forward"
     );
+}
+
+// ---- the backfill library function (Task 3, D-144, C1, C2, C10) -----------------------------
+
+/// A valid UUIDv4 document id for fixture document `index`.
+fn fixture_doc(index: usize) -> String {
+    format!("{index:08x}-0000-4000-8000-{index:012x}")
+}
+
+/// A title that exercises quoting: an apostrophe, double quotes, a backslash, a percent sign.
+fn fixture_title(index: usize) -> String {
+    format!("Doc {index}: it's a \"test\" \\ 100% caf\u{e9}")
+}
+
+fn fixture_row(index: usize) -> SidecarRow {
+    SidecarRow {
+        doc_title: Some(fixture_title(index)),
+        source: Some(format!("Publisher {} | News's", index % 7)),
+        published_date: Some(format!("2023-{:02}-{:02}", 1 + index % 12, 1 + index % 28)),
+    }
+}
+
+/// One 19-column batch holding `1 + doc % 4` chunks of each document in `docs`.
+fn nodes_batch_v19(docs: std::ops::Range<usize>) -> RecordBatch {
+    let mut document_ids = Vec::new();
+    let mut chunk_ids = Vec::new();
+    let mut chunk_indexes = Vec::new();
+    let mut contents = Vec::new();
+    for doc in docs {
+        for chunk in 0..=(doc % 4) {
+            document_ids.push(fixture_doc(doc));
+            chunk_ids.push(format!("{}:{chunk}", fixture_doc(doc)));
+            chunk_indexes.push(i32::try_from(chunk).unwrap());
+            contents.push(format!("content of {doc} chunk {chunk}"));
+        }
+    }
+    let rows = document_ids.len();
+    let embeddings = FixedSizeListArray::from_iter_primitive::<Float32Type, _, _>(
+        (0..rows).map(|row| Some((0..2048).map(move |k| Some(((row * 7 + k) % 97) as f32 / 97.0)))),
+        2048,
+    );
+    RecordBatch::try_new(
+        legacy_nodes_schema_v19(),
+        vec![
+            Arc::new(StringArray::from(document_ids)),
+            Arc::new(StringArray::from(chunk_ids)),
+            Arc::new(Int32Array::from(chunk_indexes)),
+            Arc::new(Int32Array::from(vec![0; rows])),
+            Arc::new(Int32Array::from(vec![10; rows])),
+            Arc::new(StringArray::from(contents)),
+            Arc::new(embeddings),
+            Arc::new(Int32Array::from(vec![5; rows])),
+            Arc::new(StringArray::from(vec!["o200k_base"; rows])),
+            Arc::new(StringArray::from(vec!["1"; rows])),
+            Arc::new(StringArray::from(vec![Some("file.txt"); rows])),
+            Arc::new(StringArray::from(vec![None::<&str>; rows])),
+            Arc::new(Int32Array::from(vec![None::<i32>; rows])),
+            Arc::new(Int32Array::from(vec![None::<i32>; rows])),
+            Arc::new(StringArray::from(vec![Some("hash"); rows])),
+            Arc::new(StringArray::from(vec![Some("1"); rows])),
+            Arc::new(StringArray::from(vec![Some("voyage"); rows])),
+            Arc::new(Int64Array::from(vec![Some(1_700_000_000_i64); rows])),
+            Arc::new(StringArray::from(vec![Some("text/plain"); rows])),
+        ],
+    )
+    .unwrap()
+}
+
+/// A store with a 19-column `nodes` of documents `0..docs` in five fragments, with documents 7 and
+/// 20 deleted so the fragments carry deletion vectors, like the reconciled eval store.
+async fn legacy_store(name: &str, docs: usize) -> (String, lancedb::Table) {
+    let path = store_path(name);
+    drop(DatabaseManager::initialize(&path).await.unwrap());
+    let connection = lancedb::connect(&path).execute().await.unwrap();
+    connection.drop_table("nodes", &[]).await.unwrap();
+    let table = connection
+        .create_empty_table("nodes", legacy_nodes_schema_v19())
+        .execute()
+        .await
+        .unwrap();
+    let step = docs / 5 + 1;
+    let mut start = 0;
+    while start < docs {
+        let end = (start + step).min(docs);
+        table
+            .add(nodes_batch_v19(start..end))
+            .execute()
+            .await
+            .unwrap();
+        start = end;
+    }
+    if docs > 20 {
+        for doc in [7, 20] {
+            table
+                .delete(&format!("document_id = '{}'", fixture_doc(doc)))
+                .await
+                .unwrap();
+        }
+    }
+    (path, table)
+}
+
+/// A sidecar naming every fixture document in `docs`.
+fn sidecar_for(docs: impl IntoIterator<Item = usize>) -> Sidecar {
+    Sidecar::from_rows(
+        docs.into_iter()
+            .map(|doc| (fixture_doc(doc), fixture_row(doc)))
+            .collect(),
+    )
+    .unwrap()
+}
+
+/// The live fixture documents: everything but the two deleted ones.
+fn live_docs(docs: usize) -> Vec<usize> {
+    (0..docs).filter(|doc| *doc != 7 && *doc != 20).collect()
+}
+
+async fn scan_strings(table: &lancedb::Table, column: &str) -> Vec<Option<String>> {
+    let batches: Vec<RecordBatch> = table
+        .query()
+        .select(Select::columns(&[column]))
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    let mut values = Vec::new();
+    for batch in &batches {
+        let array = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        values.extend(
+            (0..array.len()).map(|row| (!array.is_null(row)).then(|| array.value(row).to_owned())),
+        );
+    }
+    values
+}
+
+/// What an untouched table must still look like after a refused or restored operation.
+struct Fingerprint {
+    rows: usize,
+    chunk_ids: Vec<Option<String>>,
+    contents: Vec<Option<String>>,
+    digests: Vec<String>,
+}
+
+async fn fingerprint(table: &lancedb::Table) -> Fingerprint {
+    let mut digests = Vec::new();
+    for field in legacy_nodes_schema_v19().fields() {
+        digests.push(column_digest(table, field.name()).await.unwrap());
+    }
+    Fingerprint {
+        rows: table.count_rows(None).await.unwrap(),
+        chunk_ids: scan_strings(table, "chunk_id").await,
+        contents: scan_strings(table, "content").await,
+        digests,
+    }
+}
+
+fn assert_same_fingerprint(before: &Fingerprint, after: &Fingerprint) {
+    assert_eq!(before.rows, after.rows, "row count");
+    assert_eq!(before.chunk_ids, after.chunk_ids, "chunk ids in scan order");
+    assert_eq!(before.contents, after.contents, "contents in scan order");
+    assert_eq!(before.digests, after.digests, "all 19 column digests");
+}
+
+fn nodes_dir(path: &str) -> std::path::PathBuf {
+    std::path::Path::new(path).join("nodes.lance")
+}
+
+#[tokio::test]
+async fn one_call_adds_one_version_and_changes_nothing_but_the_new_columns() {
+    let (path, table) = legacy_store("backfill-main", 40).await;
+    let covered: Vec<usize> = live_docs(40).into_iter().filter(|doc| *doc != 39).collect();
+    let sidecar = sidecar_for(covered.clone());
+
+    let before = fingerprint(&table).await;
+    let version_before = table.version().await.unwrap();
+    let files_before = data_file_hashes(&nodes_dir(&path)).unwrap();
+    assert_eq!(table.list_indices().await.unwrap().len(), 0);
+    assert!(files_before.len() >= 5, "five appended fragments");
+
+    let outcome = backfill_nodes_metadata(&table, &sidecar).await.unwrap();
+
+    assert_eq!(outcome.version_before, version_before);
+    assert_eq!(
+        outcome.version_after,
+        version_before + 1,
+        "exactly one new version"
+    );
+    assert_eq!(table.version().await.unwrap(), outcome.version_after);
+    assert_eq!(
+        table.schema().await.unwrap().fields(),
+        nodes_schema().fields(),
+        "the strict 22-column schema"
+    );
+    assert_eq!(table.list_indices().await.unwrap().len(), 0);
+    assert_same_fingerprint(&before, &fingerprint(&table).await);
+    let files_after = data_file_hashes(&nodes_dir(&path)).unwrap();
+    assert!(
+        files_before
+            .iter()
+            .all(|(name, meta)| files_after.get(name) == Some(meta)),
+        "old data files are byte-identical"
+    );
+    assert!(
+        files_after.len() > files_before.len(),
+        "new column files were added"
+    );
+
+    let documents = scan_strings(&table, "document_id").await;
+    let titles = scan_strings(&table, "doc_title").await;
+    let sources = scan_strings(&table, "source").await;
+    let dates = scan_strings(&table, "published_date").await;
+    let mut uncovered_rows = 0;
+    for row in 0..documents.len() {
+        let document = documents[row].as_deref().unwrap();
+        let found = (
+            titles[row].clone(),
+            sources[row].clone(),
+            dates[row].clone(),
+        );
+        match sidecar.get(document) {
+            Some(expected) => assert_eq!(
+                found,
+                (
+                    expected.doc_title.clone(),
+                    expected.source.clone(),
+                    expected.published_date.clone()
+                ),
+                "values per document id"
+            ),
+            None => {
+                uncovered_rows += 1;
+                assert_eq!(found, (None, None, None), "uncovered rows read null");
+            }
+        }
+    }
+    assert!(uncovered_rows > 0);
+    assert_eq!(outcome.uncovered_document_ids, vec![fixture_doc(39)]);
+    assert_eq!(outcome.documents, covered.len() + 1);
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_reader_one_row_short_or_long_is_refused_and_leaves_the_table_unchanged() {
+    let (path, table) = legacy_store("backfill-bad-reader", 30).await;
+    let sidecar = sidecar_for(live_docs(30));
+    let ids: Vec<String> = scan_strings(&table, "document_id")
+        .await
+        .into_iter()
+        .map(Option::unwrap)
+        .collect();
+    let before = fingerprint(&table).await;
+    let version_before = table.version().await.unwrap();
+    let files_before = data_file_hashes(&nodes_dir(&path)).unwrap();
+
+    let mut longer = ids.clone();
+    longer.push(ids[0].clone());
+    for (label, reader_ids) in [("short", ids[..ids.len() - 1].to_vec()), ("long", longer)] {
+        let error = backfill_with(&table, &sidecar, &nodes_schema(), Some(reader_ids))
+            .await
+            .expect_err(label);
+        assert!(
+            error.contains("adding the metadata columns failed"),
+            "{label}: {error}"
+        );
+        assert_eq!(
+            table.version().await.unwrap(),
+            version_before,
+            "{label}: version"
+        );
+        assert_eq!(
+            data_file_hashes(&nodes_dir(&path)).unwrap(),
+            files_before,
+            "{label}: files"
+        );
+        assert_eq!(
+            table.schema().await.unwrap().fields(),
+            legacy_nodes_schema_v19().fields(),
+            "{label}: schema"
+        );
+        assert_same_fingerprint(&before, &fingerprint(&table).await);
+    }
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_second_run_fails_loudly_with_already_exists() {
+    let (path, table) = legacy_store("backfill-twice", 25).await;
+    let sidecar = sidecar_for(live_docs(25));
+    backfill_nodes_metadata(&table, &sidecar).await.unwrap();
+    let version = table.version().await.unwrap();
+
+    let error = backfill_nodes_metadata(&table, &sidecar)
+        .await
+        .expect_err("the columns exist");
+    assert!(error.contains("already exists"), "{error}");
+    assert_eq!(
+        table.version().await.unwrap(),
+        version,
+        "nothing was written"
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_sidecar_id_absent_from_nodes_is_refused_before_any_write() {
+    let (path, table) = legacy_store("backfill-absent-id", 25).await;
+    let mut docs = live_docs(25);
+    docs.push(999);
+    let sidecar = sidecar_for(docs);
+    let version = table.version().await.unwrap();
+    let files = data_file_hashes(&nodes_dir(&path)).unwrap();
+
+    let error = backfill_nodes_metadata(&table, &sidecar)
+        .await
+        .expect_err("a sidecar id that nodes lacks is refused");
+    assert!(error.contains("absent from nodes"), "{error}");
+    assert!(error.contains(&fixture_doc(999)), "{error}");
+    assert_eq!(table.version().await.unwrap(), version);
+    assert_eq!(data_file_hashes(&nodes_dir(&path)).unwrap(), files);
+    assert_eq!(
+        table.schema().await.unwrap().fields(),
+        legacy_nodes_schema_v19().fields()
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn a_post_state_schema_mismatch_restores_the_prior_version() {
+    let (path, table) = legacy_store("backfill-restore", 30).await;
+    let sidecar = sidecar_for(live_docs(30));
+    let before = fingerprint(&table).await;
+    let version_before = table.version().await.unwrap();
+
+    // An expected schema that differs from what Lance produces: the last column is renamed.
+    let mut fields: Vec<arrow_schema::Field> = nodes_schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect();
+    let last = fields.len() - 1;
+    fields[last] = arrow_schema::Field::new("published", DataType::Utf8, true);
+    let mismatched = Arc::new(arrow_schema::Schema::new(fields));
+
+    let error = backfill_with(&table, &sidecar, &mismatched, None)
+        .await
+        .expect_err("the post-state does not match");
+    assert!(error.contains("restored version"), "{error}");
+    assert_eq!(
+        table.schema().await.unwrap().fields(),
+        legacy_nodes_schema_v19().fields(),
+        "the 19-column schema is back"
+    );
+    assert_eq!(
+        table.version().await.unwrap(),
+        version_before + 2,
+        "the backfill and the restore each added a version (C10)"
+    );
+    assert_same_fingerprint(&before, &fingerprint(&table).await);
+
+    // The restored table is a usable legacy table: the real backfill still applies.
+    backfill_nodes_metadata(&table, &sidecar).await.unwrap();
+    assert_eq!(
+        table.schema().await.unwrap().fields(),
+        nodes_schema().fields()
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn an_empty_legacy_table_backfills_to_the_22_column_schema() {
+    let (path, table) = legacy_store("backfill-empty", 0).await;
+    let outcome = backfill_nodes_metadata(&table, &Sidecar::empty())
+        .await
+        .unwrap();
+    assert_eq!(outcome.rows, 0);
+    assert_eq!(
+        table.schema().await.unwrap().fields(),
+        nodes_schema().fields()
+    );
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn backfilled_values_equal_what_a_fresh_ingest_writes() {
+    // Store A: the document ingested fresh with the keys (22 columns).
+    let path_a = store_path("equal-fresh-a");
+    let fresh = DatabaseManager::initialize(&path_a).await.unwrap();
+    ingest(&fresh, DOC, &full_metadata()).await;
+    let nodes_a = fresh.nodes_table().await.unwrap();
+
+    // Store B: the same document's rows in a 19-column store, backfilled from its sidecar row.
+    let path_b = store_path("equal-fresh-b");
+    drop(DatabaseManager::initialize(&path_b).await.unwrap());
+    let connection = lancedb::connect(&path_b).execute().await.unwrap();
+    connection.drop_table("nodes", &[]).await.unwrap();
+    let nodes_b = connection
+        .create_empty_table("nodes", legacy_nodes_schema_v19())
+        .execute()
+        .await
+        .unwrap();
+    let batches: Vec<RecordBatch> = nodes_a
+        .query()
+        .execute()
+        .await
+        .unwrap()
+        .try_collect()
+        .await
+        .unwrap();
+    for batch in &batches {
+        let legacy_columns: Vec<usize> = (0..19).collect();
+        let legacy = batch.project(&legacy_columns).unwrap();
+        nodes_b
+            .add(
+                RecordBatch::try_new(legacy_nodes_schema_v19(), legacy.columns().to_vec()).unwrap(),
+            )
+            .execute()
+            .await
+            .unwrap();
+    }
+    let sidecar = Sidecar::parse(&format!(
+        "{{\"schema\": 1, \"rows\": {{\"{DOC}\": {{\"doc_title\": {}, \"source\": {}, \"published_date\": {}}}}}}}",
+        serde_json::to_string(full_metadata()[0].1).unwrap(),
+        serde_json::to_string(full_metadata()[1].1).unwrap(),
+        serde_json::to_string(full_metadata()[2].1).unwrap(),
+    ))
+    .unwrap();
+    backfill_nodes_metadata(&nodes_b, &sidecar).await.unwrap();
+
+    let columns = ["chunk_id", "doc_title", "source", "published_date"];
+    let read = |table: lancedb::Table| async move {
+        let mut by_column = Vec::new();
+        for column in columns {
+            by_column.push(scan_strings(&table, column).await);
+        }
+        let mut rows: Vec<Vec<Option<String>>> = (0..by_column[0].len())
+            .map(|row| by_column.iter().map(|column| column[row].clone()).collect())
+            .collect();
+        rows.sort();
+        rows
+    };
+    let rows_a = read(nodes_a).await;
+    let rows_b = read(nodes_b).await;
+    assert_eq!(rows_a.len(), 1);
+    assert_eq!(rows_a, rows_b, "backfilled equals fresh, row by row");
+    assert_eq!(rows_b[0][1].as_deref(), Some(full_metadata()[0].1));
+    let _ = std::fs::remove_dir_all(path_a);
+    let _ = std::fs::remove_dir_all(path_b);
+}
+
+#[test]
+fn the_sidecar_parses_the_documented_shape_and_refuses_everything_else() {
+    let doc = fixture_doc(3);
+    let good = format!(
+        "{{\"schema\": 1, \"rows\": {{\"{doc}\": {{\"doc_title\": \"T\", \"source\": null, \"published_date\": \"2023-10-07\"}}}}}}"
+    );
+    let sidecar = Sidecar::parse(&good).unwrap();
+    assert_eq!(sidecar.len(), 1);
+    let row = sidecar.get(&doc).unwrap();
+    assert_eq!(row.doc_title.as_deref(), Some("T"));
+    assert_eq!(row.source, None);
+    assert_eq!(row.published_date.as_deref(), Some("2023-10-07"));
+
+    let empty_string = format!(
+        "{{\"schema\": 1, \"rows\": {{\"{doc}\": {{\"doc_title\": \"\", \"source\": \"S\"}}}}}}"
+    );
+    let row = Sidecar::parse(&empty_string).unwrap();
+    let row = row.get(&doc).unwrap();
+    assert_eq!(
+        row.doc_title, None,
+        "an empty string is stored as absent, as ingest stores it"
+    );
+    assert_eq!(row.published_date, None, "a missing field is absent");
+
+    let refused = [
+        ("schema 2", "{\"schema\": 2, \"rows\": {}}".to_owned()),
+        ("not json", "rows".to_owned()),
+        ("an unknown top-level field", "{\"schema\": 1, \"rows\": {}, \"extra\": 1}".to_owned()),
+        ("a non-UUID key", "{\"schema\": 1, \"rows\": {\"doc-1\": {\"doc_title\": \"T\"}}}".to_owned()),
+        (
+            "a UUID that is not version 4",
+            "{\"schema\": 1, \"rows\": {\"00000000-0000-1000-8000-000000000001\": {\"doc_title\": \"T\"}}}".to_owned(),
+        ),
+        ("an impossible date", format!("{{\"schema\": 1, \"rows\": {{\"{doc}\": {{\"published_date\": \"2023-02-30\"}}}}}}")),
+        (
+            "a title over the limit",
+            format!("{{\"schema\": 1, \"rows\": {{\"{doc}\": {{\"doc_title\": \"{}\"}}}}}}", "t".repeat(MAX_DOC_TITLE_CHARS + 1)),
+        ),
+        ("an unknown row field", format!("{{\"schema\": 1, \"rows\": {{\"{doc}\": {{\"title\": \"T\"}}}}}}")),
+    ];
+    for (label, text) in refused {
+        assert!(Sidecar::parse(&text).is_err(), "{label} must be refused");
+    }
+    assert!(Sidecar::empty().is_empty());
+}
+
+#[test]
+fn the_schema_classifier_names_the_legacy_current_and_other_shapes() {
+    assert_eq!(
+        classify_nodes_schema(&legacy_nodes_schema_v19()),
+        NodesSchemaState::Legacy19
+    );
+    assert_eq!(
+        classify_nodes_schema(&nodes_schema()),
+        NodesSchemaState::Current22
+    );
+    let mut fields: Vec<arrow_schema::Field> = nodes_schema()
+        .fields()
+        .iter()
+        .map(|field| field.as_ref().clone())
+        .collect();
+    fields.pop();
+    assert_eq!(
+        classify_nodes_schema(&arrow_schema::Schema::new(fields)),
+        NodesSchemaState::Other
+    );
+}
+
+#[tokio::test]
+async fn verification_on_a_copy_reports_the_five_assertions_true_for_a_fully_covered_store() {
+    let (path, table) = legacy_store("verify-copy", 30).await;
+    drop(table);
+    let sidecar = sidecar_for(live_docs(30));
+
+    let report = verify_backfill_on_copy(&path, &sidecar).await.unwrap();
+
+    assert!(report.all_passed(), "{report:?}");
+    assert_eq!(report.column_digests_equal, 19);
+    assert!(report.column_digest_mismatches.is_empty());
+    assert!(report.old_data_files_byte_identical);
+    assert_eq!(report.rows_before, report.rows_after);
+    assert_eq!((report.indices_before, report.indices_after), (0, 0));
+    assert_eq!(report.version_after, report.version_before + 1);
+    assert_eq!(report.value_mismatches, 0);
+    assert!(report.uncovered_document_ids.is_empty());
+    assert!(
+        report.second_run_error.contains("already exists"),
+        "{}",
+        report.second_run_error
+    );
+    assert!(report
+        .short_reader_error
+        .contains("adding the metadata columns failed"));
+    assert!(report
+        .long_reader_error
+        .contains("adding the metadata columns failed"));
+    assert!(report.bad_readers_left_state_unchanged);
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn verification_reports_an_uncovered_document_and_still_proves_its_rows_null() {
+    let (path, table) = legacy_store("verify-uncovered", 30).await;
+    drop(table);
+    let covered: Vec<usize> = live_docs(30).into_iter().filter(|doc| *doc != 29).collect();
+
+    let report = verify_backfill_on_copy(&path, &sidecar_for(covered))
+        .await
+        .unwrap();
+
+    assert_eq!(report.uncovered_document_ids, vec![fixture_doc(29)]);
+    assert!(report.uncovered_rows_null);
+    assert!(
+        !report.assertions.scan_stable_and_sidecar_covered,
+        "assertion 4 needs the sidecar to cover every document"
+    );
+    assert!(report.assertions.uncovered_null_and_second_run_refused);
+    assert!(report.assertions.schema_strict_22_columns);
+    assert!(!report.all_passed());
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[tokio::test]
+async fn verification_refuses_a_copy_that_is_not_a_legacy_store() {
+    let path = store_path("verify-current");
+    drop(DatabaseManager::initialize(&path).await.unwrap());
+    let error = verify_backfill_on_copy(&path, &Sidecar::empty())
+        .await
+        .expect_err("a 22-column copy cannot be verified");
+    assert!(error.contains("already exists"), "{error}");
+    let _ = std::fs::remove_dir_all(path);
+}
+
+#[test]
+fn the_backfill_source_holds_the_reader_mechanism_and_no_forbidden_call() {
+    let source = include_str!("../db/backfill.rs");
+    assert!(source.contains("NewColumnTransform::Reader"));
+    assert!(
+        !source.contains(concat!("CA", "SE")),
+        "no conditional SQL expression"
+    );
+    for forbidden in [
+        concat!("extract_and_persist", "_entities"),
+        concat!(".opti", "mize("),
+        concat!("cleanup_old", "_versions"),
+        concat!("compact", "_files"),
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "backfill.rs must not call {forbidden}"
+        );
+    }
 }
