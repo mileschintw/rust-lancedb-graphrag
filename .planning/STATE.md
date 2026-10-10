@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 1
 status: executing
-stopped_at: "06.3.6 gap plan 23 executing (/gsd-execute-phase 06.3.6 --gaps-only, sequential on main)"
+stopped_at: "06.3.6 gap plan 23 complete (post-merge gate green); code review and re-verification next"
 last_updated: "2026-10-10T22:36:02.646Z"
 last_activity: 2026-10-10
 state_head: 8e2730f7bcbdfdc4e5fb9768ff70744992ea73ee
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
 current_phase: 06.3.6
-last_activity_desc: "06.3.6 gap plan 23 execution started"
+last_activity_desc: "06.3.6 gap plan 23 executed (D-194, D-197)"
 ---
 
 # Project State
@@ -36,6 +36,7 @@ Total Plans in Phase: 23
 - **2026-10-10: 06.3.6 wave 15 (20)** — held-out drive 2457/2457 (4 uncited-answer errors), lance-703, all Sail, no resume; spend est $1.927/$5.00, settled $0.522; rerank 702 calls 2 degraded (429); GRAPH_UNAVAILABLE on 447 graph-arm records.
 - **2026-10-10: 06.3.6 wave 16 (21)** — held-out readings: rerank +0.081 (Holm p .003), metadata +0.062 (p .008) significant; graph-v2, answer-format off; SC-2 MISS on rerank arms (provider latency drift) disclosed per D-192; rerank default-on per D-193.
 - **2026-10-10: 06.3.6 wave 17 (22)** — D-157 flip 3d765ea3: [engine.levers] defaults = [rerank, evidence_metadata]; closeout 5bb30939; open items: eval no-lever arms now get defaults, empty-metadata store fails startup; cargo 927.
+- **2026-10-10: 06.3.6 gap execution** — plan 23 complete (e42a5c04..01fa9060): notice code 24 DEFAULT_LEVER_UNAVAILABLE, startup warns before workers/replay, coverage and rebuild warnings; dev store ./data/lancedb migrated once (nodes v2->v3, staging v1->v2 by D-168 at the one test-key boot, replayed_jobs=0). Post-merge gate green (engine 937, gateway 124 with -count=1, eval 2175). Also fixes the gateway cross-runtime tests broken since plan 22 (masked by the Go test cache at the wave-17 gate).
 - **2026-10-10: 06.3.6 gap planning** — `/gsd-plan-phase 06.3.6 --gaps`: plan 23 (wave 18, gap_closure) closes the UAT gap. Configured defaults are filtered per request with a NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE (24) notice; explicit levers stay fail-closed. Startup warns before the workers and the replay. The legacy ./data/lancedb is migrated by `--migrate-only` (D-197, owner). Checker: iteration 1 found 1 warning (size), iteration 2 found 0 blockers and 0 warnings; decisions 71/71.
 - **2026-10-10: 06.3.6 gates** — review 0C/17W/22I (c73dbe3c), verification 8/8 human_needed, UAT 3 pass + 1 gap (D-194: missing default-lever resource degrades with notice); D-195 control arms carried forward; D-196 SC-3 code-level.
 - **2026-10-09: 06.3.6 wave 9 COMPLETE.** 14: THE schema commit `e620a0b2` (nodes 22 columns; the 19-column eval store now fails closed until plan 15 Task 4's backfill), DocMetaMap scan at startup and rebuild, `backfill_evidence_metadata` bin with COPY verification. Gate green: cargo 908, go 124, pytest 2166.
