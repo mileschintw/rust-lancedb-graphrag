@@ -996,11 +996,45 @@ impl EffectiveRagSettings {
         if !self.top_p.is_finite() || self.top_p <= 0.0 || self.top_p > 1.0 {
             return Err("invalid top_p: must be finite and between 0.0 and 1.0".into());
         }
+        validate_generation_provider_order(&self.generation_provider_order)?;
         if self.index_generation.trim().is_empty() {
             return Err("invalid index_generation: must not be empty".into());
         }
         Ok(())
     }
+}
+
+/// Longest provider slug `generation_provider_order` accepts, in characters (D-191).
+const MAX_PROVIDER_SLUG_CHARS: usize = 64;
+
+/// Refuses a generation provider order whose entries are blank, hold whitespace or control
+/// characters, run past [`MAX_PROVIDER_SLUG_CHARS`] or repeat (D-191).
+///
+/// An empty list is valid and means no provider pin.
+fn validate_generation_provider_order(order: &[String]) -> Result<(), String> {
+    for (index, slug) in order.iter().enumerate() {
+        if slug.is_empty() {
+            return Err(format!(
+                "invalid generation_provider_order[{index}]: must not be empty"
+            ));
+        }
+        if slug.chars().any(|c| c.is_whitespace() || c.is_control()) {
+            return Err(format!(
+                "invalid generation_provider_order[{index}]: must not contain whitespace or control characters"
+            ));
+        }
+        if slug.chars().count() > MAX_PROVIDER_SLUG_CHARS {
+            return Err(format!(
+                "invalid generation_provider_order[{index}]: must be at most {MAX_PROVIDER_SLUG_CHARS} characters"
+            ));
+        }
+        if order[..index].contains(slug) {
+            return Err(format!(
+                "invalid generation_provider_order[{index}]: duplicates an earlier entry"
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl Default for EffectiveRagSettings {

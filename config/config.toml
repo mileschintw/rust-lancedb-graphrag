@@ -147,3 +147,6 @@ generation_timeout_secs = 30
 temperature = 0.0
 top_p = 1.0
 max_output_tokens = 2048
+# D-191: generation is pinned to Sail Research with fallbacks off, the 06.3.5 reference provider (amends D-96).
+# An empty list sends no pin. Not environment-overridable; rerank keeps its own D-131 body.
+generation_provider_order = ["sail-research"]

@@ -169,7 +169,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             effective_settings.temperature,
             effective_settings.top_p,
             effective_settings.grounding_limits_arc(),
-        )?;
+        )?
+        .with_provider_order(effective_settings.generation_provider_order.clone());
     let generator: Arc<dyn generation::Generator> = Arc::new(
         generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
     );

@@ -646,7 +646,7 @@ impl OpenRouterGenerator {
                     schema: schema_json,
                 },
             },
-            provider: ProviderPreferences::for_order(&[]),
+            provider: ProviderPreferences::for_order(self.config.provider_order()),
         };
 
         let send_fut = self
@@ -993,11 +993,10 @@ struct ProviderPreferences {
 impl ProviderPreferences {
     /// The preferences for a chat request pinned to `order`, unpinned when `order` is empty.
     fn for_order(order: &[String]) -> Self {
-        let _ = order;
         Self {
             require_parameters: true,
-            order: Vec::new(),
-            allow_fallbacks: None,
+            order: order.to_vec(),
+            allow_fallbacks: (!order.is_empty()).then_some(false),
         }
     }
 }

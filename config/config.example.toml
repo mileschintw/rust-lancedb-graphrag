@@ -184,3 +184,7 @@ temperature = 0.0
 top_p = 1.0
 # unit=tokens; range=>0
 max_output_tokens = 2048
+# D-191: generation is pinned to Sail Research with fallbacks off, the 06.3.5 reference provider (amends D-96).
+# An empty list sends no pin. Not environment-overridable; rerank keeps its own D-131 body.
+# unit=provider slugs; range=empty, or unique entries of 1..=64 chars without whitespace
+generation_provider_order = ["sail-research"]
