@@ -1272,3 +1272,216 @@ def test_d198_measure_one_sends_the_graph_state_and_the_opt_out_explicitly():
         assert "levers" not in kwargs
         assert "retrieval_mode" not in kwargs
         assert "include_pre_truncation_ranking" not in kwargs
+
+
+# --- 06.4 D-211: the measure split-role guard -----------------------------------------
+
+
+def _d211_pass(corpus_name: str, run_dir: Path, **kwargs):
+    """One zero-cost measurement pass into `run_dir` with every paid seam stubbed."""
+
+    def stub_measure_one(client, **kw):
+        return MeasurementRecord(
+            corpus=corpus_name,
+            question_id=kw["question"].question_id,
+            graph_arm=kw["arm"],
+            outcome="success",
+            ordinal=kw["ordinal"],
+            segment=kw["segment"],
+            warm_up=kw["warm_up"],
+        )
+
+    with (
+        patch("lancet_eval.measure.measure_one", stub_measure_one),
+        patch("lancet_eval.measure.load_corpus") as mock_lc,
+        patch(
+            "lancet_eval.measure.read_effective_workflow_config",
+            return_value=dict(_CAP_WINDOW_CFG),
+        ),
+    ):
+        mock_lc.return_value = MagicMock(questions=_cap_window_questions(2))
+        return run_measurement_pass(
+            corpus_name=corpus_name,
+            sample_size_questions=2,
+            warm_up_count=0,
+            stage_spend_cap=5.0,
+            output_dir=run_dir,
+            client=MagicMock(),
+            check_allowance=False,
+            **kwargs,
+        )
+
+
+def test_d211_heldout_corpus_is_refused_before_any_request(tmp_path):
+    run_dir = tmp_path / "pass"
+    client = MagicMock()
+    with (
+        patch("lancet_eval.measure.measure_one") as measure_one_mock,
+        patch("lancet_eval.measure.run_query") as run_query_mock,
+        pytest.raises(ValueError, match="refusing to measure") as excinfo,
+    ):
+        run_measurement_pass(
+            corpus_name="multihop_rag_levers_heldout",
+            sample_size_questions=2,
+            stage_spend_cap=5.0,
+            output_dir=run_dir,
+            client=client,
+            check_allowance=False,
+        )
+
+    message = str(excinfo.value)
+    assert "multihop_rag_levers_heldout" in message
+    assert "heldout" in message
+    assert "--preregistered-override" in message
+    measure_one_mock.assert_not_called()
+    run_query_mock.assert_not_called()
+    assert client.method_calls == []
+    assert not run_dir.exists()
+
+
+def test_d211_roleless_corpus_is_refused(tmp_path):
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="refusing to measure") as excinfo:
+        run_measurement_pass(
+            corpus_name="multihop_rag",
+            sample_size_questions=2,
+            stage_spend_cap=5.0,
+            output_dir=run_dir,
+            client=MagicMock(),
+            check_allowance=False,
+        )
+
+    assert "multihop_rag" in str(excinfo.value)
+    assert "no committed split role" in str(excinfo.value)
+    assert not run_dir.exists()
+
+
+def test_d211_dev_corpus_proceeds(tmp_path):
+    run_dir, summary = _d211_pass("multihop_rag_levers_dev", tmp_path / "pass")
+
+    assert summary["total_records_emitted"] == 4
+    assert "preregistered_override" not in summary
+    assert (run_dir / "journal.jsonl").is_file()
+
+
+def test_d211_committed_override_proceeds(tmp_path):
+    run_dir, summary = _d211_pass(
+        "multihop_rag_levers_heldout",
+        tmp_path / "pass",
+        preregistered_override="PREREGISTRATION_06_3_6",
+    )
+
+    assert summary["total_records_emitted"] == 4
+    assert summary["preregistered_override"] == "PREREGISTRATION_06_3_6"
+    recorded = json.loads((run_dir / "measurement.json").read_text(encoding="utf-8"))
+    assert recorded["preregistered_override"] == "PREREGISTRATION_06_3_6"
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        "PREREGISTRATION_NOT_A_CONSTANT",
+        "COMMITTED_THRESHOLDS",
+        "not a name",
+        "PREREGISTRATION_UNCOMMITTED_FIXTURE",
+    ],
+)
+def test_d211_bogus_override_is_refused(tmp_path, monkeypatch, token):
+    from lancet_eval import thresholds
+
+    # A PREREGISTRATION_ name that exists but was never committed to thresholds.py.
+    monkeypatch.setattr(
+        thresholds,
+        "PREREGISTRATION_UNCOMMITTED_FIXTURE",
+        thresholds.PREREGISTRATION_06_3_6,
+        raising=False,
+    )
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="pre-registered override") as excinfo:
+        _d211_pass(
+            "multihop_rag_levers_heldout", run_dir, preregistered_override=token
+        )
+
+    assert repr(token) in str(excinfo.value)
+    assert not run_dir.exists()
+
+
+def test_d211_a_bad_override_is_refused_even_where_none_is_needed(tmp_path):
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="pre-registered override"):
+        _d211_pass(
+            "multihop_rag_levers_dev",
+            run_dir,
+            preregistered_override="PREREGISTRATION_NOT_A_CONSTANT",
+        )
+    assert not run_dir.exists()
+
+
+def test_d211_a_bad_stage_cap_still_raises_its_own_error_first(tmp_path):
+    with pytest.raises(ValueError, match="stage_spend_cap"):
+        run_measurement_pass(
+            corpus_name="multihop_rag_levers_heldout",
+            sample_size_questions=2,
+            stage_spend_cap=0.0,
+            output_dir=tmp_path / "pass",
+            client=MagicMock(),
+            check_allowance=False,
+        )
+
+
+def test_d211_guard_returns_the_override_only_when_it_was_needed():
+    from lancet_eval.measure import _enforce_measure_split_role
+
+    assert _enforce_measure_split_role("multihop_rag_levers_dev", None) is None
+    assert _enforce_measure_split_role("multihop_rag_rehearsal", None) is None
+    assert (
+        _enforce_measure_split_role(
+            "multihop_rag_levers_dev", "PREREGISTRATION_06_3_6"
+        )
+        is None
+    )
+    assert (
+        _enforce_measure_split_role(
+            "multihop_rag_levers_heldout", "PREREGISTRATION_06_3_6"
+        )
+        == "PREREGISTRATION_06_3_6"
+    )
+    assert (
+        _enforce_measure_split_role("multihop_rag", "PREREGISTRATION_06_3_5")
+        == "PREREGISTRATION_06_3_5"
+    )
+
+
+def test_d211_measure_command_lists_and_passes_the_override_option():
+    runner = CliRunner()
+    helped = runner.invoke(app, ["measure", "--help"], env={"COLUMNS": "200"})
+    assert helped.exit_code == 0
+    assert "--preregistered-override" in helped.output
+
+    seen: dict[str, object] = {}
+
+    def fake_pass(**kwargs):
+        seen.update(kwargs)
+        return Path("run-dir"), {"total_records_emitted": 0, "spend_summary": {}}
+
+    with patch("lancet_eval.measure.run_measurement_pass", side_effect=fake_pass):
+        res = runner.invoke(
+            app,
+            [
+                "measure",
+                "--corpus",
+                "multihop_rag_levers_heldout",
+                "--stage-cap",
+                "1.0",
+                "--preregistered-override",
+                "PREREGISTRATION_06_3_6",
+            ],
+        )
+
+    assert res.exit_code == 0, res.output
+    assert seen["preregistered_override"] == "PREREGISTRATION_06_3_6"
+
+    seen.clear()
+    with patch("lancet_eval.measure.run_measurement_pass", side_effect=fake_pass):
+        runner.invoke(app, ["measure", "--stage-cap", "1.0"])
+    assert seen["preregistered_override"] is None
