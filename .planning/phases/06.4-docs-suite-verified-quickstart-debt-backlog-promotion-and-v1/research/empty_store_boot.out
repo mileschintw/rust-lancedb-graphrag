@@ -1,0 +1,10 @@
+engine pid 49296 alive? yes
+--- non-lance log lines (ANSI stripped)
+2026-10-11T02:46:10.629726Z  INFO engine: telemetry_mode telemetry_mode="otlp" endpoint=http://127.0.0.1:1
+2026-10-11T02:46:10.736455Z  INFO engine: BM25 snapshot built document_count=0 generation=lance-1 nodes_version=1 graph_entities=0 doc_meta_documents=0
+2026-10-11T02:46:10.743050Z  WARN engine: configured default lever evidence_metadata is unavailable: the corpus snapshot holds no document metadata; a request that names no lever runs without it and carries a DEFAULT_LEVER_UNAVAILABLE notice; provide the resource (for example backfill the store, or for a legacy 19-column store run `backfill_evidence_metadata --migrate-only`) or set [engine.levers]
+2026-10-11T02:46:10.744057Z  INFO engine: Staged ingestion jobs replayed replayed_jobs=0
+2026-10-11T02:46:10.786689Z  INFO engine: Prompt tokenizer ready tokenizer="cl100k_base" build_ms=42.547000000000004 sample_tokens=10
+2026-10-11T02:46:10.786727Z  INFO engine: Rust RAG Engine serving addr=127.0.0.1:50977 build_profile="release" log_filter=info,engine=debug
+2026-10-11T02:46:13.692402Z ERROR opentelemetry_sdk: name="BatchLogProcessor.ExportError" error="Operation failed: TonicLogsClient export failed with gRPC code: Unavailable: transport error: tcp connect error: tcp connect error: 無法連線，因為目標電腦拒絕連線。 (os error 10061)"
+WARNING: further OpenTelemetry export diagnostics suppressed for 300s (D-38)

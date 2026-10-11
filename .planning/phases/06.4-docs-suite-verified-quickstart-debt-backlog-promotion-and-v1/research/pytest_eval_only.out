@@ -1,0 +1,7 @@
+pytest eval/tests exit=0
+.................................                                        [100%]
+2193 passed in 321.12s (0:05:21)
+
+real	5m25.182s
+user	0m0.015s
+sys	0m0.015s

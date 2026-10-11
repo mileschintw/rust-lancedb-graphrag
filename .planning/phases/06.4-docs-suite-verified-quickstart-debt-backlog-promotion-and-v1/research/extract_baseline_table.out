@@ -1,0 +1,55 @@
+06.3.5 comparison.json  arms[i].cells.<metric>.{value,ci_lo,ci_hi,n}
+ arms[0] dense-only
+    paper_hits_at_4              value=0.7399 CI=[0.6870,0.7865] n=296
+    paper_hits_at_10             value=0.8514 CI=[0.8063,0.8874] n=296
+    paper_mrr_at_10              value=0.5620 CI=[0.5174,0.6069] n=296
+    paper_map_at_10              value=0.2745 CI=[0.2499,0.2982] n=296
+    answer_usable_p4             value=0.5811 CI=[0.5242,0.6359] n=296
+    final_answer_em              value=0.5608 CI=[0.5039,0.6162] n=296
+    coverage_at_4                value=0.3722 CI=[0.3387,0.4046] n=296
+    gold_containment             value=0.6757 CI=[0.6204,0.7265] n=296
+    abstention_rate_g            value=0.3547 CI=[0.3024,0.4108] n=296
+    null_abstention_correctness  value=0.9302 CI=[0.8139,0.9760] n=43
+ arms[1] bm25-only
+    paper_hits_at_4              value=0.5642 CI=[0.5072,0.6195] n=296
+    paper_hits_at_10             value=0.6757 CI=[0.6204,0.7265] n=296
+    paper_mrr_at_10              value=0.4564 CI=[0.4066,0.5051] n=296
+    paper_map_at_10              value=0.2138 CI=[0.1889,0.2393] n=296
+    answer_usable_p4             value=0.3919 CI=[0.3380,0.4486] n=296
+    final_answer_em              value=0.3818 CI=[0.3283,0.4383] n=296
+    coverage_at_4                value=0.2632 CI=[0.2334,0.2942] n=296
+    gold_containment             value=0.5574 CI=[0.5005,0.6129] n=296
+    abstention_rate_g            value=0.5541 CI=[0.4971,0.6096] n=296
+    null_abstention_correctness  value=0.9767 CI=[0.8794,0.9959] n=43
+ arms[2] hybrid
+    paper_hits_at_4              value=0.6892 CI=[0.6343,0.7392] n=296
+    paper_hits_at_10             value=0.8311 CI=[0.7842,0.8695] n=296
+    paper_mrr_at_10              value=0.5719 CI=[0.5235,0.6182] n=296
+    paper_map_at_10              value=0.2762 CI=[0.2505,0.3016] n=296
+    answer_usable_p4             value=0.5709 CI=[0.5140,0.6261] n=296
+    final_answer_em              value=0.5574 CI=[0.5005,0.6129] n=296
+    coverage_at_4                value=0.3578 CI=[0.3235,0.3925] n=296
+    gold_containment             value=0.6622 CI=[0.6065,0.7137] n=296
+    abstention_rate_g            value=0.3818 CI=[0.3283,0.4383] n=296
+    null_abstention_correctness  value=0.9524 CI=[0.8421,0.9868] n=42
+ arms[3] hybrid+graph
+    paper_hits_at_4              value=0.6791 CI=[0.6239,0.7297] n=296
+    paper_hits_at_10             value=0.8108 CI=[0.7623,0.8513] n=296
+    paper_mrr_at_10              value=0.5362 CI=[0.4880,0.5820] n=296
+    paper_map_at_10              value=0.2589 CI=[0.2338,0.2845] n=296
+    answer_usable_p4             value=0.5608 CI=[0.5039,0.6162] n=296
+    final_answer_em              value=0.5574 CI=[0.5005,0.6129] n=296
+    coverage_at_4                value=0.3542 CI=[0.3195,0.3899] n=296
+    gold_containment             value=0.6453 CI=[0.5892,0.6976] n=296
+    abstention_rate_g            value=0.4020 CI=[0.3478,0.4588] n=296
+    null_abstention_correctness  value=0.9535 CI=[0.8454,0.9872] n=43
+paper_reference.rows: [{'embedding': 'bge-large-en-v1.5', 'hits_at_10': 0.6718, 'hits_at_4': 0.5221, 'map_at_10': 0.3423, 'mrr_at_10': 0.4298}, {'embedding': 'voyage-02', 'hits_at_10': 0.6506, 'hits_at_4': 0.4619, 'map_at_10': 0.3143, 'mrr_at_10': 0.3934}]
+p4: {'coverage': 0.961038961038961, 'evaluable': True, 'excluded': {'bm25-only': {'other_arm_failure': 12, 'own_failure': 0, 'pairwise_join_size': 303, 'provenance': 0}, 'dense-only': {'other_arm_failure': 7, 'own_failure': 5, 'pairwise_join_size': 298, 'provenance': 0}, 'hybrid': {'other_arm_failure': 7, 'own_failure': 5, 'pairwise_join_size': None, 'provenance': 0}, 'hybrid+graph': {'other_arm_failure': 10, 'own_failure': 2, 'pairwise_join_size': 301, 'provenance': 0}}, 'floor': 0.8, 'n_heldout_g': 308, 'n_heldout_null': 43, 'n_p4': 296}
+
+06.3.5 gates-heldout.json keys: ['stage', 'arms', 'SC-1', 'SC-2', 'D-69 companion', 'not_computed', 'retry_provenance']
+ SC-1: {"dense-only": {"gate": "SC-1", "status": "PASS", "reason": "arm dense-only: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "dense-only", "n_expected": 351, "missing_units": 0}}, "bm25-only": {"gate": "SC-1", "status": "PASS", "reason": "arm bm25-only: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "bm25-only", "n_expected": 351, "missing_units": 0}}, "hybrid": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid", "n_expected": 351, "missing_units": 0}}, "hybrid+graph": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+graph: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+graph", "n_expected": 351, "missing_units": 0}}, "pooled": {"gate": "SC-1", "status": "PASS", "reason": "header partial matches completeness_comparison() and report.json state is consistent", "value": null, "ci": null, "n": 1404, "detail": {"header_partial": false, "expected_partial": false, "journal_complete": true, "missing_units": 0.0, "report_json_exists": true, "retry_provenance": "header marker: gate_stage=heldout, max_retries=0"}}}
+ SC-2: {"dense-only": {"gate": "SC-2", "status": "MISS", "reason": "arm dense-only: timeout is a dominant error class (tied or plurality): {'timeout': 4, 'other': 1}", "value": null, "ci": null, "n": 351, "detail": {"arm": "dense-only", "class_counts": {"timeout": 4.0, "other": 1.0}, "dominant_classes": ["timeout"], "timeout_dominant": true, "sc2_timeout_dominance_rule": "plurality_tie_is_dominant", "retried_records": 0.0, "flatness_reason": "flat", "flatness_n": 351, "flatness_trend_available": true, "flatness_window_available": true, "flatness_decay_present": false, "flatness_slope_ms_per_query": 0.0, "flatness_window_delta_ms": 3.0}}, "bm25-only": {"gate": "SC-2", "status": "PASS", "reason": "arm bm25-only: error mode and RetrieveHybrid flatness both pass", "value": null, "ci": null, "n": 351, "detail": {"arm": "bm25-only", "class_counts": {}, "dominant_classes": [], "timeout_dominant": false, "sc2_timeout_dominance_rule": "plurality_tie_is_dominant", "retried_records": 0.0, "flatness_reason": "flat", "flatness_n": 351, "flatness_trend_available": true, "flatness_window_available": true, "flatness_decay_present": false, "flatness_slope_ms_per_query": 0.0, "flatness_window_delta_ms": -15.0}}, "hybrid": {"gate": "SC-2", "status": "MISS", "reason": "arm hybrid: timeout is a dominant error class (tied or plurality): {'timeout': 6}", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid", "class_counts": {"timeout": 6.0}, "dominant_classes": ["timeout"], "timeout_dominant": t
+
+06.3.6 gates-heldout.json keys: ['stage', 'arms', 'SC-1', 'SC-2', 'D-69 companion', 'not_computed', 'retry_provenance']
+ SC-1: {"hybrid": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid", "n_expected": 351, "missing_units": 0}}, "hybrid+graph": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+graph: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+graph", "n_expected": 351, "missing_units": 0}}, "hybrid+rerank": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+rerank: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+rerank", "n_expected": 351, "missing_units": 0}}, "hybrid+metadata": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+metadata: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+metadata", "n_expected": 351, "missing_units": 0}}, "hybrid+answer-format": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+answer-format: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+answer-format", "n_expected": 351, "missing_units": 0}}, "hybrid+graph-v2": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+graph-v2: all 351 work unit(s) recorded", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+graph-v2", "n_expected": 351, "missing_units": 0}}, "hybrid+all": {"gate": "SC-1", "status": "PASS", "reason": "arm hybrid+all: all 351 work unit(s) recorded", "value": null, "ci":
+ SC-2: {"hybrid": {"gate": "SC-2", "status": "PASS", "reason": "arm hybrid: error mode and RetrieveHybrid flatness both pass", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid", "class_counts": {}, "dominant_classes": [], "timeout_dominant": false, "sc2_timeout_dominance_rule": "plurality_tie_is_dominant", "retried_records": 0.0, "flatness_reason": "flat", "flatness_n": 351, "flatness_trend_available": true, "flatness_window_available": true, "flatness_decay_present": false, "flatness_slope_ms_per_query": 0.0, "flatness_window_delta_ms": -2.0, "sc2_timeout_rate_floor": "1/40", "sc2_timeout_count": 0.0, "sc2_timeout_material": false}}, "hybrid+graph": {"gate": "SC-2", "status": "PASS", "reason": "arm hybrid+graph: error mode and RetrieveHybrid flatness both pass", "value": null, "ci": null, "n": 351, "detail": {"arm": "hybrid+graph", "class_counts": {}, "dominant_classes": [], "timeout_dominant": false, "sc2_timeout_dominance_rule": "plurality_tie_is_dominant", "retried_records": 0.0, "flatness_reason": "flat", "flatness_n": 351, "flatness_trend_available": true, "flatness_window_available": true, "flatness_decay_present": false, "flatness_slope_ms_per_query": 0.00904977375565611, "flatness_window_delta_ms": 16.0, "sc2_timeout_rate_floor": "1/40", "sc2_timeout_count": 0.0, "sc2_timeout_material": false}}, "hybrid+rerank": {"gate": "SC-2", "status": "MISS", "reason": "arm hybrid+rerank: flatness decay_present; reported: RetrieveHybrid minus rerank.latency_ms flatness fla

@@ -1,0 +1,61 @@
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-01-PLAN.md:599:(Phase 6.4 honest-limitations section), which caps most impact ratings.
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-AI-SPEC.md:1170:**investigation trigger for 6.4 publication**, not a page. Staged `0.80` pairing is a **start
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md:57:  comparability across committed runs and forces a 6.4 docs revision.
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md:240:  2026-09-03 value becomes non-comparable and 6.4's methodology must say so.
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md:278:  decision, and direct input to 6.4's honest-limitations section. Both are nearly
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md:284:  an explicit statement in the methodology and in 6.4's docs that the old `0.010`
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-CONTEXT.md:388:  refs), plus a distilled public-facing note under `docs/` for 6.4's design
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-DISCUSSION-LOG.md:29:| Diagnostic sidecar only | Keep `report.md`'s 12-dimension contract frozen for 6.4 | *(first answer, reversed)* |
+06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md:120:### Open Items Carried into Phase 6.4
+06.3.2-eval-harness-diagnostics-scored-dimensions-and-paired-ablati/06.3.2-05-PLAN.md:90:dimension becomes non-comparable and Phase 6.4's methodology must say so. This plan is where that
+06.3.3-retrieval-latency-measurement-pass-and-timeout-budget-deriva/06.3.3-BUDGETS.md:129:Traversal is **genuinely slow**, not an engine defect: hub expansion over this graph costs on the order of **25–30 seconds** (outer
+06.3.3-retrieval-latency-measurement-pass-and-timeout-budget-deriva/06.3.3-RESEARCH.md:21:- **D-04:** If graph traversal is inherently too slow for any sane budget, raise the budget and accept slow graph queries; record lat
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/.review-diagnostics/gsd-review-cursor-fable-medium.md:161:- **MEDIUM** ??The plan should state how a *provisional* yield-floor miss (allowed to proceed unde
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/.review-diagnostics/gsd-review-cursor-fable-medium.md:166:- Add an explicit "open items for 6.4" section with the yield investigation status as a required r
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/.review-diagnostics/gsd-review-cursor-grok-high.md:207:- **LOW ??Bounded investigation is specified as prose (?hat will be examined, in what order?? with
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-06-PLAN.md:31:    - "Every wire notice code present in the proto enum but absent from Phase 6.4's fifth success criterion after the one authorised ad
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-06-PLAN.md:253:    same sentence: D-54 places that note squarely in 6.4's design-narrative and honest-limitations
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:23:    - "Every investigation this phase opened appears as a row in an `Open items for 6.4` table naming what would close it and the liter
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:33:    - ".planning/phases/06.3.4-.../06.3.4-FINDINGS.md — extended beneath 06.3.4-05's calibration section with the graph-yield disposi
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:256:    Close the file with a section headed exactly `Open items for 6.4`, written as a table with one
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:271:    <automated>D=.planning/phases/06.3.4-corrected-re-drive-calibration-and-root-cause-documentation; test -s $D/06.3.4-FINDINGS.md &a
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:272:    <fails_when>The `FINDINGS_OK` line is absent from stdout, or the command exits non-zero. Specifically: `missing stage boundaries [
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:282:    - The record closes with a section headed exactly `Open items for 6.4`, formatted as a table whose every row names the item, what 
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:316:| Extended phase record | `06.3.4-FINDINGS.md` — the graph-yield disposition and the paired-comparison disposition including the neg
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:346:- The record closes with the open investigations, what would close each, and where each conclusion will be recorded for Phase 6.4.
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:426:| **A provisional yield-floor miss allowed to proceed under 03 must be dispositioned here or explicitly opened for 6.4, or the debt is
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-PLAN.md:434:| Quote 07's dispositions by section heading so 06 cannot "summarize" a negative delta into a softer sentence (Grok, on 06). | **Handl
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-07-SUMMARY.md:21:3. **Open Items Ledger for Phase 6.4**:
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-09-PLAN.md:607:| Phase 6.4's docs, quickstart, v1 closure | Phase 6.4 (parked) | Blocked behind 06.3.4.1's unpark gates. |
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-10-PLAN.md:542:| Phase 6.4's docs, quickstart, v1 closure | Phase 6.4 (parked) | Blocked behind 06.3.4.1's unpark gates. |
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-PATTERNS.md:80:**Live use:** Phase 6.4's honest-limitations section will link to or inline this document.
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-REVIEWS.md:230:- **LOW ??Bounded investigation is specified as prose (?hat will be examined, in what order?? with no time box or artifact path.** 
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-REVIEWS.md:428:- **MEDIUM** ??The plan should state how a *provisional* yield-floor miss (allowed to proceed under 03) is dispositioned here: the yie
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-REVIEWS.md:433:- Add an explicit "open items for 6.4" section with the yield investigation status as a required row.
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-REVIEWS.md:463:5. **MEDIUM — FINDINGS.md overwrite / open-loop risk on 07.** Grok: `grep -qi calibration` cannot prove byte-for-byte calibration pr
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-STAGED-GATE.md:117:   - In production, missing the provisional yield floor triggers documentation in Phase 6.4's honest limitations; it does not fail
+06.3.4-corrected-re-drive-calibration-and-root-cause-documentation/06.3.4-STAGED-GATE.md:150:   - The bounded investigation into graph yield is formally owed before Phase 6.4 publishes results, and will be recorded in Phase
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-20-SUMMARY.md:102:See `key-decisions`. In short: the disclosures travel with the passing gates, the addendum stays a note rather than a 6.4 results
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-CONTEXT.md:66:**Out of scope (from ROADMAP, unchanged):** Phase 6.4 docs/quickstart/v1
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-CONTEXT.md:98:  entity_edges. Entities/edges shared with mapped docs must survive (entities
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RESEARCH.md:42:  entity_edges. Entities/edges shared with mapped docs must survive (entities
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RESEARCH.md:267:**Out of scope (from ROADMAP, unchanged):** Phase 6.4 docs/quickstart/v1 closure; judged or human-calibration spend; rewriting 06.3
+06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RUN-OF-RECORD.md:196:1. **Negative, non-significant paired quality deltas, and the cost.** Graph-on minus graph-off over pairs(V), n 65: coverage@4
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-04-PLAN.md:28:    - "D-141: when the selection is `none`, the selection file and the table record that the diagnosis table IS the lever-2 result, wi
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-04-PLAN.md:200:    table is the lever-2 result and why (D-141, kept for Phase 6.4's limitations). Commit the selection file alone (the
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-AI-SPEC.md:134:record (D-157). A lever that does not pay is listed in 6.4's honest-limitations section with its reading.
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-AI-SPEC.md:1048:recorded for 6.4. `hybrid+graph` (v1) still runs as a descriptive arm. The Holm families shrink to
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-CONTEXT.md:192:  - There is no `graph-v2` arm, and the reason is recorded for 6.4's limitations.
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-CONTEXT.md:541:  - **Disclosure (in the table header and Phase 6.4 limitations):** for these 8, `alias_split` cannot hold and `absent`
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-RESEARCH.md:300:- **Branch C (`none`)** has no plan of its own. Its effects are in the common plans: no `GRAPH_V2` enum value (plan 04), no `hybrid+
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-RESEARCH.md:509:| V2/V3/V4 | no | no auth, session or access-control change (local-only by design, 6.4 limitations) |
+06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/COVERAGE.md:20:| `user` (max 256) | OPT-OUT | No end-user identity exists in the local-only system (6.4 limitations); nothing to attribute |
+06.2-opentelemetry-traces-metrics-and-logs-across-go-and-rust-wit/06.2-04-PLAN.md:398:Create `.planning/phases/06.2-opentelemetry-traces-metrics-and-logs-across-go-and-rust-wit/06.2-04-SUMMARY.md`, recording the number of `
+06.2-opentelemetry-traces-metrics-and-logs-across-go-and-rust-wit/06.2-RESEARCH.md:41:- **D-32:** **Sampling is always-on, overridable** through the existing TOML+env convention. The production reasoning for ratio sampling 
+06.3-python-evaluation-harness-benchmark-corpora-and-recorded-run/06.3-RESEARCH.md:479:**Critical for Phase 6.4 cross-platform verification (D-68):**
+06-observability-evaluation-polish/06-11-PLAN.md:390:| LOW: precedence instruction increases trust in retrieved evidence | deferred | Already recorded as an accepted trade in Task 2 action and SUMMARY; Phase 6.4 limitations
+06-observability-evaluation-polish/06-11-SUMMARY.md:350:- No blockers for Phase 6.4 (docs and limitations) or plan 06-12 (bad-input matrix); the latter's `<files>` and threat model are independent of this plan's changes.
+06-observability-evaluation-polish/06-AI-SPEC.md:282:   machine"* among the alternatives-considered that 6.4's design narrative must document with what
+06-observability-evaluation-polish/06-AI-SPEC.md:1206:convention (D-32); the production reasoning for ratio sampling is documented in 6.4's observability
+06-observability-evaluation-polish/06-CONTEXT.md:216:  production reasoning for ratio sampling is documented in Phase 6.4's observability deep-dive
+06-observability-evaluation-polish/COVERAGE.md:36:  and reproduced verbatim in `06-12-SUMMARY.md` for Phase 6.4 to publish.

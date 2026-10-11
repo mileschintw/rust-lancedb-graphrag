@@ -1,0 +1,7 @@
+dimensions[name=latency_total_ms_delta__hybrid_graph]  status=ok score=-30.328947368419904 n=304
+dimensions[name=retrieve_node_ms_delta__hybrid_graph]  status=ok score=14.04276315789474 n=304
+dimensions[name=prompt_tokens_delta__hybrid_graph]  status=ok score=199.54934210526335 n=304
+dimensions[name=latency_total_ms_mean__hybrid]  status=ok score=8505.059210526315 n=304
+dimensions[name=latency_total_ms_mean__hybrid_graph]  status=ok score=8474.730263157895 n=304
+dimensions[name=retrieve_node_ms_mean__hybrid]  status=ok score=96.11842105263158 n=304
+dimensions[name=retrieve_node_ms_mean__hybrid_graph]  status=ok score=110.16118421052632 n=304

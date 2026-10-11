@@ -1,0 +1,9 @@
+wrote D:\Repos\lancet\.planning\phases\06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1\research\grafana_test.png 44974 bytes
+FAILED Error: EPERM, Permission denied: \\?\C:\Users\user3\AppData\Local\Temp\chrome-cdp-9LuB4s '\\?\C:\Users\user3\AppData\Local\Temp\chrome-cdp-9LuB4s'
+    at Object.rmSync (node:fs:1206:18)
+    at D:\Repos\lancet\.planning\phases\06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1\research\shot_grafana.cjs:40:84 {
+  errno: 1,
+  code: 'EPERM',
+  path: '\\\\?\\C:\\Users\\user3\\AppData\\Local\\Temp\\chrome-cdp-9LuB4s',
+  syscall: 'rm'
+}

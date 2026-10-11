@@ -1,0 +1,62 @@
+FILE lever-comparison.json  schema_version 1  run: {'arms': ['hybrid', 'hybrid+all', 'hybrid+answer-format', 'hybrid+graph', 'hybrid+graph-v2', 'hybrid+metadata', 'hybrid+rerank'], 'corpus': 'multihop_rag_levers_heldout', 'index_generation': 'lance-703', 'journal_created_at': 1791628857.8191934, 'judged': False, 'preregistration_token': 'PREREGISTRATION_06_3_6', 'reference_arm': 'hybrid', 'run': '2026-10-10-levers-heldout-multihop_rag_levers_heldout'}
+
+families[0] primary=answer_usable role=decisional m=4 alpha=0.05
+  families[0].comparisons[0] arm=hybrid+rerank ref=hybrid n_pairs=308 n_pos=39 n_neg=14 mean_arm=0.6526 mean_ref=0.5714 delta=0.081169 CI=[0.035714,0.126623] (unadjusted, estimation only) raw_p=0.000802331 adj_p=0.00320932 rejected=True decision=significant coverage=1.0
+  families[0].comparisons[1] arm=hybrid+graph-v2 ref=hybrid n_pairs=308 n_pos=16 n_neg=22 mean_arm=0.5519 mean_ref=0.5714 delta=-0.019481 CI=[-0.058442,0.019481] (unadjusted, estimation only) raw_p=0.417692 adj_p=0.417692 rejected=False decision=not significant coverage=1.0
+  families[0].comparisons[2] arm=hybrid+metadata ref=hybrid n_pairs=306 n_pos=28 n_neg=9 mean_arm=0.6340 mean_ref=0.5719 delta=0.062092 CI=[0.026144,0.101307] (unadjusted, estimation only) raw_p=0.00256321 adj_p=0.00768962 rejected=True decision=significant coverage=0.9935064935064936
+  families[0].comparisons[3] arm=hybrid+answer-format ref=hybrid n_pairs=307 n_pos=12 n_neg=25 mean_arm=0.5309 mean_ref=0.5733 delta=-0.042345 CI=[-0.081433,-0.003257] (unadjusted, estimation only) raw_p=0.047031 adj_p=0.0940621 rejected=False decision=not significant coverage=0.9967532467532467
+
+families[1] primary=paper_hits_at_4 role=supporting m=2 alpha=0.05
+  families[1].comparisons[0] arm=hybrid+rerank ref=hybrid n_pairs=308 n_pos=58 n_neg=10 mean_arm=0.8539 mean_ref=0.6981 delta=0.155844 CI=[0.107143,0.204545] (unadjusted, estimation only) raw_p=2.36163e-09 adj_p=4.72325e-09 rejected=True decision=significant coverage=1.0
+  families[1].comparisons[1] arm=hybrid+graph-v2 ref=hybrid n_pairs=308 n_pos=6 n_neg=10 mean_arm=0.6851 mean_ref=0.6981 delta=-0.012987 CI=[-0.038961,0.012987] (unadjusted, estimation only) raw_p=0.454498 adj_p=0.454498 rejected=False decision=not significant coverage=1.0
+
+default_decisions
+  default_decisions[0] lever=hybrid+rerank decision='owner disposition: SC-1/SC-2 not PASS (disclosed, never mechanical)' delta=0.081169 answer_usable_decision=significant hits_at_4_support=significant gate_reads={'hybrid SC-1': 'PASS', 'hybrid SC-2': 'PASS', 'hybrid+rerank SC-1': 'PASS', 'hybrid+rerank SC-2': 'MISS'} reasons=['hybrid+rerank SC-2 reads MISS']
+  default_decisions[1] lever=hybrid+graph-v2 decision='stays off: not significant' delta=-0.019481 answer_usable_decision=not significant hits_at_4_support=not significant gate_reads={'hybrid SC-1': 'PASS', 'hybrid SC-2': 'PASS', 'hybrid+graph-v2 SC-1': 'PASS', 'hybrid+graph-v2 SC-2': 'PASS'} reasons=['no Holm rejection']
+  default_decisions[2] lever=hybrid+metadata decision='default' delta=0.062092 answer_usable_decision=significant hits_at_4_support=None gate_reads={'hybrid SC-1': 'PASS', 'hybrid SC-2': 'PASS', 'hybrid+metadata SC-1': 'PASS', 'hybrid+metadata SC-2': 'PASS'} reasons=[]
+  default_decisions[3] lever=hybrid+answer-format decision='stays off: not significant' delta=-0.042345 answer_usable_decision=not significant hits_at_4_support=None gate_reads={'hybrid SC-1': 'PASS', 'hybrid SC-2': 'PASS', 'hybrid+answer-format SC-1': 'PASS', 'hybrid+answer-format SC-2': 'PASS'} reasons=['no Holm rejection']
+
+descriptive_rows
+  descriptive_rows[0] row='hybrid+graph - hybrid' n_pairs=308 label='descriptive, decides nothing'
+     .answer_usable: delta=-0.006494 CI=[-0.042208,0.029221] mean_arm=0.5649 mean_ref=0.5714 n_pos=14 n_neg=16
+     .paper_hits_at_4: delta=-0.016234 CI=[-0.042208,0.006494] mean_arm=0.6818 mean_ref=0.6981 n_pos=5 n_neg=10
+  descriptive_rows[1] row='hybrid+graph-v2 - hybrid+graph' n_pairs=308 label='descriptive, decides nothing'
+     .answer_usable: delta=-0.012987 CI=[-0.045455,0.019481] mean_arm=0.5519 mean_ref=0.5649 n_pos=11 n_neg=15
+     .paper_hits_at_4: delta=0.003247 CI=[-0.009740,0.016234] mean_arm=0.6851 mean_ref=0.6818 n_pos=3 n_neg=2
+  descriptive_rows[2] row='hybrid+all - hybrid' n_pairs=307 label='descriptive, decides nothing'
+     .answer_usable: delta=0.172638 CI=[0.117264,0.228013] mean_arm=0.7427 mean_ref=0.5700 n_pos=68 n_neg=15
+     .paper_hits_at_4: delta=0.156352 CI=[0.107492,0.205212] mean_arm=0.8534 mean_ref=0.6971 n_pos=58 n_neg=10
+
+null_guards
+  null_guards[0] arm=hybrid+rerank n_pairs=43 b=2 c=0 net_loss_rate=0.0465 upper95=0.0465 margin=0.1 passes=True status=would pass decisional=False note='net loss 2 of 43, at most the margin 0.1'
+  null_guards[1] arm=hybrid+graph-v2 n_pairs=43 b=0 c=0 net_loss_rate=0.0000 upper95=0.0000 margin=0.1 passes=True status=would pass decisional=False note='net loss 0 of 43, at most the margin 0.1'
+  null_guards[2] arm=hybrid+metadata n_pairs=43 b=0 c=1 net_loss_rate=-0.0233 upper95=0.0209 margin=0.1 passes=True status=PASS decisional=True note='net loss -1 of 43, at most the margin 0.1'
+  null_guards[3] arm=hybrid+answer-format n_pairs=43 b=1 c=1 net_loss_rate=0.0000 upper95=0.0442 margin=0.1 passes=True status=PASS decisional=True note='net loss 0 of 43, at most the margin 0.1'
+
+gate_readings {"hybrid SC-1": "PASS", "hybrid SC-2": "PASS", "hybrid+all SC-1": "PASS", "hybrid+all SC-2": "MISS", "hybrid+answer-format SC-1": "PASS", "hybrid+answer-format SC-2": "PASS", "hybrid+graph SC-1": "PASS", "hybrid+graph SC-2": "PASS", "hybrid+graph-v2 SC-1": "PASS", "hybrid+graph-v2 SC-2": "PASS", "hybrid+metadata SC-1": "PASS", "hybrid+metadata SC-2": "PASS", "hybrid+rerank SC-1": "PASS", "hybrid+rerank SC-2": "MISS"}
+
+populations {'floor': 0.8, 'n_heldout_g': 308, 'n_heldout_null': 43, 'p_all_label': 'all-arm P_all, not the decisional population', 'provenance_block_passed': True}
+
+rerank_operation
+  rerank_operation[0] arm=hybrid+rerank attempts=351 degrades=0 p50=319.0 p95=1075.0 max=1450.0 cost_sum=0.04580044
+  rerank_operation[1] arm=hybrid+all attempts=351 degrades=2 p50=344.0 p95=1139.0 max=1462.0 cost_sum=0.0472949
+
+graph_state
+   {'arm': 'hybrid+graph-v2', 'degree_capped_count': 1527, 'records': 351, 'records_with_degree_capped_field': 351}
+   {'arm': 'hybrid+all', 'degree_capped_count': 1527, 'records': 351, 'records_with_degree_capped_field': 351}
+   {'arm': 'hybrid+graph', 'degree_capped_count': 1529, 'records': 351, 'records_with_degree_capped_field': 351}
+
+provenance_counts
+   {'arm': 'hybrid', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 1, 'records': 351}
+   {'arm': 'hybrid+rerank', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 0, 'records': 351}
+   {'arm': 'hybrid+graph-v2', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 1, 'records': 351}
+   {'arm': 'hybrid+metadata', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 0, 'records': 351}
+   {'arm': 'hybrid+answer-format', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 0, 'records': 351}
+   {'arm': 'hybrid+all', 'clause_h_failures': 0, 'clause_i_degraded': 2, 'clause_j_failures': 0, 'query_embedding_retries': 0, 'records': 351}
+   {'arm': 'hybrid+graph', 'clause_h_failures': 0, 'clause_i_degraded': 0, 'clause_j_failures': 0, 'query_embedding_retries': 0, 'records': 351}
+
+secondaries metrics: ['abstention_rate_g', 'all_gold_at_4', 'coverage_at_4', 'final_answer_em', 'final_answer_missing_rate', 'gold_containment', 'latency_total_ms_mean', 'paper_hits_at_10', 'paper_map_at_10', 'paper_mrr_at_10', 'prompt_tokens_mean', 'retrieve_node_ms_mean', 'spend_usd_mean']
+
+sensitivity.rerank_itt {'arm': 'hybrid+rerank', 'delta': 0.08116883116883122, 'ci_lo': 0.03571428571428571, 'ci_hi': 0.1266233766233766, 'raw_p': 0.0008023308868949641, 'adjusted_p': 0.0032093235475798565, 'decision': 'significant', 'n_pairs': 308}
+
+FILE gates-heldout.json top keys: ['stage', 'arms', 'SC-1', 'SC-2', 'D-69 companion', 'not_computed', 'retry_provenance']

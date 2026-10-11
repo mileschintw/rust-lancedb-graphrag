@@ -1,0 +1,15 @@
+== report.json: 3 differing leaf values
+== metadata.json: 3 differing leaf values
+== report.md: 10 diff lines
+bytes-equal drive-console.txt: True
+bytes-equal drive-exit.txt: False
+bytes-equal gates-heldout.json: False
+bytes-equal gates-heldout.md: False
+bytes-equal journal.jsonl: False
+bytes-equal lever-comparison.json: False
+bytes-equal lever-comparison.md: False
+bytes-equal metadata.json: False
+bytes-equal preflight.txt: True
+bytes-equal readings-status.json: False
+bytes-equal report.json: False
+bytes-equal report.md: False

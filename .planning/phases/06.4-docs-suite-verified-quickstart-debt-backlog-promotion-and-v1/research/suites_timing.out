@@ -1,0 +1,21 @@
+pytest exit=1
+FAILED scripts/test_phase02_live_evidence.py::Phase02LiveEvidenceTests::test_bu02_sample_owned_true_deletes_temp
+FAILED scripts/test_phase02_live_evidence.py::Phase02LiveEvidenceTests::test_captured_inspector_arguments_explicit_path
+FAILED scripts/test_phase02_live_evidence.py::Phase02LiveEvidenceTests::test_wrong_model_is_rejected_in_optimized_isolated_subprocess
+5 failed, 2214 passed, 42 subtests passed in 346.93s (0:05:46)
+
+real	5m50.010s
+user	0m0.015s
+sys	0m0.000s
+go test exit=0
+ok  	github.com/lancet/gateway	413.111s
+ok  	github.com/lancet/gateway/db	0.512s
+ok  	github.com/lancet/gateway/internal/config	0.413s
+ok  	github.com/lancet/gateway/internal/engineclient	0.632s
+ok  	github.com/lancet/gateway/internal/sse	0.637s
+ok  	github.com/lancet/gateway/internal/telemetry	5.009s
+?   	github.com/lancet/gateway/proto/lancet/v1	[no test files]
+
+real	7m2.144s
+user	0m0.000s
+sys	0m0.030s

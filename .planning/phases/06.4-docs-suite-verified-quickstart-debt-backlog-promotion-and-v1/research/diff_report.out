@@ -1,0 +1,34 @@
+== report.json: 2 differing leaf values
+  /metadata/commit_sha
+     committed: '5f8324fe3512d89e0c6cfc0d20818a571c4bf62e'
+     copy     : '8c26f0cc86443798105e6f5108b0e7ceace09e09'
+  /metadata/run_date
+     committed: '2026-10-10T16:47:29.943938+00:00'
+     copy     : '2026-10-11T02:15:38.874785+00:00'
+== metadata.json: 2 differing leaf values
+  /commit_sha
+     committed: '5f8324fe3512d89e0c6cfc0d20818a571c4bf62e'
+     copy     : '8c26f0cc86443798105e6f5108b0e7ceace09e09'
+  /run_date
+     committed: '2026-10-10T16:47:29.943938+00:00'
+     copy     : '2026-10-11T02:15:38.874785+00:00'
+== report.md: 7 diff lines
+  --- committed
+  +++ copy
+  @@ -9,2 +9,2 @@
+  -| **Run Date** | `2026-10-10T16:47:29.943938+00:00` |
+  -| **Commit SHA** | `5f8324fe3512d89e0c6cfc0d20818a571c4bf62e` |
+  +| **Run Date** | `2026-10-11T02:15:38.874785+00:00` |
+  +| **Commit SHA** | `8c26f0cc86443798105e6f5108b0e7ceace09e09` |
+bytes-equal drive-console.txt: True
+bytes-equal drive-exit.txt: True
+bytes-equal gates-heldout.json: True
+bytes-equal gates-heldout.md: True
+bytes-equal journal.jsonl: True
+bytes-equal lever-comparison.json: True
+bytes-equal lever-comparison.md: True
+bytes-equal metadata.json: False
+bytes-equal preflight.txt: True
+bytes-equal readings-status.json: True
+bytes-equal report.json: False
+bytes-equal report.md: False

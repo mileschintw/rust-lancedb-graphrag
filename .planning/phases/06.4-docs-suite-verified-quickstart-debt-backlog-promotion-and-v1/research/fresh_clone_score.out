@@ -1,0 +1,16 @@
+
+real	0m17.863s
+user	0m0.000s
+sys	0m0.015s
+shallow? false  commits: 1777  autocrlf=true
+journal CRLF count in clone: 2458
+score exit=0
+Score report written to 
+C:\Users\user3\AppData\Local\Temp\lancet-fresh-46261\run\report.json
+
+real	2m38.926s
+user	0m0.000s
+sys	0m0.031s
+report exit=0
+--- git status in clone (eval/runs must be empty; eval/.venv ignored?)
+BASE=/tmp/lancet-fresh-46261

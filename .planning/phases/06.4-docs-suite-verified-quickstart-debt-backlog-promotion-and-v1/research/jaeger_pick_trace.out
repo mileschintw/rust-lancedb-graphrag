@@ -1,0 +1,14 @@
+traces: 300
+(708, '07365881f839ecc54472b3a9f4738016', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 6880, False, True)
+(708, '089ff84eab1689655037a5c27931d761', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 8248, False, True)
+(708, '0d2686d8b112daca7ce7a76c0667ee74', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 9344, False, True)
+(708, '0edb2bd78baaf4cb81d0bb5983d494f6', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 10455, False, True)
+(708, '0f0a19192ac7b996bf44933900cd5d93', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 6958, False, True)
+(708, '0f30a29036cb6d0fb287f93ca4e2630f', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 5645, False, True)
+(708, '10bdc5a1df9c152d9fde0a73dc51a8b7', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 4580, False, True)
+(708, '14a5be1c84874932e13edc0ebc40f205', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 9308, False, True)
+(708, '14a63a26d0d5ca182ef515a58a7bae5f', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 9346, False, True)
+(708, '166e427339c94edc174f29a706677604', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 6854, False, True)
+(708, '178412f0a44e2302d512730855eb4c6e', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 9319, False, True)
+(708, '18c849350254ce00e6fe04089ab7d5d1', 'lancet.v1.LancetService/QueryRAG', ['lancet-engine', 'lancet-gateway'], 13259, False, True)
+with rerank-ish ops: 0

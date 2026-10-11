@@ -1,0 +1,27 @@
+go             MISSING
+atlas          MISSING
+protoc         MISSING
+pkg-config     MISSING
+cmake          MISSING
+curl           /usr/bin/curl
+git            /usr/bin/git
+uv             MISSING
+cargo          /home/user39261580/.cargo/bin/cargo
+rustc          /home/user39261580/.cargo/bin/rustc
+gcc            /usr/bin/gcc
+make           /usr/bin/make
+docker         /usr/bin/docker
+node           MISSING
+chromium       MISSING
+google-chrome  MISSING
+libssl-dev           
+pkg-config           
+protobuf-compiler    
+cmake                
+build-essential      Status: install ok installed Version: 12.10ubuntu1 
+--- apt candidates (local cache, read-only)
+golang-go:   Candidate: 2:1.22~2build1 protobuf-compiler:   Candidate: 3.21.12-8.2ubuntu0.3 libssl-dev:   Candidate: 3.0.13-0ubuntu3.16 pkg-config:   Candidate: 1.8.1-2build1 
+autocrlf: []
+nproc: 12  mem: 15 GB
+PRETTY_NAME="Ubuntu 24.04.3 LTS"
+NAME="Ubuntu"

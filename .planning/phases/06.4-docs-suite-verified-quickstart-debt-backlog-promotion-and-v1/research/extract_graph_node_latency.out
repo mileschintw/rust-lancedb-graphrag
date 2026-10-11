@@ -1,0 +1,24 @@
+
+== 06.3.4.1 drive2  eval/runs/2026-10-06-drive2-multihop_rag_diag/report.json  dimensions[name=...]
+   graph_latency_ms: status=ok score=283.0 n=98 detail~{}
+   graph_ablation_latency_delta: status=ok score=1220.6179775280898 n=89 detail~{'n_pairs': 89.0}
+   graph_ablation_prompt_token_delta: status=ok score=210.95505617977528 n=89 detail~{'n_pairs': 89.0}
+   retrieve_latency_ms: status=ok score=116.0 n=98 detail~{}
+   graph_presence_rate: status=ok score=0.6224489795918368 n=98 detail~{}
+   graph_influence_rate: status=ok score=0.6224489795918368 n=98 detail~{}
+
+== 06.3.5 heldout  eval/runs/2026-10-07-heldout-multihop_rag_heldout/report.json  dimensions[name=...]
+   graph_latency_ms: status=ok score=617.0 n=349 detail~{}
+   graph_ablation_latency_delta: status=ok score=356.7308970099668 n=301 detail~{'n_pairs': 301.0}
+   graph_ablation_prompt_token_delta: status=ok score=198.42857142857142 n=301 detail~{'n_pairs': 301.0}
+   retrieve_latency_ms: status=ok score=113.0 n=349 detail~{}
+   graph_presence_rate: status=ok score=0.5702005730659025 n=349 detail~{}
+   graph_influence_rate: status=ok score=0.5702005730659025 n=349 detail~{}
+
+== 06.3.6 levers  eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout/report.json  dimensions[name=...]
+   graph_latency_ms: status=ok score=600.0 n=351 detail~{}
+   graph_ablation_latency_delta: status=ok score=-18.538961038961038 n=308 detail~{'n_pairs': 308.0}
+   graph_ablation_prompt_token_delta: status=ok score=198.12012987012986 n=308 detail~{'n_pairs': 308.0}
+   retrieve_latency_ms: status=ok score=109.0 n=351 detail~{}
+   graph_presence_rate: status=ok score=0.5698005698005698 n=351 detail~{}
+   graph_influence_rate: status=ok score=0.5698005698005698 n=351 detail~{}

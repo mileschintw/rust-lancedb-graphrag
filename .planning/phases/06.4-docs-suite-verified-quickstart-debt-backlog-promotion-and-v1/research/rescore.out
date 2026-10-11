@@ -1,0 +1,16 @@
+copy at: /tmp/lancet-rescore-46104/run
+--- git status before
+score exit=0
+C:\Users\user3\AppData\Local\Temp\lancet-rescore-46104\run\report.json
+
+real	2m37.722s
+user	0m0.000s
+sys	0m0.015s
+report exit=0
+C:\Users\user3\AppData\Local\Temp\lancet-rescore-46104\run\report.md
+
+real	0m0.860s
+user	0m0.000s
+sys	0m0.030s
+--- git status after (must be empty)
+TMP=/tmp/lancet-rescore-46104

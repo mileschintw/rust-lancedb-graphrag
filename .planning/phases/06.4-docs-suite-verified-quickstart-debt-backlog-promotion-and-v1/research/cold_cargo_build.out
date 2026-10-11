@@ -1,0 +1,37 @@
+start: 2026-10-10T19:20:28-07:00
+target exists? ls: cannot access 'engine/target': No such file or directory
+protoc: libprotoc 35.1  cargo: cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+   Compiling serde-untagged v0.1.9
+   Compiling json5 v0.4.1
+   Compiling lance-testing v8.0.0
+   Compiling fancy-regex v0.17.0
+   Compiling tonic-types v0.14.6
+   Compiling lance-graph-catalog v0.5.4
+   Compiling rustls-platform-verifier v0.7.0
+   Compiling convert_case v0.6.0
+   Compiling getopts v0.2.24
+   Compiling bstr v1.13.0
+   Compiling pulldown-cmark-escape v0.11.0
+   Compiling pathdiff v0.2.3
+   Compiling config v0.15.25
+   Compiling tiktoken-rs v0.12.0
+   Compiling reqwest v0.13.4
+   Compiling opentelemetry-otlp v0.32.0
+   Compiling opentelemetry-appender-tracing v0.32.0
+   Compiling tracing-opentelemetry v0.33.0
+   Compiling unicode-casefold v0.2.0
+   Compiling opentelemetry-semantic-conventions v0.32.1
+   Compiling lance-graph v0.5.4
+   Compiling lance-namespace-impls v8.0.0
+   Compiling lancedb v0.31.0
+   Compiling engine v0.1.0 (C:\Users\user3\AppData\Local\Temp\lancet-fresh-46261\clone\engine)
+    Finished `release` profile [optimized] target(s) in 20m 58s
+exit=0
+end: 2026-10-10T19:41:26-07:00  elapsed_seconds=1258
+-rwxr-xr-x 2 user3 197609 207165440 Oct 10 19:41 engine/target/release/backfill_evidence_metadata.exe
+-rwxr-xr-x 2 user3 197609 217873408 Oct 10 19:41 engine/target/release/diag_probe.exe
+-rwxr-xr-x 2 user3 197609 304092672 Oct 10 19:41 engine/target/release/engine.exe
+-rwxr-xr-x 2 user3 197609 207751168 Oct 10 19:41 engine/target/release/inspect_lancedb.exe
+-rwxr-xr-x 2 user3 197609 207108608 Oct 10 19:41 engine/target/release/reconcile_eval_store.exe
+-rwxr-xr-x 2 user3 197609 215110144 Oct 10 19:41 engine/target/release/retrieval_soak.exe
+-rwxr-xr-x 2 user3 197609 206014976 Oct 10 19:41 engine/target/release/seed_rag_fixture.exe

@@ -1,0 +1,17 @@
+346 schedule_ranges
+346 read_fragment
+1 query_reformulation
+1 embedding_request
+1 graph_context_extraction
+1 load
+1 plan_scan
+1 init_filtered_read_stream
+1 DatasetRecordBatchStream
+1 dense_search
+1 bm25_search
+1 hybrid_retrieval
+1 prompt_assembly
+1 lancet.v1.LancetService/QueryRAG
+1 POST /rag/query
+total 708
+{}
