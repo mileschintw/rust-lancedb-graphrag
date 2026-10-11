@@ -159,11 +159,22 @@ max_graph_chunk_candidates = 8
 # D-139: the variant was chosen on dev (read 1 EdgeEvidence beat read 2 MultiCited(2)) and frozen in the D-154 commit
 # unit=variant name; range=all | edge_evidence | multi_cited
 graph_v2_chunk_precision = "edge_evidence"
+# D-207 (owner decision, 2026-10-11): graph context ships default-off and is opt-in per request. This is the
+# graph state of a request that leaves `disable_graph_context` absent: false runs it graph-off, and the
+# response carries a GRAPH_DISABLED_BY_CONFIG notice (typed code 25, INFO, not a degraded run). A request
+# sends `disable_graph_context: false` to turn graph context on, or `true` to turn it off (GRAPH_ABLATION).
+# While this is false, a request that names the `graph_v2` lever must also send `disable_graph_context: false`,
+# and a `graph_v2` default lever stops startup. LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED overrides it
+# (true, 1, false or 0; any other value stops startup).
+# A unit test pins this value in both committed config files; the compiled-in default in engine/src/config.rs is true.
+# unit=boolean; range=true | false
+context_default_enabled = false
 
 [engine.levers]
 # D-157: the quality levers a request that names none runs with, by wire name in canonical order
 # (rerank, evidence_metadata, binary_answer_format, graph_v2). The echo in the retrieval snapshot
-# reports the effective set. A request that names levers runs exactly those.
+# reports the effective set. A request that names levers runs exactly those, and a request that sends
+# `disable_default_levers: true` (D-198) runs exactly the levers it names, even none.
 # These are the 06.3.6 run-of-record winners (06.3.6-RUN-OF-RECORD.md, default_decision rows):
 # - evidence_metadata: default by rule (answer_usable +0.0621, Holm p 0.0077, guard 1 PASS).
 # - rerank: default by owner disposition D-193 (answer_usable +0.0812, Holm p 0.0032), with the D-192

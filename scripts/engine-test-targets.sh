@@ -511,6 +511,10 @@ fi
 #         bad_input_matrix check keep their counts. 942->951. lib rises 827->835 and config_startup
 #         25->26; `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata
 #         unchanged (0/58/18/14).
+#   952 -- Phase 06.4 plan 01 Task 3 (the D-207 flip commit): one lib test,
+#         `d207_graph_default_is_true_in_code_and_both_files_carry_false`, the two-file pin for
+#         `[engine.graph] context_default_enabled`. 951->952. lib rises 835->836; the other targets
+#         are unchanged (0/58/18/14/26).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -553,18 +557,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 951 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 951, got $TOTAL" >&2
+if [ "$TOTAL" -ne 952 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 952, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 835 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 835, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 836 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 836, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 835 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 835, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 836 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 836, got $LIB_COUNT" >&2
   exit 1
 fi
 

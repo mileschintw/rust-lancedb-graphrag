@@ -93,6 +93,7 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "engine.graph.max_path_facts",
     "engine.graph.max_graph_chunk_candidates",
     "engine.graph.graph_v2_chunk_precision",
+    "engine.graph.context_default_enabled",
     "engine.workflow.reformulate_timeout_ms",
     "engine.workflow.query_embedding_timeout_ms",
     "engine.workflow.retrieve_timeout_ms",
@@ -202,6 +203,10 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "engine.graph.graph_v2_chunk_precision",
         "unit=variant name; range=all | edge_evidence | multi_cited",
+    ),
+    (
+        "engine.graph.context_default_enabled",
+        "unit=boolean; range=true | false",
     ),
     (
         "engine.workflow.reformulate_timeout_ms",

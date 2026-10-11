@@ -5,7 +5,7 @@
 //! fakes, and reads the effective lever set or the graph state back from the response. The
 //! service fixture is shared with [`super::levers_pins`].
 
-use engine::config::{EffectiveRagSettings, Settings};
+use engine::config::{EffectiveRagSettings, GraphConfigSettings, Settings};
 use engine::pb::lancet::v1::{
     AnswerBasis, Lever, Notice, NoticeCode, NoticeSeverity, QueryRagRequest,
 };
@@ -371,4 +371,52 @@ fn d207_code_25_is_outside_the_degraded_mode_set() {
         derive_degraded_mode(&[unavailable], AnswerBasis::Retrieval),
         "the contrast: an unavailable graph still counts"
     );
+}
+
+/// The committed operator configuration, read as the engine reads it at startup.
+const CONFIG_TOML: &str = include_str!("../../../config/config.toml");
+const CONFIG_EXAMPLE_TOML: &str = include_str!("../../../config/config.example.toml");
+
+/// Reads `engine.graph.context_default_enabled` from a TOML document as written, failing when the
+/// key is absent instead of falling back to the compiled-in default.
+fn file_context_default_enabled(raw: &str) -> bool {
+    ::config::Config::builder()
+        .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+        .build()
+        .expect("configuration file must parse as TOML")
+        .get::<bool>("engine.graph.context_default_enabled")
+        .unwrap_or_else(|error| panic!("engine.graph.context_default_enabled must be present: {error}"))
+}
+
+/// D-207 (owner decision, 2026-10-11): the compiled-in default keeps the pre-6.4 request shape,
+/// both committed files ship graph context off, and each file passes startup validation as that
+/// effective setting. The two-file pin mirrors the one for the default levers (D-157).
+#[test]
+fn d207_graph_default_is_true_in_code_and_both_files_carry_false() {
+    assert!(GraphConfigSettings::default().context_default_enabled);
+    assert!(
+        EffectiveRagSettings::default().graph.context_default_enabled,
+        "the compiled-in default must stay on, so a service built without the file keeps the old request shape"
+    );
+    for (file_name, raw) in [
+        ("config/config.toml", CONFIG_TOML),
+        ("config/config.example.toml", CONFIG_EXAMPLE_TOML),
+    ] {
+        assert!(
+            !file_context_default_enabled(raw),
+            "{file_name} engine.graph.context_default_enabled must be false (D-207)"
+        );
+        let settings: Settings = ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .try_deserialize()
+            .expect("configuration file must deserialize through Settings");
+        let effective = EffectiveRagSettings::try_from_settings(&settings)
+            .unwrap_or_else(|error| panic!("{file_name} must pass startup validation: {error}"));
+        assert!(
+            !effective.graph.context_default_enabled,
+            "{file_name} must resolve to a default-off graph"
+        );
+    }
 }
