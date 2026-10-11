@@ -41,6 +41,7 @@ D1 infrastructure failures fail closed with session, correlation, and error-kind
 - **Trigger:** Phase 06 hardening or multi-tenant/shared-log-sink deployment.
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** Identity-only structured logging without raw provider detail leakage across shared log sinks.
+- **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-RAG-02 — Provider failure, timeout, retry, and fallback behavior
 
@@ -129,6 +130,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Non-loopback deployment, untrusted provider path, or security review of provider I/O.
 - **Target:** Phase 06 resource/security hardening.
 - **Future acceptance criteria:** Reader never retains frame exceeding remaining budget; shared 256 KiB policy enforced pre-materialization.
+- **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-STAGING-GEN-RACE — Staging generation allocation race (Plan 03-23 T1)
 - **Rationale:** `persist_raw_with_boundary` max generation RMW lacks lock/CAS. Single-writer per doc local MVP avoids concurrent ingest of same doc.
@@ -137,6 +139,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Concurrent same-document_id ingest, multi-replica Engine, or production incident with stuck staging docs.
 - **Target:** Phase 06 ingestion hardening.
 - **Future acceptance criteria:** Generation allocation atomic/serialized per document; concurrent replace test passes.
+- **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-STAGING-PHYSICAL-BU — Physical row retention after delete failure (Plan 03-23 T2)
 - **Rationale:** Delete failure leaving both physical rows unproven under injected delete faults.
@@ -145,6 +148,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Staging failure-injection work starts or write protocol modified.
 - **Target:** Phase 06 test hardening.
 - **Future acceptance criteria:** Injected delete failure leaves old + successor physical rows; error returned; successor not deleted.
+- **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-CONFIG-DB-PLAINTEXT — Committed database credentials and disabled TLS
 - **Rationale:** `config.toml` contains plaintext dev credentials and `sslmode=disable` for local docker-style MVP defaults under R4.
@@ -153,6 +157,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Non-local Postgres, shared environment, or secrets review.
 - **Target:** Phase 06 secrets/config hygiene.
 - **Future acceptance criteria:** No live credentials in committed config; placeholders used; TLS required for non-local.
+- **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-CR-04 — Insecure Gateway→Engine gRPC (Extended with Phase 03 evidence)
 - **Rationale:** `gateway/main.go` dials engine with `insecure.NewCredentials()`. Extended Phase 02 `DEBT-CR-04` with Phase 03 evidence; loopback single-host MVP makes plaintext gRPC acceptable.
@@ -161,6 +166,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Non-loopback `engine_addr`, multi-host deployment, or shared network path.
 - **Target:** Phase 06 transport hardening.
 - **Future acceptance criteria:** TLS with cert validation for non-local; fail startup when insecure dials non-loopback.
+- **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-PROVIDER-ENDPOINT-TRUST — Provider endpoint trust and bearer exfiltration
 - **Rationale:** Effective settings validate endpoints only as non-blank. Bearer token sent to configured URL.
@@ -169,6 +175,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Multi-tenant/untrusted config source or security review.
 - **Target:** Phase 06 security hardening.
 - **Future acceptance criteria:** HTTPS required except loopback dev; endpoint host allowlist before attaching bearer.
+- **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-WARN-DX — Fixture and upload DX issues
 - **Rationale:** Non-idempotent seeder appends duplicate stable IDs on re-run; empty multipart upload ambiguity.
@@ -177,6 +184,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** CI flake from duplicate seeds or user empty-upload issue.
 - **Target:** Phase 06 DX overhaul.
 - **Future acceptance criteria:** Seeder reset/upsert; empty upload rejected with 400.
+- **Promoted:** Phase 999.16 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-WARN-API — API semantics and D1 identity gaps
 - **Rationale:** Mixed answer basis without conflict disclosure; `NoEvidenceFits` mapped to 400 (blaming client for capacity); missing D1 session/correlation identity on some retrieval errors.
@@ -185,6 +193,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** External client integration depending on precise status/identity.
 - **Target:** Phase 06 API contract hardening.
 - **Future acceptance criteria:** Mixed requires conflict notice; `NoEvidenceFits` maps to capacity status; error kinds attached.
+- **Promoted:** Phase 999.16 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-WARN-SETTINGS — Settings consistency warnings
 - **Rationale:** Invalid numeric env overrides silently ignored; public scalar grounding budgets vs private carrier; chunk limits saturate to `i32::MAX`.
@@ -193,6 +202,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Production config via env at scale or settings incidents.
 - **Target:** Phase 06 settings refactor.
 - **Future acceptance criteria:** Present-but-invalid env overrides fail startup; carrier is single authority; fail-closed chunk settings.
+- **Promoted:** Phase 999.15 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-WARN-VALIDATE — Validation gaps (nulls and non-finite)
 - **Rationale:** Staging readers call `value(i)` without null checks on required fields; embeddings missing `f32::is_finite` check; BM25 finite boosts overflow before fusion reject.
@@ -201,6 +211,7 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Trigger:** Untrusted embedding source or numeric retrieval incidents.
 - **Target:** Phase 06 validation sweep.
 - **Future acceptance criteria:** Required staging fields null-checked; embeddings finite-checked; BM25 boost ceilings.
+- **Promoted:** Phase 999.15 (06.4, 06-CONTEXT D-03)
 
 ### DEBT-P3-MODULE-GRAPH — Dual library/binary module graph
 - **Rationale:** `lib.rs` and `main.rs` both declare overlapping production modules, risking drift between test library and running binary.

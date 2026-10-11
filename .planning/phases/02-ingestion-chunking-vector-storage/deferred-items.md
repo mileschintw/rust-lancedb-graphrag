@@ -17,6 +17,7 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Trigger:** Any shared, network, remote, public, multi-user, container-ingress, VM, cloud, tunnel, proxy, or external-caller deployment.
 - **Target:** Before the trigger; if still untriggered, review at Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Ingestion requires authentication and authorization; ingress uses TLS; request-rate and per-principal ingestion/storage/provider quotas exist; unauthorized/over-quota callers are behaviorally proven unable to consume provider or durable-storage resources.
+- **Disposition:** documented-only (06-CONTEXT D-06); not promoted
 
 ### DEBT-CR-05 — Resource bounds before queue admission
 
@@ -53,22 +54,29 @@ All open Phase 02 findings listed below are accepted as technical debt deferred 
 - **DEBT-CR-01 / VER-16**: Completed canonical ingestion downgraded to failed after engine restart
   - **Target**: Final hardening phase
   - **Constraints**: Single-operator use; avoid automated engine restarts during active ingestion.
+  - **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
 - **DEBT-CR-02**: Rollback failure destroys replay state
   - **Target**: Final hardening phase
   - **Constraints**: Log rollback errors verbosely for manual inspection.
+  - **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
 - **DEBT-CR-03**: Failed admission stranded queued without durable reconciliation intent
   - **Target**: Final hardening phase
   - **Constraints**: Single PostgreSQL instance; manual monitoring of queued documents.
+  - **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
 - **DEBT-CR-04 / VER-20**: Evidence helper forges human approval when approval flag omitted
   - **Target**: Final hardening phase
   - **Constraints**: Operator must consciously review disclosures.
+  - **Promoted:** Phase 999.17 (06.4, 06-CONTEXT D-03)
 - **DEBT-WR-01 / VER-19**: Test cleanup deletes another process's fixtures and fails full suite
   - **Target**: Final hardening phase
   - **Constraints**: Run tests sequentially in clean workspace.
+  - **Promoted:** Phase 999.17 (06.4, 06-CONTEXT D-03)
 - **DEBT-WR-02**: Empty uploads become durable failed jobs and misleading 502 response
   - **Target**: Final hardening phase
   - **Constraints**: Client-side validation to prevent zero-byte uploads.
+  - **Promoted:** Phase 999.16 (06.4, 06-CONTEXT D-03)
 - **DEBT-WR-03**: Cross-runtime recovery tests can hang indefinitely on failure
   - **Target**: Final hardening phase
   - **Constraints**: Run tests with external timeouts.
+  - **Promoted:** Phase 999.17 (06.4, 06-CONTEXT D-03)
 

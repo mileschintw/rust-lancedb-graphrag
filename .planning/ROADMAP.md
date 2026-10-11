@@ -1496,3 +1496,105 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.13: Security and transport hardening (BACKLOG)
+
+**Goal:** Pay down the five security and transport debt items Phase 6 left un-selected: the plaintext Gateway to Engine gRPC dial, provider-endpoint trust before the bearer key is attached, committed database credentials with TLS off, the post-chunk provider body bound, and full-message provider detail in engine logs. Promoted from the Phase 02 and Phase 03 deferred-items records by Phase 6.4 (06-CONTEXT D-02, D-03).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** DEBT-CR-04-EXT, DEBT-P3-PROVIDER-ENDPOINT-TRUST, DEBT-P3-CONFIG-DB-PLAINTEXT, DEBT-P3-BODY-BOUND, DEBT-D1-SAFE-LOG
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:162` (DEBT-CR-04-EXT, the "Extended with Phase 03 evidence" record), `:171` (DEBT-P3-PROVIDER-ENDPOINT-TRUST), `:153` (DEBT-P3-CONFIG-DB-PLAINTEXT), `:126` (DEBT-P3-BODY-BOUND), `:34` (DEBT-D1-SAFE-LOG)
+
+DEBT-D1-SAFE-LOG's shared-log-sink trigger fired with the Phase 6.2 Loki export; kept in backlog by owner decision (06-CONTEXT D-09). The loopback-bound single-user compose stack is why the multi-tenant risk the debt describes does not apply here.
+
+DEBT-CR-04 is three unrelated issues sharing one label (06-CONTEXT D-03): the plain DEBT-CR-04 (network auth, TLS, quotas; `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`) is documented-only per D-06 and is NOT promoted; DEBT-CR-04-EXT (the insecure Gateway to Engine dial) is promoted here; DEBT-CR-04 / VER-20 (the evidence helper that forges human approval) is promoted to Phase 999.17.
+
+The 06.3.6 review finding A-IN-02 (an unvalidated `rerank_endpoint`) is the same class as DEBT-P3-PROVIDER-ENDPOINT-TRUST and lives in Phase 999.19.
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.14: Ingestion and staging robustness (BACKLOG)
+
+**Goal:** Pay down the five ingestion and staging debt items: a completed ingestion downgraded to failed after an engine restart, rollback failure that destroys replay state, a failed admission stranded as queued with no durable reconciliation intent, the staging generation allocation race, and unproven physical row retention after a delete failure. Promoted by Phase 6.4 (06-CONTEXT D-02, D-03).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** DEBT-CR-01, DEBT-CR-02, DEBT-CR-03, DEBT-P3-STAGING-GEN-RACE, DEBT-P3-STAGING-PHYSICAL-BU
+**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:54` (DEBT-CR-01 / VER-16), `:58` (DEBT-CR-02), `:62` (DEBT-CR-03); `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:135` (DEBT-P3-STAGING-GEN-RACE), `:144` (DEBT-P3-STAGING-PHYSICAL-BU)
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.15: Config and settings hygiene (BACKLOG)
+
+**Goal:** Pay down the two config and settings debt items: invalid numeric environment overrides that are silently ignored with chunk limits that saturate, and validation gaps for nulls and non-finite values in staging readers, embeddings and BM25 boosts. Promoted by Phase 6.4 (06-CONTEXT D-02, D-03).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** DEBT-P3-WARN-SETTINGS, DEBT-P3-WARN-VALIDATE
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:198` (DEBT-P3-WARN-SETTINGS), `:207` (DEBT-P3-WARN-VALIDATE)
+
+**Also routed here (06.4 code review, counted separately from the 18 and the 27):** 06.4-REVIEW IN-03, the compiled-in `context_default_enabled = true` that is the opposite of the shipped default (`engine/src/config.rs:204-221`); see `06.4-DEBT-LEDGER.md` table (d).
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.16: API contract and DX (BACKLOG)
+
+**Goal:** Pay down the three API contract and developer-experience debt items: mixed answer basis without conflict disclosure with `NoEvidenceFits` mapped to a client error and missing D1 identity, a non-idempotent seeder with an ambiguous empty upload, and empty uploads that become durable failed jobs with a misleading 502. Promoted by Phase 6.4 (06-CONTEXT D-02, D-03).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** DEBT-P3-WARN-API, DEBT-P3-WARN-DX, DEBT-WR-02
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:189` (DEBT-P3-WARN-API), `:180` (DEBT-P3-WARN-DX); `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:74` (DEBT-WR-02)
+
+**Also routed here (06.4 owner decision, counted separately from the 18 and the 27):** DEBT-06.4-DEFAULT-RUN, add `default-run = "engine"` to `engine/Cargo.toml` so a plain `cargo run` works (the engine crate has seven binaries; the README uses `--bin engine`; found by plan 06.4-09); see `06.4-DEBT-LEDGER.md` table (d).
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.17: Test and evidence hygiene (BACKLOG)
+
+**Goal:** Pay down the three test and evidence debt items: test cleanup that deletes another process's fixtures, cross-runtime recovery tests that can hang indefinitely on failure, and the evidence helper that forges human approval when the approval flag is omitted. Promoted by Phase 6.4 (06-CONTEXT D-02, D-03).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** DEBT-WR-01, DEBT-WR-03, DEBT-CR-04 / VER-20
+**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:70` (DEBT-WR-01 / VER-19), `:78` (DEBT-WR-03), `:66` (DEBT-CR-04 / VER-20)
+
+The plain DEBT-CR-04 (`.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`, network auth, TLS, quotas) is documented-only per 06-CONTEXT D-06 and is NOT promoted; DEBT-CR-04 / VER-20 above is a different, unrelated item that shares its label.
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.18: Eval-harness provenance and protocol hardening (06.3.6 review carry-forward) (BACKLOG)
+
+**Goal:** Carry forward the eleven 06.3.6 review findings routed to the eval harness by Phase 6.4 (06.4 D-204, D-229): provenance and protocol checks that trust stored reports or skip silently, and small correctness nits. None sits on the quickstart path or in a 06.4 measurement; each matters before the next paid measurement drive. Counted separately from the 18 promoted DEBT items (SC-6).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** B-WR-01, B-WR-02, B-WR-03, B-WR-04, B-WR-05, B-IN-02, B-IN-03, B-IN-04, B-IN-05, B-IN-06, B-IN-08
+**Sources:** `06.3.6-REVIEW.md @ c73dbe3c` (text preserved in `.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/research/06.3.6-REVIEW-c73dbe3c.md`); dispositions in `.planning/phases/06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-REVIEW-DISPOSITION.md`
+
+**Also routed here (06.4 code review, counted separately from the 18 and the 27):** 06.4-REVIEW IN-01 (`explicit_field_failures` graph-ran evidence is vacuous for `graph_seed_count`), IN-02 (`load_official` re-opens the path after verifying the hash) and IN-05 (the `--preregistered-override` help omits the held-out binding); see `06.4-DEBT-LEDGER.md` table (d).
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
+
+### Phase 999.19: Engine, gateway and test robustness (06.3.6 review carry-forward) (BACKLOG)
+
+**Goal:** Carry forward the sixteen 06.3.6 review findings routed to the engine, gateway and tests by Phase 6.4 (06.4 D-204, D-229): unvalidated rerank endpoint, lever-mask guards, backfill and dump tooling, and test-hygiene findings (coupled or unfalsifiable tests, source-text pins, mutable-config pins). Counted separately from the 18 promoted DEBT items (SC-6).
+**Requirements:** TBD
+**Plans:** 0 plans
+**Member IDs:** A-IN-02, A-IN-03, A-IN-04, A-IN-05, A-IN-06, C-WR-02, C-WR-03, C-WR-04, C-WR-05, C-IN-01, C-IN-02, C-IN-03, C-IN-04, C-IN-05, C-IN-06, C-IN-07
+**Sources:** `06.3.6-REVIEW.md @ c73dbe3c` (text preserved in `.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/research/06.3.6-REVIEW-c73dbe3c.md`); dispositions in `.planning/phases/06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-REVIEW-DISPOSITION.md`
+
+A-IN-02 (an unvalidated `rerank_endpoint` that receives the bearer key) is the same class as DEBT-P3-PROVIDER-ENDPOINT-TRUST in Phase 999.13; it is cross-linked there and not folded into the 18.
+
+**Also routed here (06.4 code review and owner decision, counted separately from the 18 and the 27):** 06.4-REVIEW IN-04 (the engine binds the port while the replay can still block, so a TCP probe sees it up before gRPC serves), 06.4-REVIEW IN-06 (`TestRAGQueryClientDisconnectCancelsRustWorkflow` can reach the real rerank endpoint), and DEBT-06.4-ENGINE-GEN-RETRY, a decision whether the engine should retry a generation that ends with `finish_reason: error` (plan 06.4-09's first stack preflight failed on qs-001 hybrid+graph-v2 with `generation_output_rejected`, `finish_reason` `error` after 2089 completion tokens; the owner-authorised second attempt passed); see `06.4-DEBT-LEDGER.md` table (d).
+
+Plans:
+
+- [ ] TBD (promote with /gsd-review-backlog when ready)
