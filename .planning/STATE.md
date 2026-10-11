@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 4
+current_plan: 6
 status: executing
-stopped_at: Phase 06.4 wave 2 complete (06.4-02, 06.4-03); wave 3 next
+stopped_at: Phase 06.4 wave 3 complete (06.4-04, 06.4-05); wave 4 (06.4-06 orchestrator review gate) next
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -22,11 +22,12 @@ last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-pro
 
 ## Current Position
 
-Current Plan: 4
+Current Plan: 6
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-11: 06.4 wave 3 COMPLETE (plans 04 main, 05 worktree, merged clean).** 04: `preflight --stack`, `compare_rescore.py`, D-211 measure split-role guard (`drive_measurement_pass.py` deleted), D-212 IN-05 verify-before-exec; one plan verify command (`--help | grep -q`) exits 120 on a broken pipe, code fine. 05: five project-authored MIT sample docs + manifest + `qs-` canaries, `.env.example`, `quickstart.py`, README quickstart block (Windows/WSL), eval/README OB-30 fixes (`5a7a6b50`). Gate green on merged HEAD `1cd38a32`: engine 963, gateway 124, eval 2315, buf idempotent.
 - **2026-10-11: 06.4 wave 2 COMPLETE (plans 02, 03; sequential on main).** 02: D-202 bind-first startup (held port exits before any replay), D-203 C1 coverage log lines, IN-01/02/03, A-WR-05, D-227 `rerank_request` leaf span, D-212 sha2. 03: explicit per-arm `disable_graph_context`/`disable_default_levers`, legacy labels re-score only, D-199 drive-environment refusal and per-arm explicit-field gate (RED `7343bed8`, GREEN `cc305254`); note-10 acceptance: journal-only re-score identical, zero fatal records in 3 journals. Gate green: engine 963, gateway 124, eval 2245, buf idempotent.
 - **2026-10-11: 06.4 wave 1 COMPLETE (plan 01).** One `buf generate` (`4e82e037`): `disable_default_levers = 9`, NoticeCode 25, D-47 comment rewrites; D-198 admission, gateway pointer passthrough (+A-WR-06), harness tri-state fields; D-207 `context_default_enabled` with fail-closed env, code 25, graph_v2 refusals; flip commit `32a49a03` (graph context default-off). Gate green: engine 952 (lib 836), gateway 124 (-count=1), eval 2195, buf idempotent.
 - **2026-10-11: Phase 06.4 EXECUTION STARTED** (`/gsd-execute-phase 06.4`). 17 plans in 14 waves. Routing: wave 1 (01) on main; wave 2 02 on main and 03 in a harness worktree; wave 3 04 on main and 05 in a worktree; wave 4 (06) is the orchestrator-run D-205 review gate; waves 5-14 (07-17) sequential on main, including the live fresh-clone plans 08-11 (D-222 cap $1.00, D-230 compose stop and restore, D-231, D-233). Executors run on Sonnet; the orchestrator owns STATE/ROADMAP writes. **Plan 01 Task 1 (one-way `checkpoint:decision`) answered before dispatch: `as-proposed`** (owner, 2026-10-11T07:13:50Z): `optional bool disable_default_levers = 9;`, `[engine.graph] context_default_enabled` (env `LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED`), `NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG = 25`, and the D-47 comment rewrites, all as proposed in the plan.

@@ -1313,7 +1313,7 @@ Plans:
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
 
-**Plans:** 3/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
+**Plans:** 5/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
 
 Plans:
 
@@ -1328,8 +1328,8 @@ Plans:
 
 **Wave 3**
 
-- [ ] 06.4-04-PLAN.md — `lancet-eval preflight --stack`, `compare_rescore.py`, the D-211 `measure` split-role guard with the script retirement, D-212 IN-05
-- [ ] 06.4-05-PLAN.md — Quickstart assets: the D-221 project-authored sample, `quickstart.py`, `.env.example`, the README quickstart block, `eval/README.md` fixes
+- [x] 06.4-04-PLAN.md — `lancet-eval preflight --stack`, `compare_rescore.py`, the D-211 `measure` split-role guard with the script retirement, D-212 IN-05
+- [x] 06.4-05-PLAN.md — Quickstart assets: the D-221 project-authored sample, `quickstart.py`, `.env.example`, the README quickstart block, `eval/README.md` fixes
 
 **Wave 4**
 
