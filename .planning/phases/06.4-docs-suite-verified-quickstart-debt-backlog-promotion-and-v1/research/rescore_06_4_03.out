@@ -1,0 +1,14 @@
+score exit=0
+report exit=0
+total 44988
+drwxr-xr-x 1 user3 197609        0 Oct 11 02:12 .
+drwxr-xr-x 1 user3 197609        0 Oct 11 02:12 ..
+-rw-r--r-- 1 user3 197609 45630310 Oct 11 02:09 journal.jsonl
+-rw-r--r-- 1 user3 197609     1305 Oct 11 02:12 metadata.json
+-rw-r--r-- 1 user3 197609   267019 Oct 11 02:12 report.json
+-rw-r--r-- 1 user3 197609   149888 Oct 11 02:12 report.md
+dimensions equal: True
+result_hash equal: True
+differing metadata keys: ['run_date', 'commit_sha']
+git status eval/runs: []
+TMP=/tmp/lancet-rescore-min-28885

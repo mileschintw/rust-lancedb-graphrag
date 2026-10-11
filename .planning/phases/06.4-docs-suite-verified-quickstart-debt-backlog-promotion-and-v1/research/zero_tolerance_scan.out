@@ -1,0 +1,31 @@
+ZERO_TOLERANCE_CODES = abcdfhj
+
+== eval/runs/2026-10-06-drive2-multihop_rag_diag/journal.jsonl
+  records read: 200; scanned after dedup: 200 (collapsed 0)
+  pooled clause tally: {'a': 0, 'b': 0, 'c': 0, 'd': 0, 'e': 0, 'f': 0, 'g': 0, 'h': 0, 'i': 0, 'j': 0}
+  arm graph-off: records=100 clauses={}
+  arm graph-on: records=100 clauses={}
+  fatal records (zero-tolerance codes): 0
+
+== eval/runs/2026-10-07-heldout-multihop_rag_heldout/journal.jsonl
+  records read: 1404; scanned after dedup: 1404 (collapsed 0)
+  pooled clause tally: {'a': 0, 'b': 0, 'c': 0, 'd': 0, 'e': 10, 'f': 0, 'g': 0, 'h': 0, 'i': 0, 'j': 0}
+  arm bm25-only: records=351 clauses={}
+  arm dense-only: records=351 clauses={'e': 4}
+  arm hybrid: records=351 clauses={'e': 6}
+  arm hybrid+graph: records=351 clauses={}
+  fatal records (zero-tolerance codes): 0
+
+== eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout/journal.jsonl
+  records read: 2457; scanned after dedup: 2457 (collapsed 0)
+  pooled clause tally: {'a': 0, 'b': 0, 'c': 0, 'd': 0, 'e': 0, 'f': 0, 'g': 0, 'h': 0, 'i': 2, 'j': 0}
+  arm hybrid: records=351 clauses={}
+  arm hybrid+all: records=351 clauses={'i': 2}
+  arm hybrid+answer-format: records=351 clauses={}
+  arm hybrid+graph: records=351 clauses={}
+  arm hybrid+graph-v2: records=351 clauses={}
+  arm hybrid+metadata: records=351 clauses={}
+  arm hybrid+rerank: records=351 clauses={}
+  fatal records (zero-tolerance codes): 0
+
+result: OK, zero fatal records in every journal
