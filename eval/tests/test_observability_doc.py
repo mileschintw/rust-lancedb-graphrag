@@ -11,7 +11,8 @@ invented, re-derived or drift from the evidence:
   ``.x5`` tie Python's ``round()`` is accepted too;
 - the parent cell must name the span's actual parent, or name no span when the parent
   was never exported (the client span behind the inbound ``traceparent``);
-- every ``key`` = ``value`` pair in the attributes cell must equal that span's tag.
+- every ``key`` = ``value`` pair in the attributes cell must equal that span's tag,
+  and the cell may hold nothing else but the commas between pairs.
 """
 
 from __future__ import annotations
@@ -135,6 +136,13 @@ def _row_errors(rows: list[list[str]], trace: dict[str, Any]) -> list[str]:
                 errors.append(
                     f"{name!r}: {key} = {value!r}, trace says {_tag_text(tags[key])!r}"
                 )
+        # Anything left after the checked pairs and their comma separators is a value
+        # nobody compared to the trace (an unbackticked value, another separator, prose).
+        residue = ATTRIBUTE.sub("", attributes_cell)
+        if residue.replace(",", "").strip():
+            errors.append(
+                f"{name!r}: unchecked text in attributes cell: {residue.strip()!r}"
+            )
     return errors
 
 
@@ -204,6 +212,17 @@ def test_a_row_naming_a_span_absent_from_the_trace_json_fails() -> None:
     }
     for kind, row in wrong.items():
         assert _row_errors([row], trace), f"an invented {kind} was not reported"
+
+    # A true value written without its backticks is no longer a checked pair; only the
+    # residue check can report it.
+    rerank_row = next(row for row in real if _unquote(row[0]) == "rerank_request")
+    pair = re.search(r"`lancet\.rerank\.outcome` = `([^`]*)`", rerank_row[3])
+    assert pair is not None
+    unbackticked = rerank_row[3].replace(
+        pair.group(0), f"`lancet.rerank.outcome` = {pair.group(1)}"
+    )
+    errors = _row_errors([[*rerank_row[:3], unbackticked]], trace)
+    assert errors and all("unchecked text" in e for e in errors), errors
 
 
 def test_tie_rule_accepts_half_up_and_python_round_only_on_an_exact_tie() -> None:
