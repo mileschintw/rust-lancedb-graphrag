@@ -1,3 +1,3 @@
-{"question_id": "qs-001", "question": "Which company built the spectrograph at the observatory Marisol Vega directs, and where is that company based?", "question_type": "inference_query", "min_retrieved_chunks": 1}
+{"question_id": "qs-001", "question": "Which company built the spectrograph at Harbor Light Observatory, which Marisol Vega directs, and where is that company based?", "question_type": "inference_query", "min_retrieved_chunks": 1}
 {"question_id": "qs-002", "question": "Who directs Harbor Light Observatory?", "question_type": "inference_query", "min_retrieved_chunks": 1}
 {"question_id": "qs-003", "question": "Which quickstart sample document is the most recent?", "question_type": "temporal_query", "min_retrieved_chunks": 1}

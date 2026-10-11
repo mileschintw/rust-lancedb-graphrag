@@ -202,8 +202,8 @@ def test_d221_canary_manifest_ids_cannot_collide_with_multihop_ids() -> None:
         assert row["min_retrieved_chunks"] == 1
         assert row["question"].endswith("?")
     assert rows[0]["question"] == (
-        "Which company built the spectrograph at the observatory Marisol Vega "
-        "directs, and where is that company based?"
+        "Which company built the spectrograph at Harbor Light Observatory, "
+        "which Marisol Vega directs, and where is that company based?"
     )
 
 

@@ -239,11 +239,11 @@ It prints one JSON line per document and exits non-zero if a document fails or t
 **11. Query again, then ask the two-hop question.** Re-run the step 9 query: the printed JSON no longer lists `DEFAULT_LEVER_UNAVAILABLE`, and `levers` is now `["rerank", "evidence_metadata"]`. Then ask a question that needs three of the five documents, first with the defaults and then with the graph opted in:
 
 ```bash
-uv run --project eval python eval/scripts/quickstart.py query "Which company built the spectrograph at the observatory Marisol Vega directs, and where is that company based?"
-uv run --project eval python eval/scripts/quickstart.py query "Which company built the spectrograph at the observatory Marisol Vega directs, and where is that company based?" --graph
+uv run --project eval python eval/scripts/quickstart.py query "Which company built the spectrograph at Harbor Light Observatory, which Marisol Vega directs, and where is that company based?"
+uv run --project eval python eval/scripts/quickstart.py query "Which company built the spectrograph at Harbor Light Observatory, which Marisol Vega directs, and where is that company based?" --graph
 ```
 
-The expected answer is Alder Optics, based in Port Marlow. `graph_path_found` says whether the graph found a path between the question's entities; it only means something with `--graph`, and whether entity extraction links the documents is not guaranteed on a five-document sample.
+The expected answer is Alder Optics, based in Port Marlow. The question names two entities, Harbor Light Observatory and Marisol Vega, because the graph looks for a path between entities the question names; a question that names only one cannot produce a path. `graph_path_found` says whether the graph found a path between the question's entities; it only means something with `--graph`, and whether entity extraction links the documents is not guaranteed on a five-document sample.
 
 **12. Open the traces and dashboard.** In Jaeger, <http://127.0.0.1:16686>, pick the service `lancet-gateway` and paste the printed `trace_id` (or open `http://127.0.0.1:16686/trace/<trace_id>` directly). Grafana is at <http://127.0.0.1:3000>, dashboard "Lancet RAG Operations", login `admin`/`admin` (a committed local-dev credential).
 
