@@ -1,0 +1,2603 @@
+{
+  "data": [
+    {
+      "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+      "spans": [
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "a132486dd3a6841a",
+          "operationName": "query_reformulation",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "05daa62152041d91"
+            }
+          ],
+          "startTime": 1791748277656012,
+          "duration": 7,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 4400
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\runner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 349
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 3700
+            },
+            {
+              "key": "lancet.node.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "lancet.reformulation.variant_count",
+              "type": "string",
+              "value": "1"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "b5d20dd5fda75f1b",
+          "operationName": "embedding_request",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "c2077831b1c23911"
+            }
+          ],
+          "startTime": 1791748277656050,
+          "duration": 371149,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 157400
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\service.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 761
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "gen_ai.request.model",
+              "type": "string",
+              "value": "voyageai/voyage-4-large"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 370991900
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "c2077831b1c23911",
+          "operationName": "graph_context_extraction",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "05daa62152041d91"
+            }
+          ],
+          "startTime": 1791748277656045,
+          "duration": 371163,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 193400
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\runner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 360
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 370970400
+            },
+            {
+              "key": "lancet.graph.edge_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.graph.node_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.node.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "2e89a94408aeb9a5",
+          "operationName": "load",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "6901ad1fe8a81e1c"
+            }
+          ],
+          "startTime": 1791748278027260,
+          "duration": 528,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 379200
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\dataset\\builder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 594
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::dataset::builder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 149600
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::dataset::builder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748278027781,
+              "fields": [
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\dataset\\builder.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 600
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "lance::dataset::builder"
+                },
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "loading"
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "status",
+                  "type": "string",
+                  "value": "success"
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "lance::dataset_events"
+                },
+                {
+                  "key": "target_ref",
+                  "type": "string",
+                  "value": "None"
+                },
+                {
+                  "key": "uri",
+                  "type": "string",
+                  "value": "./data/lancedb\\nodes.lance"
+                },
+                {
+                  "key": "version",
+                  "type": "string",
+                  "value": "11"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "b4fa7c158b02eb05",
+          "operationName": "plan_scan",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029747,
+          "duration": 5,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 3600
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 487
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 1900
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "2b118a98acc94859",
+          "operationName": "init_filtered_read_stream",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029760,
+          "duration": 29,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 27700
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 341
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 1800
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "3663ced0103fd4db",
+          "operationName": "schedule_ranges",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "af8f6ccba1be1e8a"
+            }
+          ],
+          "startTime": 1791748278030033,
+          "duration": 13,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 11100
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-encoding-8.0.0\\src\\decoder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1268
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2500
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 5
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "af8f6ccba1be1e8a",
+          "operationName": "read_fragment",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029827,
+          "duration": 234,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 137200
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1077
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 97700
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "1be5d4c4e3ae2486",
+          "operationName": "schedule_ranges",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "6898e1d8268e3818"
+            }
+          ],
+          "startTime": 1791748278030160,
+          "duration": 8,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 6400
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-encoding-8.0.0\\src\\decoder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1268
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2100
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 5
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "6898e1d8268e3818",
+          "operationName": "read_fragment",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029860,
+          "duration": 316,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 159200
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1077
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 157100
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "6a590a3b90f0a071",
+          "operationName": "schedule_ranges",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "36a7f5eb5e22af8b"
+            }
+          ],
+          "startTime": 1791748278030208,
+          "duration": 9,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 6900
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-encoding-8.0.0\\src\\decoder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1268
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2600
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "36a7f5eb5e22af8b",
+          "operationName": "read_fragment",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029824,
+          "duration": 404,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 185300
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1077
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 219000
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 11
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "dcf9b753bcdf65e6",
+          "operationName": "schedule_ranges",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "5531b0b88ca29dd8"
+            }
+          ],
+          "startTime": 1791748278030297,
+          "duration": 7,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 5300
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-encoding-8.0.0\\src\\decoder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1268
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 3100
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 8
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "5531b0b88ca29dd8",
+          "operationName": "read_fragment",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029824,
+          "duration": 491,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 311500
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1077
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 180100
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "3a5847668cdc31b2",
+          "operationName": "schedule_ranges",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "a52146d9d98066c3"
+            }
+          ],
+          "startTime": 1791748278030351,
+          "duration": 7,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 6200
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-encoding-8.0.0\\src\\decoder.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1268
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2400
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance_encoding::decoder"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 5
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "a52146d9d98066c3",
+          "operationName": "read_fragment",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "57028a0e435277e3"
+            }
+          ],
+          "startTime": 1791748278029882,
+          "duration": 486,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 343800
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\io\\exec\\filtered_read.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1077
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 142900
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::io::exec::filtered_read"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 8
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "57028a0e435277e3",
+          "operationName": "DatasetRecordBatchStream",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "6901ad1fe8a81e1c"
+            }
+          ],
+          "startTime": 1791748278029712,
+          "duration": 2565,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 1089300
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-8.0.0\\src\\dataset\\scanner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 4957
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "lance::dataset::scanner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 1476700
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "lance::dataset::scanner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748278032254,
+              "fields": [
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "event C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-datafusion-8.0.0\\src\\exec.rs:544"
+                },
+                {
+                  "key": "bytes_read",
+                  "type": "string",
+                  "value": "112943"
+                },
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "C:\\Users\\user3\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\lance-datafusion-8.0.0\\src\\exec.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 544
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "lance_datafusion::exec"
+                },
+                {
+                  "key": "index_comparisons",
+                  "type": "string",
+                  "value": "0"
+                },
+                {
+                  "key": "indices_loaded",
+                  "type": "string",
+                  "value": "0"
+                },
+                {
+                  "key": "iops",
+                  "type": "string",
+                  "value": "60"
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "output_rows",
+                  "type": "string",
+                  "value": "13"
+                },
+                {
+                  "key": "parts_loaded",
+                  "type": "string",
+                  "value": "0"
+                },
+                {
+                  "key": "plan_summary",
+                  "type": "string",
+                  "value": "Projection(Take(CoalesceBatches(GlobalLimit(LanceFilter(SortExec(TopK)(KNNVectorDistance(FilteredRead)))))))"
+                },
+                {
+                  "key": "requests",
+                  "type": "string",
+                  "value": "60"
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "lance::execution"
+                },
+                {
+                  "key": "type",
+                  "type": "string",
+                  "value": "plan_run"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "6901ad1fe8a81e1c",
+          "operationName": "dense_search",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "f88fe378729c9338"
+            }
+          ],
+          "startTime": 1791748278027248,
+          "duration": 5055,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 2850100
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\service.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 903
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "db.operation",
+              "type": "string",
+              "value": "vector_search"
+            },
+            {
+              "key": "db.system",
+              "type": "string",
+              "value": "lancedb"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2205800
+            },
+            {
+              "key": "lancet.index.generation",
+              "type": "string",
+              "value": "lance-11"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "156ce1f8b4292b4c",
+          "operationName": "bm25_search",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "f88fe378729c9338"
+            }
+          ],
+          "startTime": 1791748278032314,
+          "duration": 47,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 44900
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\service.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1034
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 2800
+            },
+            {
+              "key": "lancet.index.generation",
+              "type": "string",
+              "value": "bm25-memory"
+            },
+            {
+              "key": "lancet.retrieval.path",
+              "type": "string",
+              "value": "bm25"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "92e065b60c0aaae0",
+          "operationName": "rerank_request",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "f88fe378729c9338"
+            }
+          ],
+          "startTime": 1791748278032381,
+          "duration": 256007,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 126500
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\nodes\\retrieve.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 303
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::nodes::retrieve"
+            },
+            {
+              "key": "gen_ai.request.model",
+              "type": "string",
+              "value": "voyageai/rerank-2.5-lite"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 255881100
+            },
+            {
+              "key": "lancet.rerank.candidates",
+              "type": "string",
+              "value": "13"
+            },
+            {
+              "key": "lancet.rerank.latency_ms",
+              "type": "string",
+              "value": "256"
+            },
+            {
+              "key": "lancet.rerank.outcome",
+              "type": "string",
+              "value": "completed"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::nodes::retrieve"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748278288382,
+              "fields": [
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "rerank_call"
+                },
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "src\\rerank\\openrouter.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 170
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "engine::rerank::openrouter"
+                },
+                {
+                  "key": "cost_reported",
+                  "type": "bool",
+                  "value": true
+                },
+                {
+                  "key": "latency_ms",
+                  "type": "float64",
+                  "value": 255.9705
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "n",
+                  "type": "string",
+                  "value": "13"
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "engine::rerank::openrouter"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "f88fe378729c9338",
+          "operationName": "hybrid_retrieval",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "05daa62152041d91"
+            }
+          ],
+          "startTime": 1791748278027240,
+          "duration": 261217,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 3167500
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\runner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 354
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 258049700
+            },
+            {
+              "key": "lancet.node.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "lancet.retrieval.bm25_count",
+              "type": "string",
+              "value": "11"
+            },
+            {
+              "key": "lancet.retrieval.dense_count",
+              "type": "string",
+              "value": "13"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748278288449,
+              "fields": [
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "retrieve_hybrid_substages"
+                },
+                {
+                  "key": "alive_tasks",
+                  "type": "string",
+                  "value": "33"
+                },
+                {
+                  "key": "bm25_ms",
+                  "type": "float64",
+                  "value": 0.0506
+                },
+                {
+                  "key": "checkout_ms",
+                  "type": "float64",
+                  "value": 0.1539
+                },
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "src\\workflow\\nodes\\retrieve.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 756
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "engine::workflow::nodes::retrieve"
+                },
+                {
+                  "key": "dense_ms",
+                  "type": "float64",
+                  "value": 5.0597
+                },
+                {
+                  "key": "fusion_ms",
+                  "type": "float64",
+                  "value": 0.015799999999999998
+                },
+                {
+                  "key": "global_queue",
+                  "type": "string",
+                  "value": "0"
+                },
+                {
+                  "key": "graph_fetch_ms",
+                  "type": "float64",
+                  "value": 0.0003
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "open_table_ms",
+                  "type": "float64",
+                  "value": 0.5442
+                },
+                {
+                  "key": "rerank_ms",
+                  "type": "float64",
+                  "value": 256.03209999999996
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "engine::workflow::nodes::retrieve"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "3ebe015bd21ab0c3",
+          "operationName": "prompt_assembly",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "05daa62152041d91"
+            }
+          ],
+          "startTime": 1791748278288505,
+          "duration": 1618,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 1471600
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\runner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 367
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 147700
+            },
+            {
+              "key": "lancet.node.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "lancet.prompt.evidence_block_count",
+              "type": "string",
+              "value": "8"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "f5e94d48720c126c",
+          "operationName": "lancet.v1.LancetService/QueryRAG",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "8f0f625edfbc1274"
+            }
+          ],
+          "startTime": 1791748277655210,
+          "duration": 4665623,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+            },
+            {
+              "key": "otel.scope.version",
+              "type": "string",
+              "value": "0.70.0"
+            },
+            {
+              "key": "rpc.method",
+              "type": "string",
+              "value": "lancet.v1.LancetService/QueryRAG"
+            },
+            {
+              "key": "rpc.response.status_code",
+              "type": "string",
+              "value": "OK"
+            },
+            {
+              "key": "rpc.system.name",
+              "type": "string",
+              "value": "grpc"
+            },
+            {
+              "key": "server.address",
+              "type": "string",
+              "value": "127.0.0.1"
+            },
+            {
+              "key": "server.port",
+              "type": "int64",
+              "value": 50051
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "client"
+            }
+          ],
+          "logs": [],
+          "processID": "p2",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "8f0f625edfbc1274",
+          "operationName": "POST /rag/query",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "8cd5a8c96cce890e"
+            }
+          ],
+          "startTime": 1791748277655210,
+          "duration": 4665623,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+            },
+            {
+              "key": "otel.scope.version",
+              "type": "string",
+              "value": "0.61.0"
+            },
+            {
+              "key": "client.address",
+              "type": "string",
+              "value": "127.0.0.1"
+            },
+            {
+              "key": "http.request.body.size",
+              "type": "int64",
+              "value": 154
+            },
+            {
+              "key": "http.request.method",
+              "type": "string",
+              "value": "POST"
+            },
+            {
+              "key": "http.response.body.size",
+              "type": "int64",
+              "value": 18344
+            },
+            {
+              "key": "http.response.status_code",
+              "type": "int64",
+              "value": 200
+            },
+            {
+              "key": "lancet.answer_basis",
+              "type": "string",
+              "value": "retrieval"
+            },
+            {
+              "key": "lancet.correlation_id",
+              "type": "string",
+              "value": "d70cc58c-a3ce-4ffe-ad03-bd98a8b9b807"
+            },
+            {
+              "key": "lancet.degraded_mode",
+              "type": "bool",
+              "value": false
+            },
+            {
+              "key": "lancet.notice_codes",
+              "type": "string",
+              "value": "[\"GRAPH_DISABLED_BY_CONFIG\"]"
+            },
+            {
+              "key": "lancet.stream_terminal_seen",
+              "type": "bool",
+              "value": true
+            },
+            {
+              "key": "lancet.workflow.success",
+              "type": "bool",
+              "value": true
+            },
+            {
+              "key": "network.peer.address",
+              "type": "string",
+              "value": "127.0.0.1"
+            },
+            {
+              "key": "network.peer.port",
+              "type": "int64",
+              "value": 60322
+            },
+            {
+              "key": "network.protocol.version",
+              "type": "string",
+              "value": "1.1"
+            },
+            {
+              "key": "server.address",
+              "type": "string",
+              "value": "127.0.0.1"
+            },
+            {
+              "key": "server.port",
+              "type": "int64",
+              "value": 8080
+            },
+            {
+              "key": "url.path",
+              "type": "string",
+              "value": "/rag/query"
+            },
+            {
+              "key": "url.scheme",
+              "type": "string",
+              "value": "http"
+            },
+            {
+              "key": "user_agent.original",
+              "type": "string",
+              "value": "python-httpx/0.28.1"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "server"
+            },
+            {
+              "key": "otel.status_code",
+              "type": "string",
+              "value": "OK"
+            }
+          ],
+          "logs": [],
+          "processID": "p2",
+          "warnings": [
+            "parent span ID=8cd5a8c96cce890e is not in the trace; skipping clock skew adjustment"
+          ]
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "91071affa0d17c69",
+          "operationName": "llm_attempt",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "828db17c11c59285"
+            }
+          ],
+          "startTime": 1791748278290200,
+          "duration": 4030308,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "attempt",
+              "type": "string",
+              "value": "1"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 1659000
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\nodes\\generate.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 179
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::nodes::generate"
+            },
+            {
+              "key": "gen_ai.request.model",
+              "type": "string",
+              "value": "deepseek/deepseek-v4-flash-0731"
+            },
+            {
+              "key": "gen_ai.usage.input_tokens",
+              "type": "string",
+              "value": "2560"
+            },
+            {
+              "key": "gen_ai.usage.output_tokens",
+              "type": "string",
+              "value": "128"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 4028650000
+            },
+            {
+              "key": "lancet.attempt.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::nodes::generate"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748282320484,
+              "fields": [
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "generation_served"
+                },
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "src\\generation\\openrouter.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 948
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "engine::generation::openrouter"
+                },
+                {
+                  "key": "correlation_id",
+                  "type": "string",
+                  "value": "\"d70cc58c-a3ce-4ffe-ad03-bd98a8b9b807\""
+                },
+                {
+                  "key": "gen_ai.response.model",
+                  "type": "string",
+                  "value": "\"deepseek/deepseek-v4-flash-0731\""
+                },
+                {
+                  "key": "generation_id",
+                  "type": "string",
+                  "value": "\"gen-1791748279-ECItWZypLTrbBNAwrROC\""
+                },
+                {
+                  "key": "generation_served",
+                  "type": "bool",
+                  "value": true
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "provider",
+                  "type": "string",
+                  "value": "\"Sail Research\""
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "engine::generation::openrouter"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "828db17c11c59285",
+          "operationName": "llm_generation",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "05daa62152041d91"
+            }
+          ],
+          "startTime": 1791748278290189,
+          "duration": 4030359,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 1731000
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\workflow\\runner.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 372
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 4028628300
+            },
+            {
+              "key": "lancet.generation.attempts",
+              "type": "string",
+              "value": "1"
+            },
+            {
+              "key": "lancet.node.outcome",
+              "type": "string",
+              "value": "ok"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::workflow::runner"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 10
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [],
+          "processID": "p1",
+          "warnings": null
+        },
+        {
+          "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+          "spanID": "05daa62152041d91",
+          "operationName": "query_rag",
+          "references": [
+            {
+              "refType": "CHILD_OF",
+              "traceID": "6b986b3d9efc5d266429bcba3409c3bd",
+              "spanID": "f5e94d48720c126c"
+            }
+          ],
+          "startTime": 1791748277655959,
+          "duration": 4664727,
+          "tags": [
+            {
+              "key": "otel.scope.name",
+              "type": "string",
+              "value": "lancet-engine"
+            },
+            {
+              "key": "busy_ns",
+              "type": "int64",
+              "value": 6957100
+            },
+            {
+              "key": "code.file.path",
+              "type": "string",
+              "value": "src\\service.rs"
+            },
+            {
+              "key": "code.line.number",
+              "type": "int64",
+              "value": 1452
+            },
+            {
+              "key": "code.module.name",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "correlation_id",
+              "type": "string",
+              "value": "d70cc58c-a3ce-4ffe-ad03-bd98a8b9b807"
+            },
+            {
+              "key": "idle_ns",
+              "type": "int64",
+              "value": 4657771300
+            },
+            {
+              "key": "lancet.degraded_mode",
+              "type": "bool",
+              "value": false
+            },
+            {
+              "key": "lancet.workflow.bm25_count",
+              "type": "string",
+              "value": "11"
+            },
+            {
+              "key": "lancet.workflow.completed_at_ms",
+              "type": "int64",
+              "value": 1791748282320
+            },
+            {
+              "key": "lancet.workflow.completion_tokens",
+              "type": "string",
+              "value": "128"
+            },
+            {
+              "key": "lancet.workflow.graph_edge_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.workflow.graph_node_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.workflow.graph_path_found",
+              "type": "bool",
+              "value": false
+            },
+            {
+              "key": "lancet.workflow.graph_prompt_fact_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.workflow.graph_seed_count",
+              "type": "string",
+              "value": "0"
+            },
+            {
+              "key": "lancet.workflow.prompt_tokens",
+              "type": "string",
+              "value": "2560"
+            },
+            {
+              "key": "lancet.workflow.reformulation_used",
+              "type": "bool",
+              "value": false
+            },
+            {
+              "key": "lancet.workflow.started_at_ms",
+              "type": "int64",
+              "value": 1791748277655
+            },
+            {
+              "key": "lancet.workflow.vector_count",
+              "type": "string",
+              "value": "13"
+            },
+            {
+              "key": "session_id",
+              "type": "string",
+              "value": "bc609beb-3a3f-49fe-9771-27ac29993290"
+            },
+            {
+              "key": "target",
+              "type": "string",
+              "value": "engine::service"
+            },
+            {
+              "key": "thread.id",
+              "type": "int64",
+              "value": 6
+            },
+            {
+              "key": "thread.name",
+              "type": "string",
+              "value": "tokio-rt-worker"
+            },
+            {
+              "key": "span.kind",
+              "type": "string",
+              "value": "internal"
+            }
+          ],
+          "logs": [
+            {
+              "timestamp": 1791748282320680,
+              "fields": [
+                {
+                  "key": "event",
+                  "type": "string",
+                  "value": "request_process_state"
+                },
+                {
+                  "key": "alive_tasks",
+                  "type": "string",
+                  "value": "33"
+                },
+                {
+                  "key": "code.file.path",
+                  "type": "string",
+                  "value": "src\\service.rs"
+                },
+                {
+                  "key": "code.line.number",
+                  "type": "int64",
+                  "value": 97
+                },
+                {
+                  "key": "code.module.name",
+                  "type": "string",
+                  "value": "engine::service"
+                },
+                {
+                  "key": "correlation_id",
+                  "type": "string",
+                  "value": "d70cc58c-a3ce-4ffe-ad03-bd98a8b9b807"
+                },
+                {
+                  "key": "global_queue_depth",
+                  "type": "string",
+                  "value": "0"
+                },
+                {
+                  "key": "level",
+                  "type": "string",
+                  "value": "INFO"
+                },
+                {
+                  "key": "process_uptime_ms",
+                  "type": "string",
+                  "value": "106671"
+                },
+                {
+                  "key": "request_ordinal",
+                  "type": "string",
+                  "value": "3"
+                },
+                {
+                  "key": "request_process_state",
+                  "type": "bool",
+                  "value": true
+                },
+                {
+                  "key": "session_approx_num_items",
+                  "type": "string",
+                  "value": "424"
+                },
+                {
+                  "key": "target",
+                  "type": "string",
+                  "value": "engine::service"
+                }
+              ]
+            }
+          ],
+          "processID": "p1",
+          "warnings": null
+        }
+      ],
+      "processes": {
+        "p1": {
+          "serviceName": "lancet-engine",
+          "tags": [
+            {
+              "key": "deployment.environment",
+              "type": "string",
+              "value": "dev"
+            },
+            {
+              "key": "service.version",
+              "type": "string",
+              "value": "0.1.0"
+            },
+            {
+              "key": "telemetry.sdk.language",
+              "type": "string",
+              "value": "rust"
+            },
+            {
+              "key": "telemetry.sdk.name",
+              "type": "string",
+              "value": "opentelemetry"
+            },
+            {
+              "key": "telemetry.sdk.version",
+              "type": "string",
+              "value": "0.32.1"
+            }
+          ]
+        },
+        "p2": {
+          "serviceName": "lancet-gateway",
+          "tags": [
+            {
+              "key": "deployment.environment",
+              "type": "string",
+              "value": "dev"
+            },
+            {
+              "key": "service.version",
+              "type": "string",
+              "value": "0.1.0"
+            },
+            {
+              "key": "telemetry.sdk.language",
+              "type": "string",
+              "value": "go"
+            },
+            {
+              "key": "telemetry.sdk.name",
+              "type": "string",
+              "value": "opentelemetry"
+            },
+            {
+              "key": "telemetry.sdk.version",
+              "type": "string",
+              "value": "1.45.0"
+            }
+          ]
+        }
+      },
+      "warnings": null
+    }
+  ]
+}

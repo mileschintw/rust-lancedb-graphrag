@@ -1,0 +1,197 @@
+{
+  "plan": "06.4-09",
+  "platform": "windows-native",
+  "commit": "84aa285c",
+  "queries": {
+    "before_ingest": {
+      "role": "query-before",
+      "exit": 0,
+      "trace_id": "25c49ad02021c3462ecf63e987276134",
+      "status": "ok",
+      "notice_codes": [
+        24,
+        25,
+        1
+      ],
+      "notices": [
+        "DEFAULT_LEVER_UNAVAILABLE",
+        "GRAPH_DISABLED_BY_CONFIG",
+        "NO_EVIDENCE"
+      ],
+      "degraded_mode": true,
+      "levers": [
+        "rerank"
+      ],
+      "graph_path_found": false
+    },
+    "after_ingest": {
+      "role": "query-after",
+      "exit": 0,
+      "trace_id": "d5991b663ed51bb0a117607936a3c7cc",
+      "status": "ok",
+      "notice_codes": [
+        25
+      ],
+      "notices": [
+        "GRAPH_DISABLED_BY_CONFIG"
+      ],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": false
+    },
+    "two_hop_default": {
+      "role": "two-hop",
+      "exit": 0,
+      "trace_id": "6b986b3d9efc5d266429bcba3409c3bd",
+      "status": "ok",
+      "notice_codes": [
+        25
+      ],
+      "notices": [
+        "GRAPH_DISABLED_BY_CONFIG"
+      ],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": false
+    },
+    "two_hop_graph": {
+      "role": "two-hop-graph",
+      "exit": 0,
+      "trace_id": "120b35f5a25518b66de6f05b6ea1367d",
+      "status": "ok",
+      "notice_codes": [],
+      "notices": [],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": true
+    }
+  },
+  "steps": {
+    "engine_start": {
+      "exit": null
+    },
+    "ingest": {
+      "exit": 0,
+      "documents": [
+        {
+          "file": "harbor-light-overview.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "kestrel-spectrograph-install.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "alder-optics-profile.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "tidewater-funding-report.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "cedar-island-ferry.md",
+          "status": "completed",
+          "last_status": "completed"
+        }
+      ]
+    },
+    "burst_a": {
+      "exit": 0,
+      "trace_ids": [
+        "d640a2dea9305949bd0c1ae554a7ff21",
+        "de4d17141360ad845ba69471bb552bc7",
+        "4fde031e735fd0936adaf6cb26f11d91"
+      ],
+      "notice_codes": [
+        [
+          25
+        ],
+        [
+          25
+        ],
+        [
+          25
+        ]
+      ]
+    },
+    "burst_b": {
+      "exit": 0,
+      "trace_ids": [
+        "7c7abd8974ba9eea47b775301f82f123",
+        "2b6b041e26558eaa1f68fedafa1e9b91"
+      ],
+      "notice_codes": [
+        [
+          25
+        ],
+        [
+          25
+        ]
+      ]
+    }
+  },
+  "traces": {
+    "two_hop_default": {
+      "trace_id": "6b986b3d9efc5d266429bcba3409c3bd",
+      "file": "docs/assets/jaeger-default-query.trace.json",
+      "span_count": 27
+    },
+    "two_hop_graph": {
+      "trace_id": "120b35f5a25518b66de6f05b6ea1367d",
+      "file": "docs/assets/jaeger-graph-optin.trace.json",
+      "span_count": 57
+    }
+  },
+  "rescore": {
+    "compare_exit": 0,
+    "compare_output": "re-score reproduces the published values",
+    "eval_runs_status": "",
+    "result_hash": "64bad6f11b7678a2",
+    "metadata_keys_differed": [
+      "commit_sha",
+      "run_date",
+      "dependency_lock_hash"
+    ]
+  },
+  "preflight": {
+    "attempts": 1,
+    "final_passed": false,
+    "retry_evidence": [],
+    "attempt_1": {
+      "exit": 1,
+      "checks": {
+        "drive_environment": "PASS",
+        "gateway_reachable": "PASS",
+        "engine_reachable": "PASS",
+        "arm_mode_canaries": "FAIL"
+      },
+      "failure": "Canary qs-001 (hybrid+graph-v2) workflow failed (failed)",
+      "class": "not timeout-class: the engine log shows generation_output_rejected with finish_reason 'error' (OpenRouter completion incomplete) for that request, and no timeout event for it; the only timeout-related line in the attempt (query_embedding_retry, 19:56:48Z) belongs to a different, successful request",
+      "wall_clock_kill": false,
+      "retried": false
+    }
+  },
+  "spend": {
+    "before_usd": 3.704442847,
+    "after_usd": 3.7111963,
+    "delta_usd": 0.006753453,
+    "platform_cap_usd": 0.3,
+    "cumulative_usd": 0.006753453,
+    "phase_cap_usd": 1.0,
+    "note": "delta spans both repeats; the first halted run alone was 0.001685044"
+  }
+}
