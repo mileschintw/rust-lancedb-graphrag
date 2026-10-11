@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 15
+current_plan: 16
 status: executing
-stopped_at: Phase 06.4 wave 11 complete (06.4-14); wave 12 (06.4-15 API contract / README) next
+stopped_at: Phase 06.4 wave 12 complete (06.4-15); wave 13 (06.4-16 debt ledger / backlog promotion) next
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -22,11 +22,12 @@ last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-pro
 
 ## Current Position
 
-Current Plan: 15
+Current Plan: 16
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-12: 06.4 wave 12 COMPLETE (plan 15, Opus).** `docs/api-contract.md` (request fields incl. tri-state flags, gRPC/HTTP refusals, 20 notice codes with severity and degraded_mode, D-15 matrix verbatim from `bad_input_matrix.rs` header) guarded by `eval/tests/test_notice_docs.py` (RED `b7a6f493`, GREEN `102aa291`); README rewritten as the v1 front door (quickstart block byte-identical to `3ff83415`; node order, plan count 250, reranker, notice codes, test counts, entity resolution corrected); `docs/build-history.md`. Ledger open 4 (OB-34/35/36 for 17; OB-44 awaits the owner) / closed 40. SUMMARY `ae6a155a`. Scoped gate: 4 passed, drift clean. Owner reviews owed: D2 (README read-through, rerank latency caveat placement), D4 (build-history fairness); banner date 2026-10-11 (UTC).
 - **2026-10-12: 06.4 wave 11 COMPLETE (plan 14, Opus).** `docs/design-narrative.md`: seven alternatives in prose with source links, graph described as built/measured/off-by-default (~42% no-path, 149/150/148 of 351), query-path and ingestion Mermaid diagrams (ordering and degraded-branch labels follow the code). OB-25 and OB-38 closed; ledger 18 open / 26 closed / 104 n-a. quote_check passes unchanged. SUMMARY `0efe6eeb`. Docs-only wave: gate skipped per owner rule. Owed: owner visual check of the Mermaid diagrams on GitHub.
 - **2026-10-12: 06.4 wave 10 COMPLETE (plan 13, Opus).** D-218 forest plot generated from the two committed run JSONs (`eval/scripts/render_forest_plot.py` + template, `docs/assets/eval-forest.{svg,json}`, 18 cells, D-228 Hits@4 footnote cells carry no number), `docs/evaluation.md`, fidelity-note addendum only, never-re-derive `quote_check.py` (+ allow file, 3 phrases; two checker bugs fixed: thousands grouping, unsigned-vs-negative match). Ledger open 20 / closed 24 (OB-39/40/41/43 also closed). SUMMARY `e50824bd`. Scoped gate: test_forest_plot 6 passed, drift clean. Known checker limit: short figures can match unrelated tokens in large report.json files.
 - **2026-10-12: 06.4 RESUMED by the owner; wave 9 COMPLETE (plan 12, Opus executor).** Owner decisions for 12-17: no engine/gateway/proto/config changes this phase; defer `default-run = "engine"` and engine retry on `finish_reason: error` to plan 16's debt ledger next to IN-01..06; executors Opus for 12-15, Sonnet for 16-17; scoped post-wave gates (skip for .planning/docs/README-only waves, plan-touched eval test files + drift for eval/ changes, full suite only for engine/gateway/proto/config/scripts; full regression once at phase end). 12: `docs/observability.md` (two traces of the two-entity question, span tables tied to committed trace JSON by `eval/tests/test_observability_doc.py`), OB-23 closed; SUMMARY `54da63bf`. Scoped gate: 5 passed, drift clean. Carried: OB-44 (per-document ingestion span count never measured; needs an owner call before 17's zero-open check), README "What is built" node order (graph extraction runs before hybrid retrieval) for plan 15, human render check of the Mermaid diagrams/screenshots.
