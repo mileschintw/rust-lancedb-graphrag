@@ -232,20 +232,23 @@ pub fn unavailable_default_levers(
         })
 }
 
-/// The startup warning for a configured default lever that this engine cannot serve (D-194).
+/// The remedy a startup warning names for a configured default lever that is unavailable (D-204 IN-02).
 ///
-/// One plain sentence: the lever by wire name, why it is missing, what a request that names no
-/// lever now gets, and the remedies.
-pub fn default_lever_unavailable_warning(lever: v1::Lever) -> String {
-    format!(
-        "configured default lever {} is unavailable: {}; a request that names no lever runs \
-         without it and carries a DEFAULT_LEVER_UNAVAILABLE notice; provide the resource (for \
-         example backfill the store, or for a legacy 19-column store run \
-         `backfill_evidence_metadata --migrate-only`) or set [engine.levers] defaults = [] to \
-         start lever-free",
-        workflow::levers::wire_name(lever),
-        lever_unavailable_reason(lever)
-    )
+/// One remedy per lever, each naming the resource that lever needs, so the warning for one lever
+/// never sends the operator to another lever's fix.
+pub fn lever_unavailable_remedy(lever: v1::Lever) -> &'static str {
+    match lever {
+        v1::Lever::Rerank => concat!(
+            "wire the lever reranker: an OpenRouter rerank configuration ",
+            "(rerank_endpoint and rerank_model) is required"
+        ),
+        v1::Lever::EvidenceMetadata => concat!(
+            "ingest documents with doc_title, source or published_date, or run ",
+            "`backfill_evidence_metadata`; a legacy 19-column store runs `--migrate-only` first"
+        ),
+        v1::Lever::GraphV2 => "set [engine.graph] graph_v2_chunk_precision to a non-`all` variant",
+        v1::Lever::BinaryAnswerFormat | v1::Lever::Unspecified => "it needs no resource to serve",
+    }
 }
 
 /// The graph settings one request runs under (D-139, D-140).

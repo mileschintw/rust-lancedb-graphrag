@@ -24,7 +24,7 @@ const DECLARED: [Lever; 4] = [
 /// The name a lever carries on the gateway wire and in `[engine.levers] defaults`.
 ///
 /// `Lever::Unspecified` is not a lever and has no name.
-pub(crate) fn wire_name(lever: Lever) -> &'static str {
+pub fn wire_name(lever: Lever) -> &'static str {
     match lever {
         Lever::Unspecified => "unspecified",
         Lever::Rerank => "rerank",

@@ -1757,7 +1757,7 @@ fn removing_a_lever_clears_exactly_that_lever_and_keeps_the_echo_canonical() {
 
 #[tokio::test]
 async fn startup_check_reports_each_unavailable_default_lever() {
-    use crate::service::{default_lever_unavailable_warning, unavailable_default_levers};
+    use crate::service::{lever_unavailable_reason, unavailable_default_levers};
 
     async fn unavailable(
         service: &crate::service::LancetServiceImpl,
@@ -1831,16 +1831,43 @@ async fn startup_check_reports_each_unavailable_default_lever() {
     );
     let _ = std::fs::remove_dir_all(path);
 
-    let warning = default_lever_unavailable_warning(Lever::EvidenceMetadata);
-    assert!(warning.contains("evidence_metadata"), "{warning}");
-    assert!(warning.contains("no document metadata"), "{warning}");
+    let reason = lever_unavailable_reason(Lever::EvidenceMetadata);
+    assert!(reason.contains("no document metadata"), "{reason}");
+}
+
+/// D-204 IN-02: the startup warning names the remedy of the lever that is missing, never another
+/// lever's. Each remedy names the resource its own lever needs.
+#[test]
+fn d204_in02_each_lever_has_a_specific_remedy() {
+    use crate::service::lever_unavailable_remedy;
+
+    let rerank = lever_unavailable_remedy(Lever::Rerank);
+    let metadata = lever_unavailable_remedy(Lever::EvidenceMetadata);
+    let graph = lever_unavailable_remedy(Lever::GraphV2);
+
     assert!(
-        warning.contains("defaults = []"),
-        "the warning names the remedy: {warning}"
+        rerank != metadata && metadata != graph && rerank != graph,
+        "three levers, three remedies: {rerank} | {metadata} | {graph}"
     );
+    assert!(rerank.contains("rerank"), "{rerank}");
     assert!(
-        !warning.contains("  "),
-        "the sentence has single spaces only: {warning}"
+        metadata.contains("backfill_evidence_metadata") && metadata.contains("--migrate-only"),
+        "{metadata}"
+    );
+    assert!(graph.contains("graph_v2_chunk_precision"), "{graph}");
+    for (own, other) in [
+        (rerank, metadata),
+        (metadata, graph),
+        (graph, rerank),
+    ] {
+        assert!(
+            !own.contains(other),
+            "a remedy never contains another lever's: {own}"
+        );
+    }
+    assert!(
+        !rerank.contains("backfill") && !graph.contains("backfill"),
+        "only the metadata remedy names the backfill"
     );
 }
 
@@ -1980,31 +2007,43 @@ fn a_swap_that_empties_or_refills_document_metadata_is_logged() {
     );
 }
 
+/// D-202 (WR-01): `main` runs every fallible startup step (the lever check, the generator, the
+/// address parse, the tokenizer warm-up, the port bind and the staged-job read) before the ingest
+/// worker spawns and before the replay. The `config_startup` held-port test is the behavioural
+/// sibling of this source-order pin.
 #[test]
-fn main_runs_the_default_lever_check_before_the_workers_and_the_replay() {
+fn d202_main_binds_and_reads_staged_jobs_before_the_workers_and_the_replay() {
     let main = include_str!("../main.rs");
-    let check = main
-        .find("unavailable_default_levers(")
-        .expect("main checks the configured defaults");
-    let worker = main
-        .find("spawn_worker_with_concurrency(")
-        .expect("main spawns the ingest worker");
-    let replay = main
-        .find("read_staged_jobs(")
-        .expect("main reads the staged jobs");
-    let replayed = main
-        .find("Staged ingestion jobs replayed")
-        .expect("main logs the end of the replay");
+    let first = |needle: &str| {
+        main.find(needle)
+            .unwrap_or_else(|| panic!("main.rs must contain `{needle}`"))
+    };
+    let order = [
+        "unavailable_default_levers(",
+        "OpenRouterGenerator::new_with_config",
+        "grpc_addr.parse",
+        "warm_prompt_tokenizer",
+        "TcpIncoming::bind",
+        "read_staged_jobs(",
+        "spawn_worker_with_concurrency(",
+        "serve_with_incoming_shutdown",
+    ];
+    let offsets: Vec<usize> = order.iter().map(|needle| first(needle)).collect();
     assert!(
-        check < worker && worker < replay && replay < replayed,
-        "order must be default check ({check}), worker spawn ({worker}), staged-job read ({replay}), replay line ({replayed})"
+        offsets.windows(2).all(|pair| pair[0] < pair[1]),
+        "startup order must be {order:?}, found offsets {offsets:?}"
     );
-    let debounce = main
-        .find("spawn_rebuild_debounce_task(")
-        .expect("main spawns the rebuild task");
     assert!(
-        check < debounce,
-        "the default check ({check}) precedes the rebuild task ({debounce})"
+        main.contains("with_nodelay(Some(true))"),
+        "the bound listener keeps TCP_NODELAY so SSE latency is unchanged"
+    );
+    let worker = first("spawn_worker_with_concurrency(");
+    let replayed = first("Staged ingestion jobs replayed");
+    let debounce = first("spawn_rebuild_debounce_task(");
+    let bind = first("TcpIncoming::bind");
+    assert!(
+        bind < debounce && worker < replayed,
+        "the bind ({bind}) precedes the rebuild task ({debounce}), and the worker ({worker}) precedes the replay line ({replayed})"
     );
     assert!(
         !main.contains("validate_default_levers"),

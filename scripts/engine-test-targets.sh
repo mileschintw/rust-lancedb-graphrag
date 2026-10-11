@@ -515,6 +515,14 @@ fi
 #         `d207_graph_default_is_true_in_code_and_both_files_carry_false`, the two-file pin for
 #         `[engine.graph] context_default_enabled`. 951->952. lib rises 835->836; the other targets
 #         are unchanged (0/58/18/14/26).
+#   954 -- Phase 06.4 plan 02 Task 1: D-202 (startup binds the gRPC port and reads the staged jobs
+#         before any worker spawns or job is replayed) and D-204 IN-02 (a lever-specific remedy in
+#         the startup warning). One lib test, d204_in02_each_lever_has_a_specific_remedy, and one
+#         config_startup test, d202_a_held_grpc_port_fails_startup_before_any_replay. The source-order
+#         pin main_runs_the_default_lever_check_before_the_workers_and_the_replay was rewritten and
+#         renamed d202_main_binds_and_reads_staged_jobs_before_the_workers_and_the_replay, so it keeps
+#         its count. 952->954. lib rises 836->837 and config_startup 26->27; the other targets are
+#         unchanged (0/58/18/14).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -557,18 +565,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 952 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 952, got $TOTAL" >&2
+if [ "$TOTAL" -ne 954 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 954, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 836 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 836, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 837 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 837, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 836 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 836, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 837 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 837, got $LIB_COUNT" >&2
   exit 1
 fi
 
@@ -597,8 +605,8 @@ if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
   exit 1
 fi
 
-if [ "$INTEG_CONFIG_COUNT" -ne 26 ]; then
-  echo "FAIL: config_startup test count mismatch: expected 26, got $INTEG_CONFIG_COUNT" >&2
+if [ "$INTEG_CONFIG_COUNT" -ne 27 ]; then
+  echo "FAIL: config_startup test count mismatch: expected 27, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 

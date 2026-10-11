@@ -131,7 +131,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &snapshot,
         );
         for lever in unavailable.iter() {
-            tracing::warn!("{}", engine::service::default_lever_unavailable_warning(lever));
+            tracing::warn!(
+                lever = engine::workflow::levers::wire_name(lever),
+                reason = engine::service::lever_unavailable_reason(lever),
+                remedy = engine::service::lever_unavailable_remedy(lever),
+                "configured default lever is unavailable: a request that names no lever runs without it and carries a DEFAULT_LEVER_UNAVAILABLE notice; apply the remedy or set [engine.levers] defaults = [] to start lever-free"
+            );
         }
     }
     let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
@@ -150,6 +155,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             extraction_config,
         )?,
     );
+
+    // D-202: every fallible startup step runs before the ingest worker spawns and before any
+    // staged job is replayed. A replay re-spends provider calls, so an engine that cannot serve
+    // (a held port, a bad address, a failed read) must exit before it ever starts one.
+    let generation_config =
+        generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
+            effective_settings.generation_model.clone(),
+            effective_settings.chat_endpoint.clone(),
+            effective_settings.model_metadata_endpoint.clone(),
+            Duration::from_secs(effective_settings.generation_timeout_secs),
+            effective_settings.temperature,
+            effective_settings.top_p,
+            effective_settings.grounding_limits_arc(),
+        )?
+        .with_provider_order(effective_settings.generation_provider_order.clone());
+    let generator: Arc<dyn generation::Generator> = Arc::new(
+        generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
+    );
+
+    let addr = settings.engine.grpc_addr.parse()?;
+    // D-93: build the prompt tokenizer before the server accepts requests, so the first
+    // query's AssemblePrompt does not pay for it. It is blocking CPU work, so it runs off
+    // the async runtime; the ready line below precedes the serving line.
+    let tokenizer_warmup = tokio::task::spawn_blocking(engine::prompt::warm_prompt_tokenizer)
+        .await
+        .map_err(|error| format!("prompt tokenizer warm-up task failed: {error}"))?;
+    tracing::info!(
+        tokenizer = "cl100k_base",
+        build_ms = tokenizer_warmup.elapsed.as_secs_f64() * 1000.0,
+        sample_tokens = tokenizer_warmup.sample_token_count,
+        "Prompt tokenizer ready"
+    );
+    // Bind the port before anything with a side effect. The builder's own bind sets TCP_NODELAY;
+    // a listener bound here must set it too, or Nagle's algorithm delays the SSE stream.
+    let incoming = tonic::transport::server::TcpIncoming::bind(addr)?.with_nodelay(Some(true));
+    let staged_jobs = read_staged_jobs(&database).await?;
 
     let statuses = Arc::new(DashMap::new());
     let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
@@ -181,7 +222,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         trigger_links,
     );
 
-    let staged_jobs = read_staged_jobs(&database).await?;
     let replayed_jobs = staged_jobs.len();
     for job in staged_jobs {
         statuses.insert(job.document_id.clone(), IngestionStatus::queued());
@@ -191,21 +231,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|_| "worker exited during replay send")?;
     }
     tracing::info!(replayed_jobs, "Staged ingestion jobs replayed");
-
-    let generation_config =
-        generation::openrouter::OpenRouterGenerationConfig::from_effective_limits(
-            effective_settings.generation_model.clone(),
-            effective_settings.chat_endpoint.clone(),
-            effective_settings.model_metadata_endpoint.clone(),
-            Duration::from_secs(effective_settings.generation_timeout_secs),
-            effective_settings.temperature,
-            effective_settings.top_p,
-            effective_settings.grounding_limits_arc(),
-        )?
-        .with_provider_order(effective_settings.generation_provider_order.clone());
-    let generator: Arc<dyn generation::Generator> = Arc::new(
-        generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
-    );
 
     let service = LancetServiceImpl {
         table,
@@ -221,19 +246,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         database: database.clone(),
     };
 
-    let addr = settings.engine.grpc_addr.parse()?;
-    // D-93: build the prompt tokenizer before the server accepts requests, so the first
-    // query's AssemblePrompt does not pay for it. It is blocking CPU work, so it runs off
-    // the async runtime; the ready line below precedes the serving line.
-    let tokenizer_warmup = tokio::task::spawn_blocking(engine::prompt::warm_prompt_tokenizer)
-        .await
-        .map_err(|error| format!("prompt tokenizer warm-up task failed: {error}"))?;
-    tracing::info!(
-        tokenizer = "cl100k_base",
-        build_ms = tokenizer_warmup.elapsed.as_secs_f64() * 1000.0,
-        sample_tokens = tokenizer_warmup.sample_token_count,
-        "Prompt tokenizer ready"
-    );
     // `build_profile` and `log_filter` make drive 1's release-build and level-filter
     // preconditions checkable from the log (D-92, D-90).
     tracing::info!(
@@ -244,7 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     Server::builder()
         .add_service(LancetServiceServer::new(service))
-        .serve_with_shutdown(addr, async {
+        .serve_with_incoming_shutdown(incoming, async {
             let _ = tokio::signal::ctrl_c().await;
             let _ = shutdown_tx.send(true);
         })

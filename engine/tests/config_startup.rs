@@ -1344,3 +1344,132 @@ fn an_empty_lever_defaults_override_starts_the_engine_over_a_store_without_metad
     );
     let _ = fs::remove_dir_all(temp_dir);
 }
+
+/// What one engine process printed and how it ended.
+struct ExitedEngine {
+    status: std::process::ExitStatus,
+    /// Both output streams, joined: the engine's log layer writes to stdout, its startup error to stderr.
+    output: String,
+}
+
+/// Runs the engine until it exits, capturing both output streams.
+///
+/// `spawn_engine_full` returns only stderr on a failed start, so a log line the engine printed on
+/// stdout before failing would never reach a test that asserts its absence. The child is killed at
+/// `deadline` so an engine that wrongly keeps serving fails the test instead of hanging it.
+fn run_engine_until_exit(
+    cwd: &Path,
+    env_vars: &[(&str, &str)],
+    deadline: Duration,
+) -> Result<ExitedEngine, String> {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_engine"));
+    command.current_dir(cwd);
+    command.env(LEVER_DEFAULTS_ENV, "");
+    for (key, value) in env_vars {
+        command.env(key, value);
+    }
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+    let mut child = command.spawn().expect("failed to spawn engine binary");
+
+    fn drain<R: std::io::Read + Send + 'static>(stream: R) -> thread::JoinHandle<String> {
+        thread::spawn(move || {
+            BufReader::new(stream)
+                .lines()
+                .map_while(Result::ok)
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+    }
+    let stdout = drain(child.stdout.take().expect("stdout piped"));
+    let stderr = drain(child.stderr.take().expect("stderr piped"));
+
+    let started = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if started.elapsed() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "engine was still running after {deadline:?}; stdout:\n{}\nstderr:\n{}",
+                    stdout.join().unwrap_or_default(),
+                    stderr.join().unwrap_or_default()
+                ));
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(50)),
+            Err(error) => return Err(format!("failed to poll the engine: {error}")),
+        }
+    };
+    let output = format!(
+        "{}\n{}",
+        stdout.join().unwrap_or_default(),
+        stderr.join().unwrap_or_default()
+    );
+    Ok(ExitedEngine { status, output })
+}
+
+/// D-202 (WR-01): every fallible startup step runs before the ingest worker spawns and before any
+/// staged job is replayed, so an engine whose gRPC port is held exits non-zero without ever
+/// reaching the replay that re-spends provider calls.
+#[test]
+fn d202_a_held_grpc_port_fails_startup_before_any_replay() {
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-d202-{}", uuid::Uuid::new_v4()));
+    let config_dir = temp_dir.join("isolated_config");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    let lancedb_dir = temp_dir.join("lancedb");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::create_dir_all(&cwd_dir).unwrap();
+
+    // The listener must stay alive in a named binding for the whole run: `let _ = ...` would drop
+    // it at once and free the port.
+    let held_listener = TcpListener::bind(("127.0.0.1", 0)).expect("hold a free loopback port");
+    let held_addr = held_listener
+        .local_addr()
+        .expect("read the held loopback port");
+    // Telemetry goes to a port nothing listens on, so a running owner stack never sees test spans.
+    let dead_otlp = format!("http://{}", unused_loopback_addr());
+    fs::write(
+        config_dir.join("config.toml"),
+        format!(
+            "[engine]\ngrpc_addr = \"{held_addr}\"\nlancedb_path = \"{}\"\n",
+            lancedb_dir.to_str().unwrap().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+
+    let held_addr_text = held_addr.to_string();
+    let env_vars = [
+        ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+        ("LANCET_ENGINE__GRPC_ADDR", held_addr_text.as_str()),
+        ("LANCET_ENGINE__TELEMETRY__OTLP_ENDPOINT", dead_otlp.as_str()),
+        ("OPENROUTER_API_KEY", "test-key"),
+    ];
+    let exited = run_engine_until_exit(&cwd_dir, &env_vars, Duration::from_secs(120))
+        .unwrap_or_else(|failure| panic!("a held port must stop the engine:\n{failure}"));
+    drop(held_listener);
+
+    assert!(
+        !exited.status.success(),
+        "the engine must exit non-zero when its port is held:\n{}",
+        exited.output
+    );
+    // Positive controls: the engine got through the steps that precede the bind, so the missing
+    // lines below are missing because of the bind and not because the capture saw nothing.
+    for reached in ["BM25 snapshot built", "Prompt tokenizer ready"] {
+        assert!(
+            exited.output.contains(reached),
+            "the capture must show `{reached}`:\n{}",
+            exited.output
+        );
+    }
+    for never in ["Staged ingestion jobs replayed", "Rust RAG Engine serving"] {
+        assert!(
+            !exited.output.contains(never),
+            "a held port must stop startup before `{never}`:\n{}",
+            exited.output
+        );
+    }
+    let _ = fs::remove_dir_all(temp_dir);
+}
