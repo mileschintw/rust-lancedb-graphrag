@@ -3,19 +3,19 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: Phase 06.4 context gathered
-last_updated: "2026-10-11T01:33:27.542Z"
+stopped_at: Phase 06.4 planned
+last_updated: "2026-10-11T06:58:39.571Z"
 last_activity: 2026-10-11
-state_head: 2afa6f333bfdccce7e41cb3decf3e0ee95246efa
+state_head: 3dc6241256974f4af21741336db6b8ac6abb6f91
 progress:
   total_phases: 18
   completed_phases: 10
-  total_plans: 233
+  total_plans: 250
   completed_plans: 233
 milestone_name: milestone
-current_phase: "06.4"
 current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
-last_activity_desc: Phase 06.3.6 complete (UAT 6/6, VALIDATION 0 gaps, SECURITY 85/85, verification passed); OBS-06 ticked
+current_phase: "06.4"
+last_activity_desc: Phase 06.4 planned (17 plans, 14 waves; plan check passed at iteration 3; decisions 36/36)
 ---
 
 # Project State
@@ -23,10 +23,15 @@ last_activity_desc: Phase 06.3.6 complete (UAT 6/6, VALIDATION 0 gaps, SECURITY 
 ## Current Position
 
 Current Plan: Not started
-Total Plans in Phase: 23
+Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-11: Phase 06.4 PLANNED.** 17 plans in 14 waves (`06.4-01..17-PLAN.md`). The plan check passed at iteration 3: five parallel full-read slice checks (3 blockers, 17 warnings), three parallel fresh revision planners on disjoint plan sets, a second slice pass (6 warnings), one scoped revision and a scoped re-check. Decision coverage is 36/36 (D-198..D-233) with the 19 inherited 06-CONTEXT IDs asserted by hand; OBS-03 is on all 17 plans.
+  - **Owner decisions taken during planning:** D-227 (add a `rerank_request` leaf span), D-228 (forest plot plots committed values only), D-229 (uncovered review residuals accepted as listed v1 debt; D-204 deferrals to 999.18/999.19), D-230 (executor stops and restores the dev compose stack), D-231 (sudo authorised for the WSL prerequisites, never a typed password), D-232 (`--no-archive-phases` at milestone close), D-233 (one timeout-class preflight retry per platform, read literally).
+  - **Research corrections that changed the plans:** the command is `lancet-eval measure`; no rerank span existed; a shallow clone breaks the re-score (full clone only); the README quickstart was wrong three ways; tonic's `serve_with_incoming_shutdown` drops nodelay; `score` scans every record, so the new D-199 checks live outside it; the D-203 log token must be in the message text (the fmt layer never prints the event name); local `main` is ahead of origin, so fresh clones come from the local path.
+  - **Execution shape:** code-first wave 01-05 (one one-way `checkpoint:decision` before the single `buf generate`), orchestrator-run code-review gate 06, D-208 override 07, fresh-clone verification Windows 08/09 and WSL 10/11 (A / orchestrator cold build behind a blocking checkpoint / B; live, sequential on main), docs 12-15, backlog promotion 16, closure 17 (D-223 reconciliation checkpoint). Orchestrator rule (D-230): if a plan 09 or 11 executor ends without finishing teardown, run that plan's STOP PROCEDURE steps 1-5 before anything else.
+  - **Next:** `/gsd-execute-phase 06.4`.
 - **2026-10-09: Phase 06.3.6 EXECUTION STARTED** (`/gsd-execute-phase 06.3.6`). Wave 1: 06.3.6-01 (D-131 rerank probe, live, main), 06.3.6-02 (D-137 rule commit and `--graph-dump`, main) and 06.3.6-03 (harness hardening, worktree). Executors run on Sonnet.
 - **2026-10-10: 06.3.6 wave 10 COMPLETE.** 15: live metadata backfill (nodes 702 -> 703; staging 766 -> 767 at first start), engine `generation=lance-703 doc_meta_documents=346`, generation recorded once (`0250d160`), D-61 coverage identical. Corroboration closed under owner D-189: 2/3 exact; mhr-325f99830534 retrieval completes but generation fails deterministically (OpenInference finish_reason 'error' at 701 tokens, 4 sends). Pre-backfill restore source: data/store-snapshots/pre-backfill-2026-10-10/. Gate green.
 - **2026-10-10: 06.3.6 wave 11 (16)** — dev session 1 600 records (599 ok), all Sail; metadata +0.100 CI [+0.022,+0.178]; graph-v2 read 2 (MultiCited) triggered; D-135 T=2286 ms needs O11; spend est $0.444 / acct $0.113.
@@ -324,7 +329,7 @@ Total Plans in Phase: 23
 
 ## Active Phase
 
-- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
+- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). **Planned 2026-10-11:** 17 plans in 14 waves, plan check passed at iteration 3; owner answers at plan-phase recorded as D-227..D-233. Next: `/gsd-execute-phase 06.4`. Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
@@ -593,8 +598,8 @@ Total Plans in Phase: 23
 
 **Last session:** 2026-10-11T01:33:25.633Z
 **Last activity:** 2026-10-11
-**Stopped at:** Phase 06.4 context gathered
-**Resume file:** .planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-CONTEXT.md
+**Stopped at:** Phase 06.4 planned
+**Resume file:** .planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-01-PLAN.md
 
 ## Accumulated Context
 
