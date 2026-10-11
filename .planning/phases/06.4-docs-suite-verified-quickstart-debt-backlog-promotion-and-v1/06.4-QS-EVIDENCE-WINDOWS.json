@@ -1,7 +1,7 @@
 {
   "plan": "06.4-09",
   "platform": "windows-native",
-  "commit": "84aa285c",
+  "commit": "1c000271",
   "queries": {
     "before_ingest": {
       "role": "query-before",
@@ -168,9 +168,12 @@
     ]
   },
   "preflight": {
-    "attempts": 1,
-    "final_passed": false,
-    "retry_evidence": [],
+    "attempts": 2,
+    "final_passed": true,
+    "retry_evidence": [
+      "No timeout evidence exists for attempt 1: its failing canary ended with generation_output_rejected, finish_reason 'error' (OpenRouter completion incomplete), and the only timeout-related engine line (query_embedding_retry, 19:56:48Z) belongs to a different successful request. Attempt 2 was licensed by the owner's decision of 2026-10-11T20:05Z, not by D-233."
+    ],
+    "owner_authorised_retry": true,
     "attempt_1": {
       "exit": 1,
       "checks": {
@@ -180,18 +183,28 @@
         "arm_mode_canaries": "FAIL"
       },
       "failure": "Canary qs-001 (hybrid+graph-v2) workflow failed (failed)",
-      "class": "not timeout-class: the engine log shows generation_output_rejected with finish_reason 'error' (OpenRouter completion incomplete) for that request, and no timeout event for it; the only timeout-related line in the attempt (query_embedding_retry, 19:56:48Z) belongs to a different, successful request",
+      "class": "not timeout-class (provider finish_reason error)",
+      "wall_clock_kill": false
+    },
+    "attempt_2": {
+      "exit": 0,
+      "checks": {
+        "drive_environment": "PASS",
+        "gateway_reachable": "PASS",
+        "engine_reachable": "PASS",
+        "arm_mode_canaries": "PASS (all 27 arm-mode canaries: 3 rehearsal rows x 9 arms)"
+      },
       "wall_clock_kill": false,
-      "retried": false
+      "stack": "fresh lancet-qs stack, fresh store re-ingested (5 of 5), same clone, engine and gateway restarted"
     }
   },
   "spend": {
     "before_usd": 3.704442847,
-    "after_usd": 3.7111963,
-    "delta_usd": 0.006753453,
+    "after_usd": 3.715600308,
+    "delta_usd": 0.011157461,
     "platform_cap_usd": 0.3,
-    "cumulative_usd": 0.006753453,
+    "cumulative_usd": 0.011157461,
     "phase_cap_usd": 1.0,
-    "note": "delta spans both repeats; the first halted run alone was 0.001685044"
+    "note": "delta spans all four runs (run 1 startup failure, run 2 graph-gate halt 0.001685044, run 3 and its failed preflight, run 4 preflight pass)"
   }
 }

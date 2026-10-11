@@ -105,7 +105,7 @@ The 2026-09-03 and 2026-09-09 runs under `eval/runs/` are retained as superseded
 <!-- quickstart:start -->
 ## 🚀 Quickstart (Windows native and Linux via WSL)
 
-> Verified on a fresh clone: pending (Phase 06.4 plans 09 and 11).
+> Verified on a fresh clone: Windows 11 native on 2026-10-11 at commit 1c000271 (06.4-QS-TRANSCRIPT-WINDOWS.md); WSL: pending (plan 06.4-11).
 
 This takes a clean clone to a traced answer over a five-document sample, on Windows native and on Linux inside WSL. Both platforms run the same commands; where a shell differs, both variants are shown. Run every command from the repository root unless a step says otherwise. The only thing you supply is an OpenRouter API key.
 
