@@ -33,11 +33,11 @@ key it does not know.
 | `session_id` | `string` | string | the engine assigns one | a UUIDv4. A malformed id, or a UUID of another version, is refused as `invalid_session_id`. |
 | `filter` | `DocumentFilter` | object `{"document_ids": [...], "content_types": [...]}` | no filter | restricts retrieval to the named documents and content types. A filter that matches nothing is not refused: the response carries `NO_EVIDENCE`. |
 | `allow_model_only` | `optional bool` | bool | the configured default (`[engine.workflow] allow_model_only_answers`) | `true` lets the engine answer from the model's own knowledge when retrieval finds nothing, with a `MODEL_ONLY` notice. `false` turns that off for this request (06-CONTEXT D-10, D-12). |
-| `disable_graph_context` | `optional bool` | bool | the configured default, `[engine.graph] context_default_enabled`, which ships `false`, so the graph is off and the response carries `GRAPH_DISABLED_BY_CONFIG` | `false` turns graph context on for this request. `true` turns it off and the response carries `GRAPH_ABLATION` (06.4 D-207). |
+| `disable_graph_context` | `optional bool` | bool | the configured default, `[engine.graph] context_default_enabled`, which ships `false`, so the graph is off and the response carries `GRAPH_DISABLED_BY_CONFIG` | `false` turns graph context on for this request. `true` turns it off and the response carries `GRAPH_ABLATION` (Phase 06.4 D-207). |
 | `retrieval_mode` | `RetrievalMode` | string: `hybrid`, `dense_only` or `bm25_only` | `hybrid` | which retrieval paths run (06.3.5 D-99). A path the mode excludes is skipped and emits no `RETRIEVAL_DEGRADED_*` notice. The chosen mode is echoed on the snapshot. |
 | `include_pre_truncation_ranking` | `bool` | bool | `false` | `true` adds the pre-rerank, pre-truncation candidate ranking (ids and ranks only) to the snapshot (06.3.5 D-100). |
 | `levers` | `repeated Lever` | array of strings: `rerank`, `evidence_metadata`, `binary_answer_format`, `graph_v2` | the configured default levers, `[engine.levers] defaults` (shipped: `rerank` and `evidence_metadata`) | the quality levers this request runs. A request that names levers runs exactly those, never the union with the configured defaults (06.3.6 D-136, D-157). |
-| `disable_default_levers` | `optional bool` | bool | `false` | `true` runs exactly the named levers, even none, and adds no configured default (06.4 D-198). |
+| `disable_default_levers` | `optional bool` | bool | `false` | `true` runs exactly the named levers, even none, and adds no configured default (Phase 06.4 D-198). |
 
 ### `disable_graph_context`: three states
 
@@ -142,19 +142,19 @@ The severity column gives the severity the shipped engine emits the code with.
 | `NOTICE_CODE_INDEX_GENERATION_MISMATCH` | 22 | not emitted | yes | Declared for Phase 6.1 (06-CONTEXT D-24, D-25). The shipped engine does not emit it. |
 | `NOTICE_CODE_RERANK_DEGRADED` | 23 | info | yes | The `rerank` lever's reranker was attempted and failed, and the fused order was kept (06.3.6 D-134). |
 | `NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE` | 24 | warning | yes | A configured default lever was dropped from a request that named no lever, because this engine lacks its resource (06.3.6 D-194). One notice per dropped lever. |
-| `NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG` | 25 | info | no | Graph context did not run because the request left `disable_graph_context` absent and the configured default (`[engine.graph] context_default_enabled = false`) is off (06.4 D-207). |
+| `NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG` | 25 | info | no | Graph context did not run because the request left `disable_graph_context` absent and the configured default (`[engine.graph] context_default_enabled = false`) is off (Phase 06.4 D-207). |
 
 `degraded_mode` is true whenever `answer_basis` is not `retrieval`, whatever the notices say: a `mixed` or
 `model_only` answer is degraded even with no notice in the `yes` column. This is the early return in
 `derive_degraded_mode`.
 
-**Values that are not codes.** 17 is reserved. In-fusion graph retrieval would have used it, and it is unreachable
+**Values that are not codes.** 17 is reserved. The proto declares `reserved 17;`: in-fusion graph retrieval would have used it, and it is unreachable
 because hybrid retrieval holds no graph port; a reserved number is never reused. 6-9 are unused and not reserved. They
 are a gap left between the codes that existed before Phase 6 and the Phase 6 block, and a later code may take one.
 `NOTICE_CODE_UNSPECIFIED` (0) is the proto3 zero value and is never emitted.
 
 **The `DEFAULT_LEVER_UNAVAILABLE` message.** Its message names the lever and gives a fixed reason phrase, which names
-no server configuration key (06.4 D-204 IN-03; `lever_unavailable_notice_text` in
+no server configuration key (Phase 06.4 D-204 IN-03; `lever_unavailable_notice_text` in
 [`engine/src/service.rs`](../engine/src/service.rs)). The message reads
 `configured default lever <name> was not applied: <phrase>`, with these phrases:
 
@@ -183,8 +183,8 @@ error, but not a cancellation). Its message names the error kind and the error t
 completed with zero results gets `NO_EVIDENCE` (1) instead, so a client can tell "the corpus has nothing" from "the
 search did not run".
 
-**Which notice list to read.** Over HTTP, notices reach a client in up to two places, and the gateway never fills
-both for one request:
+**Which notice list to read.** Over HTTP, a response's notices sit either inside a final response or in a top-level list
+on the terminal event, never both for one request:
 
 - The `final_answer` event carries the answer and its `notices`. When the workflow produced an answer, the terminal
   `workflow_completed` event also carries the same response under `final_response`.
@@ -263,4 +263,5 @@ can express are refused by the gateway first, as described in [Refusals](#refusa
 - The [observability walkthrough](observability.md): one request followed through its spans, including the notices
   above as they appear in a trace.
 - The [evaluation results](evaluation.md): the measured value and cost of the levers and the graph.
-- The [design narrative](design-narrative.md): why the contract has typed notices and fails closed.
+- The [design narrative](design-narrative.md): the alternatives considered, including the state machine whose nodes emit
+  these notices.

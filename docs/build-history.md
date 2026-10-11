@@ -5,7 +5,7 @@ gives the same history in one line per group. Goals, success criteria and full p
 [`.planning/ROADMAP.md`](../.planning/ROADMAP.md), and each phase's PLAN, SUMMARY, VERIFICATION, review and UAT
 records are under [`.planning/phases/`](../.planning/phases).
 
-v1 is 250 plans across 18 phases. Phase numbers with a decimal (04.1, 6.1, 06.3.4.1 and so on) were inserted between
+v1 is 250 plans across 18 phases. Phase numbers with a decimal (`04.1`, `6.1`, `06.3.4.1` and so on) were inserted between
 the original phases as the work showed they were needed.
 
 ### ✅ Phase 1: Basic Gateway & Rust Engine Ping (1 plan — 2026-07-13)
