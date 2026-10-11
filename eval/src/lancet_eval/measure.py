@@ -19,7 +19,7 @@ from pydantic import ConfigDict
 from lancet_eval.arms import explicit_default_fields
 from lancet_eval.client import QueryOutcome, run_query
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
-from lancet_eval.corpus import GoldQuestion, load_corpus
+from lancet_eval.corpus import GoldQuestion, load_corpus, load_corpus_config
 from lancet_eval.identity import require_index_identity
 from lancet_eval.journal import (
     AttemptRecord,
@@ -613,6 +613,82 @@ def derive_budgets_from_records(
     )
 
 
+_OVERRIDE_PREFIX = "PREREGISTRATION_"
+
+
+def _override_problem(token: str) -> str | None:
+    """Why `token` is not a committed pre-registration constant, or None if it is."""
+    from lancet_eval import gitcheck
+    from lancet_eval.preregistration import PreregistrationError, resolve
+
+    if not token.startswith(_OVERRIDE_PREFIX):
+        return f"its name does not start with {_OVERRIDE_PREFIX}"
+    try:
+        resolve(token)
+    except PreregistrationError as exc:
+        return str(exc)
+    try:
+        introducing = gitcheck.introducing_commit(token, gitcheck.THRESHOLDS_PATH)
+    except gitcheck.GitCheckError as exc:
+        return f"git could not prove it is committed: {exc}"
+    if introducing is None:
+        return f"no commit in {gitcheck.THRESHOLDS_PATH} introduces it"
+    return None
+
+
+def _enforce_measure_split_role(
+    corpus_name: str, preregistered_override: str | None
+) -> str | None:
+    """Refuse to measure a held-out or role-less corpus (06.4 D-211).
+
+    `measure` issues paid queries for questions of `corpus_name`. A `heldout` corpus
+    holds questions the pre-registered drive needs unseen, and a corpus with no
+    `[split]` has no committed role to check, so both are refused unless
+    `preregistered_override` names a `PREREGISTRATION_*` constant in
+    `lancet_eval.thresholds` whose introducing commit exists. A supplied token is
+    validated even where it is not needed, so a typo never passes unnoticed. Runs
+    before any request and before any journal I/O, in the style of
+    `run._enforce_split_role`.
+
+    Args:
+        corpus_name: The corpus the pass will measure.
+        preregistered_override: The committed pre-registration token, if any.
+
+    Returns:
+        The override token when it was needed and accepted, else None.
+
+    Raises:
+        ValueError: If the override is not a committed pre-registration, or the corpus
+            is held-out or has no split role and no valid override was given.
+    """
+    if preregistered_override is not None:
+        problem = _override_problem(preregistered_override)
+        if problem is not None:
+            raise ValueError(
+                f"refusing to measure {corpus_name!r}: {preregistered_override!r} is "
+                f"not a committed pre-registered override ({problem}); name a "
+                f"{_OVERRIDE_PREFIX}* constant of lancet_eval.thresholds that a "
+                "commit introduced"
+            )
+    role = load_corpus_config(corpus_name).split_role
+    if role is not None and role != "heldout":
+        return None
+    if preregistered_override is not None:
+        return preregistered_override
+    described = (
+        "no committed split role (its corpus config has no [split])"
+        if role is None
+        else f"the split role {role!r}"
+    )
+    raise ValueError(
+        f"refusing to measure corpus {corpus_name!r}: it has {described}, so a "
+        "latency pass could spend or expose questions a pre-registered drive needs "
+        "unseen (06.4 D-211). Measure a dev or rehearsal corpus, or pass "
+        "--preregistered-override TOKEN naming a committed "
+        f"{_OVERRIDE_PREFIX}* constant in lancet_eval.thresholds."
+    )
+
+
 def run_measurement_pass(
     corpus_name: str = "multihop_rag",
     sample_size_questions: int = 10,
@@ -625,10 +701,14 @@ def run_measurement_pass(
     thresholds: DecisionThresholds | None = None,
     check_allowance: bool = True,
     workers: int = 1,
+    preregistered_override: str | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     """Execute two-armed measurement drive over gold questions.
 
     For N questions, dispatches 2N queries adjacently across both experimental arms.
+    A held-out or role-less corpus is refused unless `preregistered_override` names a
+    committed `PREREGISTRATION_*` constant (06.4 D-211); an accepted override is
+    recorded in the output as `preregistered_override`.
     """
     settings = settings or load_settings()
     require_index_identity(settings, corpus_name)
@@ -641,6 +721,12 @@ def run_measurement_pass(
             "stage_spend_cap must be a finite positive USD amount, "
             f"got {stage_spend_cap!r}"
         )
+
+    # D-211: the split-role guard, after the identity gate and the cap check (so each
+    # keeps its own error) and before any directory, journal, client or request.
+    accepted_override = _enforce_measure_split_role(
+        corpus_name, preregistered_override
+    )
 
     thresholds = thresholds or COMMITTED_THRESHOLDS
     run_dir = output_dir or resolve_measurement_run_dir(corpus_name)
@@ -835,6 +921,8 @@ def run_measurement_pass(
         "ceiling_report": ceiling_rep.__dict__,
         "run_timestamp": datetime.now(UTC).isoformat(),
     }
+    if accepted_override is not None:
+        summary["preregistered_override"] = accepted_override
 
     for name in ("run_record.json", "measurement.json"):
         with open(run_dir / name, "w", encoding="utf-8") as sf:

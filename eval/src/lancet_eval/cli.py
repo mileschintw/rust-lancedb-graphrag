@@ -1479,6 +1479,17 @@ def measure_latency(
             help="Number of concurrent worker threads",
         ),
     ] = 1,
+    preregistered_override: Annotated[
+        str | None,
+        typer.Option(
+            "--preregistered-override",
+            help=(
+                "06.4 D-211: measure a held-out or split-less corpus anyway. TOKEN "
+                "must name a committed PREREGISTRATION_* constant in "
+                "lancet_eval.thresholds, e.g. PREREGISTRATION_06_3_6."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run two-armed latency measurement pass and derive proposed timeout budgets."""
     from lancet_eval.measure import run_measurement_pass
@@ -1491,6 +1502,7 @@ def measure_latency(
             stage_spend_cap=stage_cap,
             output_dir=out,
             workers=workers,
+            preregistered_override=preregistered_override,
         )
         console.print(
             f"[green]Measurement pass complete. Results written to:[/green] {run_dir}"

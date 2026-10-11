@@ -34,6 +34,24 @@ from lancet_eval.measure import (
 from lancet_eval.preflight import read_workflow_timeouts
 
 
+@pytest.fixture(autouse=True)
+def _measure_split_role_guard_bypassed(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Make the D-211 split-role guard a no-op for every test but the `test_d211_*` ones.
+
+    Many tests here drive the real `run_measurement_pass` with the role-less default
+    corpus `multihop_rag`, which the guard would refuse. The `test_d211_*` tests skip
+    this bypass and so exercise the real guard. Same per-test skip as conftest's
+    `_identity_gate_matches_document_map`, which already makes the identity half pass.
+    """
+    if request.node.name.startswith("test_d211_"):
+        return
+    monkeypatch.setattr(
+        "lancet_eval.measure._enforce_measure_split_role", lambda *args, **kwargs: None
+    )
+
+
 def test_measurement_record_schema_differentiation():
     """Assert MeasurementRecord accepts extra fields and RunRecord rejects them."""
     data = {
@@ -77,7 +95,9 @@ def test_reader_parses_with_measurement_record_type():
 def test_measure_command_help_specifies_sample_size_units():
     """Assert measure command help states sample size counts questions."""
     runner = CliRunner()
-    res = runner.invoke(app, ["measure", "--help"])
+    # A wide terminal: the option column grows with the longest option name, which
+    # would otherwise wrap the phrases asserted below across two lines.
+    res = runner.invoke(app, ["measure", "--help"], env={"COLUMNS": "200"})
     assert res.exit_code == 0
     assert "Number of questions to measure" in res.output
     assert "two queries per question" in res.output

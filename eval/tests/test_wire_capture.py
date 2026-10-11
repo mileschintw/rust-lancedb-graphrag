@@ -354,14 +354,13 @@ def test_every_wire_metadata_field_is_mapped_at_each_drive_site() -> None:
     from lancet_eval.journal import WorkflowWireMeta
 
     # A field the client reads but a drive site forgets to copy is dropped without
-    # any error, because the journal model defaults it. Keep both models and all
-    # three sites in step.
+    # any error, because the journal model defaults it. Keep both models and both
+    # drive sites (run.py, measure.py) in step.
     assert set(WorkflowMetadata.model_fields) == set(WorkflowWireMeta.model_fields)
     names = set(WorkflowWireMeta.model_fields) | set(SEED_KEYS)
     for site in (
         "eval/src/lancet_eval/run.py",
         "eval/src/lancet_eval/measure.py",
-        "eval/scripts/drive_measurement_pass.py",
     ):
         source = Path(site).read_text(encoding="utf-8")
         for name in sorted(names):
