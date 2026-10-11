@@ -40,6 +40,12 @@ from typing import Any
 OFFICIAL_REPO = "yixuantt/MultiHop-RAG"
 OFFICIAL_COMMIT = "c1c1287aa60a94acf9c4d20c891c9cd611a0f6e8"
 OFFICIAL_FILE = "retrieval_evaluate.py"
+# 06.4 D-212 (06.3.5 IN-05): the SHA-256 of the pinned official file. It equals the
+# `official_file_sha256` in the committed fixture header, and `load_official` checks it
+# BEFORE the file is executed, so a swapped or tampered download never runs.
+OFFICIAL_FILE_SHA256 = (
+    "6734516f0d5f9385076f76bf4e08d54968541fdb05f519f1cf687c0b65ae0f90"
+)
 SEED = 42
 RANDOM_TRIALS = 240
 DEFAULT_OUT = Path("eval/tests/fixtures/multihop_rag_calculate_metrics_golden.json")
@@ -53,7 +59,17 @@ def strip_ws(text: str) -> str:
 
 
 def load_official(path: Path) -> Any:
-    """Imports the official module from a local file path."""
+    """Imports the official module from a local file path.
+
+    The file's SHA-256 is verified against ``OFFICIAL_FILE_SHA256`` first; a mismatch
+    exits without executing the file (06.3.5 IN-05).
+    """
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != OFFICIAL_FILE_SHA256:
+        raise SystemExit(
+            f"{path} does not match the pinned official file: expected sha256 "
+            f"{OFFICIAL_FILE_SHA256}, got {actual}; refusing to execute it"
+        )
     spec = importlib.util.spec_from_file_location("official_retrieval_evaluate", path)
     if spec is None or spec.loader is None:
         raise SystemExit(f"cannot load {path} as a Python module")
