@@ -59,6 +59,7 @@ use tokio_util::sync::CancellationToken;
 pub mod bad_input_matrix;
 pub mod graph_boost;
 pub mod graph_cutover;
+pub mod graph_default_pins;
 pub mod graph_wire;
 pub mod ingest_metadata;
 pub mod levers_pins;

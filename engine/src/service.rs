@@ -1275,7 +1275,11 @@ impl LancetService for LancetServiceImpl {
         // combination check below reads this set before availability is consulted; availability
         // then refuses a named lever whose resource is missing, and drops a configured default
         // whose resource is missing (D-194).
-        let levers = if requested.is_empty() {
+        // 06.4 D-198: `disable_default_levers = true` runs exactly the named levers, even none, and
+        // adds no configured default. Absent and false keep the D-157 behaviour.
+        let use_default_levers =
+            requested.is_empty() && !req.disable_default_levers.unwrap_or(false);
+        let levers = if use_default_levers {
             self.effective_settings.default_levers
         } else {
             requested
@@ -1302,7 +1306,7 @@ impl LancetService for LancetServiceImpl {
         };
         let availability = self.lever_availability(&snapshot);
         let mut dropped_defaults = Vec::new();
-        let levers = if requested.is_empty() {
+        let levers = if use_default_levers {
             let mut kept = levers;
             for lever in levers
                 .iter()

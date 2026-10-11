@@ -177,7 +177,7 @@ fn ranking_ids(ctx: &WorkflowContext) -> Vec<String> {
         .collect()
 }
 
-const RERANK: &[i32] = &[Lever::Rerank as i32];
+pub(super) const RERANK: &[i32] = &[Lever::Rerank as i32];
 
 /// The notice codes in order, for comparing two runs.
 fn notice_codes(notices: &[crate::pb::lancet::v1::Notice]) -> Vec<&str> {
@@ -679,8 +679,8 @@ async fn a_rerank_request_uses_the_lever_reranker_and_a_plain_request_uses_the_s
 // D-136, D-142, D-145)
 // ---------------------------------------------------------------------------
 
-const METADATA: &[i32] = &[Lever::EvidenceMetadata as i32];
-const BINARY: &[i32] = &[Lever::BinaryAnswerFormat as i32];
+pub(super) const METADATA: &[i32] = &[Lever::EvidenceMetadata as i32];
+pub(super) const BINARY: &[i32] = &[Lever::BinaryAnswerFormat as i32];
 
 fn headline_meta() -> DocMeta {
     DocMeta {
@@ -1366,7 +1366,7 @@ fn configured_lever_names_refuse_whatever_is_not_a_canonical_declared_name() {
 
 /// A service whose configured defaults are `defaults`, with the lever reranker wired when
 /// `reranker` is set and a snapshot that holds metadata when `metadata` is set.
-async fn service_with_default_levers(
+pub(super) async fn service_with_default_levers(
     name: &str,
     defaults: &[&str],
     reranker: bool,
@@ -1396,7 +1396,7 @@ async fn service_with_default_levers(
 
 /// A filter naming no ingested document leaves zero evidence, so the run stops before the prompt:
 /// admission and the echo are what these tests read, not an answer.
-fn request_without_evidence(levers: &[i32], session: &str) -> QueryRagRequest {
+pub(super) fn request_without_evidence(levers: &[i32], session: &str) -> QueryRagRequest {
     QueryRagRequest {
         levers: levers.to_vec(),
         filter: Some(DocumentFilter {
@@ -1407,7 +1407,7 @@ fn request_without_evidence(levers: &[i32], session: &str) -> QueryRagRequest {
     }
 }
 
-fn error_kind_of(status: &tonic::Status) -> String {
+pub(super) fn error_kind_of(status: &tonic::Status) -> String {
     status
         .metadata()
         .get("x-lancet-error-kind")
@@ -1478,7 +1478,7 @@ async fn an_empty_default_list_leaves_a_request_that_names_no_levers_lever_free(
 }
 
 /// The DEFAULT_LEVER_UNAVAILABLE notices (typed code 24) of a response.
-fn default_lever_notices(
+pub(super) fn default_lever_notices(
     notices: &[crate::pb::lancet::v1::Notice],
 ) -> Vec<&crate::pb::lancet::v1::Notice> {
     notices
@@ -1488,7 +1488,7 @@ fn default_lever_notices(
 }
 
 /// A request that names no lever, with a fresh session so no two tests share one.
-fn fresh_no_lever_request() -> QueryRagRequest {
+pub(super) fn fresh_no_lever_request() -> QueryRagRequest {
     request_without_evidence(&[], &Uuid::new_v4().to_string())
 }
 
