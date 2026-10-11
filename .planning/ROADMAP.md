@@ -1291,7 +1291,8 @@ Plans:
    - the codes: `NO_EVIDENCE`, `GRAPH_TIMEOUT`, `GRAPH_DEGRADED`, `MODEL_NOTICE`, `MODEL_WARNING`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_DEGRADED_DENSE`/`_BM25`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `BASIS_RECONCILED`, `GRAPH_ABLATION`, `RETRIEVAL_FAILED`, the index codes (`INDEX_REBUILD_FAILED`, `INDEX_STALE`, `INDEX_GENERATION_MISMATCH`), `RERANK_DEGRADED` and `DEFAULT_LEVER_UNAVAILABLE` (code 24, which sets `degraded_mode`);
    - the `levers` request field and its snapshot echo, with the `lever_unavailable`/`invalid_levers` refusals;
    - the D-198 default-lever opt-out;
-   - the D-207 `disable_graph_context` semantics (absent = configured default, now off).
+   - the D-207 `disable_graph_context` semantics (absent = configured default, now off; amends 06-CONTEXT D-47);
+   - the new informational notice for a graph that is off by configured default (`GRAPH_ABLATION` stays for explicit `true`).
 6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04). The count stays exactly 18. Items this phase defers to backlog from 06.3.4/06.3.6 are recorded separately, so the 18 still reconciles.
 7. v1 milestone closure lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86). It produces:
    - a per-ID requirements evidence audit, approved by the owner at a blocking checkpoint before any checkbox changes (D-223);
@@ -1307,7 +1308,7 @@ Plans:
    - the D-199 harness preflight refusal of `LANCET_ENGINE__GRAPH__*`/`LEVERS__*` and per-arm echo mismatch;
    - WR-01 startup ordering (D-202);
    - WR-02 per-swap coverage logging (D-203);
-   - graph context default-off (D-207);
+   - graph context default-off (D-207), with every harness arm sending `disable_graph_context` explicitly, and the new config-off notice code;
    - the `measure-latency` split-role guard and retirement of `drive_measurement_pass.py` (D-211);
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
