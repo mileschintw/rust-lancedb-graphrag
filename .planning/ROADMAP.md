@@ -1313,7 +1313,7 @@ Plans:
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
 
-**Plans:** 8/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
+**Plans:** 9/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
 
 Plans:
 
@@ -1342,7 +1342,7 @@ Plans:
 
 **Wave 6**
 
-- [ ] 06.4-09-PLAN.md — Windows B: verbatim quickstart run, D-194 sequence, D-217 Jaeger/Grafana captures from the fresh store, offline re-score, stack preflight, settled spend, teardown, D-230 restore
+- [x] 06.4-09-PLAN.md — Windows B: verbatim quickstart run, D-194 sequence, D-217 Jaeger/Grafana captures from the fresh store, offline re-score, stack preflight, settled spend, teardown, D-230 restore
 
 **Wave 7**
 
