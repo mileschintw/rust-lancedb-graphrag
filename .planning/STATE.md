@@ -1,28 +1,28 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 1
+current_plan: Not started
 status: executing
-stopped_at: "06.3.6 re-verified after gap closure: human_needed 21/21 (UAT tests 5-6 pending); next /gsd-verify-work 06.3.6"
-last_updated: "2026-10-10T22:36:02.646Z"
-last_activity: 2026-10-10
-state_head: 8e2730f7bcbdfdc4e5fb9768ff70744992ea73ee
+stopped_at: Phase 06.3.6 complete, ready to plan Phase 06.4
+last_updated: "2026-10-11T00:59:42.851Z"
+last_activity: 2026-10-11
+state_head: 6e6fc411814489b98888d23e336d102edbc72414
 progress:
   total_phases: 18
   completed_phases: 10
   total_plans: 233
-  completed_plans: 232
+  completed_plans: 233
 milestone_name: milestone
-current_phase_name: Quality levers measured as arms — reranker, graph repair by diagnosis, evidence metadata, answer format
-current_phase: 06.3.6
-last_activity_desc: "06.3.6 gap closure reviewed (0 critical) and re-verified (human_needed)"
+current_phase: "06.4"
+current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
+last_activity_desc: "Phase 06.3.6 complete (UAT 6/6, VALIDATION 0 gaps, SECURITY 85/85, verification passed); OBS-06 ticked"
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 06.3.6-23
+Current Plan: Not started
 Total Plans in Phase: 23
 
 ## Current Status
@@ -36,6 +36,7 @@ Total Plans in Phase: 23
 - **2026-10-10: 06.3.6 wave 15 (20)** — held-out drive 2457/2457 (4 uncited-answer errors), lance-703, all Sail, no resume; spend est $1.927/$5.00, settled $0.522; rerank 702 calls 2 degraded (429); GRAPH_UNAVAILABLE on 447 graph-arm records.
 - **2026-10-10: 06.3.6 wave 16 (21)** — held-out readings: rerank +0.081 (Holm p .003), metadata +0.062 (p .008) significant; graph-v2, answer-format off; SC-2 MISS on rerank arms (provider latency drift) disclosed per D-192; rerank default-on per D-193.
 - **2026-10-10: 06.3.6 wave 17 (22)** — D-157 flip 3d765ea3: [engine.levers] defaults = [rerank, evidence_metadata]; closeout 5bb30939; open items: eval no-lever arms now get defaults, empty-metadata store fails startup; cargo 927.
+- **2026-10-11: Phase 06.3.6 COMPLETE** — `/gsd-verify-work 06.3.6`: UAT 6/6 (test 1's D-194 gap re-tested pass after plan 23; plan-23 prohibitions acknowledged). verify:pre api-coverage gate fixed (two COVERAGE.md reasons over 200 chars since D-186, `27b647e0`). validate-phase: 52 commands green, 16 manual, 0 gaps (`f6bc33ba`). secure-phase: 85 threats, T-06.3.6-34 closed by the default-rule pin test `d5b4d869` (owner choice), T-84/T-SC accepted (`db608e77`). Re-verification passed 21/21 (`6e6fc411`). `phase.complete` ticked OBS-06 and also DATA-09; DATA-09 restored by hand (D-127). Open, non-blocking: review WR-01/WR-02, D-195 lever-free control arm (next measurement freeze).
 - **2026-10-10: 06.3.6 gap execution** — plan 23 complete (e42a5c04..01fa9060): notice code 24 DEFAULT_LEVER_UNAVAILABLE, startup warns before workers/replay, coverage and rebuild warnings; dev store ./data/lancedb migrated once (nodes v2->v3, staging v1->v2 by D-168 at the one test-key boot, replayed_jobs=0). Post-merge gate green (engine 937, gateway 124 with -count=1, eval 2175). Also fixes the gateway cross-runtime tests broken since plan 22 (masked by the Go test cache at the wave-17 gate).
 - **2026-10-10: 06.3.6 gap planning** — `/gsd-plan-phase 06.3.6 --gaps`: plan 23 (wave 18, gap_closure) closes the UAT gap. Configured defaults are filtered per request with a NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE (24) notice; explicit levers stay fail-closed. Startup warns before the workers and the replay. The legacy ./data/lancedb is migrated by `--migrate-only` (D-197, owner). Checker: iteration 1 found 1 warning (size), iteration 2 found 0 blockers and 0 warnings; decisions 71/71.
 - **2026-10-10: 06.3.6 gates** — review 0C/17W/22I (c73dbe3c), verification 8/8 human_needed, UAT 3 pass + 1 gap (D-194: missing default-lever resource degrades with notice); D-195 control arms carried forward; D-196 SC-3 code-level.
@@ -323,7 +324,7 @@ Total Plans in Phase: 23
 
 ## Active Phase
 
-- **Phase:** 06.3.6 (Quality levers measured as arms), **executing** since 2026-10-09: 22 plans in 17 waves. Parallel waves (1, 4, 5) fan out through a Workflow (one plan on main, siblings in worktrees, merged by the GSD record-agent/cleanup-wave gauntlet); the live-stack plans (01, 04, 15-21) run sequentially on main. Pre-answered checkpoints D-172..D-185 are applied by the executor that reaches them. Phase 6.4 stays **parked** until the user decides the unpark.
+- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **PARKED**: unpark is an owner decision after 06.3.5 and 06.3.6 publish their runs of record, and both now have (06.3.6 completed 2026-10-11). Carried from 06.3.6: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
@@ -340,6 +341,7 @@ Total Plans in Phase: 23
 - **Phase 06.3.4: Corrected re-drive, calibration and root-cause documentation** (Completed: 2026-09-10 — 7/7 plans; 658 records driven, findings documented in `06.3.4-FINDINGS.md`, forensic trail in `06.3.1-ROOT-CAUSE.md`, open items carried into Phase 6.4)
 - **Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair** (Completed: 2026-10-06 — 34/34 plans; run of record drive 2, D-83 `all-pass-close`; UAT gaps closed by plans 31-34; re-verification `passed` 10/10; 6.4 stays parked)
 - **Phase 06.3.5: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration** (Completed: 2026-10-09 — 18/18 plans; held-out run of record with SC-2 MISS under continue-with-disclosure; UAT 2/2; VALIDATION 0 gaps; SECURITY 68/68; re-verification `passed` 9/9 with G-1 owner override; OBS-06 stays open for 06.3.6)
+- **Phase 06.3.6: Quality levers measured as arms** (Completed: 2026-10-11 — 23/23 plans incl. gap-closure 06.3.6-23; held-out lever run of record: rerank and evidence_metadata default, graph-v2 and answer-format off; UAT 6/6; VALIDATION 0 gaps; SECURITY 85/85; re-verification `passed` 21/21; OBS-06 closed)
 
 ## Known Issues & Debt
 
@@ -589,10 +591,10 @@ Total Plans in Phase: 23
 
 ## Session
 
-**Last session:** 2026-10-09T05:45:58.208Z
-**Last activity:** 2026-10-10
-**Stopped at:** 06.3.6 gap plan 23 planned (D-194 degrade-with-notice, D-197 legacy store migration); next /gsd-execute-phase 06.3.6 --gaps-only
-**Resume file:** .planning/phases/06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-CONTEXT.md
+**Last session:** 2026-10-11T01:10:00Z
+**Last activity:** 2026-10-11
+**Stopped at:** Phase 06.3.6 complete, ready to plan Phase 06.4
+**Resume file:** None
 
 ## Accumulated Context
 

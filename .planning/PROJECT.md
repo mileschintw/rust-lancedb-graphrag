@@ -26,6 +26,8 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Add an offline evaluation script using a fixed test set and LLM-as-judge or similar scoring for retrieval recall, context precision, groundedness, and faithfulness. — Phase 06.3
 - ✓ Empirically measure retrieval node latency distributions, establish collapse root cause (budget undersizing vs memory decay), enforce engine provider-contract invariant at startup, and derive/apply six synchronized production timeout budgets. — Phase 06.3.3
 
+- ✓ Report standard-RAG baselines (dense-only, BM25-only, hybrid, hybrid+graph) beside the graph on a committed held-out question set with the benchmark's own retrieval convention, judged dimensions and a human-calibrated slice, and measure each quality lever (reranker, graph repair, evidence metadata, answer format) as its own arm before it becomes a default. — OBS-06, Phases 06.3.5 and 06.3.6 (closed 2026-10-10: 06.3.6 run of record; rerank and evidence_metadata ship as default levers, graph-v2 and answer-format stay off)
+
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
 - [ ] Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
@@ -36,7 +38,6 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
 - [ ] Provide a README/design narrative that explains the architecture, alternatives considered, custom-vs-existing-tool choices, and how to run/evaluate the system.
-- [ ] Report standard-RAG baselines (dense-only, BM25-only, hybrid) beside the graph on a committed held-out question set, with the benchmark's own retrieval convention, judged dimensions and a human-calibrated slice; measure each later quality lever (reranker, graph repair, temporal metadata, answer format) as its own arm before it becomes a default. — OBS-06, Phases 06.3.5 and 06.3.6 (added 2026-10-06)
 
 ### Out of Scope
 
@@ -110,6 +111,9 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | 06.3.5 held-out four-arm drive (`eval/runs/2026-10-07-heldout-multihop_rag_heldout/`) is the run of record. The SC-2 MISS stands, under a post-hoc continue-with-disclosure | 12 of 13 errors were query-embedding timeouts at 2,001-2,016 ms against the 2,000 ms budget. The pre-registered error-mode rule has no minimum count, so it read MISS. A re-drive on unchanged code would most likely repeat it, and a fix would be an engine change after a held-out reading (D-106). Holm: only bm25-only vs hybrid rejects. Both judged dimensions are uncalibrated (QWK -0.026, 0.066, n=20; D-114) | ✓ Recorded, Phase 06.3.5 (owner, 2026-10-08) |
 | Plan 18 normalises a cited grounded abstention mislabelled `model_only` to `retrieval`. This is accepted against the goal wording "system under test NOT changed" (G-1 override) | The defect predates the phase (2 records in drive 2). The fix landed before the held-out drive and is disclosed by `BASIS_RECONCILED` on 118 of 1,404 records. Comparability with drive 2 holds for retrieval and is qualified for abstention and error counts. The ROADMAP goal wording is deliberately unchanged | ✓ Owner override, Phase 06.3.5 UAT (2026-10-09) |
 | Review fixes after the run of record: CR-01 (case-insensitive model answer label), WR-01 (split and seed markers verified), WR-02 partial (pre-registered values AST-checked; `compare` not yet gated), WR-04, WR-05 | They postdate the drive and do not alter any reading: the verifier re-derived the run at HEAD with the same numbers. 06.3.6 runs on the stricter engine and must say so. WR-03 (prose bound) is an open owner decision | ✓ Shipped, Phase 06.3.5 (a3af9def, c9d84043, fa8f093a, c453d88f, 7a0abe78) |
+| 06.3.6 held-out lever drive is the run of record: rerank (+0.0812 `answer_usable`, Holm p 0.0032; Hits@4 +0.1558) and evidence metadata (+0.0621, Holm p 0.0077) become default levers; graph-v2 and answer-format stay off | Pre-registered Holm family over four lever arms against the same-day `hybrid` on one index generation (lance-703). Metadata flips by rule; rerank's arm read SC-2 MISS (a provider-side latency regime change), so its default is the owner's disposition D-193 with the D-192 latency caveat disclosed. The single D-157 flip commit `3d765ea3` postdates the record | ✓ Shipped, Phase 06.3.6 (plans 21-22) |
+| An unavailable configured default lever degrades with a notice instead of refusing startup; an explicitly named lever still fails closed | UAT gap D-194: the committed defaults made the engine unbootable over empty, metadata-less and legacy stores, and the refusal ran after the staged-job replay. Now a per-request `DEFAULT_LEVER_UNAVAILABLE` (24) WARNING notice (joins `degraded_mode`), a startup WARN before the workers and replay, and coverage/rebuild warnings. The legacy dev store was migrated once by `--migrate-only` (D-197); the engine still never upgrades `nodes` (D-144) | ✓ Shipped, Phase 06.3.6 (gap plan 23) |
+| The lever-free control-arm path is deferred to the next measurement phase's freeze | D-195: arms that omit `levers` now run the committed defaults, so a future drive must choose an empty `LANCET_ENGINE__LEVERS__DEFAULTS`, an eval overlay or a proto opt-out, and launchers must refuse `LANCET_ENGINE__LEVERS__*`. Recorded runs are unaffected (provenance clauses h/j would flag such records) | — Deferred (owner, 2026-10-10) |
 
 ## Evolution
 
@@ -130,4 +134,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Update Roadmap status
 
 ---
-*Last updated: 2026-10-09 after Phase 06.3.5*
+*Last updated: 2026-10-11 after Phase 06.3.6*
