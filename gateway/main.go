@@ -820,7 +820,9 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		RetrievalMode:               retrievalMode,
 		IncludePreTruncationRanking: body.IncludePreTruncationRanking != nil && *body.IncludePreTruncationRanking,
 		Levers:                      levers,
-		DisableDefaultLevers:        body.DisableDefaultLevers,
+
+		// 06.4 D-198: the opt-out from the configured default levers, presence preserved.
+		DisableDefaultLevers: body.DisableDefaultLevers,
 	}
 	if body.Filter != nil {
 		req.Filter = &pb.DocumentFilter{
