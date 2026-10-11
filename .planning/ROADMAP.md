@@ -21,7 +21,7 @@
 | 6.3.4.1 | Retrieval Diagnosis, Index Identity, and Graph-Yield Repair (INSERTED) | Separate index drift vs vector/hybrid retrieval vs graph architecture, restore a working vector baseline, and make graph-on produce a measurable paired effect (unpark gates cleared 2026-10-06) | OBS-05, DATA-03, DATA-04, DATA-05 |
 | 6.3.5 | Retrieval Ablation Matrix, Paper-Convention Metrics, Judged Pass and Calibration (INSERTED) | dense-only / BM25-only / hybrid / hybrid+graph arms on a committed held-out split; Hits@k and MRR beside Lancet's metrics; judged pass with human calibration | OBS-06 |
 | 6.3.6 | Quality Levers Measured as Arms (INSERTED) | reranker (999.2), graph repair by diagnosis (999.6-lite), evidence metadata (date, source, title), answer format — each an arm against the 6.3.5 reference, developed on dev, read once on held-out | OBS-06 |
-| 6.4 | Docs Suite, Verified Quickstart and v1 Closure (INSERTED) | README/docs suite, verified quickstart, debt backlog promotion, milestone closure (PARKED; unpark is an owner decision after 6.3.5 and 6.3.6 publish) | OBS-03 |
+| 6.4 | Docs Suite, Verified Quickstart and v1 Closure (INSERTED) | README/docs suite, verified quickstart, debt backlog promotion, milestone closure (unparked by the owner 2026-10-11) | OBS-03 |
 
 ## Phase Details
 
@@ -1235,19 +1235,59 @@ Plans:
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
-**Goal:** **[PARKED — not ready to plan.]** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone. Phase 06.3.4.1 cleared its unpark gates on 2026-10-06 (`all-pass-close`), but on 2026-10-06 the owner decided (`.planning/research/NEXT-STEPS-2026-10-06.md`) that the docs must report a standard-RAG baseline and a measured lever table, not only a graph-on/graph-off null result. This phase therefore stays parked until Phases 06.3.5 and 06.3.6 publish their runs of record; the unpark remains a separate user decision. Do not draft the evaluation-methodology, eval-results, or quickstart pages before that.
+**Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone, written against what actually shipped. **Unparked by owner decision on 2026-10-11**, after Phases 06.3.5 and 06.3.6 both published their runs of record. The docs report the 06.3.4.1 run of record, the 06.3.5 four-arm standard-RAG baseline and the 06.3.6 lever table, together with the defaults those runs produced: `rerank` (default-on by owner disposition D-193, with the D-192 SC-2 latency caveat beside it) and `evidence_metadata` (default by the pre-registered rule). `graph_v2` and `binary_answer_format` stay off. The phase's decisions are in `06.4-CONTEXT.md`, which inherits `06-CONTEXT.md`.
 **Requirements:** OBS-03
-**Depends on:** Phase 6, Phase 06.3.4 (gap-closure items T-19/CR-01, T-24, T-25, T-43 closed 2026-09-13 — not open blockers), Phase 06.3.4.1 (gates cleared 2026-10-06), Phase 06.3.5 (four-arm matrix run of record), Phase 06.3.6 (lever table and default decisions)
-**Canonical refs:** `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` — governs Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). Do not re-run discussion; this file is the canonical decision record. Phases 06.3.1–06.3.4 (inserted between 6.3 and 6.4, sharing `06.3.1-CONTEXT.md` as their own decision record) attempted to fix the retrieval collapse surfaced by Phase 6.3's evaluation run; 06.3.4's own drive halted at 658/1000 records, uncalibrated, with a then-open journal-completeness defect (T-19/CR-01, closed 2026-09-13) — **it is not a run of record and must not be cited as complete.** Phase 06.3.4.1 was inserted after 06.3.4 to diagnose and repair retrieval/graph yield (OI-01 graph architecture, OI-02 `RetrieveHybrid` latency, OI-03 corpus/index drift — see `06.3.4-FINDINGS.md` §4 — these are 06.3.4.1's work, not this phase's); this phase's evaluation-methodology and eval-results documentation must reflect whatever run 06.3.4.1 validates as trustworthy, not the 2026-09-03 run and not 06.3.4's halted re-drive. Root-cause analysis for the 2026-09-03 collapse and correction rationale is in `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` (D-53, D-54). **Run of record validated by Phase 06.3.4.1:** `eval/runs/2026-10-06-drive2-multihop_rag_diag/` (index generation `lance-702`), with its readings and the decision record in `.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RUN-OF-RECORD.md`. The D-83 outcome, decided by the user 2026-10-06, is `all-pass-close`: SC-1 200/200 work units, SC-4 59/89 = 0.6629 (Wilson [0.5598, 0.7526]) and SC-5 35/65 = 0.5385 all pass, with three standing disclosures (non-significant negative paired quality deltas with a latency and prompt-token cost, a mid-drive provider switch, and a graph-off retrieved-set difference of undetermined cause). Phase 06.3.4.1's gates are met; **this entry is not unparked by that outcome, 6.4 stays parked, and the unpark is a separate user decision.** Graph usefulness (whether the graph earns its cost) is a 6.4 question.
-**Success Criteria** (parked — none of these are achievable, and none should be drafted against, until Phases 06.3.5 and 06.3.6 publish their runs of record; Phase 06.3.4.1's unpark gates cleared 2026-10-06 (`all-pass-close`), and the unpark remains a separate owner decision):
+**Depends on:** Phase 6, Phase 06.3.4 (gap-closure items T-19/CR-01, T-24, T-25, T-43 closed 2026-09-13; not open blockers), Phase 06.3.4.1 (gates cleared 2026-10-06), Phase 06.3.5 (four-arm matrix run of record), Phase 06.3.6 (lever table and default decisions, complete 2026-10-11)
+**Canonical refs:**
+- `.planning/phases/06-observability-evaluation-polish/06-CONTEXT.md` is the inherited decision record for Phases 6, 6.1, 6.2, 6.3 and 6.4 (D-77). `06.4-CONTEXT.md` holds this phase's own decisions on the items carried in from 06.3.4 and 06.3.6.
+- Runs of record the docs must report:
+  - `06.3.4.1-RUN-OF-RECORD.md`: `eval/runs/2026-10-06-drive2-multihop_rag_diag/`, `lance-702`, D-83 `all-pass-close` with three standing disclosures.
+  - `06.3.5-RUN-OF-RECORD.md`: `eval/runs/2026-10-07-heldout-multihop_rag_heldout/`, `lance-702`. SC-2 MISS on dense-only, hybrid, hybrid+graph and pooled, continued with disclosure. The judged rows are uncalibrated (QWK -0.026 and 0.066) and are not findings.
+  - `06.3.6-RUN-OF-RECORD.md`: `eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout/`, `lance-703`. SC-2 MISS on hybrid+rerank, hybrid+all and pooled, from rerank-provider latency drift (D-192).
+  - `06.3.6-CLOSEOUT.md`: per-lever outcome, flip commit `3d765ea3`, D-194/D-197 superseding note, open items.
+- `.planning/research/NEXT-STEPS-2026-10-06.md`: why the docs report a baseline and a lever table rather than only a graph-on/graph-off result.
+- `.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md` and `docs/evaluation-fidelity-and-graph-yield.md` (D-53, D-54): the 2026-09-03 collapse and its correction.
+- 06.3.4's halted 658-record re-drive is **not a run of record** and is not cited as one.
 
-1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links); `docs/` gains a design narrative (alternatives-considered, linking ADRs), an observability walkthrough following one real query end to end, and an evaluation methodology + results page reporting the 06.3.4.1 run of record, the 06.3.5 four-arm matrix and the 06.3.6 lever table with their default decisions — not 06.3.4's halted, uncalibrated re-drive — each written after the implementation it documents (D-66, D-67, D-72, D-73).
-2. The quickstart is executable and verified end-to-end on a clean checkout — compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval — on both Windows native and Linux via WSL (D-68).
-3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
-4. The README carries an honest limitations section: local-only by design (no auth/TLS/quotas, DEBT-CR-04's trigger conditions), the open debt themes linked to their backlog phases, and what the eval does and does not measure, including the unmeasured evidence-vs-priors claim (D-71).
-5. The notice-code vocabulary (`NO_EVIDENCE`, `GRAPH_DEGRADED`, `GRAPH_TIMEOUT`, `RETRIEVAL_DEGRADED`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_FAILED`, index-staleness codes) is documented in `docs/` as part of the API contract (D-76, D-28, D-53).
-6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each phase listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04).
-7. v1 milestone closure — requirements reconciliation and the debt ledger — lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86).
+**Success Criteria** (rewritten 2026-10-11 against the shipped system; the items carried in from 06.3.4 and 06.3.6 are decided in `06.4-CONTEXT.md`):
+
+1. The README stays the readable front door (story, architecture sketch, quickstart, headline results, links). `docs/` gains three pages, each written after the implementation it documents (D-66, D-67, D-72, D-73):
+   - a design narrative (alternatives considered, linking the ADRs);
+   - an observability walkthrough that follows one real query end to end, including the `rerank` node timing;
+   - an evaluation methodology and results page.
+
+   The results page reports:
+   - the 06.3.4.1 run of record;
+   - the 06.3.5 four-arm baseline (dense-only, bm25-only, hybrid, hybrid+graph; paper-convention Hits@k/MRR beside Lancet's metrics);
+   - the 06.3.6 lever table (two Holm families, exact paired sign-flip test) and the resulting defaults.
+
+   Every gate reading is reported as recorded, MISSes included: 06.3.5 SC-2 (12 query-embedding timeouts) and 06.3.6 SC-2 (rerank latency drift). The rerank default is stated with its caveat beside it:
+   - the D-192 latency drift;
+   - +289 ms mean total latency and +458 ms of RetrieveHybrid time on P_X;
+   - the 2,286 ms rerank budget a request can pay in the provider's slow mode.
+
+   The page also states that rerank plus metadata together was never measured decisionally; `hybrid+all` is the only, descriptive, evidence. Uncalibrated judged rows are labelled as not findings.
+2. The quickstart is executable and verified end to end on a clean checkout, on both Windows native and Linux via WSL (D-68): compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval. It documents the shipped default-lever behaviour:
+   - the committed config sets `[engine.levers] defaults = ["rerank", "evidence_metadata"]`, so every query that names no lever makes a paid rerank call;
+   - a store without document metadata boots with a startup WARN, and responses carry `DEFAULT_LEVER_UNAVAILABLE` and `degraded_mode = true` until the store is backfilled (D-194);
+   - a legacy 19-column store needs `backfill_evidence_metadata --migrate-only` first (D-197);
+   - `LANCET_ENGINE__LEVERS__DEFAULTS=` starts the engine lever-free.
+
+   The eval step uses the lever-free control-arm path decided in `06.4-CONTEXT.md` (06.3.6 D-195).
+3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches and the rerank step, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
+4. The README carries an honest limitations section (D-71) covering:
+   - local-only by design (no auth/TLS/quotas; DEBT-CR-04's trigger conditions);
+   - the open debt themes, linked to their backlog phases;
+   - what the eval does and does not measure, including the unmeasured evidence-vs-priors claim (D-45), and that every reading is on one corpus (MultiHop-RAG), one generation model from one provider, and one seed, with a null guard of n = 43;
+   - the graph's cost without a measured gain (06.3.5 hybrid+graph not significant; 06.3.6 `graph_v2` not significant, with `GRAPH_UNAVAILABLE` on about 42% of graph-arm records);
+   - the levers that stayed off, with their readings (06.3.6 SC-8): `graph_v2` -0.0195, Holm p 0.4177; `binary_answer_format` -0.0423, Holm p 0.0941, CI on the harm side;
+   - the uncalibrated judge, with the judge carry-forwards deferred to v1.1 (06.3.6 D-153);
+   - the rerank latency caveat.
+5. The notice-code vocabulary is documented in `docs/` as part of the API contract (D-76, D-28, D-53). It is generated from or checked against `proto/lancet/v1/lancet.proto` `NoticeCode`, so it cannot drift:
+   - the codes: `NO_EVIDENCE`, `GRAPH_TIMEOUT`, `GRAPH_DEGRADED`, `MODEL_NOTICE`, `MODEL_WARNING`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_DEGRADED_DENSE`/`_BM25`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `BASIS_RECONCILED`, `GRAPH_ABLATION`, `RETRIEVAL_FAILED`, the index codes (`INDEX_REBUILD_FAILED`, `INDEX_STALE`, `INDEX_GENERATION_MISMATCH`), `RERANK_DEGRADED` and `DEFAULT_LEVER_UNAVAILABLE` (code 24, which sets `degraded_mode`);
+   - the `levers` request field and its snapshot echo, with the `lever_unavailable`/`invalid_levers` refusals.
+6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04). The count stays exactly 18. Items this phase defers to backlog from 06.3.4/06.3.6 are recorded separately, so the 18 still reconciles.
+7. v1 milestone closure lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86). It covers the requirements reconciliation, the debt ledger, and the disposition of every item carried into 6.4 from 06.3.4 and 06.3.6.
 
 ## Backlog
 
