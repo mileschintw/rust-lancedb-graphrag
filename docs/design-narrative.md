@@ -5,8 +5,9 @@
 > chosen, what was rejected and why, and links the document where the call was made. None of these choices has its own
 > ADR file: the reasoning lives in the `.discussion/` planning documents written before the first line of code, and in
 > the `.planning/` phase records written while building. Results live on the [evaluation page](evaluation.md). Where
-> this page quotes a figure, the figure is copied verbatim from a run of record, and the same committed check that
-> guards the evaluation page fails this page on any decimal it cannot find there.
+> this page quotes a figure, it is copied verbatim from the source linked beside it: a run of record, the 06.3.6
+> closeout, a committed run or diagnosis file, the configuration, or a planning record. The same committed check that
+> guards the evaluation page fails this page on any decimal it cannot find in the run sources.
 
 **Seven decisions shaped this system. Four were made before any code existed: a small Rust state machine instead of a
 workflow framework, embedded LanceDB instead of a vector service, a custom chunker instead of a framework's, and a Go
@@ -91,12 +92,8 @@ row).
 Embedding the store moved work into the engine. The `lance-graph` and Arrow version compatibility was an unknown big
 enough to get its own spike phase before any graph extraction was built (Phase 4). The engine owns its index lifecycle,
 so the BM25 index and the graph index are rebuilt off the write lock and swapped in as one snapshot with a new index
-generation, which is the end of the [ingestion path](#the-ingestion-path-through-rebuild-and-swap) below. And a
-long-running store needs care: the forensic record of the first benchmark run describes latency creeping upward over
-hundreds of queries against an uncompacted index
-([`06.3.1-ROOT-CAUSE.md`](../.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md),
-section 3). Each of those is engineering a managed service would have hidden, and each is the kind of engineering this
-project set out to show.
+generation, which is the end of the [ingestion path](#the-ingestion-path-through-rebuild-and-swap) below. Each of those
+is engineering a managed service would have hidden, and each is the kind of engineering this project set out to show.
 
 ## Custom structure-aware chunking, not a framework's
 
@@ -202,7 +199,7 @@ Why ship a built subsystem off? Because on MultiHop-RAG it did not pay. No graph
 150 and 148 of the 351 records of the three graph arms of the lever run, a rate stable across runs and unchanged by
 graph-v2 ([evaluation page](evaluation.md#results-the-three-runs-of-record)). Where the graph does contribute, it adds
 noise to ranking: the graph-repair run's ranking-quality delta was -0.0807, CI [-0.1362, -0.0259] over 89 pairs, an
-interval that excludes zero
+interval that excludes zero (a legacy ablation reading that the run of record reports outside its SC-5 qualifying set)
 ([`06.3.4.1-RUN-OF-RECORD.md`](../.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RUN-OF-RECORD.md)).
 And it costs prompt tokens and retrieval time in every run (see [graph cost, reconciled](evaluation.md#graph-cost-reconciled)).
 
@@ -312,7 +309,8 @@ flowchart TD
 The degraded branches are the ones `derive_degraded_mode` in `engine/src/workflow/mod.rs` counts: a response is
 degraded when its answer basis is not retrieval, or when it carries a degrading notice (the graph's
 `GRAPH_UNAVAILABLE`, `GRAPH_DEGRADED` and `GRAPH_TIMEOUT`, the two `RETRIEVAL_DEGRADED_*` codes, `RETRIEVAL_FAILED`,
-`RERANK_DEGRADED`, `DEFAULT_LEVER_UNAVAILABLE`, `CITATION_DROPPED`, `MODEL_ONLY`, and the three index codes). The two
+`RERANK_DEGRADED`, `DEFAULT_LEVER_UNAVAILABLE`, `CITATION_DROPPED`, `MODEL_ONLY`, the three index codes, and
+`BASIS_RECONCILED` unless it only records a normalised grounded abstention). The two
 graph-off codes, `GRAPH_DISABLED_BY_CONFIG` and `GRAPH_ABLATION`, are informational and never mark a response degraded.
 Three details on the diagram are easy to miss. The graph node runs before retrieval because it computes the query
 embedding that the dense search also uses, so it holds that cost even when the graph is off. The rerank call runs
