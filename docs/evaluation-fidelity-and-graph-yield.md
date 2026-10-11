@@ -48,3 +48,11 @@ Phase 06.3.4.1 (retrieval diagnosis, index identity and graph-yield repair) chan
 - `.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-STORE-BASELINE.md` (index generation)
 - `.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-BUDGETS.md` (budgets and spend)
 - `.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-SEED-PROBE.md` (seeding)
+
+## Addendum 2026-10-11: Phase 6.4 published
+
+The owner unparked Phase 6.4 on 2026-10-11, so the statement above that Phase 6.4 stays parked describes the state on 2026-10-06 and no longer holds. This note's earlier sections are left as written.
+
+- **The results page is [`docs/evaluation.md`](evaluation.md).** It reproduces the three runs of record (Phase 06.3.4.1 drive 2, the Phase 06.3.5 four-arm baseline and the Phase 06.3.6 lever comparison) verbatim from their run-of-record files, with the forest plot, the defaults that shipped and their caveats.
+- **The graph cost cited in the 2026-10-06 addendum is reconciled there.** That cost is drive 2's paired reading over its two populations. The later held-out runs read the graph's paired total-latency cost differently, so the results page's "Graph cost, reconciled" section quotes each run's own readings with their populations, separates the repeatable prompt-token and RetrieveHybrid costs from provider-driven total latency, and does not use drive 2's figure as the graph's general cost.
+- **Graph context now ships default-off (D-207).** The seeding described above is still the graph path a request gets when it opts in; it is no longer the production default.
