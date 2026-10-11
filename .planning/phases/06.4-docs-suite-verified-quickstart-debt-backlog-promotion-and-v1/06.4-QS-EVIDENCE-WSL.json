@@ -111,5 +111,39 @@
       "coverage_literal_found": true,
       "availability_literal_found": true
     }
+  },
+  "preflight": {
+    "attempts": 1,
+    "final_passed": true,
+    "retry_evidence": [],
+    "wall_clock_kill": false,
+    "attempt_1": {
+      "exit": 0,
+      "checks": {
+        "drive_environment": "PASS",
+        "gateway_reachable": "PASS",
+        "engine_reachable": "PASS",
+        "arm_mode_canaries": "PASS"
+      }
+    }
+  },
+  "rescore": {
+    "result_hash": "64bad6f11b7678a2",
+    "compare_exit": 0,
+    "compare_output": "re-score reproduces the published values",
+    "eval_runs_status": "",
+    "metadata_keys_differed": [
+      "commit_sha",
+      "run_date"
+    ]
+  },
+  "spend": {
+    "before_usd": 3.715600308,
+    "after_usd": 3.720327544,
+    "delta_usd": 0.004727236,
+    "platform_cap_usd": 0.3,
+    "windows_delta_usd": 0.011157461,
+    "cumulative_usd": 0.015884697,
+    "phase_cap_usd": 1.0
   }
 }
