@@ -33,6 +33,10 @@
 #         TestCreateDocumentEvidenceMetadata (the D-144 doc_title / source / published_date edge
 #         validation, as subtests of ONE top-level test) and the new gateway/internal/engineclient
 #         package's TestIngestMetadataMap (the first-frame metadata map builder).
+#   124 — unchanged by Phase 06.4 plan 01 (D-198, D-207, A-WR-06): every new case is a subtest of an
+#         existing top-level test (TestQueryRAG_EdgeFlagsAndDisallowUnknownFields d198_* and d207_*,
+#         TestCreateDocumentEvidenceMetadata awr06_*, TestRAGQueryCrossRuntime d198_* and d207_*), so
+#         no top-level Test function was added and the count does not move.
 set -e
 
 EXPECTED_TOTAL=124

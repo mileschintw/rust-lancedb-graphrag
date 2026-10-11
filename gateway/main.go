@@ -379,9 +379,14 @@ func (a app) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "engine": map[string]any{"status": "ok", "latency_ms": latency.Milliseconds()}})
 }
 
-// validMetaText reports whether v fits within maxRunes runes and holds no control
-// character. An empty v is valid: an empty form field is an absent one.
+// validMetaText reports whether v is valid UTF-8, fits within maxRunes runes and holds no
+// control character. An empty v is valid: an empty form field is an absent one.
 func validMetaText(v string, maxRunes int) bool {
+	// Invalid UTF-8 is refused at the edge: staged as-is it fails later in the engine with a 502
+	// (06.3.6 re-review A-WR-06, 06.4 D-204 route F).
+	if !utf8.ValidString(v) {
+		return false
+	}
 	if utf8.RuneCountInString(v) > maxRunes {
 		return false
 	}
@@ -597,6 +602,11 @@ type ragQueryRequestBody struct {
 	// array is today's request; a name outside leverByName, a duplicate, or more than
 	// maxRequestLevers entries is rejected before the engine is called.
 	Levers *[]string `json:"levers"`
+	// DisableDefaultLevers opts out of the engine's configured default levers (06.4 D-198). Absent
+	// or false is today's behaviour; true runs exactly the named levers, even none. A pointer, so
+	// an absent field stays distinct from false, and DisallowUnknownFields keeps rejecting every
+	// other unknown key.
+	DisableDefaultLevers *bool `json:"disable_default_levers"`
 }
 
 // maxRequestLevers is the most levers one request may name: the number of levers the closed
@@ -806,6 +816,7 @@ func (a app) queryRAG(w http.ResponseWriter, r *http.Request) {
 		RetrievalMode:               retrievalMode,
 		IncludePreTruncationRanking: body.IncludePreTruncationRanking != nil && *body.IncludePreTruncationRanking,
 		Levers:                      levers,
+		DisableDefaultLevers:        body.DisableDefaultLevers,
 	}
 	if body.Filter != nil {
 		req.Filter = &pb.DocumentFilter{

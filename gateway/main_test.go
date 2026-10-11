@@ -1874,6 +1874,33 @@ func TestCreateDocumentEvidenceMetadata(t *testing.T) {
 			}
 		}
 	})
+
+	// 06.4 D-204 route F (A-WR-06): a value that is not valid UTF-8 is refused at the edge with
+	// the same 400 shape, before any side effect, instead of failing later in the engine as a 502.
+	t.Run("awr06_invalid_utf8_title_is_refused", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			fields map[string]string
+			body   string
+		}{
+			{"title", map[string]string{"doc_title": "bad\xfftitle"}, "invalid doc_title"},
+			{"source", map[string]string{"source": "bad\xc3source"}, "invalid source"},
+		} {
+			code, _, calls, inserted := serve(t, tc.fields)
+			if code != http.StatusBadRequest {
+				t.Fatalf("%s: status = %d, want 400", tc.name, code)
+			}
+			if calls != 0 || inserted {
+				t.Fatalf("%s: engine calls = %d, inserted = %v, want 0 and false", tc.name, calls, inserted)
+			}
+			store := &fakeStore{}
+			recorder := httptest.NewRecorder()
+			app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, evidenceMetaRequest(t, tc.fields))
+			if got := strings.TrimSpace(recorder.Body.String()); got != tc.body {
+				t.Fatalf("%s: body = %q, want %q", tc.name, got, tc.body)
+			}
+		}
+	})
 }
 
 type fakeStream struct {
@@ -2794,6 +2821,46 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		!strings.Contains(chatEvidence, "GRAPH_FIXTURE_MARKER_RELATION") {
 		t.Fatalf("Rust-owned evidence omitted graph, dense or lexical fixture content")
 	}
+
+	// 06.4 D-198: one request through the real gateway and the real engine that opts out of the
+	// configured default levers and names none runs no lever. The explicit graph field keeps the
+	// mock's graph-marker evidence check valid whatever the configured graph default is.
+	t.Run("d198_opt_out_runs_no_lever", func(t *testing.T) {
+		optOutBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000007","disable_default_levers":true,"disable_graph_context":false}`
+		optOutReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(optOutBody))
+		if err != nil {
+			t.Fatalf("create request: %v", err)
+		}
+		optOutReq.Header.Set("Content-Type", "application/json")
+		optOutReq.Header.Set("Accept", "text/event-stream")
+		optOutResp, err := httpClient.Do(optOutReq)
+		if err != nil {
+			t.Fatalf("execute request: %v", err)
+		}
+		defer optOutResp.Body.Close()
+		if optOutResp.StatusCode != http.StatusOK {
+			t.Fatalf("opt-out /rag/query status = %d; engine output: %s", optOutResp.StatusCode, strings.Join(engineLines, " | "))
+		}
+		optOutRaw, err := io.ReadAll(optOutResp.Body)
+		if err != nil {
+			t.Fatalf("read SSE response body: %v", err)
+		}
+		optOutDTO, err := parseTerminalResponseDTO(string(optOutRaw))
+		if err != nil {
+			t.Fatalf("decode opt-out /rag/query response: %v; body: %s", err, optOutRaw)
+		}
+		if optOutDTO.Snapshot == nil {
+			t.Fatalf("opt-out response carries no retrieval snapshot: %s", optOutRaw)
+		}
+		if len(optOutDTO.Snapshot.Levers) != 0 {
+			t.Fatalf("snapshot levers = %v, want an empty echo for the opt-out", optOutDTO.Snapshot.Levers)
+		}
+		for _, n := range optOutDTO.Notices {
+			if n.Code == "RERANK_DEGRADED" || n.TypedCode == int32(pb.NoticeCode_NOTICE_CODE_RERANK_DEGRADED) {
+				t.Fatalf("opt-out response carries a RERANK_DEGRADED notice, so a default lever ran: %#v", n)
+			}
+		}
+	})
 }
 
 func TestRAGQuerySSEFirstFrame(t *testing.T) {
@@ -4541,6 +4608,67 @@ func TestQueryRAG_EdgeFlagsAndDisallowUnknownFields(t *testing.T) {
 		if receivedReq.DisableGraphContext == nil || receivedReq.GetDisableGraphContext() {
 			t.Errorf("disable_graph_context = %v, want &false", receivedReq.DisableGraphContext)
 		}
+	})
+
+	// 06.4 D-198 / D-207: the two opt-outs cross the gateway as pointers, so an absent field, an
+	// explicit false and an explicit true reach the engine as nil, &false and &true. A client that
+	// sends disable_default_levers must not meet DisallowUnknownFields.
+	forwarded := func(t *testing.T, body string) *pb.QueryRAGRequest {
+		t.Helper()
+		var receivedReq *pb.QueryRAGRequest
+		engine := engineFunc{
+			queryRAG: func(ctx context.Context, req *pb.QueryRAGRequest) (pb.LancetService_QueryRAGClient, error) {
+				receivedReq = req
+				return newSingleResponseStream(&pb.QueryRAGResponse{Answer: "Flags answer", SessionId: req.GetSessionId()}, nil), nil
+			},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/rag/query", strings.NewReader(body)).WithContext(t.Context())
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		app{store: &fakeStore{}, engine: engine, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+		}
+		if receivedReq == nil {
+			t.Fatal("engine QueryRAG was not called")
+		}
+		return receivedReq
+	}
+	wantBoolPointer := func(t *testing.T, name string, got *bool, want *bool) {
+		t.Helper()
+		switch {
+		case want == nil && got != nil:
+			t.Errorf("%s = &%v, want nil (absent)", name, *got)
+		case want != nil && got == nil:
+			t.Errorf("%s = nil, want &%v", name, *want)
+		case want != nil && *got != *want:
+			t.Errorf("%s = &%v, want &%v", name, *got, *want)
+		}
+	}
+	yes, no := true, false
+
+	t.Run("d198_absent", func(t *testing.T) {
+		req := forwarded(t, `{"query":"q","session_id":"sess-d198-absent"}`)
+		wantBoolPointer(t, "disable_default_levers", req.DisableDefaultLevers, nil)
+	})
+	t.Run("d198_false", func(t *testing.T) {
+		req := forwarded(t, `{"query":"q","session_id":"sess-d198-false","disable_default_levers":false}`)
+		wantBoolPointer(t, "disable_default_levers", req.DisableDefaultLevers, &no)
+	})
+	t.Run("d198_true", func(t *testing.T) {
+		req := forwarded(t, `{"query":"q","session_id":"sess-d198-true","disable_default_levers":true}`)
+		wantBoolPointer(t, "disable_default_levers", req.DisableDefaultLevers, &yes)
+		if len(req.GetLevers()) != 0 {
+			t.Errorf("levers = %v, want none", req.GetLevers())
+		}
+	})
+	t.Run("d207_graph_absent", func(t *testing.T) {
+		req := forwarded(t, `{"query":"q","session_id":"sess-d207-absent"}`)
+		wantBoolPointer(t, "disable_graph_context", req.DisableGraphContext, nil)
+	})
+	t.Run("d207_graph_true", func(t *testing.T) {
+		req := forwarded(t, `{"query":"q","session_id":"sess-d207-true","disable_graph_context":true}`)
+		wantBoolPointer(t, "disable_graph_context", req.DisableGraphContext, &yes)
 	})
 
 	t.Run("unknown top-level field rejected with 400", func(t *testing.T) {
