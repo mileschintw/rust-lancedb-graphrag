@@ -255,7 +255,11 @@ def test_disable_graph_context_body_serialization(httpx_mock: HTTPXMock) -> None
 
     sig = inspect.signature(run_query)
     assert "disable_graph_context" in sig.parameters
-    assert sig.parameters["disable_graph_context"].annotation in (bool, "bool")
+    # 06.4 D-207: tri-state. None sends no key; False is sent, because it now means graph ON.
+    assert sig.parameters["disable_graph_context"].annotation in (
+        bool | None,
+        "bool | None",
+    )
 
     with httpx.Client(base_url="http://testserver") as client:
         run_query(client, query="graph off", disable_graph_context=True)
@@ -269,7 +273,7 @@ def test_disable_graph_context_body_serialization(httpx_mock: HTTPXMock) -> None
     assert body_off["disable_graph_context"] is True
 
     body_on = json.loads(requests[1].read().decode("utf-8"))
-    assert "disable_graph_context" not in body_on
+    assert body_on["disable_graph_context"] is False
 
 
 def test_run_query_sends_retrieval_mode_and_parses_ranking(
@@ -403,6 +407,71 @@ def test_run_query_sends_levers_and_parses_the_echo(httpx_mock: HTTPXMock) -> No
     assert outcome.answer is not None
     assert outcome.answer.snapshot is not None
     assert outcome.answer.snapshot.levers == ["binary_answer_format"]
+
+
+_PLAIN_COMPLETION = (
+    "event: workflow_completed\n"
+    'data: {"success":true,"final_response":{"answer":"ok"}}\n\n'
+)
+
+
+def _sent_bodies(httpx_mock: HTTPXMock, calls: list[dict[str, object]]) -> list[dict]:
+    """Run each ``run_query`` keyword set against the mock and return the JSON bodies sent."""
+    for _ in calls:
+        httpx_mock.add_response(
+            url="http://testserver/rag/query",
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=_PLAIN_COMPLETION,
+        )
+    with httpx.Client(base_url="http://testserver") as client:
+        for kwargs in calls:
+            run_query(client, query="q", session_id="s", **kwargs)
+    return [json.loads(r.read().decode("utf-8")) for r in httpx_mock.get_requests()]
+
+
+def test_d198_run_query_sends_disable_default_levers_only_when_set(
+    httpx_mock: HTTPXMock,
+) -> None:
+    bodies = _sent_bodies(
+        httpx_mock,
+        [
+            {},
+            {"disable_default_levers": None},
+            {"disable_default_levers": False},
+            {"disable_default_levers": True},
+            {"disable_default_levers": True, "levers": ["rerank"]},
+        ],
+    )
+    base = {"query": "q", "session_id": "s"}
+    # An unset or None value sends no key, so the body is the one sent before D-198.
+    assert bodies[0] == base
+    assert bodies[1] == base
+    # False is a real value and is sent as JSON false, never dropped.
+    assert bodies[2] == {**base, "disable_default_levers": False}
+    assert bodies[3] == {**base, "disable_default_levers": True}
+    assert bodies[4] == {**base, "disable_default_levers": True, "levers": ["rerank"]}
+
+
+def test_d207_run_query_sends_disable_graph_context_false_when_given_false(
+    httpx_mock: HTTPXMock,
+) -> None:
+    bodies = _sent_bodies(
+        httpx_mock,
+        [
+            {},
+            {"disable_graph_context": None},
+            {"disable_graph_context": False},
+            {"disable_graph_context": True},
+        ],
+    )
+    base = {"query": "q", "session_id": "s"}
+    # Absent means the engine's configured default (shipped off), so nothing is sent for it.
+    assert bodies[0] == base
+    assert bodies[1] == base
+    # An explicit false asks for graph context ON and must reach the engine as false.
+    assert bodies[2] == {**base, "disable_graph_context": False}
+    assert bodies[3] == {**base, "disable_graph_context": True}
 
 
 def test_a_lever_free_arm_sends_exactly_the_06_3_5_request_body(

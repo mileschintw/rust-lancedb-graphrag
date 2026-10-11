@@ -251,15 +251,22 @@ def run_query(
     *,
     query: str,
     session_id: str = "",
-    disable_graph_context: bool = False,
+    disable_graph_context: bool | None = None,
     retrieval_mode: str | None = None,
     include_pre_truncation_ranking: bool = False,
     levers: Sequence[str] = (),
+    disable_default_levers: bool | None = None,
     deadline_s: float = 600.0,
     read_timeout_s: float | None = None,
     capture_raw_events: bool = False,
 ) -> QueryOutcome:
-    """Drive gateway /rag/query endpoint with SSE streaming and contract assertions."""
+    """Drive gateway /rag/query endpoint with SSE streaming and contract assertions.
+
+    ``disable_graph_context`` and ``disable_default_levers`` are tri-state (06.4 D-198, D-207):
+    ``None`` sends no key, so the engine applies its configured default; ``False`` is sent as JSON
+    ``false`` (graph context explicitly on, or the configured default levers kept); ``True`` is
+    sent as ``true``.
+    """
     import httpx
     from httpx_sse import SSEError, connect_sse
 
@@ -268,14 +275,16 @@ def run_query(
 
     started = time.monotonic()
     body: dict[str, object] = {"query": query, "session_id": session_id}
-    if disable_graph_context:
-        body["disable_graph_context"] = True
+    if disable_graph_context is not None:
+        body["disable_graph_context"] = disable_graph_context
     if retrieval_mode is not None:
         body["retrieval_mode"] = retrieval_mode
     if include_pre_truncation_ranking:
         body["include_pre_truncation_ranking"] = True
     if levers:
         body["levers"] = list(levers)
+    if disable_default_levers is not None:
+        body["disable_default_levers"] = disable_default_levers
 
     effective_read_timeout = (
         read_timeout_s
