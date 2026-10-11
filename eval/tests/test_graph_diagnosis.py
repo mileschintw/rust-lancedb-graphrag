@@ -603,8 +603,10 @@ def test_the_population_is_the_graph_on_records_with_the_unavailable_notice(
     assert sorted(pop) == [f"q{i:03d}" for i in range(8)]
 
 
-@pytest.mark.skipif(not REAL_JOURNAL.exists(), reason="drive-2 journal not present")
 def test_the_real_journal_population_parses_to_the_expected_size() -> None:
+    # 06.4-03 (review C-WR-06): the committed journal must exist. A missing one fails
+    # loudly instead of skipping, because the D-200 re-score and the docs depend on it.
+    assert REAL_JOURNAL.exists(), f"committed drive-2 journal missing: {REAL_JOURNAL}"
     assert len(population(REAL_JOURNAL)) == RULE.expected_count
 
 

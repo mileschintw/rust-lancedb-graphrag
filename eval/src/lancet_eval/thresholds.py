@@ -480,8 +480,11 @@ class LeverPreRegistration:
         bootstrap_seed: Seed of those CIs.
         null_guard_arms: The arms the null-abstention guard can veto (D-148).
         null_guard_predicate: The abstention predicate the guard reads.
-        null_guard_margin: The guard fails when the abstention increase over the
-            reference exceeds this share of the null pairs.
+        null_guard_margin: The guard fails when the net abstention drop against the
+            reference exceeds this share of the null pairs. The drop counts the null
+            pairs where the reference abstains and the arm does not, minus the reverse
+            (``evaluate_null_guard``: ``b - c``), so a larger value is a worse arm
+            (06.4-03, review B-IN-07).
         null_guard_min_pair_fraction: The fraction of the null questions that must be
             paired for the guard to be evaluable; below it the guard fails closed.
         answer_mix_strata: The strata of the reported-only answer-mix guard.
