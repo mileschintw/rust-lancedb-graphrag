@@ -1,12 +1,12 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
+current_plan: 1
 status: executing
-stopped_at: Phase 06.4 planned
-last_updated: "2026-10-11T06:58:39.571Z"
+stopped_at: Phase 06.4 execution started (wave 1, plan 06.4-01)
+last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
-state_head: 3dc6241256974f4af21741336db6b8ac6abb6f91
+state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
 progress:
   total_phases: 18
   completed_phases: 10
@@ -15,18 +15,19 @@ progress:
 milestone_name: milestone
 current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
 current_phase: "06.4"
-last_activity_desc: Phase 06.4 planned (17 plans, 14 waves; plan check passed at iteration 3; decisions 36/36)
+last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-proposed (owner, 2026-10-11T07:13:50Z)
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: Not started
+Current Plan: 1
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-11: Phase 06.4 EXECUTION STARTED** (`/gsd-execute-phase 06.4`). 17 plans in 14 waves. Routing: wave 1 (01) on main; wave 2 02 on main and 03 in a harness worktree; wave 3 04 on main and 05 in a worktree; wave 4 (06) is the orchestrator-run D-205 review gate; waves 5-14 (07-17) sequential on main, including the live fresh-clone plans 08-11 (D-222 cap $1.00, D-230 compose stop and restore, D-231, D-233). Executors run on Sonnet; the orchestrator owns STATE/ROADMAP writes. **Plan 01 Task 1 (one-way `checkpoint:decision`) answered before dispatch: `as-proposed`** (owner, 2026-10-11T07:13:50Z): `optional bool disable_default_levers = 9;`, `[engine.graph] context_default_enabled` (env `LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED`), `NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG = 25`, and the D-47 comment rewrites, all as proposed in the plan.
 - **2026-10-11: Phase 06.4 PLANNED.** 17 plans in 14 waves (`06.4-01..17-PLAN.md`). The plan check passed at iteration 3: five parallel full-read slice checks (3 blockers, 17 warnings), three parallel fresh revision planners on disjoint plan sets, a second slice pass (6 warnings), one scoped revision and a scoped re-check. Decision coverage is 36/36 (D-198..D-233) with the 19 inherited 06-CONTEXT IDs asserted by hand; OBS-03 is on all 17 plans.
   - **Owner decisions taken during planning:** D-227 (add a `rerank_request` leaf span), D-228 (forest plot plots committed values only), D-229 (uncovered review residuals accepted as listed v1 debt; D-204 deferrals to 999.18/999.19), D-230 (executor stops and restores the dev compose stack), D-231 (sudo authorised for the WSL prerequisites, never a typed password), D-232 (`--no-archive-phases` at milestone close), D-233 (one timeout-class preflight retry per platform, read literally).
   - **Research corrections that changed the plans:** the command is `lancet-eval measure`; no rerank span existed; a shallow clone breaks the re-score (full clone only); the README quickstart was wrong three ways; tonic's `serve_with_incoming_shutdown` drops nodelay; `score` scans every record, so the new D-199 checks live outside it; the D-203 log token must be in the message text (the fmt layer never prints the event name); local `main` is ahead of origin, so fresh clones come from the local path.
@@ -329,7 +330,7 @@ Total Plans in Phase: 17
 
 ## Active Phase
 
-- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). **Planned 2026-10-11:** 17 plans in 14 waves, plan check passed at iteration 3; owner answers at plan-phase recorded as D-227..D-233. Next: `/gsd-execute-phase 06.4`. Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
+- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). **Planned 2026-10-11:** 17 plans in 14 waves, plan check passed at iteration 3; owner answers at plan-phase recorded as D-227..D-233. **Executing since 2026-10-11** (`/gsd-execute-phase 06.4`). Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
