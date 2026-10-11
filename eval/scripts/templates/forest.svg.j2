@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="{{ g.width }}" height="{{ g.height }}" viewBox="0 0 {{ g.width }} {{ g.height }}" role="img" aria-labelledby="forest-title forest-desc">
+<title id="forest-title">{{ g.title }}</title>
+<desc id="forest-desc">{{ g.desc }}</desc>
+<rect class="background" x="0" y="0" width="{{ g.width }}" height="{{ g.height }}" fill="#ffffff"/>
+<text class="title" x="{{ g.label_x }}" y="30" font-family="sans-serif" font-size="16" font-weight="bold">{{ g.title }}</text>
+<text class="subtitle" x="{{ g.label_x }}" y="50" font-family="sans-serif" font-size="11" fill="#444444">{{ g.subtitle }}</text>
+<g class="row-labels">
+{% for header in g.headers %}
+<text class="group-label" x="{{ header.x }}" y="{{ header.y }}" font-family="sans-serif" font-size="11" font-weight="bold">{{ header.text }}</text>
+{% endfor %}
+{% for label in g.labels %}
+<text class="arm-label" x="{{ label.x }}" y="{{ label.y }}" font-family="sans-serif" font-size="11">{{ label.text }}</text>
+{% endfor %}
+</g>
+{% for panel in g.panels %}
+<g class="panel" data-panel="{{ panel.panel }}">
+<text class="panel-title" x="{{ panel.x0 }}" y="{{ panel.title_y }}" font-family="sans-serif" font-size="12" font-weight="bold">{{ panel.title }}</text>
+{% for tick in panel.ticks %}
+<line class="gridline" x1="{{ tick.x }}" y1="{{ g.top }}" x2="{{ tick.x }}" y2="{{ g.bottom }}" stroke="{{ g.colors.grid }}" stroke-width="1"/>
+<text class="tick-label" x="{{ tick.x }}" y="{{ g.tick_label_y }}" text-anchor="middle" font-family="sans-serif" font-size="10">{{ tick.label }}</text>
+{% endfor %}
+<line class="zero-line" x1="{{ panel.zero_x }}" y1="{{ g.top }}" x2="{{ panel.zero_x }}" y2="{{ g.bottom }}" stroke="{{ g.colors.axis }}" stroke-width="1.5"/>
+<line class="axis-line" x1="{{ panel.x0 }}" y1="{{ g.bottom }}" x2="{{ panel.x1 }}" y2="{{ g.bottom }}" stroke="{{ g.colors.axis }}" stroke-width="1"/>
+{% for cell in panel.cells %}
+<g class="cell" data-group="{{ cell.group }}" data-panel="{{ cell.panel }}" data-arm="{{ cell.arm }}" data-mark="{{ cell.mark }}">
+{% if cell.ci is none %}
+<text class="footnote-ref" x="{{ cell.note.x }}" y="{{ cell.note.y }}" font-family="sans-serif" font-size="10" font-style="italic" fill="#666666">{{ cell.note.text }}</text>
+{% else %}
+<line class="ci" x1="{{ cell.ci.x1 }}" y1="{{ cell.y }}" x2="{{ cell.ci.x2 }}" y2="{{ cell.y }}" stroke="{{ cell.ci.color }}" stroke-width="1.5"{% if cell.ci.dash %} stroke-dasharray="{{ cell.ci.dash }}"{% endif %}/>
+<line class="ci-cap" x1="{{ cell.ci.x1 }}" y1="{{ cell.ci.cap_top }}" x2="{{ cell.ci.x1 }}" y2="{{ cell.ci.cap_bottom }}" stroke="{{ cell.ci.color }}" stroke-width="1.5"/>
+<line class="ci-cap" x1="{{ cell.ci.x2 }}" y1="{{ cell.ci.cap_top }}" x2="{{ cell.ci.x2 }}" y2="{{ cell.ci.cap_bottom }}" stroke="{{ cell.ci.color }}" stroke-width="1.5"/>
+{% if cell.point.shape == "diamond" %}
+<polygon class="point" points="{{ cell.point.diamond }}" fill="{{ cell.point.fill }}" stroke="{{ cell.point.stroke }}" stroke-width="1.5"/>
+{% else %}
+<circle class="point" cx="{{ cell.point.cx }}" cy="{{ cell.point.cy }}" r="4.5" fill="{{ cell.point.fill }}" stroke="{{ cell.point.stroke }}" stroke-width="1.5"/>
+{% endif %}
+<text class="value" x="{{ cell.value.x }}" y="{{ cell.value.y }}" font-family="sans-serif" font-size="10">{{ cell.value.text }}</text>
+{% endif %}
+</g>
+{% endfor %}
+</g>
+{% endfor %}
+<g class="legend">
+{% for item in g.legend %}
+{% if item.kind == "diamond" %}
+<polygon class="legend-mark" points="{{ item.diamond }}" fill="#ffffff" stroke="{{ g.colors.descriptive }}" stroke-width="1.5"/>
+{% elif item.kind == "circle-filled" %}
+<circle class="legend-mark" cx="{{ item.cx }}" cy="{{ item.cy }}" r="4.5" fill="{{ g.colors.holm }}" stroke="{{ g.colors.holm }}" stroke-width="1.5"/>
+{% else %}
+<circle class="legend-mark" cx="{{ item.cx }}" cy="{{ item.cy }}" r="4.5" fill="#ffffff" stroke="{{ g.colors.holm }}" stroke-width="1.5"/>
+{% endif %}
+<text class="legend-label" x="{{ item.text_x }}" y="{{ item.text_y }}" font-family="sans-serif" font-size="11">{{ item.text }}</text>
+{% endfor %}
+</g>
+<g class="notes">
+{% for line in g.lines %}
+<text class="{{ line.cls }}" x="{{ g.label_x }}" y="{{ line.y }}" font-family="sans-serif" font-size="10" fill="#444444">{{ line.text }}</text>
+{% endfor %}
+</g>
+</svg>
