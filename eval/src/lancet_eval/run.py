@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import re
 import time
 from fractions import Fraction
@@ -13,8 +14,11 @@ import httpx
 
 from lancet_eval import gitcheck, preregistration
 from lancet_eval.arms import (
+    ablation_failures,
     canonical_arm,
+    explicit_field_failures,
     is_legacy_label,
+    lever_echo_failures,
     plan_work_units,
     request_fields,
     resolve_arm,
@@ -42,6 +46,7 @@ from lancet_eval.journal import (
     reconcile_header,
 )
 from lancet_eval.measure import compute_spend
+from lancet_eval.preflight import check_drive_environment
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
 from lancet_eval.split import (
     HeldOutSplit,
@@ -61,6 +66,12 @@ class DriveResult(int):
     drive (06.3.6 D-174), and ``rerank_degraded_by_arm`` maps each arm that made a
     rerank attempt to the number of its degraded attempts in this invocation (empty
     when the corpus has no tripwire).
+
+    ``field_gate_failures`` holds the failures the gate-stage first-record gate found
+    (06.4 D-199): each entry names an arm and what its first completed record did not
+    echo. It is filled even when the failing record was the last unit.
+    ``stopped_by_field_gate`` is True only when a unit was still waiting and was not
+    dispatched, the same rule the cap and the tripwire follow (WR-01).
     """
 
     executed_count: int
@@ -68,6 +79,8 @@ class DriveResult(int):
     observed_spend: float
     stopped_by_tripwire: bool
     rerank_degraded_by_arm: dict[str, int]
+    stopped_by_field_gate: bool
+    field_gate_failures: tuple[str, ...]
 
     def __new__(
         cls,
@@ -76,6 +89,8 @@ class DriveResult(int):
         observed_spend: float = 0.0,
         stopped_by_tripwire: bool = False,
         rerank_degraded_by_arm: dict[str, int] | None = None,
+        stopped_by_field_gate: bool = False,
+        field_gate_failures: tuple[str, ...] = (),
     ) -> DriveResult:
         val = super().__new__(cls, executed_count)
         val.executed_count = executed_count
@@ -83,6 +98,8 @@ class DriveResult(int):
         val.observed_spend = observed_spend
         val.stopped_by_tripwire = stopped_by_tripwire
         val.rerank_degraded_by_arm = dict(rerank_degraded_by_arm or {})
+        val.stopped_by_field_gate = stopped_by_field_gate
+        val.field_gate_failures = tuple(field_gate_failures)
         return val
 
     @property
@@ -566,6 +583,29 @@ def drive_one(
     )
 
 
+def first_record_field_failures(record: RunRecord) -> list[str]:
+    """The gate-stage first-record checks of one completed record (06.4 D-199).
+
+    Clause (e) ``ablation_failures``, clause (h) ``lever_echo_failures`` and the
+    explicit-field check ``explicit_field_failures``. They run on the response that is
+    already paid for, so the gate costs nothing; legacy labels are not exempt, because
+    a legacy body omits the fields and so runs the engine's configured defaults.
+
+    Args:
+        record: A successful record with a snapshot.
+
+    Returns:
+        Failure strings that each name the arm; empty when the echo holds.
+    """
+    label = record.graph_arm
+    snapshot = record.snapshot
+    return [
+        *ablation_failures(label, record.notices),
+        *lever_echo_failures(label, snapshot.levers if snapshot is not None else None),
+        *explicit_field_failures(record, resolve_arm(label)),
+    ]
+
+
 def refuse_legacy_labels_for_live_drive(corpus: str) -> None:
     """Refuses a live drive of a corpus whose arms hold a legacy label (06.4 D-198).
 
@@ -650,6 +690,10 @@ def drive(
                 "gate-stage drives require --retries 0 (D-67): a retry would replace "
                 f"an attempt the gates must see (got max_retries={max_retries})"
             )
+        # 06.4 D-199: refused before any journal I/O and any request. Names only.
+        environment_check = check_drive_environment(os.environ)
+        if not environment_check.passed:
+            raise ValueError(environment_check.message)
 
     config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
@@ -774,6 +818,10 @@ def drive(
         executed_count = 0
         stopped_by_cap = False
         stopped_by_tripwire = False
+        stopped_by_field_gate = False
+        # 06.4 D-199: a gate-stage drive checks the first completed record of each arm.
+        field_gate_failures: list[str] = []
+        field_gate_checked: set[str] = set()
         tripwire = rerank_tripwire_for(config)
         remaining_iter = iter(remaining_units)
         in_flight: set[concurrent.futures.Future[RunRecord]] = set()
@@ -815,6 +863,18 @@ def drive(
                         executed_count += 1
                         if tripwire is not None:
                             tripwire.observe(record)
+                        if (
+                            gate_stage is not None
+                            and record.outcome == "success"
+                            and record.snapshot is not None
+                            and record.graph_arm not in field_gate_checked
+                        ):
+                            # An error record carries no echo, so it does not use up
+                            # its arm's check; the first completed one does.
+                            field_gate_checked.add(record.graph_arm)
+                            field_gate_failures.extend(
+                                first_record_field_failures(record)
+                            )
 
                     # Take the next unit before the cap check (WR-01): a drive is
                     # "stopped by cap" only if a unit was still waiting when the cap
@@ -824,6 +884,7 @@ def drive(
                         len(in_flight) < effective_workers
                         and not stopped_by_cap
                         and not stopped_by_tripwire
+                        and not stopped_by_field_gate
                     ):
                         try:
                             q, arm = next(remaining_iter)
@@ -835,6 +896,9 @@ def drive(
                             break
                         if tripwire is not None and tripwire.tripped is not None:
                             stopped_by_tripwire = True
+                            break
+                        if field_gate_failures:
+                            stopped_by_field_gate = True
                             break
                         fut = executor.submit(
                             drive_one,
@@ -861,6 +925,10 @@ def drive(
                 tripwire.tripped,
                 tripwire.summary(),
             )
+        if field_gate_failures:
+            logger.error(
+                "explicit-field gate failed: %s", "; ".join(field_gate_failures)
+            )
         return DriveResult(
             executed_count,
             stopped_by_cap=stopped_by_cap,
@@ -869,6 +937,8 @@ def drive(
             rerank_degraded_by_arm=(
                 tripwire.degraded_by_arm if tripwire is not None else None
             ),
+            stopped_by_field_gate=stopped_by_field_gate,
+            field_gate_failures=tuple(field_gate_failures),
         )
     finally:
         _safe_reconcile()

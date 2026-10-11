@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from lancet_eval.client import Notice
     from lancet_eval.corpus import GoldQuestion
+    from lancet_eval.journal import RunRecord
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
 ArmLabel = Literal[
@@ -371,6 +372,131 @@ def ablation_failures(label: str, notices: Sequence[Notice]) -> list[str]:
         f"arm {label!r}: graph-off arm lacks the GRAPH_ABLATION notice "
         "or carries GRAPH_UNAVAILABLE"
     ]
+
+
+def _graph_counter_failures(meta: object | None) -> list[str]:
+    """Names each non-zero graph counter of a workflow metadata record."""
+    if meta is None:
+        return []
+    observed: list[str] = []
+    for name in ("graph_node_count", "graph_edge_count", "graph_seed_count"):
+        value = getattr(meta, name, None)
+        if value:
+            observed.append(f"{name}={value}")
+    return observed
+
+
+def explicit_field_failures(record: RunRecord, spec: ArmSpec) -> list[str]:
+    """Checks that a live response proves the explicit request fields arrived.
+
+    This is the per-arm echo check of 06.4 D-199 (and the code 24 consumer of review
+    IN-04). It is NOT a provenance clause: it is called only where a live response
+    exists, by the arm-mode canary check and the gate-stage first-record gate, and never
+    by ``provenance.provenance_failures`` or ``score``. A new clause there would be
+    evaluated on every record of the committed run journals, which could make ``score``
+    refuse the runs of record (D-201). Callers branch on this function, never on
+    message text (D-158 IN-04).
+
+    * Any DEFAULT_LEVER_UNAVAILABLE notice (typed code 24) is a failure: with an
+      explicit opt-out or named levers it can only appear if the field never reached
+      the engine.
+    * An arm with ``disable_graph_context`` True must carry GRAPH_ABLATION (18) and
+      none of GRAPH_DISABLED_BY_CONFIG (25), GRAPH_UNAVAILABLE or a non-zero graph
+      counter.
+    * An arm with ``disable_graph_context`` False must show its graph node ran (a
+      non-zero ``graph_node_count``, a ``graph_seed_count`` the engine reported, or a
+      GRAPH_UNAVAILABLE, GRAPH_TIMEOUT or GRAPH_DEGRADED notice) and must carry neither
+      18 nor 25. That last condition is what proves an explicit ``false`` reached the
+      engine under a default-off configuration. The seed count is always on the
+      gateway's wire when metadata exists, so the notices are the authoritative half.
+
+    Notices are identified by ``typed_code``, falling back to ``code``.
+
+    Args:
+        record: A live response as a journal record (its notices and workflow
+            metadata are read).
+        spec: The registry row of the arm that made the request.
+
+    Returns:
+        Failure strings of the form ``arm 'X': expected ..., observed ...``; empty when
+        every declared field is echoed.
+    """
+    from lancet_eval.dimensions import (
+        NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE,
+        NOTICE_CODE_GRAPH_ABLATION,
+        NOTICE_CODE_GRAPH_DEGRADED,
+        NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG,
+        NOTICE_CODE_GRAPH_TIMEOUT,
+        NOTICE_CODE_GRAPH_UNAVAILABLE,
+    )
+
+    label = record.graph_arm
+
+    def carries(number: int, name: str) -> bool:
+        return any(n.typed_code == number or n.code == name for n in record.notices)
+
+    meta = record.workflow_meta
+    failures: list[str] = []
+    if carries(NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE, "DEFAULT_LEVER_UNAVAILABLE"):
+        failures.append(
+            f"arm {label!r}: expected no DEFAULT_LEVER_UNAVAILABLE notice (code "
+            f"{NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE}), observed one: the explicit "
+            "lever fields did not reach the engine"
+        )
+    ablation = carries(NOTICE_CODE_GRAPH_ABLATION, "GRAPH_ABLATION")
+    by_config = carries(
+        NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG, "GRAPH_DISABLED_BY_CONFIG"
+    )
+    unavailable = carries(NOTICE_CODE_GRAPH_UNAVAILABLE, "GRAPH_UNAVAILABLE")
+    failed_open = (
+        unavailable
+        or carries(NOTICE_CODE_GRAPH_TIMEOUT, "GRAPH_TIMEOUT")
+        or carries(NOTICE_CODE_GRAPH_DEGRADED, "GRAPH_DEGRADED")
+    )
+    if spec.disable_graph_context:
+        if not ablation:
+            failures.append(
+                f"arm {label!r}: expected GRAPH_ABLATION (18) on an arm that sends "
+                "disable_graph_context=true, observed none"
+            )
+        if by_config:
+            failures.append(
+                f"arm {label!r}: expected no GRAPH_DISABLED_BY_CONFIG (25) on an arm "
+                "that sends disable_graph_context=true, observed one"
+            )
+        if unavailable:
+            failures.append(
+                f"arm {label!r}: expected no GRAPH_UNAVAILABLE (10) on a graph-off "
+                "arm, observed one"
+            )
+        counters = _graph_counter_failures(meta)
+        if counters:
+            failures.append(
+                f"arm {label!r}: expected zero graph counters on a graph-off arm, "
+                f"observed {', '.join(counters)}"
+            )
+        return failures
+    if ablation:
+        failures.append(
+            f"arm {label!r}: expected no GRAPH_ABLATION (18) on an arm that sends "
+            "disable_graph_context=false, observed one"
+        )
+    if by_config:
+        failures.append(
+            f"arm {label!r}: expected no GRAPH_DISABLED_BY_CONFIG (25) on an arm "
+            "that sends disable_graph_context=false, observed one: the explicit "
+            "false did not reach the engine"
+        )
+    ran = failed_open or (
+        meta is not None
+        and (meta.graph_node_count > 0 or meta.graph_seed_count is not None)
+    )
+    if not ran:
+        failures.append(
+            f"arm {label!r}: expected evidence that the graph node ran (a graph "
+            "node count, a graph seed count or a graph failure notice), observed none"
+        )
+    return failures
 
 
 def mode_provenance_failures(

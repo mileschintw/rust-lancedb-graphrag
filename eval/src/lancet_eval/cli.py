@@ -497,6 +497,7 @@ def run_benchmark(
                 "a retry would replace an attempt the gates must see (D-67)",
                 param_hint="'--retries'",
             )
+    field_gate_failures: tuple[str, ...] = ()
     try:
         from lancet_eval.run import drive, refuse_legacy_labels_for_live_drive
 
@@ -529,7 +530,16 @@ def run_benchmark(
         )
         stopped = getattr(count, "stopped_by_cap", False)
         spend = getattr(count, "observed_spend", 0.0)
-        if getattr(count, "stopped_by_tripwire", False):
+        gate_failures = getattr(count, "field_gate_failures", ())
+        if isinstance(gate_failures, tuple | list):
+            field_gate_failures = tuple(str(f) for f in gate_failures)
+        if field_gate_failures:
+            console.print(
+                "[yellow]Drive stopped early: the explicit-field gate failed on a "
+                f"first record (D-199); recorded {count} work units (observed "
+                f"spend: ${spend:.4f}). The paid records stay journalled.[/yellow]"
+            )
+        elif getattr(count, "stopped_by_tripwire", False):
             degraded = getattr(count, "rerank_degraded_by_arm", {})
             console.print(
                 "[yellow]Drive stopped early: the rerank degrade tripwire fired "
@@ -550,6 +560,17 @@ def run_benchmark(
     except Exception as exc:
         console.print(f"[bold red]Run error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+    if field_gate_failures:
+        # Raised after the try/except: the `except Exception` above would catch a
+        # typer.Exit (a RuntimeError) raised inside it. Cap and tripwire stops keep
+        # exit 0 (B-IN-03 stays in the backlog).
+        from rich.markup import escape
+
+        for failure in field_gate_failures:
+            console.print(
+                f"[bold red]Explicit-field gate failed:[/bold red] {escape(failure)}"
+            )
+        raise typer.Exit(code=1)
 
 
 @app.command("staged-gate")

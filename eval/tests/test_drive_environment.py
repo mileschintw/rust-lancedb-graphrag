@@ -57,7 +57,7 @@ def test_d199_a_lower_case_name_is_refused_too() -> None:
 
 
 def test_d199_the_empty_value_is_still_a_set_variable() -> None:
-    """A blank `LANCET_ENGINE__LEVERS__DEFAULTS` means "no default lever" to the engine."""
+    """A blank `LANCET_ENGINE__LEVERS__DEFAULTS` means "no default lever"."""
     res = preflight.check_drive_environment({"LANCET_ENGINE__LEVERS__DEFAULTS": ""})
 
     assert res.passed is False
@@ -126,7 +126,8 @@ def test_d199_a_gate_stage_drive_refuses_before_any_journal_io(
     monkeypatch.setenv("LANCET_ENGINE__GRAPH__SEED_MATCH_MIN_SCORE", _SECRET)
     j_path = tmp_path / "journal.jsonl"
 
-    with pytest.raises(ValueError, match="LANCET_ENGINE__GRAPH__SEED_MATCH_MIN_SCORE") as exc:
+    name = "LANCET_ENGINE__GRAPH__SEED_MATCH_MIN_SCORE"
+    with pytest.raises(ValueError, match=name) as exc:
         drive(
             corpus="graphrag_bench",
             journal_path=j_path,

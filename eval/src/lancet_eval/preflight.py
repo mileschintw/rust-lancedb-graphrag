@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Self
@@ -292,6 +292,91 @@ def check_gateway_and_engine(
             message="Engine status unknown due to gateway error.",
         )
         return gw_check, engine_check
+
+
+#: 06.4 D-199: engine-override variable prefixes (matched on the upper-cased name) that
+#: silently change an arm's levers or graph state. A drive or preflight refuses them.
+REFUSED_ENGINE_ENV_PREFIXES: tuple[str, ...] = (
+    "LANCET_ENGINE__GRAPH__",
+    "LANCET_ENGINE__LEVERS__",
+)
+
+#: Variables the retired 06.3.4.1 launchers also refused. They are reported in the check
+#: detail and never refused (06.4-CONTEXT discretion ruling): they do not change what an
+#: arm declares, and the per-arm echo check is authoritative.
+WARN_ONLY_ENGINE_ENV: tuple[str, ...] = (
+    "LANCET_ENGINE__WORKFLOW__*",
+    "LANCET_OPENROUTER__*_ENDPOINT",
+    "LANCET_CONFIG_DIR",
+    "RUST_LOG",
+)
+
+
+def _is_warn_only_env_name(upper_name: str) -> bool:
+    return (
+        upper_name.startswith("LANCET_ENGINE__WORKFLOW__")
+        or (
+            upper_name.startswith("LANCET_OPENROUTER__")
+            and upper_name.endswith("_ENDPOINT")
+        )
+        or upper_name in {"LANCET_CONFIG_DIR", "RUST_LOG"}
+    )
+
+
+def check_drive_environment(environ: Mapping[str, str]) -> PreflightCheckResult:
+    """Refuses a drive environment that sets an engine graph or lever override (D-199).
+
+    A variable whose upper-cased name starts with ``LANCET_ENGINE__GRAPH__`` or
+    ``LANCET_ENGINE__LEVERS__`` fails the check, even when its value is empty (a blank
+    ``LANCET_ENGINE__LEVERS__DEFAULTS`` means "no default lever" to the engine). The
+    message names each variable and never its value. The harness cannot read the
+    engine's own environment, so this covers the shell that launches the drive and the
+    engine together; the per-arm echo check (``arms.explicit_field_failures``) is the
+    authoritative one. Warn-only variables are listed in the detail.
+
+    Args:
+        environ: The environment to inspect, normally ``os.environ``.
+
+    Returns:
+        A ``drive_environment`` check result; ``detail`` holds the sorted
+        ``refused_variables`` and ``warned_variables`` (names only) and the
+        ``warn_only`` pattern list.
+    """
+    refused = sorted(
+        name
+        for name in environ
+        if name.upper().startswith(REFUSED_ENGINE_ENV_PREFIXES)
+    )
+    warned = sorted(name for name in environ if _is_warn_only_env_name(name.upper()))
+    detail: dict[str, Any] = {
+        "refused_variables": refused,
+        "warned_variables": warned,
+        "warn_only": list(WARN_ONLY_ENGINE_ENV),
+    }
+    if refused:
+        return PreflightCheckResult(
+            name="drive_environment",
+            passed=False,
+            message=(
+                "The drive environment sets engine override variable(s) "
+                f"{', '.join(refused)}, which silently change an arm's levers or "
+                "graph state (06.4 D-199): unset it, restart the engine without it, "
+                "re-run."
+            ),
+            detail=detail,
+        )
+    note = (
+        f" Warn-only variables present: {', '.join(warned)}." if warned else ""
+    )
+    return PreflightCheckResult(
+        name="drive_environment",
+        passed=True,
+        message=(
+            "No engine graph or lever override variable is set in the drive "
+            f"environment.{note}"
+        ),
+        detail=detail,
+    )
 
 
 def check_corpus_generation(
@@ -1133,7 +1218,7 @@ def check_arm_mode_canaries(
     when it has one, else `PREFLIGHT_RERANK_DEGRADE_HALT`. Clauses (h) and (j), and
     every other clause, keep their fail-on-any behaviour.
     """
-    from lancet_eval.arms import request_fields, resolve_arm
+    from lancet_eval.arms import explicit_field_failures, request_fields, resolve_arm
     from lancet_eval.client import run_query
     from lancet_eval.journal import NodeTiming, RunRecord, WorkflowWireMeta
     from lancet_eval.provenance import provenance_failures
@@ -1269,6 +1354,12 @@ def check_arm_mode_canaries(
                 f"{label} provenance clause ({f.code}): {f.detail}"
                 for f in canary_failures
                 if f.code != "i"
+            )
+            # 06.4 D-199 (D-200 live check): the engine echoed what this arm declared.
+            # Outside provenance_failures on purpose, so `score` never evaluates it.
+            failures.extend(
+                f"{label} explicit-field check: {message}"
+                for message in explicit_field_failures(record, specs[arm])
             )
             if arm in rerank_arms:
                 if any(f.code == "i" for f in canary_failures):
@@ -1409,6 +1500,13 @@ def run_preflight_checks(
     validate_accepted_known_misses(accepted_known_misses)
     settings = settings or load_settings()
     results: list[PreflightCheckResult] = []
+
+    # 0. Drive environment (06.4 D-199): the first check, before the corpus config load
+    # and before any store or HTTP request. A refused override variable ends the run.
+    environment_check = check_drive_environment(os.environ)
+    results.append(environment_check)
+    if not environment_check.passed:
+        return results
 
     # 06.3.5 D-124: a corpus that declares `legacy_canaries = false` skips the two
     # legacy canary checks, and one with an `arm_canaries` manifest and more than two
