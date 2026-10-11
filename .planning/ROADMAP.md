@@ -1313,7 +1313,7 @@ Plans:
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
 
-**Plans:** 15/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
+**Plans:** 16/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
 
 Plans:
 
@@ -1370,7 +1370,7 @@ Plans:
 
 **Wave 13**
 
-- [ ] 06.4-16-PLAN.md — Backlog promotion 999.13-999.17 (the 18 DEBT items) plus 999.18/999.19 (the 27 review deferrals), the debt ledger, the 06.3.6 ledger at zero open
+- [x] 06.4-16-PLAN.md — Backlog promotion 999.13-999.17 (the 18 DEBT items) plus 999.18/999.19 (the 27 review deferrals), the debt ledger, the 06.3.6 ledger at zero open
 
 **Wave 14**
 
