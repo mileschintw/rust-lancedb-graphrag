@@ -240,6 +240,166 @@ def test_the_provenance_block_and_gates_gate_a_default() -> None:
     assert reasons == ["x SC-2 reads MISS"]
 
 
+# ---- the default rule is pinned to the pre-registration, clause by clause ----------
+#
+# T-06.3.6-34 (repudiation, forking paths): the lever default rule is prose in
+# PREREGISTRATION_06_3_6.default_rule, which the D-73 gate freezes, but decide_default
+# hard-codes it as a conjunction that no gate reads. These tests make the two
+# inseparable: edit either side alone and one of them fails.
+
+_PASSING_GUARD = evaluate_null_guard(0, 0, 43, 43, margin=0.10, min_pair_fraction=0.80)
+_FAILED_GUARD = evaluate_null_guard(6, 0, 43, 43, margin=0.10, min_pair_fraction=0.80)
+_PENDING_GUARD = evaluate_null_guard(0, 0, 20, 43, margin=0.10, min_pair_fraction=0.80)
+
+# clause id -> (key text inside the pre-registered default_rule, the decide_default
+# branch that implements it). Each prose segment (split on "; " and ". ") must hold
+# exactly one key, and each key must sit in exactly one segment.
+_DEFAULT_RULE_CLAUSES = {
+    "family": (
+        "X is in the decisional family",
+        "`if not in_decisional_family` -> stays off",
+    ),
+    "provenance": (
+        "the run passed the post-drive provenance block",
+        "`if not provenance_passed` -> OFF_PROVENANCE",
+    ),
+    "gates": (
+        "SC-1 and SC-2 (with sc2_timeout_rate_floor) read PASS on hybrid and on X",
+        "every gate_reads value must be PASS, else OWNER_DISPOSITION; unread -> "
+        "OFF_GATES_NOT_READ",
+    ),
+    "coverage": (
+        "|P_X| / |H_G| >= complete_case_floor",
+        "`if not evaluable` -> OFF_NOT_EVALUABLE",
+    ),
+    "holm": (
+        "Holm rejects X at FWER alpha with m fixed",
+        "`if not rejected` -> OFF_NOT_SIGNIFICANT; m fixed in holm_fixed_m",
+    ),
+    "delta": (
+        "delta(X) > 0",
+        "`delta is None or < 0` -> WORSE; `delta == 0` -> OFF_NO_POSITIVE_DELTA",
+    ),
+    "guard": (
+        "if X is in null_guard_arms, the null guard is evaluable and passes",
+        "`guard is not None` and not evaluable / not passing -> OFF_GUARD_*",
+    ),
+    "owner": (
+        "If only the SC-1/SC-2 condition fails after D-110, X's default is an owner "
+        "disposition, disclosed, never mechanical",
+        "gate failure is the last check, so it only fires when every other clause "
+        "held -> OWNER_DISPOSITION",
+    ),
+}
+
+_NOT_FAMILY = "stays off: not in the decisional family"
+
+# (clause, broken input, expected decision): the all-pass input is `_decide()`.
+_BROKEN_CLAUSE_CASES = [
+    ("family", {"in_decisional_family": False}, _NOT_FAMILY),
+    (
+        "provenance",
+        {"provenance_passed": False},
+        lever_comparison.OFF_PROVENANCE,
+    ),
+    (
+        "gates",
+        {"gate_reads": {**GOOD, "hybrid SC-1": "MISS"}},
+        lever_comparison.OWNER_DISPOSITION,
+    ),
+    (
+        "gates",
+        {"gate_reads": {**GOOD, "x SC-2": "FAIL"}},
+        lever_comparison.OWNER_DISPOSITION,
+    ),
+    ("gates", {"gate_reads": None}, lever_comparison.OFF_GATES_NOT_READ),
+    ("coverage", {"evaluable": False}, lever_comparison.OFF_NOT_EVALUABLE),
+    ("holm", {"rejected": False}, lever_comparison.OFF_NOT_SIGNIFICANT),
+    ("delta", {"delta": 0.0}, lever_comparison.OFF_NO_POSITIVE_DELTA),
+    ("delta", {"delta": -0.1}, lever_comparison.WORSE),
+    ("delta", {"delta": None}, lever_comparison.WORSE),
+    (
+        "guard",
+        {"guard": _PENDING_GUARD},
+        lever_comparison.OFF_GUARD_NOT_EVALUABLE,
+    ),
+    ("guard", {"guard": _FAILED_GUARD}, lever_comparison.OFF_GUARD_FAILED),
+    # "only" the gate condition: a second failing clause outranks the owner path.
+    (
+        "owner",
+        {"provenance_passed": False, "gate_reads": {**GOOD, "x SC-1": "MISS"}},
+        lever_comparison.OFF_PROVENANCE,
+    ),
+    (
+        "owner",
+        {"guard": _FAILED_GUARD, "gate_reads": {**GOOD, "x SC-1": "MISS"}},
+        lever_comparison.OFF_GUARD_FAILED,
+    ),
+    (
+        "owner",
+        {"gate_reads": {**GOOD, "x SC-1": "MISS"}},
+        lever_comparison.OWNER_DISPOSITION,
+    ),
+]
+
+
+def _default_rule_segments() -> list[str]:
+    rule = " ".join(thresholds.PREREGISTRATION_06_3_6.default_rule.split())
+    return [s.strip() for s in rule.replace(". ", "; ").split("; ") if s.strip()]
+
+
+def test_decide_default_implements_each_preregistered_default_rule_clause() -> None:
+    """T-06.3.6-34 / D-73: the clause table and the frozen default_rule agree.
+
+    The D-73 gate freezes the prose but nothing reads it, and `decide_default` is a
+    hard-coded conjunction. Editing the prose without this table, or adding a clause
+    to the prose that the table lacks, fails here; the per-clause behaviour test below
+    then fails if `decide_default` stops implementing a clause.
+    """
+    segments = _default_rule_segments()
+    keys = [key for key, _impl in _DEFAULT_RULE_CLAUSES.values()]
+    for key in keys:
+        assert [s for s in segments if key in s], f"clause text not in prose: {key!r}"
+    for segment in segments:
+        held = [k for k in keys if k in segment]
+        assert len(held) == 1, f"prose clause not mapped one-to-one: {segment!r}"
+    assert len(segments) == len(_DEFAULT_RULE_CLAUSES)
+    # every clause has at least one behaviour case below
+    assert {c for c, _i, _e in _BROKEN_CLAUSE_CASES} == set(_DEFAULT_RULE_CLAUSES)
+    for _clause, (_key, impl) in _DEFAULT_RULE_CLAUSES.items():
+        assert impl
+
+
+def test_the_all_pass_input_is_a_default_with_no_reasons() -> None:
+    assert _decide() == ("default", [])
+    assert _decide(guard=_PASSING_GUARD) == ("default", [])
+
+
+@pytest.mark.parametrize(
+    ("clause", "broken", "expected"),
+    _BROKEN_CLAUSE_CASES,
+    ids=[f"{c}-{i}" for i, (c, _b, _e) in enumerate(_BROKEN_CLAUSE_CASES)],
+)
+def test_breaking_one_default_rule_clause_removes_the_default(
+    clause: str, broken: dict, expected: str
+) -> None:
+    """T-06.3.6-34 / D-73: one broken clause, and only that one, changes the outcome."""
+    assert clause in _DEFAULT_RULE_CLAUSES
+    decision, reasons = _decide(**broken)
+    assert decision != "default"
+    assert decision == expected
+    assert reasons
+
+
+def test_holm_keeps_m_fixed_when_a_comparison_is_not_evaluable() -> None:
+    """T-06.3.6-34 / D-73: the 'm fixed' half of the Holm clause."""
+    reject, adjusted = holm_fixed_m(
+        (0.02, 0.001, 0.001, 0.0), (True, True, True, False), 0.05
+    )
+    assert reject == [True, True, True, False]
+    assert adjusted == pytest.approx([0.04, 0.004, 0.004, 1.0])
+
+
 # ---- the builder over synthetic journals ---------------------------------------------
 
 
