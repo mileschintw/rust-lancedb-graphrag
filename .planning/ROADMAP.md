@@ -1235,7 +1235,7 @@ Plans:
 
 ### Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03) (INSERTED)
 
-**Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone, written against what actually shipped. **Unparked by owner decision on 2026-10-11**, after Phases 06.3.5 and 06.3.6 both published their runs of record. The docs report the 06.3.4.1 run of record, the 06.3.5 four-arm standard-RAG baseline and the 06.3.6 lever table, together with the defaults those runs produced: `rerank` (default-on by owner disposition D-193, with the D-192 SC-2 latency caveat beside it) and `evidence_metadata` (default by the pre-registered rule). `graph_v2` and `binary_answer_format` stay off. The phase's decisions are in `06.4-CONTEXT.md`, which inherits `06-CONTEXT.md`.
+**Goal:** Ship the README/docs design-narrative suite with a verified quickstart, promote the un-closed debt backlog, and close out the v1 milestone, written against what actually shipped. **Unparked by owner decision on 2026-10-11**, after Phases 06.3.5 and 06.3.6 both published their runs of record. The docs report the 06.3.4.1 run of record, the 06.3.5 four-arm standard-RAG baseline and the 06.3.6 lever table, together with the defaults those runs produced: `rerank` (default-on by owner disposition D-193, with the D-192 SC-2 latency caveat beside it) and `evidence_metadata` (default by the pre-registered rule). `graph_v2` and `binary_answer_format` stay off. Graph v1 context, on by default until now, ships **default-off and opt-in per request** (06.4 D-207). The default request becomes `hybrid` + rerank + metadata; those two levers were never measured together decisionally. The phase's decisions are in `06.4-CONTEXT.md` (D-198..D-226), which inherits `06-CONTEXT.md`.
 **Requirements:** OBS-03
 **Depends on:** Phase 6, Phase 06.3.4 (gap-closure items T-19/CR-01, T-24, T-25, T-43 closed 2026-09-13; not open blockers), Phase 06.3.4.1 (gates cleared 2026-10-06), Phase 06.3.5 (four-arm matrix run of record), Phase 06.3.6 (lever table and default decisions, complete 2026-10-11)
 **Canonical refs:**
@@ -1266,14 +1266,18 @@ Plans:
    - +289 ms mean total latency and +458 ms of RetrieveHybrid time on P_X;
    - the 2,286 ms rerank budget a request can pay in the provider's slow mode.
 
-   The page also states that rerank plus metadata together was never measured decisionally; `hybrid+all` is the only, descriptive, evidence. Uncalibrated judged rows are labelled as not findings.
+   The page also states:
+   - the default request shape (`hybrid` + rerank + metadata, graph opt-in, D-207), and that the two levers together were never measured decisionally; `hybrid+all` is the only, descriptive, evidence;
+   - that the recorded drives predate the flip and the D-198 opt-out.
+
+   Uncalibrated judged rows are labelled as not findings. The eval chart is a paired-delta forest plot generated from the run JSON (D-218). README numbers are plain-language and link to this page (D-213, D-214).
 2. The quickstart is executable and verified end to end on a clean checkout, on both Windows native and Linux via WSL (D-68): compose up, migrate, `cargo run`/`go run`, ingest, query, open Jaeger and Grafana, run the eval. It documents the shipped default-lever behaviour:
    - the committed config sets `[engine.levers] defaults = ["rerank", "evidence_metadata"]`, so every query that names no lever makes a paid rerank call;
    - a store without document metadata boots with a startup WARN, and responses carry `DEFAULT_LEVER_UNAVAILABLE` and `degraded_mode = true` until the store is backfilled (D-194);
    - a legacy 19-column store needs `backfill_evidence_metadata --migrate-only` first (D-197);
    - `LANCET_ENGINE__LEVERS__DEFAULTS=` starts the engine lever-free.
 
-   The eval step uses the lever-free control-arm path decided in `06.4-CONTEXT.md` (06.3.6 D-195).
+   It ingests a small bundled, license-clean sample with document metadata (D-221). Its eval step is a small paid smoke on dev questions: `hybrid` with the explicit lever opt-out against the shipped default shape (D-200). The smoke is not a run of record. Proof is a committed fresh-clone transcript per platform plus an owner UAT spot-check (D-220). Paid steps stay within the owner's $1.00 settled phase cap (D-222).
 3. Four Mermaid diagrams (system/deployment topology, query-path state machine including degraded branches and the rerank step, ingestion pipeline through index rebuild-and-swap, telemetry topology) plus three captured artifacts (Jaeger trace screenshot, Grafana dashboard, eval-results chart) are present (D-69).
 4. The README carries an honest limitations section (D-71) covering:
    - local-only by design (no auth/TLS/quotas; DEBT-CR-04's trigger conditions);
@@ -1285,9 +1289,28 @@ Plans:
    - the rerank latency caveat.
 5. The notice-code vocabulary is documented in `docs/` as part of the API contract (D-76, D-28, D-53). It is generated from or checked against `proto/lancet/v1/lancet.proto` `NoticeCode`, so it cannot drift:
    - the codes: `NO_EVIDENCE`, `GRAPH_TIMEOUT`, `GRAPH_DEGRADED`, `MODEL_NOTICE`, `MODEL_WARNING`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_DEGRADED_DENSE`/`_BM25`, `CITATION_REPAIRED`/`CITATION_DROPPED`, `MODEL_ONLY`, `BASIS_RECONCILED`, `GRAPH_ABLATION`, `RETRIEVAL_FAILED`, the index codes (`INDEX_REBUILD_FAILED`, `INDEX_STALE`, `INDEX_GENERATION_MISMATCH`), `RERANK_DEGRADED` and `DEFAULT_LEVER_UNAVAILABLE` (code 24, which sets `degraded_mode`);
-   - the `levers` request field and its snapshot echo, with the `lever_unavailable`/`invalid_levers` refusals.
+   - the `levers` request field and its snapshot echo, with the `lever_unavailable`/`invalid_levers` refusals;
+   - the D-198 default-lever opt-out;
+   - the D-207 `disable_graph_context` semantics (absent = configured default, now off).
 6. The 18 un-selected `DEBT-*` items are promoted to five themed `999.x` backlog phases in ROADMAP.md (Security & transport hardening; Ingestion & staging robustness; Config & settings hygiene; API contract & DX; Test & evidence hygiene), each listing its member IDs, cross-linked to the source `deferred-items.md` files (D-02, D-03, D-04). The count stays exactly 18. Items this phase defers to backlog from 06.3.4/06.3.6 are recorded separately, so the 18 still reconciles.
-7. v1 milestone closure lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86). It covers the requirements reconciliation, the debt ledger, and the disposition of every item carried into 6.4 from 06.3.4 and 06.3.6.
+7. v1 milestone closure lands as a Phase 6.4 task rather than a separate post-phase workflow (D-86). It produces:
+   - a per-ID requirements evidence audit, approved by the owner at a blocking checkpoint before any checkbox changes (D-223);
+   - the debt ledger;
+   - an obligations ledger of every "owed to 6.4" item, which must be empty at close (D-210);
+   - the closure rows for the 06.3.4 items (SC-3 superseded by owner override D-208; the others closed by pointer, D-209);
+   - the 06.3.6 review ledger with no `open` rows (D-204);
+   - a milestone summary.
+
+   The owner then runs `/gsd-complete-milestone` (D-224).
+8. A code-first slice lands, with tests, and is code-reviewed before the quickstart verification (D-205):
+   - the D-198 proto opt-out from default levers;
+   - the D-199 harness preflight refusal of `LANCET_ENGINE__GRAPH__*`/`LEVERS__*` and per-arm echo mismatch;
+   - WR-01 startup ordering (D-202);
+   - WR-02 per-swap coverage logging (D-203);
+   - graph context default-off (D-207);
+   - the `measure-latency` split-role guard and retirement of `drive_measurement_pass.py` (D-211);
+   - the IN-05/IN-06/outbound-call follow-ups (D-212);
+   - the fixes the D-204 triage routes here.
 
 ## Backlog
 
