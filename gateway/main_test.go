@@ -2436,6 +2436,7 @@ type ragMockState struct {
 	graphOff           bool
 	embeddingCalls     int
 	metadataCalls      int
+	rerankCalls        int
 	chatCalls          int
 	chatModel          string
 	chatEvidence       string
@@ -2490,6 +2491,32 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 				"id":                   "openai/gpt-4o-mini",
 				"supported_parameters": []string{"response_format", "structured_outputs"},
 			}}})
+
+		case "/api/v1/rerank":
+			// 06.4 WR-03: the default levers include rerank, so the engine child needs a local rerank
+			// endpoint or it would call the real openrouter.ai with the literal test key. The reply keeps
+			// the fused order (scores fall with the index), so the assertions below do not depend on it.
+			if r.Method != http.MethodPost {
+				http.Error(w, "rerank endpoint requires POST", http.StatusMethodNotAllowed)
+				return
+			}
+			var request struct {
+				Model     string   `json:"model"`
+				Query     string   `json:"query"`
+				Documents []string `json:"documents"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "voyageai/rerank-2.5-lite" || strings.TrimSpace(request.Query) == "" || len(request.Documents) == 0 {
+				http.Error(w, "invalid rerank request", http.StatusBadRequest)
+				return
+			}
+			state.mu.Lock()
+			state.rerankCalls++
+			state.mu.Unlock()
+			results := make([]any, len(request.Documents))
+			for i := range request.Documents {
+				results[i] = map[string]any{"index": i, "relevance_score": 1 - float64(i)/float64(len(request.Documents)+1)}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"model": "rerank-2.5-lite", "results": results})
 
 		case "/api/v1/chat/completions":
 			if r.Method != http.MethodPost {
@@ -2623,12 +2650,34 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		t.Fatal("fixture seeder did not exit within 30 seconds")
 	}
 
+	// 06.4 WR-03: the rerank endpoint has no environment override by design (it carries the bearer
+	// key), so the child reads a copy of the committed config.toml whose only difference is a
+	// rerank_endpoint on the local mock. The default levers, budgets and graph default stay the
+	// committed ones.
+	committedConfig, err := os.ReadFile(filepath.Join(repoRoot, "config", "config.toml"))
+	if err != nil {
+		t.Fatalf("read committed config.toml: %v", err)
+	}
+	const committedRerankEndpoint = `rerank_endpoint = "https://openrouter.ai/api/v1/rerank"`
+	if strings.Count(string(committedConfig), committedRerankEndpoint) != 1 {
+		t.Fatalf("config.toml must hold exactly one %s line", committedRerankEndpoint)
+	}
+	rerankConfigDir := filepath.Join(tempRoot, "config")
+	if err := os.MkdirAll(rerankConfigDir, 0o755); err != nil {
+		t.Fatalf("create rerank config dir: %v", err)
+	}
+	mockedConfig := strings.Replace(string(committedConfig), committedRerankEndpoint, `rerank_endpoint = "`+mock.URL+`/api/v1/rerank"`, 1)
+	if err := os.WriteFile(filepath.Join(rerankConfigDir, "config.toml"), []byte(mockedConfig), 0o600); err != nil {
+		t.Fatalf("write mocked-rerank config.toml: %v", err)
+	}
+
 	engineEnv := ragChildEnv(
 		"LANCET_ENGINE__GRPC_ADDR="+engineAddr,
 		"LANCET_ENGINE__LANCEDB_PATH="+lancedbPath,
 		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT="+mock.URL+"/api/v1/embeddings",
 		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT="+mock.URL+"/api/v1/models",
 		"LANCET_OPENROUTER__CHAT_ENDPOINT="+mock.URL+"/api/v1/chat/completions",
+		"LANCET_CONFIG_DIR="+filepath.ToSlash(rerankConfigDir),
 		"LANCET_OPENROUTER__GENERATION_MODEL=openai/gpt-4o-mini",
 		"OPENROUTER_API_KEY=test-key",
 	)
@@ -2813,6 +2862,23 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	if dto.Notices == nil {
 		t.Fatalf("notices must be non-nil slice")
 	}
+	// 06.4 WR-03 positive control: this request names no opt-out, so the committed default levers
+	// run. It echoes rerank in the snapshot, reaches the mocked rerank endpoint exactly once, and
+	// carries no RERANK_DEGRADED notice. The opt-out subtest below is read against this baseline.
+	if !slices.Contains(dto.Snapshot.Levers, "rerank") {
+		t.Fatalf("default-lever control: snapshot levers = %v, want rerank among them", dto.Snapshot.Levers)
+	}
+	for _, n := range dto.Notices {
+		if n.Code == "RERANK_DEGRADED" || n.TypedCode == int32(pb.NoticeCode_NOTICE_CODE_RERANK_DEGRADED) {
+			t.Fatalf("default-lever control carries a RERANK_DEGRADED notice against the mocked rerank endpoint: %#v", n)
+		}
+	}
+	state.mu.Lock()
+	controlRerankCalls := state.rerankCalls
+	state.mu.Unlock()
+	if controlRerankCalls != 1 {
+		t.Fatalf("default-lever control reached the mocked rerank endpoint %d times, want 1; engine output: %s", controlRerankCalls, strings.Join(engineLines, " | "))
+	}
 	state.mu.Lock()
 	chatCalls, metadataCalls, embeddingCalls := state.chatCalls, state.metadataCalls, state.embeddingCalls
 	chatEvidence, chatModel, usageReturned, strictChat := state.chatEvidence, state.chatModel, state.chatUsageReturned, state.strictChatObserved
@@ -2863,6 +2929,14 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 		}
 		if len(optOutDTO.Snapshot.Levers) != 0 {
 			t.Fatalf("snapshot levers = %v, want an empty echo for the opt-out", optOutDTO.Snapshot.Levers)
+		}
+		// The mocked rerank endpoint is the discriminator: the control request above reached it once,
+		// so an opt-out that still ran the rerank lever would raise the count.
+		state.mu.Lock()
+		optOutRerankCalls := state.rerankCalls
+		state.mu.Unlock()
+		if optOutRerankCalls != controlRerankCalls {
+			t.Fatalf("opt-out reached the mocked rerank endpoint %d more time(s), so a default lever ran", optOutRerankCalls-controlRerankCalls)
 		}
 		for _, n := range optOutDTO.Notices {
 			if n.Code == "RERANK_DEGRADED" || n.TypedCode == int32(pb.NoticeCode_NOTICE_CODE_RERANK_DEGRADED) {
@@ -3511,6 +3585,7 @@ func assertCleanRAGChildEnv(t *testing.T, env []string) {
 		"LANCET_OPENROUTER__EMBEDDING_ENDPOINT":      true,
 		"LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT": true,
 		"LANCET_OPENROUTER__CHAT_ENDPOINT":           true,
+		"LANCET_CONFIG_DIR":                          true,
 		"LANCET_OPENROUTER__GENERATION_MODEL":        true,
 		"LANCET_OPENROUTER__EMBEDDING_MODEL":         true,
 		"OPENROUTER_API_KEY":                         true,
