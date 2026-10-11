@@ -178,8 +178,17 @@ def test_d221_sample_documents_have_a_title_line_and_a_bounded_length() -> None:
         assert 70 <= len(text.split()) <= 200, entry["file"]
 
 
-def test_d221_example_question_needs_three_linked_documents() -> None:
-    """Each bridging entity is repeated verbatim in both documents it links."""
+def test_d221_example_question_names_two_entities_the_sample_grounds() -> None:
+    """The qs-001 canary names Harbor Light Observatory and Marisol Vega (the graph needs
+    two named entities to find a path), and the sample grounds every clause of it.
+
+    The Alder Optics profile alone names the builder and its base; the overview is the only
+    document that says Marisol Vega directs the observatory. Each bridging entity is also
+    repeated verbatim in both documents it links.
+    """
+    canary = (SAMPLE_DIR / "canary.arms.jsonl").read_text(encoding="utf-8").splitlines()
+    question = json.loads(canary[0])["question"]
+    assert "Harbor Light Observatory" in question and "Marisol Vega" in question
     read = {
         e["file"]: (SAMPLE_DIR / e["file"]).read_text(encoding="utf-8")
         for e in _manifest()
@@ -187,6 +196,10 @@ def test_d221_example_question_needs_three_linked_documents() -> None:
     overview = read["harbor-light-overview.md"]
     install = read["kestrel-spectrograph-install.md"]
     profile = read["alder-optics-profile.md"]
+    assert "Alder Optics built the Kestrel spectrograph for Harbor Light Observatory" in profile
+    assert [f for f, text in read.items() if "Marisol Vega" in text] == [
+        "harbor-light-overview.md"
+    ]
     assert "Marisol Vega directs Harbor Light Observatory" in overview
     assert "Harbor Light Observatory" in install and "Kestrel spectrograph" in install
     assert "Kestrel spectrograph" in overview

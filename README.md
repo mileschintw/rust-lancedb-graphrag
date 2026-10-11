@@ -249,7 +249,7 @@ uv run --project eval python eval/scripts/quickstart.py ingest
 
 It prints one JSON line per document and exits non-zero if a document fails or the 420-second deadline expires. Then wait until the engine terminal shows a line containing `evidence_metadata became available again` and a line containing `index.swap.metadata_coverage: documents_with_metadata=5 documents=5` (a 2-second debounce plus the index rebuild). Coverage lines with smaller counts can appear while the five documents finish; the 5-of-5 line is the one to wait for.
 
-**11. Query again, then ask the two-hop question.** Re-run the step 9 query: the printed JSON no longer lists `DEFAULT_LEVER_UNAVAILABLE`, and `levers` is now `["rerank", "evidence_metadata"]`. Then ask a question that needs three of the five documents, first with the defaults and then with the graph opted in:
+**11. Query again, then ask the two-hop question.** Re-run the step 9 query: the printed JSON no longer lists `DEFAULT_LEVER_UNAVAILABLE`, and `levers` is now `["rerank", "evidence_metadata"]`. Then ask a question that names two linked entities (the Alder Optics profile alone names the builder and where it is based, and the observatory overview confirms that Marisol Vega directs Harbor Light Observatory), first with the defaults and then with the graph opted in:
 
 ```bash
 uv run --project eval python eval/scripts/quickstart.py query "Which company built the spectrograph at Harbor Light Observatory, which Marisol Vega directs, and where is that company based?"
