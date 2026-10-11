@@ -69,8 +69,12 @@ pub struct QueryRagRequest {
     #[prost(bool, optional, tag="4")]
     pub allow_model_only: ::core::option::Option<bool>,
     /// D-47. STRICTLY DISTINCT from allow_model_only — "without graph" != "without evidence".
-    /// Names what it turns OFF because the graph node has no disable path today, so this
-    /// field is what produces 6.3's `graph-off` arm. `graph-on` is the absent/false state.
+    /// Names what it turns OFF; this field is what produces 6.3's `graph-off` arm.
+    /// 06.4 D-207, amends 06-CONTEXT D-47: `optional` for FIELD PRESENCE, in the D-12 pattern
+    /// `allow_model_only` already uses. ABSENT means the engine's configured default
+    /// (`\[engine.graph\] context_default_enabled`, shipped false, so a plain request runs graph-off and
+    /// carries NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG); false means graph context explicitly ON;
+    /// true means explicitly OFF (NOTICE_CODE_GRAPH_ABLATION).
     #[prost(bool, optional, tag="5")]
     pub disable_graph_context: ::core::option::Option<bool>,
     /// 06.3.5 D-99. Names the retrieval path set the request runs; UNSPECIFIED (absent) is HYBRID.
@@ -82,10 +86,17 @@ pub struct QueryRagRequest {
     /// only, at most `candidate_limit` rows). False/absent leaves the snapshot bytes unchanged.
     #[prost(bool, tag="7")]
     pub include_pre_truncation_ranking: bool,
-    /// 06.3.6 D-136. The quality levers this request switches on; empty == absent == today's request.
+    /// 06.3.6 D-136. The quality levers this request switches on; empty == absent: the configured
+    /// defaults apply unless disable_default_levers is true (06.4 D-198).
     /// Echoed canonically (ascending enum number) on `RetrievalSnapshot.levers`.
     #[prost(enumeration="Lever", repeated, tag="8")]
     pub levers: ::prost::alloc::vec::Vec<i32>,
+    /// 06.4 D-198 (resolves 06.3.6 D-195). `optional` for FIELD PRESENCE. Absent or false: today's
+    /// behaviour (a request naming no lever runs the configured `\[engine.levers\] defaults`; a request
+    /// naming levers runs exactly those, never the union). true: run exactly the named levers, even
+    /// none, and add no configured default. Named levers stay fail-closed with `lever_unavailable`.
+    #[prost(bool, optional, tag="9")]
+    pub disable_default_levers: ::core::option::Option<bool>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Notice {
@@ -462,7 +473,8 @@ pub enum Lever {
     /// D-141: asks for a yes/no-shaped final answer line for binary questions.
     BinaryAnswerFormat = 3,
     /// D-137/D-141: the graph repair the committed diagnosis selected (`graph_list_precision`).
-    /// Refused with `invalid_lever_combination` when `disable_graph_context` is also set (D-165).
+    /// Refused with `invalid_lever_combination` when the graph state resolves to off: an explicit
+    /// `disable_graph_context = true` (D-165), or an absent field under a default-off config (06.4 D-207).
     GraphV2 = 4,
 }
 impl Lever {
@@ -528,6 +540,12 @@ pub enum NoticeCode {
     /// D-194: a configured default lever whose resource this snapshot lacks was not applied to a request
     /// that named no lever. Joins the `degraded_mode` set.
     DefaultLeverUnavailable = 24,
+    /// ── Phase 06.4 ────────────────────────────────────────────────────────────
+    /// D-207: the graph context node did not run because the configured default
+    /// (`\[engine.graph\] context_default_enabled = false`) is off and the request left
+    /// `disable_graph_context` absent. INFO, and NOT in the `degraded_mode` set (like GRAPH_ABLATION).
+    /// An explicit `disable_graph_context = true` keeps NOTICE_CODE_GRAPH_ABLATION.
+    GraphDisabledByConfig = 25,
 }
 impl NoticeCode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -556,6 +574,7 @@ impl NoticeCode {
             Self::IndexGenerationMismatch => "NOTICE_CODE_INDEX_GENERATION_MISMATCH",
             Self::RerankDegraded => "NOTICE_CODE_RERANK_DEGRADED",
             Self::DefaultLeverUnavailable => "NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE",
+            Self::GraphDisabledByConfig => "NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -581,6 +600,7 @@ impl NoticeCode {
             "NOTICE_CODE_INDEX_GENERATION_MISMATCH" => Some(Self::IndexGenerationMismatch),
             "NOTICE_CODE_RERANK_DEGRADED" => Some(Self::RerankDegraded),
             "NOTICE_CODE_DEFAULT_LEVER_UNAVAILABLE" => Some(Self::DefaultLeverUnavailable),
+            "NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG" => Some(Self::GraphDisabledByConfig),
             _ => None,
         }
     }

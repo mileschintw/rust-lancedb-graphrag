@@ -314,7 +314,8 @@ impl WorkflowContext {
 ///
 /// True when any notice in the terminal notice set is in the included code set or when
 /// the answer basis is anything other than Retrieval. Excluded codes (NoEvidence, ModelNotice,
-/// ModelWarning, CitationRepaired, GraphAblation, and Unspecified) evaluate to false.
+/// ModelWarning, CitationRepaired, GraphAblation, GraphDisabledByConfig, and Unspecified) evaluate
+/// to false.
 ///
 /// A `BasisReconciled` notice whose message is exactly
 /// [`crate::generation::GROUNDED_ABSTENTION_NORMALISED_NOTICE`] discloses a grounded
@@ -353,7 +354,8 @@ pub fn derive_degraded_mode(
                 | NoticeCode::ModelNotice
                 | NoticeCode::ModelWarning
                 | NoticeCode::CitationRepaired
-                | NoticeCode::GraphAblation => {}
+                | NoticeCode::GraphAblation
+                | NoticeCode::GraphDisabledByConfig => {}
             }
         }
     }
