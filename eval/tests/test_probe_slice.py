@@ -316,7 +316,8 @@ def test_probe_arm_flag_and_validation(httpx_mock: HTTPXMock, tmp_path: Path) ->
             "-f",
             "f",
             "--arm",
-            "graph-off",
+            # D-198: legacy labels are refused by probe; `hybrid` still sends the graph-off flag.
+            "hybrid",
             "-o",
             str(out_dir),
         ],

@@ -1,5 +1,6 @@
 """Tests for preflight checks and store isolation verification."""
 
+import json
 from pathlib import Path
 
 import httpx
@@ -139,6 +140,12 @@ def test_check_corpus_generation_match_and_mismatch(
         res_trunc = check_corpus_generation(client, "multihop_rag")
     assert not res_trunc.passed
     assert "truncated" in res_trunc.message
+
+    # D-198 / D-207: the probe states its graph state and opts out of default levers.
+    for request in httpx_mock.get_requests():
+        body = json.loads(request.read().decode("utf-8"))
+        assert body["disable_graph_context"] is False
+        assert body["disable_default_levers"] is True
 
 
 def test_check_openrouter_api_and_model_differentiation() -> None:

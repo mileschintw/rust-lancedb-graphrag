@@ -102,6 +102,13 @@ def test_seed_corpus_multipart_no_chunk_overrides(
     assert "chunk_size" not in req_body
     assert "chunk_overlap" not in req_body
 
+    # D-198: the index-generation probe must not make a paid rerank call under the
+    # configured default levers.
+    probes = [r for r in httpx_mock.get_requests() if r.url.path == "/rag/query"]
+    assert len(probes) == 1
+    probe_body = json.loads(probes[0].read().decode("utf-8"))
+    assert probe_body["disable_default_levers"] is True
+
 
 def test_seed_corpus_resumes_without_reupload(
     httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

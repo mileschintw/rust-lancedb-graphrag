@@ -461,7 +461,8 @@ def _invoke_run(tmp_path: Path, cap_args: list[str]) -> object:
         [
             "run",
             "--corpus",
-            "multihop_rag",
+            # D-198: a legacy-label corpus is refused by `run`; this one declares canonical arms.
+            "multihop_rag_heldout",
             *cap_args,
             "--out",
             str(tmp_path / "j.jsonl"),

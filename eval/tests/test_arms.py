@@ -81,24 +81,74 @@ def test_request_fields_legacy_bodies_are_byte_identical_to_drives_1_to_2() -> N
 
 
 def test_request_fields_canonical_labels_carry_mode_and_ranking_flag() -> None:
+    # D-198 / D-207: every canonical body states its graph state (false included) and
+    # opts out of the configured default levers, so no arm inherits a server default.
     assert request_fields("dense-only") == {
         "retrieval_mode": "dense_only",
         "disable_graph_context": True,
+        "disable_default_levers": True,
         "include_pre_truncation_ranking": True,
     }
     assert request_fields("bm25-only") == {
         "retrieval_mode": "bm25_only",
         "disable_graph_context": True,
+        "disable_default_levers": True,
         "include_pre_truncation_ranking": True,
     }
     assert request_fields("hybrid") == {
         "retrieval_mode": "hybrid",
         "disable_graph_context": True,
+        "disable_default_levers": True,
         "include_pre_truncation_ranking": True,
     }
     assert request_fields("hybrid+graph") == {
         "retrieval_mode": "hybrid",
+        "disable_graph_context": False,
+        "disable_default_levers": True,
         "include_pre_truncation_ranking": True,
+    }
+
+
+def test_d198_every_canonical_arm_sends_both_explicit_fields() -> None:
+    """D-198 / D-207: each canonical arm names its graph state and opts out of defaults."""
+    for label, spec in ARM_REGISTRY.items():
+        fields = request_fields(label)
+        assert fields["disable_graph_context"] is spec.disable_graph_context, label
+        assert fields["disable_default_levers"] is True, label
+        if spec.levers:
+            assert fields["levers"] == list(spec.levers), label
+        else:
+            assert "levers" not in fields, label
+
+
+def test_d198_lever_arm_bodies_state_their_graph_and_levers() -> None:
+    assert request_fields("hybrid+rerank") == {
+        "retrieval_mode": "hybrid",
+        "disable_graph_context": True,
+        "disable_default_levers": True,
+        "include_pre_truncation_ranking": True,
+        "levers": ["rerank"],
+    }
+    if "hybrid+graph-v2" in ARM_REGISTRY:
+        assert request_fields("hybrid+graph-v2") == {
+            "retrieval_mode": "hybrid",
+            "disable_graph_context": False,
+            "disable_default_levers": True,
+            "include_pre_truncation_ranking": True,
+            "levers": ["graph_v2"],
+        }
+
+
+def test_d198_explicit_default_fields_are_the_measurement_helper() -> None:
+    from lancet_eval import arms as arms_module
+
+    assert arms_module.explicit_default_fields("graph-on") == {
+        "disable_graph_context": False,
+        "disable_default_levers": True,
+    }
+    assert arms_module.explicit_default_fields("graph-off") == {
+        "disable_graph_context": True,
+        "disable_default_levers": True,
     }
 
 
@@ -288,9 +338,11 @@ def test_request_fields_add_levers_only_for_a_lever_arm() -> None:
         assert "levers" not in request_fields(label)
     assert request_fields("graph-off") == {"disable_graph_context": True}
     assert request_fields("graph-on") == {}
+    # D-198 / D-207: a control arm now sends the opt-out beside its explicit graph state.
     assert request_fields("hybrid") == {
         "retrieval_mode": "hybrid",
         "disable_graph_context": True,
+        "disable_default_levers": True,
         "include_pre_truncation_ranking": True,
     }
 

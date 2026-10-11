@@ -221,6 +221,21 @@ def test_canary_floors_all_met_passes(httpx_mock: HTTPXMock) -> None:
     assert "All 8 canaries passed floors" in res.message
 
 
+def test_d198_legacy_canaries_send_explicit_graph_state_and_the_opt_out(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """D-198 / D-207: the live legacy canaries must not run default levers or a default-off graph."""
+    _mock_canary_responses(httpx_mock)
+    client = httpx.Client(base_url="http://testserver")
+    res = check_canary_floors(client)
+    assert res.passed
+    bodies = _request_bodies(httpx_mock)
+    assert len(bodies) == 8
+    assert {b["disable_graph_context"] for b in bodies} == {True, False}
+    assert all(b["disable_default_levers"] is True for b in bodies)
+    assert all("levers" not in b for b in bodies)
+
+
 def test_canary_floors_retrieval_floor_missed_fails_with_qid(
     httpx_mock: HTTPXMock,
 ) -> None:
@@ -982,6 +997,9 @@ def test_a_lever_arm_canary_sends_its_levers(httpx_mock: HTTPXMock) -> None:
     assert sum(1 for b in bodies if b.get("levers") == ["rerank"]) == 3
     assert sum(1 for b in bodies if "levers" not in b) == 3
     assert res.detail["rerank_degraded_by_arm"] == {"hybrid+rerank": 0, "hybrid+all": 0}
+    # D-198 / D-207: every canary request opts out of the defaults and names its graph state.
+    assert all(b["disable_default_levers"] is True for b in bodies)
+    assert all(isinstance(b["disable_graph_context"], bool) for b in bodies)
 
 
 def test_one_degraded_rerank_canary_passes_and_is_reported(

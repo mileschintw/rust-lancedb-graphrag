@@ -474,9 +474,10 @@ def test_d207_run_query_sends_disable_graph_context_false_when_given_false(
     assert bodies[3] == {**base, "disable_graph_context": True}
 
 
-def test_a_lever_free_arm_sends_exactly_the_06_3_5_request_body(
+def test_d198_a_lever_free_arm_sends_the_explicit_06_4_body(
     httpx_mock: HTTPXMock,
 ) -> None:
+    """D-198 / D-207: a lever-free canonical arm states its graph state and the opt-out."""
     from lancet_eval.arms import request_fields
 
     plain = (
@@ -485,29 +486,32 @@ def test_a_lever_free_arm_sends_exactly_the_06_3_5_request_body(
     )
     base = {"query": "q", "session_id": "s"}
     expected = {
-        "graph-off": {**base, "disable_graph_context": True},
-        "graph-on": dict(base),
         "dense-only": {
             **base,
             "retrieval_mode": "dense_only",
             "disable_graph_context": True,
+            "disable_default_levers": True,
             "include_pre_truncation_ranking": True,
         },
         "bm25-only": {
             **base,
             "retrieval_mode": "bm25_only",
             "disable_graph_context": True,
+            "disable_default_levers": True,
             "include_pre_truncation_ranking": True,
         },
         "hybrid": {
             **base,
             "retrieval_mode": "hybrid",
             "disable_graph_context": True,
+            "disable_default_levers": True,
             "include_pre_truncation_ranking": True,
         },
         "hybrid+graph": {
             **base,
             "retrieval_mode": "hybrid",
+            "disable_graph_context": False,
+            "disable_default_levers": True,
             "include_pre_truncation_ranking": True,
         },
     }
@@ -525,6 +529,36 @@ def test_a_lever_free_arm_sends_exactly_the_06_3_5_request_body(
     bodies = [json.loads(r.read().decode("utf-8")) for r in httpx_mock.get_requests()]
     assert bodies == list(expected.values())
     assert all("levers" not in body for body in bodies)
+
+
+def test_legacy_labels_keep_their_recorded_06_3_5_bodies(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """Legacy labels are re-score only (D-198), and their bodies stay byte-identical."""
+    from lancet_eval.arms import request_fields
+
+    plain = (
+        "event: workflow_completed\n"
+        'data: {"success":true,"final_response":{"answer":"ok"}}\n\n'
+    )
+    base = {"query": "q", "session_id": "s"}
+    expected = {
+        "graph-off": {**base, "disable_graph_context": True},
+        "graph-on": dict(base),
+    }
+    for _ in expected:
+        httpx_mock.add_response(
+            url="http://testserver/rag/query",
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=plain,
+        )
+    with httpx.Client(base_url="http://testserver") as client:
+        for label in expected:
+            run_query(client, query="q", session_id="s", **request_fields(label))
+
+    bodies = [json.loads(r.read().decode("utf-8")) for r in httpx_mock.get_requests()]
+    assert bodies == list(expected.values())
 
 
 def test_run_query_has_no_parameter_that_could_carry_a_benchmark_label() -> None:

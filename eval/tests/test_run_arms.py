@@ -76,6 +76,41 @@ def test_request_body_polarity_and_model_only_absence(httpx_mock: HTTPXMock) -> 
     assert "allow_model_only" not in req_off_body
 
 
+def test_d198_canonical_arms_send_explicit_polarity_and_the_opt_out(
+    httpx_mock: HTTPXMock,
+) -> None:
+    """D-198 / D-207: a canonical drive states graph on (false) or off (true), never absent."""
+
+    def sse_response(request: httpx.Request) -> httpx.Response:
+        data = (
+            'event: final_answer\n'
+            'data: {"answer": "Paris", "snapshot": {"index_generation": "gen1"}}\n\n'
+            'event: workflow_completed\n'
+            'data: {"success": true, "duration_ms": 100}\n\n'
+        )
+        return httpx.Response(
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=data,
+        )
+
+    httpx_mock.add_callback(sse_response, is_reusable=True)
+    client = httpx.Client(base_url="http://testserver")
+    q = GoldQuestion(question_id="q1", question="What is Paris?", gold_facts=["Paris"])
+
+    drive_one(client, corpus="multihop_rag_heldout", question=q, arm="hybrid+graph")
+    drive_one(client, corpus="multihop_rag_heldout", question=q, arm="hybrid")
+
+    bodies = [
+        json.loads(r.read().decode("utf-8")) for r in httpx_mock.get_requests()
+    ]
+    assert bodies[0]["disable_graph_context"] is False
+    assert bodies[1]["disable_graph_context"] is True
+    assert all(b["disable_default_levers"] is True for b in bodies)
+    assert all("levers" not in b for b in bodies)
+    assert all("allow_model_only" not in b for b in bodies)
+
+
 def test_drive_one_catches_all_exceptions_without_raising(
     httpx_mock: HTTPXMock,
 ) -> None:
@@ -321,7 +356,8 @@ def test_run_command_loads_settings_and_forwards_to_drive(
 
     res = runner.invoke(
         app,
-        ["run", "--corpus", "multihop_rag", "--stage-cap", "2.0", "--out", str(tmp_path / "journal.jsonl")],
+        # D-198: a legacy-label corpus is refused by `run`; this one declares canonical arms.
+        ["run", "--corpus", "multihop_rag_heldout", "--stage-cap", "2.0", "--out", str(tmp_path / "journal.jsonl")],
     )
     assert res.exit_code == 0
     assert "settings" in captured_kwargs
@@ -748,7 +784,8 @@ def _invoke_gate_run(tmp_path: Path, extra: list[str]) -> object:
         [
             "run",
             "--corpus",
-            "multihop_rag",
+            # D-198: a legacy-label corpus is refused by `run`; this one declares canonical arms.
+            "multihop_rag_heldout",
             "--stage-cap",
             "0.5",
             "--out",
@@ -809,6 +846,71 @@ def test_run_without_gate_stage_forwards_none_and_keeps_default_retries(
     assert res.exit_code == 0
     assert "gate_stage" in calls[0] and calls[0]["gate_stage"] is None
     assert calls[0]["max_retries"] == 2
+
+
+def _invoke_legacy_run(out: Path, corpus: str = "multihop_rag") -> object:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    return CliRunner().invoke(
+        app,
+        ["run", "--corpus", corpus, "--stage-cap", "1.0", "--out", str(out)],
+    )
+
+
+@pytest.mark.parametrize("corpus", ["multihop_rag", "multihop_rag_diag", "graphrag_bench"])
+def test_d198_legacy_label_refused_for_a_new_drive(
+    corpus: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-198: legacy labels are re-score only; `run` refuses them before drive() is called."""
+    calls: list[object] = []
+    monkeypatch.setattr("lancet_eval.run.drive", lambda *a, **k: calls.append(k) or 0)
+    out = tmp_path / "journal.jsonl"
+
+    res = _invoke_legacy_run(out, corpus)
+
+    assert res.exit_code == 1
+    assert calls == []
+    assert "graph-on" in res.output
+    assert "hybrid+graph" in res.output
+    assert "graph-off" in res.output
+    assert "re-score" in res.output
+    assert not out.exists()
+
+
+def test_d198_legacy_label_refused_even_for_a_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-198: a journal that already holds records is no exception (resume sends new requests)."""
+    calls: list[object] = []
+    monkeypatch.setattr("lancet_eval.run.drive", lambda *a, **k: calls.append(k) or 0)
+    out = tmp_path / "journal.jsonl"
+    before = _seed_journal(out, None)
+
+    res = _invoke_legacy_run(out)
+
+    assert res.exit_code == 1
+    assert calls == []
+    assert "re-score" in res.output
+    assert out.read_bytes() == before
+
+
+def test_d198_refusal_helper_names_each_legacy_label_and_passes_canonical_corpora() -> None:
+    from lancet_eval.run import refuse_legacy_labels_for_live_drive
+
+    with pytest.raises(ValueError, match=r"graph-on.*hybrid\+graph"):
+        refuse_legacy_labels_for_live_drive("multihop_rag")
+    refuse_legacy_labels_for_live_drive("multihop_rag_heldout")
+
+
+def test_d198_direct_drive_still_accepts_legacy_labels_for_offline_callers() -> None:
+    """The rule lives in the `run` command: drive() keeps its arm handling unchanged."""
+    import inspect
+
+    from lancet_eval import run as run_module
+
+    assert "refuse_legacy_labels_for_live_drive" not in inspect.getsource(run_module.drive)
 
 
 @pytest.mark.parametrize("label", ["", "  ", "has space", "tab\there"])
@@ -979,9 +1081,9 @@ def test_raw_events_directory_uses_the_slug_for_canonical_labels(
 
 @pytest.mark.parametrize(
     "arm",
-    ["dense-only", "bm25-only", "hybrid", "hybrid+graph", "graph-on", "graph-off"],
+    ["dense-only", "bm25-only", "hybrid", "hybrid+graph"],
 )
-def test_probe_accepts_the_four_labels_and_both_aliases(
+def test_probe_accepts_the_four_labels(
     arm: str, httpx_mock: HTTPXMock, tmp_path: Path
 ) -> None:
     from typer.testing import CliRunner
@@ -996,6 +1098,44 @@ def test_probe_accepts_the_four_labels_and_both_aliases(
     assert res.exit_code == 0, res.output
     body = json.loads(httpx_mock.get_requests()[0].read().decode("utf-8"))
     assert set(body) == {"query", "session_id", *request_fields(arm)}
+
+
+@pytest.mark.parametrize(
+    ("alias", "canonical"), [("graph-on", "hybrid+graph"), ("graph-off", "hybrid")]
+)
+def test_d198_probe_refuses_a_legacy_label(
+    alias: str, canonical: str, httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """D-198: legacy labels are re-score only, so `probe --arm graph-on` sends no request."""
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    res = CliRunner().invoke(
+        app, ["probe", "-q", "q", "-f", "f", "--arm", alias, "-o", str(tmp_path / "o")]
+    )
+    assert res.exit_code != 0
+    assert canonical in res.output
+    assert httpx_mock.get_requests() == []
+
+
+def test_d198_probe_without_arm_uses_hybrid_plus_graph(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """D-207: the old default `graph-on` sent no graph field, which now means graph off."""
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    httpx_mock.add_callback(_echoing_stream, is_reusable=True)
+    res = CliRunner().invoke(
+        app, ["probe", "-q", "q", "-f", "f", "-o", str(tmp_path / "o")]
+    )
+    assert res.exit_code == 0, res.output
+    body = json.loads(httpx_mock.get_requests()[0].read().decode("utf-8"))
+    assert body["disable_graph_context"] is False
+    assert body["disable_default_levers"] is True
+    assert body["retrieval_mode"] == "hybrid"
 
 
 def test_probe_rejects_an_unknown_arm_with_exit_2() -> None:

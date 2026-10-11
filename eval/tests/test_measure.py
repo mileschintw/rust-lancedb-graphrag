@@ -1227,3 +1227,48 @@ def test_failed_generation_attempt_usd_follows_the_output_price():
     ) * measure.GENERATION_OUTPUT_PRICE_PER_1M
     assert measure.failed_generation_attempt_usd() == pytest.approx(expected)
     assert measure.failed_generation_attempt_usd() > 0.0035
+
+
+def test_d198_measure_one_sends_the_graph_state_and_the_opt_out_explicitly():
+    """D-198 / D-207: both measurement arms state their graph state and stay lever-free."""
+    from lancet_eval.client import WorkflowCompleted
+
+    mock_client = MagicMock()
+    q = GoldQuestion(
+        question_id="q1",
+        question="What?",
+        question_type="factoid",
+        gold_answer="A",
+        supporting_facts=[],
+    )
+    sent: dict[str, dict] = {}
+
+    def fake_run_query(client, **kwargs):
+        sent[kwargs["query"] + str(len(sent))] = kwargs
+        return QueryOutcome(
+            status="ok",
+            answer=None,
+            completion=WorkflowCompleted(success=True, total_duration_ms=10),
+            duration_ms=10,
+        )
+
+    with patch("lancet_eval.measure.run_query", side_effect=fake_run_query):
+        for ordinal, arm in enumerate(("graph-off", "graph-on")):
+            measure_one(
+                mock_client,
+                corpus="multihop_rag",
+                question=q,
+                arm=arm,
+                ordinal=ordinal,
+                segment="segment-1",
+            )
+
+    off, on = list(sent.values())
+    assert off["disable_graph_context"] is True
+    assert on["disable_graph_context"] is False
+    assert off["disable_default_levers"] is True
+    assert on["disable_default_levers"] is True
+    for kwargs in (off, on):
+        assert "levers" not in kwargs
+        assert "retrieval_mode" not in kwargs
+        assert "include_pre_truncation_ranking" not in kwargs
