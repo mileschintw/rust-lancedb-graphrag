@@ -1,0 +1,7 @@
+# Literal phrases quote_check.py blanks before it tokenises a doc (D-214, D-210, D-228).
+# One entry per line: <phrase>  # <reason>  (two spaces before the #).
+# Only non-run figures that a doc must quote are listed. Never add a result value, a version
+# or any other bare token: a version or a non-result identifier goes in an inline code span.
++1.2 to +1.6 s  # README.md:88 at 234578f2, the README's former single graph-cost figure; docs/evaluation.md quotes it once only to retract it as one run's paired reading (D-210, OB-33)
+1.6%  # the refused 2026-09-03 run's pairing coverage, 8 of 500 questions (06.3.1-CONTEXT.md:575), in the README story D-70 preserves (README.md:20 at 234578f2, "Refusing a result that looked good")
+9.8%  # 06.3.4's whole-question cosine-seeding graph presence, 14 of 143 (06.3.4-07-SUMMARY.md:12), in the README Key Decisions section (README.md:217 at 234578f2, "Graph retrieval redesigned")
