@@ -1259,11 +1259,25 @@ fn committed_lever_defaults_start_the_engine_over_an_empty_store_with_a_warning(
         built < warned && warned < replayed && replayed < serving,
         "order must be snapshot built ({built}), WARN ({warned}), replay ({replayed}), serving ({serving})"
     );
-    assert!(
-        logs.iter()
-            .all(|line| !(line.contains("WARN") && line.contains("default lever rerank"))),
-        "the lever reranker is wired, so no WARN names rerank as unavailable:\n{}",
+    // Exactly one default lever is unavailable here. The match proves the pattern can fire, and
+    // the count of one proves `rerank` (wired) is not warned about; the lever name is a styled
+    // field, so its quoted value is the contiguous text.
+    let unavailable: Vec<&String> = logs
+        .iter()
+        .filter(|line| {
+            line.contains("WARN") && line.contains("configured default lever is unavailable")
+        })
+        .collect();
+    assert_eq!(
+        unavailable.len(),
+        1,
+        "only evidence_metadata is unavailable:\n{}",
         logs.join("\n")
+    );
+    assert!(
+        unavailable[0].contains("\"evidence_metadata\"") && !unavailable[0].contains("\"rerank\""),
+        "the one warning names evidence_metadata: {}",
+        unavailable[0]
     );
     let _ = fs::remove_dir_all(temp_dir);
 }
