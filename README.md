@@ -1,7 +1,7 @@
 # Lancet 🚀
 
 > [!NOTE]
-> **v1 complete (2026-10-11).** Lancet's v1 is built, measured on held-out data, and documented, with a quickstart verified from a fresh clone on Windows and on WSL. The results are in [`docs/evaluation.md`](docs/evaluation.md), and the phase-by-phase record of how it was built is in [`docs/build-history.md`](docs/build-history.md).
+> **v1 complete (2026-10-11).** Lancet's v1 is built, measured on held-out data, and documented, with a quickstart verified from a fresh clone on Windows and on WSL. The results are in [`docs/evaluation.md`](docs/evaluation.md), and the phase-by-phase record of how it was built is in [`docs/build-history.md`](docs/build-history.md). The [v1 milestone summary](.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-MILESTONE-SUMMARY.md) lists what shipped and what is carried forward.
 
 **Lancet** is an end-to-end, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform. It is built to show data-plane engineering depth and evaluation discipline: a Go control plane and a Rust data plane joined by gRPC, custom chunking, hybrid dense + BM25 retrieval over embedded LanceDB with an optional rerank step and an opt-in knowledge graph, a lightweight Rust state machine with degraded modes, production-style observability, and a benchmark harness whose results can be believed — including when they are negative.
 

@@ -1565,6 +1565,8 @@ Plans:
 
 The plain DEBT-CR-04 (`.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`, network auth, TLS, quotas) is documented-only per 06-CONTEXT D-06 and is NOT promoted; DEBT-CR-04 / VER-20 above is a different, unrelated item that shares its label.
 
+**Also routed here (06.4 owner decision of 2026-10-11, counted separately from the 18 and the 27):** OB-44, the per-document ingestion span count that 06.2-04 never measured (`06.4-OBLIGATIONS.md`); see `06.4-DEBT-LEDGER.md`, "Also routed to 999.17".
+
 Plans:
 
 - [ ] TBD (promote with /gsd-review-backlog when ready)

@@ -17,15 +17,15 @@
 
 ## Data & Graph Processing
 
-- [ ] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources.
-- [ ] **DATA-02**: Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies.
+- [x] **DATA-01**: Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources. **SATISFIED — Phase 02 (evidence: `06.4-RECONCILIATION.md`).**
+- [x] **DATA-02**: Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies. **SATISFIED — Phase 02 (evidence: `06.4-RECONCILIATION.md`).**
 - [ ] **DATA-03**: Persist chunks and metadata in LanceDB as the local-first vector/graph store.
 - [x] **DATA-04**: Extract entities and relationships during ingestion and persist them as graph nodes/edges in LanceDB. **SATISFIED — Phase 04.1.**
 - [x] **DATA-05**: Query graph context with `lance-graph`/Cypher-style pattern matching and compile it into RAG prompt context. **SATISFIED — Phase 04.1.**
-- [ ] **DATA-06**: Prepare database schemas for hierarchical global summarization by adding an optional `community_ids` array on nodes and registering an empty placeholder `communities` table (Port for 999.1).
-- [ ] **DATA-07**: Register nullable `summary` (Text) and `summary_vector` (Float Array) columns, along with an `unsummarized_refs` list column on the `nodes` table (Port for 999.4).
-- [ ] **DATA-08**: Define separate `nodes` and `edges` tables in LanceDB. The `edges` table must include nullable `summary` (Text) and `summary_vector` (Float Array) columns (Port for 999.5).
-- [ ] **DATA-09**: Define an async `EntityResolver` trait in Rust for ingestion, implementing a pass-through `ExactMatchResolver` as the default (Port for 999.6).
+- [x] **DATA-06**: Prepare database schemas for hierarchical global summarization by adding an optional `community_ids` array on nodes and registering an empty placeholder `communities` table (Port for 999.1). **SATISFIED — Phase 02, relocated to `entities` by Phase 04.1 (evidence: `06.4-RECONCILIATION.md`).**
+- [x] **DATA-07**: Register nullable `summary` (Text) and `summary_vector` (Float Array) columns, along with an `unsummarized_refs` list column on the `nodes` table (Port for 999.4). **SATISFIED — Phase 02, relocated to `entities` by Phase 04.1 (evidence: `06.4-RECONCILIATION.md`).**
+- [x] **DATA-08**: Define separate `nodes` and `edges` tables in LanceDB. The `edges` table must include nullable `summary` (Text) and `summary_vector` (Float Array) columns (Port for 999.5). **SATISFIED — Phase 02 (evidence: `06.4-RECONCILIATION.md`).**
+- [x] **DATA-09**: Define an async `EntityResolver` trait in Rust for ingestion, implementing a pass-through `ExactMatchResolver` as the default (Port for 999.6). **SATISFIED — Phase 02 (evidence: `06.4-RECONCILIATION.md`).**
 
 ## Orchestration & State
 
@@ -61,6 +61,14 @@
 | OBS-04 | Phase 06.3 | Placeholder global-evaluation metric, registered as an explicit `skipped` dimension (06-CONTEXT.md D-78, D-51). |
 | OBS-06 | Phases 06.3.5, 06.3.6 | Comparative evaluation. 06.3.5: four-arm retrieval matrix on a committed held-out split, paper-convention metrics, judged pass and human calibration. 06.3.6: reranker, graph repair by diagnosis, evidence metadata and answer-format levers each measured as an arm; a lever becomes a default only on a pre-registered Holm rejection (exact paired sign-flip) with a positive held-out paired delta of `answer_usable` that also passes its pre-registered guards (`06.3.6-CONTEXT.md` D-150, D-148; wording amended 2026-10-09, D-169). |
 | OBS-05 | Phases 06.3.1, 06.3.2, 06.3.3, 06.3.4, 06.3.4.1 | Evaluation fidelity. Split across the family sharing `06.3.1-CONTEXT.md` (D-46): 06.3.1 engine/config failure signalling and provenance; 06.3.2 harness capture, scored dimensions and paired ablation; 06.3.3 latency measurement and budget derivation; 06.3.4 corrected re-drive, calibration and root-cause docs; 06.3.4.1 index identity, OI-02 fix, answer-usability metrics, graph repair and run of record. |
+| RAG-06 | Phase 02 | Accepted partial (owner, 2026-10-11, `06.4-RECONCILIATION.md`): the Tokio channel worker runs real ingestion rather than a NoOp default; Phase 02 was force-closed under ADR-02-004. The box stays unchecked. |
+| DATA-01 | Phase 02 | Satisfied; Markdown, text and JSON ingestion (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
+| DATA-02 | Phase 02 | Satisfied; fixed-size and structure-aware chunking (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
+| DATA-03 | Phase 02, Phase 06.3.4.1 | Carried to v1.1 (owner, 2026-10-11). The box stays unchecked, keeping the 06.3.4.1 owner decision: D-59 resolved as d59-none, no re-ingest, and `06.3.4.1-VERIFICATION.md:223` and `:256` record it as intentional ("leaves DATA-03 `[ ]` by owner decision"). |
+| DATA-06 | Phase 02, Phase 04.1 | Satisfied on the `entities` table (`community_ids`, `engine/src/db/mod.rs:319`) plus the empty `communities` table (`:337`). The requirement text says "nodes"; Phase 04.1 D-11 and D-15 relocated the column from `nodes` to `entities` (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
+| DATA-07 | Phase 02, Phase 04.1 | Satisfied on the `entities` table (`summary`, `summary_vector`, `unsummarized_refs`, `engine/src/db/mod.rs:316-318`). The requirement text says "nodes"; Phase 04.1 D-11 and D-15 relocated the columns from `nodes` to `entities` (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
+| DATA-08 | Phase 02 | Satisfied; separate `nodes` and `edges` tables, `edges` carries nullable `summary` and `summary_vector` (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
+| DATA-09 | Phase 02 | Satisfied; `EntityResolver` trait with the pass-through `ExactMatchResolver` default, consumed and never re-mapped by Phase 06.3.6 (D-127) (owner-confirmed 2026-10-11, `06.4-RECONCILIATION.md`). |
 
 The Phase 03 source audit and coverage matrix must show RAG-03 as opted out/deferred rather than covered.
 
