@@ -63,7 +63,14 @@ if (-not (Test-Path -LiteralPath $pidsFile)) {
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $raw = [System.IO.File]::ReadAllText($pidsFile, $Utf8NoBom)
 $entries = @()
-if ($raw.Trim().Length -gt 0) { $entries = @($raw | ConvertFrom-Json) }
+if ($raw.Trim().Length -gt 0) {
+    # Unwrap the {"value":[...],"Count":n} object that Windows PowerShell 5.1 writes for a
+    # one-element array, so an older pids.json still names every wrapper.
+    foreach ($x in (ConvertFrom-Json -InputObject $raw)) {
+        if ($x.PSObject.Properties['value'] -and $x.PSObject.Properties['Count']) { $entries += @($x.value) }
+        else { $entries += $x }
+    }
+}
 if ($Role) { $entries = @($entries | Where-Object { $_.role -eq $Role }) }
 
 $killed = 0

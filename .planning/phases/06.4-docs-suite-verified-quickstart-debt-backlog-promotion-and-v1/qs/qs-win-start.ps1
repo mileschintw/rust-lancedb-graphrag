@@ -43,7 +43,14 @@ $pidsFile = Join-Path $EvidenceDir 'pids.json'
 $entries = @()
 if (Test-Path -LiteralPath $pidsFile) {
     $raw = [System.IO.File]::ReadAllText($pidsFile, $Utf8NoBom)
-    if ($raw.Trim().Length -gt 0) { $entries = @($raw | ConvertFrom-Json) }
+    if ($raw.Trim().Length -gt 0) {
+        # Windows PowerShell 5.1 serializes a one-element array through -InputObject as
+        # {"value":[...],"Count":1}; unwrap any such object so an older file still reads.
+        foreach ($x in (ConvertFrom-Json -InputObject $raw)) {
+            if ($x.PSObject.Properties['value'] -and $x.PSObject.Properties['Count']) { $entries += @($x.value) }
+            else { $entries += $x }
+        }
+    }
 }
 $entries += [pscustomobject]@{
     role        = $Role
@@ -52,6 +59,8 @@ $entries += [pscustomobject]@{
     started_utc = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
     clone       = $Clone
 }
-[System.IO.File]::WriteAllText($pidsFile, (ConvertTo-Json -InputObject @($entries) -Depth 4), $Utf8NoBom)
+# One compressed object per entry, joined by hand, so a single entry is still a JSON array.
+$json = '[' + ((@($entries) | ForEach-Object { $_ | ConvertTo-Json -Compress -Depth 4 }) -join ',') + ']'
+[System.IO.File]::WriteAllText($pidsFile, $json, $Utf8NoBom)
 
 Write-Host "started role=$Role attempt=$Attempt wrapper_pid=$($result.ProcessId) evidence=$EvidenceDir"
