@@ -1,0 +1,29 @@
+06.4 plan 10, Task 3: the cold WSL release build, run by the ORCHESTRATOR (not an executor).
+
+Why not an executor: the cold build takes longer than an executor's 10-minute cap (RESEARCH A1 estimates 15 to 25 minutes;
+the Windows cold build took 35 m 25 s), and executors have no Monitor. Run the single command below in a background Git Bash
+shell of your own (run_in_background), then wait with a background until-loop on the existence of build.exit (no foreground
+sleep). The long-lived wsl.exe that this command holds keeps the distro up for the whole build.
+
+Clone (WSL filesystem): /home/user39261580/lqs/wsl-20261011
+Evidence directory (gitignored): D:/Repos/lancet/data/qs-evidence/wsl-20261011 (WSL path /mnt/d/Repos/lancet/data/qs-evidence/wsl-20261011)
+Build log: <evidence dir>/build.log (stdout and stderr, teed by the step)
+Exit code: <evidence dir>/build.exit (written LAST, after build.times holds the end time, so the until-loop never fires early)
+Start and end UTC: <evidence dir>/build.times (line 1 start, line 2 end)
+
+Command (one Git Bash line; the committed `build` step exports CARGO_BUILD_JOBS=4, the owner's resource limit for this
+machine, and carries no inline $):
+
+MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash /mnt/d/Repos/lancet/.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/qs/qs-wsl-run.sh /home/user39261580/lqs/wsl-20261011 /mnt/d/Repos/lancet/data/qs-evidence/wsl-20261011 build
+
+The cargo command inside the step is: cargo build --release --locked --manifest-path engine/Cargo.toml
+
+After build.exit appears (poll D:/Repos/lancet/data/qs-evidence/wsl-20261011/build.exit):
+  - 0: check that /home/user39261580/lqs/wsl-20261011/engine/target/release/engine exists in WSL
+    (MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- ls -l /home/user39261580/lqs/wsl-20261011/engine/target/release/engine),
+    then reply "wsl-build-ok <elapsed>".
+  - non-zero: stop for the owner with the tail of build.log, and reply "wsl-build-failed". A missing system dependency
+    here would mean the README's WSL prerequisites are incomplete.
+
+The owner's dev stack keeps running during the build (D-230, contract C2: plan 06.4-11 stops it right before its
+compose-up), so a failed build has nothing to restore.
