@@ -77,6 +77,21 @@ fn basis_label(basis: AnswerBasis) -> &'static str {
     }
 }
 
+/// Why graph context is switched off for a query run (06.4 D-207).
+///
+/// Only read when [`WorkflowContext::disable_graph_context`] is `true`. It selects which notice the
+/// graph node emits, so a response attributes the graph being off to its true cause: the caller's
+/// explicit opt-out, or the configured default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum GraphOffReason {
+    /// The request named `disable_graph_context = true`; the node emits `GRAPH_ABLATION`.
+    #[default]
+    Caller,
+    /// The request left `disable_graph_context` absent and `[engine.graph] context_default_enabled`
+    /// is false; the node emits `GRAPH_DISABLED_BY_CONFIG`.
+    ConfigDefault,
+}
+
 #[derive(Debug, Clone)]
 pub struct WorkflowContext {
     pub session_id: String,
@@ -85,8 +100,16 @@ pub struct WorkflowContext {
     pub filter: Option<DocumentFilter>,
     /// Whether graph context is disabled for this query run.
     ///
-    /// Resolved once at admission from the request flag and never re-read from configuration downstream.
+    /// Resolved once at admission, in the order request flag, then `[engine.graph]
+    /// context_default_enabled` (06.4 D-207), and never re-read from configuration downstream.
     pub disable_graph_context: bool,
+    /// Why graph context is off when [`disable_graph_context`](Self::disable_graph_context) is set
+    /// (06.4 D-207).
+    ///
+    /// [`GraphOffReason::Caller`] in [`new`](Self::new); admission sets
+    /// [`GraphOffReason::ConfigDefault`] only for an absent request field under a default-off
+    /// configuration.
+    pub graph_off_reason: GraphOffReason,
     /// Which retrieval paths this query runs (D-99), exactly as the request named it.
     ///
     /// Resolved once at admission. An absent or unrecognised value is `Unspecified`, which
@@ -163,6 +186,7 @@ impl WorkflowContext {
             original_query: request.query.clone(),
             filter: request.filter.clone(),
             disable_graph_context: request.disable_graph_context.unwrap_or(false),
+            graph_off_reason: GraphOffReason::Caller,
             retrieval_mode: request.retrieval_mode(),
             include_pre_truncation_ranking: request.include_pre_truncation_ranking,
             levers: LeverSet::default(),

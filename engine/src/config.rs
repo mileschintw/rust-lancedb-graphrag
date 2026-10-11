@@ -204,6 +204,22 @@ pub fn default_graph_v2_chunk_precision() -> ChunkPrecision {
     ChunkPrecision::EdgeEvidence
 }
 
+/// Whether a request that leaves `disable_graph_context` absent runs the graph node: `true`.
+///
+/// **Derivation.** This is the compiled-in neutral value, the behaviour before Phase 6.4, and it
+/// mirrors the empty compiled-in `[engine.levers] defaults`. D-207 (owner, 2026-10-11) ships the
+/// committed config files with `false`, so a plain request runs graph-off and carries
+/// `GRAPH_DISABLED_BY_CONFIG`; a unit test pins that value in both files. The code default stays
+/// `true` so an engine started without a config file, and every test that builds
+/// `EffectiveRagSettings::default()`, keeps the pre-6.4 request shape.
+///
+/// **Effect of changing it.** `false` makes an absent `disable_graph_context` mean graph-off and
+/// makes a `graph_v2` default lever a startup error; `true` makes it mean graph-on. An explicit
+/// request value always wins over this key.
+pub fn default_context_default_enabled() -> bool {
+    true
+}
+
 /// The `[engine.graph] graph_v2_chunk_precision` values (D-139).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -262,6 +278,10 @@ pub struct GraphConfigSettings {
     pub max_graph_chunk_candidates: usize,
     #[serde(default = "default_graph_v2_chunk_precision")]
     pub graph_v2_chunk_precision: ChunkPrecision,
+    /// Whether graph context runs for a request that leaves `disable_graph_context` absent
+    /// (06.4 D-207). A request's explicit `false` (on) or `true` (off) overrides this default.
+    #[serde(default = "default_context_default_enabled")]
+    pub context_default_enabled: bool,
 }
 
 impl Default for GraphConfigSettings {
@@ -275,6 +295,7 @@ impl Default for GraphConfigSettings {
             max_path_facts: default_max_path_facts(),
             max_graph_chunk_candidates: default_max_graph_chunk_candidates(),
             graph_v2_chunk_precision: default_graph_v2_chunk_precision(),
+            context_default_enabled: default_context_default_enabled(),
         }
     }
 }
@@ -290,6 +311,9 @@ pub struct GraphSettings {
     pub max_graph_chunk_candidates: usize,
     /// The configured chunk variant a request with the `graph_v2` lever uses (D-139).
     pub graph_v2_chunk_precision: ChunkPrecision,
+    /// Whether graph context runs for a request that leaves `disable_graph_context` absent
+    /// (06.4 D-207). Read once at admission; an explicit request value overrides it.
+    pub context_default_enabled: bool,
     /// The chunk selection these settings run: `All` unless the request names `graph_v2`, and then
     /// the one `graph_v2_chunk_precision` stands for. The service sets it per request.
     pub chunk_selection: graph::paths::ChunkSelection,
@@ -307,6 +331,7 @@ impl Default for GraphSettings {
             max_path_facts: defaults.max_path_facts,
             max_graph_chunk_candidates: defaults.max_graph_chunk_candidates,
             graph_v2_chunk_precision: defaults.graph_v2_chunk_precision,
+            context_default_enabled: defaults.context_default_enabled,
             chunk_selection: graph::paths::ChunkSelection::All,
         }
     }
@@ -925,6 +950,7 @@ impl EffectiveRagSettings {
             max_path_facts: settings.engine.graph.max_path_facts,
             max_graph_chunk_candidates: settings.engine.graph.max_graph_chunk_candidates,
             graph_v2_chunk_precision: settings.engine.graph.graph_v2_chunk_precision,
+            context_default_enabled: settings.engine.graph.context_default_enabled,
             chunk_selection: graph::paths::ChunkSelection::All,
         };
         let ev = u32::try_from(settings.engine.retrieval.evidence_token_budget)
@@ -933,6 +959,18 @@ impl EffectiveRagSettings {
             .map_err(|err| err.message().to_string())?;
         let default_levers = workflow::LeverSet::try_from_names(&settings.engine.levers.defaults)
             .map_err(|err| format!("invalid engine.levers.defaults: {err}"))?;
+        // D-84, D-207: the graph repair needs the graph, so a default lever set that names it
+        // cannot start beside a default-off graph. Every request that names no lever would
+        // otherwise be refused `invalid_lever_combination` at admission.
+        if default_levers.contains(crate::pb::lancet::v1::Lever::GraphV2)
+            && !graph.context_default_enabled
+        {
+            return Err(concat!(
+                "invalid engine.levers.defaults: graph_v2 cannot be a default lever while ",
+                "engine.graph.context_default_enabled is false"
+            )
+            .to_string());
+        }
         let effective = Self {
             workflow,
             retrieval,
@@ -1203,8 +1241,9 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
         }
     }
     // D-139: the dev reads pick the graph chunk variant here. The frozen variant lives in
-    // `config.toml`; the rehearsal and drive launchers (plans 06.3.6-19 and -20) refuse
-    // `LANCET_ENGINE__GRAPH__*`, so this override reaches dev reads only (T-06.3.6-42).
+    // `config.toml`; the committed D-199 harness refusal (plan 06.4-03) rejects every
+    // `LANCET_ENGINE__GRAPH__*` variable in a drive environment, so this override reaches dev
+    // reads only (T-06.3.6-42).
     if let Ok(raw) = std::env::var("LANCET_ENGINE__GRAPH__GRAPH_V2_CHUNK_PRECISION") {
         let trimmed = raw.trim();
         if !trimmed.is_empty() {
@@ -1216,11 +1255,29 @@ pub fn load_settings() -> Result<Settings, ::config::ConfigError> {
                 })?;
         }
     }
+    // 06.4 D-207: whether graph context runs for a request that leaves `disable_graph_context`
+    // absent. Fail closed (06-CONTEXT D-84): only true/1/false/0 are accepted, and a blank value
+    // is ignored like the other keys. The committed D-199 harness refusal (plan 06.4-03) rejects
+    // this variable in a drive environment.
+    if let Ok(raw) = std::env::var("LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED") {
+        let trimmed = raw.trim();
+        if !trimmed.is_empty() {
+            settings.engine.graph.context_default_enabled = match trimmed {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                other => {
+                    return Err(::config::ConfigError::Message(format!(
+                        "LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED must be true/1/false/0, got {other:?}"
+                    )))
+                }
+            };
+        }
+    }
     // D-157: the default levers. Unlike the keys above, an empty value is meaningful here: it
     // starts the process lever-free. A default whose resource is missing, for example a store that
     // holds no document metadata yet, is otherwise dropped with a startup WARN and a per-request
-    // notice (D-194). The rehearsal and drive launchers refuse `LANCET_ENGINE__GRAPH__*` and
-    // should refuse this too.
+    // notice (D-194). The committed D-199 harness refusal (plan 06.4-03) rejects
+    // `LANCET_ENGINE__GRAPH__*` and this variable in a drive environment.
     if let Ok(raw) = std::env::var("LANCET_ENGINE__LEVERS__DEFAULTS") {
         settings.engine.levers.defaults = parse_lever_names_env(&raw);
     }

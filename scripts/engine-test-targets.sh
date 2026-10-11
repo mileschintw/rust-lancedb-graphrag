@@ -497,6 +497,20 @@ fi
 #         d198_named_unavailable_lever_is_still_refused). 937->942. lib rises 822->827;
 #         `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata/config_startup
 #         unchanged (0/58/18/14/25).
+#   951 -- Phase 06.4 plan 01 Task 3: D-207 behaviour (the `[engine.graph] context_default_enabled`
+#         key with its fail-closed environment override, the graph state resolved once at admission,
+#         `GraphOffReason`, NoticeCode 25 and the `graph_v2` interaction and startup refusals). Eight
+#         lib tests in `tests::graph_default_pins` (d207_absent_field_under_a_default_off_config_runs_graph_off_with_code_25,
+#         d207_explicit_false_runs_the_graph_node, d207_explicit_true_keeps_graph_ablation_and_no_code_25,
+#         d207_default_on_config_keeps_the_pre_6_4_request_shape,
+#         d207_graph_v2_with_an_absent_field_under_a_default_off_config_is_refused,
+#         d207_graph_v2_with_explicit_false_is_admitted,
+#         d207_startup_refuses_graph_v2_default_levers_with_graph_default_off,
+#         d207_code_25_is_outside_the_degraded_mode_set) and one config_startup test
+#         (d207_graph_context_default_invalid_env_fails_closed). The reshaped IN-05 test and the
+#         bad_input_matrix check keep their counts. 942->951. lib rises 827->835 and config_startup
+#         25->26; `engine (bin)`/inspect_lancedb/reconcile_eval_store/backfill_evidence_metadata
+#         unchanged (0/58/18/14).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -539,18 +553,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 942 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 942, got $TOTAL" >&2
+if [ "$TOTAL" -ne 951 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 951, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 827 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 827, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 835 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 835, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 827 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 827, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 835 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 835, got $LIB_COUNT" >&2
   exit 1
 fi
 
@@ -579,8 +593,8 @@ if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
   exit 1
 fi
 
-if [ "$INTEG_CONFIG_COUNT" -ne 25 ]; then
-  echo "FAIL: config_startup test count mismatch: expected 25, got $INTEG_CONFIG_COUNT" >&2
+if [ "$INTEG_CONFIG_COUNT" -ne 26 ]; then
+  echo "FAIL: config_startup test count mismatch: expected 26, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 

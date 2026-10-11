@@ -424,6 +424,7 @@ fn graph_settings_select_the_seed_and_path_settings() {
         max_path_facts: 5,
         max_graph_chunk_candidates: 6,
         graph_v2_chunk_precision: ChunkPrecision::All,
+        context_default_enabled: true,
         chunk_selection: ChunkSelection::All,
     };
 

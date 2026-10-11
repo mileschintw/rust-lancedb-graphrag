@@ -35,6 +35,7 @@
 //! | `levers_admitted` | `levers` names `binary_answer_format`, unmatched filter | success (not rejected) | n/a | `binary_answer_format` needs no resource and is admitted; the zero-match filter keeps the row independent of corpus content. |
 //! | `levers_metadata_admitted` | `levers` names `evidence_metadata`, unmatched filter, after the service's snapshot is replaced by one whose `DocMetaMap` holds an entry | success (not rejected) | n/a | Run after the table above, on the same service, so the one request is refused on the empty map and admitted on the non-empty one. |
 //! | `levers_graph_v2_admitted` | `levers` names `graph_v2`, unmatched filter, after the service's `graph_v2_chunk_precision` is set to `edge_evidence` | success (not rejected) | n/a | Run after the two checks above, on the same service, so the one request is refused on the no-op `all` and admitted once a variant is configured; with `disable_graph_context` it is still refused as `invalid_lever_combination` (D-165). |
+//! | `graph_v2_with_graph_default_off` | `levers` names `graph_v2`, `disable_graph_context` is absent and `[engine.graph] context_default_enabled` is false (06.4 D-207, D-84: the combination check reads the graph state resolved at admission) | `InvalidArgument` | `invalid_lever_combination` | — |
 //! | `levers_default_degraded` | `[engine.levers] defaults` names `rerank` and `evidence_metadata`, the request names no lever, and this service holds no lever reranker (D-157, D-194) | success (not rejected) | n/a | Run after the checks above, on the same service: the unavailable default is dropped, never refused. The echo lists only the lever that ran (`evidence_metadata`), and the response carries one DEFAULT_LEVER_UNAVAILABLE notice (typed code 24) naming `rerank`. |
 //! | `levers_default_admitted` | the same defaults; a request that names `binary_answer_format` is admitted with the defaults unused, and a request that names no lever echoes both defaults and carries no code-24 notice once a lever reranker is wired (D-157, D-194) | success (not rejected) | n/a | Run last, on the same service, so the one request degrades without the reranker and runs both defaults with it. |
 //!
@@ -627,6 +628,35 @@ async fn bad_input_matrix_rejects_and_dispositions_are_stable() {
             .unwrap(),
         "invalid_lever_combination"
     );
+
+    // `graph_v2_with_graph_default_off` (06.4 D-207): the lever is available here, and the request
+    // leaves `disable_graph_context` absent, so only the configured graph default decides. Under a
+    // default-off configuration the resolved graph state is off and the combination is refused;
+    // under the default-on configuration the same request was admitted just above.
+    service.effective_settings.graph.context_default_enabled = false;
+    let default_off = super::execute_query_rag(
+        &service,
+        QueryRagRequest {
+            query: "valid query".into(),
+            session_id: String::new(),
+            filter: unmatched_filter(),
+            levers: vec![Lever::GraphV2 as i32],
+            ..Default::default()
+        },
+    )
+    .await
+    .expect_err("graph_v2 with the graph resolved off by the configured default is refused");
+    assert_eq!(default_off.code(), tonic::Code::InvalidArgument);
+    assert_eq!(
+        default_off
+            .metadata()
+            .get("x-lancet-error-kind")
+            .expect("an error-kind trailer")
+            .to_str()
+            .unwrap(),
+        "invalid_lever_combination"
+    );
+    service.effective_settings.graph.context_default_enabled = true;
 
     // `levers_default_degraded` and `levers_default_admitted` (D-157, D-194): the configured
     // defaults are the effective set of a request that names no lever, minus any whose resource is

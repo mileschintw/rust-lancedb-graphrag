@@ -1657,23 +1657,45 @@ async fn a_dropped_default_comes_back_once_a_snapshot_with_metadata_is_swapped_i
 
 #[tokio::test]
 async fn a_request_naming_no_lever_meets_the_combination_check_before_the_availability_filter() {
-    // The configured graph_v2 is unavailable under the no-op `all`, yet the contradiction with
-    // `disable_graph_context` is still refused: the combination check reads the configured
-    // defaults, and the defaults filter sits only in the availability slot (D-194, D-165).
+    // The configured graph_v2 is unavailable under the no-op `all`, yet the contradiction with a
+    // disabled graph is still refused: the combination check reads the configured defaults, and
+    // the defaults filter sits only in the availability slot (D-194, D-165).
+    //
+    // 06.4 D-207 (D-204 route F, re-review IN-05) reshapes what "the graph is off" means: the
+    // check reads the graph state RESOLVED at admission, so an absent `disable_graph_context`
+    // under a default-off configuration is the same contradiction as an explicit `true`, and the
+    // same absent field under a default-on configuration is not a contradiction at all.
     let (path, mut service) =
         service_with_default_levers("levers-defaults-combination", &["graph_v2"], true, true).await;
     service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
-    let refused = super::execute_query_rag(
-        &service,
-        QueryRagRequest {
-            disable_graph_context: Some(true),
-            ..fresh_no_lever_request()
-        },
-    )
-    .await
-    .expect_err("graph_v2 with the graph off is a contradiction before availability is read");
-    assert_eq!(refused.code(), tonic::Code::InvalidArgument);
-    assert_eq!(error_kind_of(&refused), "invalid_lever_combination");
+
+    service.effective_settings.graph.context_default_enabled = false;
+    for disable_graph_context in [Some(true), None] {
+        let refused = super::execute_query_rag(
+            &service,
+            QueryRagRequest {
+                disable_graph_context,
+                ..fresh_no_lever_request()
+            },
+        )
+        .await
+        .expect_err("graph_v2 with the graph off is a contradiction before availability is read");
+        assert_eq!(refused.code(), tonic::Code::InvalidArgument);
+        assert_eq!(
+            error_kind_of(&refused),
+            "invalid_lever_combination",
+            "disable_graph_context {disable_graph_context:?} under a default-off configuration"
+        );
+    }
+
+    // Default on: an absent field resolves to graph-on, so there is no contradiction. The
+    // unavailable graph_v2 default is then dropped by the availability filter, with its notice.
+    service.effective_settings.graph.context_default_enabled = true;
+    let admitted = super::execute_query_rag(&service, fresh_no_lever_request())
+        .await
+        .expect("an absent field under a default-on configuration is not a contradiction");
+    assert!(admitted.snapshot.expect("a snapshot").levers.is_empty());
+    assert_eq!(default_lever_notices(&admitted.notices).len(), 1);
     let _ = std::fs::remove_dir_all(path);
 }
 

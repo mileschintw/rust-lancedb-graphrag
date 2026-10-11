@@ -1241,8 +1241,19 @@ impl LancetService for LancetServiceImpl {
             (vec![], vec![])
         };
 
-        // Resolved once at admission; Phase 6 adds no configuration key for this flag.
-        let disable_graph_context = req.disable_graph_context.unwrap_or(false);
+        // 06.4 D-207, amending 06-CONTEXT D-47: the graph state is resolved once here, in the D-12
+        // order request field, then `[engine.graph] context_default_enabled`. An absent field
+        // under a default-off configuration runs graph-off and says so with its own notice; an
+        // explicit field is the caller's choice and keeps its meaning.
+        let graph_default_enabled = self.effective_settings.graph.context_default_enabled;
+        let disable_graph_context = req
+            .disable_graph_context
+            .unwrap_or(!graph_default_enabled);
+        let graph_off_reason = if req.disable_graph_context.is_none() && !graph_default_enabled {
+            workflow::GraphOffReason::ConfigDefault
+        } else {
+            workflow::GraphOffReason::Caller
+        };
 
         // D-99 fails closed: a mode this build does not know is refused here and never read as
         // hybrid, because a silent default would make an ablation arm's delta an artefact. The
@@ -1286,11 +1297,22 @@ impl LancetService for LancetServiceImpl {
         };
 
         // D-165: the graph repair needs the graph, so asking for it with the graph off is a
-        // contradiction, refused before availability is consulted.
+        // contradiction, refused before availability is consulted. D-207: the check reads the
+        // RESOLVED graph state, so a request that names `graph_v2` and leaves the graph field
+        // absent under a default-off configuration is refused too, and must say
+        // `disable_graph_context: false` to run it.
         if levers.contains(v1::Lever::GraphV2) && disable_graph_context {
+            let message = match graph_off_reason {
+                workflow::GraphOffReason::Caller => {
+                    "levers graph_v2 cannot be combined with disable_graph_context"
+                }
+                workflow::GraphOffReason::ConfigDefault => {
+                    "levers graph_v2 needs graph context, which is off by configured default; send disable_graph_context=false"
+                }
+            };
             return Err(d1_status(
                 tonic::Code::InvalidArgument,
-                "levers graph_v2 cannot be combined with disable_graph_context",
+                message,
                 &session_id,
                 &correlation_id,
                 "invalid_lever_combination",
@@ -1391,6 +1413,8 @@ impl LancetService for LancetServiceImpl {
         let mut ctx =
             workflow::WorkflowContext::new(session_id.clone(), correlation_id.clone(), &req);
         ctx.allow_model_only = req.allow_model_only.unwrap_or(wf.allow_model_only_answers);
+        ctx.disable_graph_context = disable_graph_context;
+        ctx.graph_off_reason = graph_off_reason;
         ctx.levers = levers;
         for lever in dropped_defaults {
             ctx.add_notice(workflow::notice(

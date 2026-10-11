@@ -839,6 +839,53 @@ fn model_only_answers_invalid_env_fails_closed() {
     let _ = fs::remove_dir_all(temp_dir);
 }
 
+/// 06.4 D-207, 06-CONTEXT D-84: a present-but-invalid
+/// `LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED` stops startup and names the variable and the
+/// value, instead of being read as either default.
+#[test]
+fn d207_graph_context_default_invalid_env_fails_closed() {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let config_dir = repo_root.join("config");
+    let temp_dir =
+        std::env::temp_dir().join(format!("lancet-cfg-test-d207-inv-{}", uuid::Uuid::new_v4()));
+    let lancedb_dir = temp_dir.join("lancedb");
+    let cwd_dir = temp_dir.join("empty_cwd");
+    fs::create_dir_all(&cwd_dir).unwrap();
+    fs::create_dir_all(&lancedb_dir).unwrap();
+    let lancedb_path = lancedb_dir.to_str().unwrap().replace('\\', "/");
+
+    for invalid_val in ["maybe", "yes", "2", "TRUE_EXTRA"] {
+        let env_vars = [
+            ("LANCET_CONFIG_DIR", config_dir.to_str().unwrap()),
+            ("LANCET_ENGINE__GRPC_ADDR", "127.0.0.1:0"),
+            ("LANCET_ENGINE__LANCEDB_PATH", lancedb_path.as_str()),
+            ("LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED", invalid_val),
+            ("OPENROUTER_API_KEY", "test-key"),
+        ];
+        let result = spawn_engine_full(&cwd_dir, &env_vars, &["LANCET_ENV"]);
+        let err_msg = match result {
+            Ok((child, _, _)) => {
+                cleanup_child(child);
+                panic!("engine must reject invalid LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED value {invalid_val:?}")
+            }
+            Err(error) => error,
+        };
+        assert!(
+            err_msg.contains("process exited nonzero"),
+            "engine must terminate nonzero on invalid setting: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("LANCET_ENGINE__GRAPH__CONTEXT_DEFAULT_ENABLED"),
+            "diagnostic must name the environment variable key: {err_msg}"
+        );
+        assert!(
+            err_msg.contains(invalid_val),
+            "diagnostic must show the offending value {invalid_val:?}: {err_msg}"
+        );
+    }
+    let _ = fs::remove_dir_all(temp_dir);
+}
+
 #[test]
 fn citation_repair_enabled_defaults_to_true_with_shipped_config() {
     let repo_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();

@@ -7,7 +7,7 @@ use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind, QueryEmbeddingPort},
     notice,
     ports::{GraphQueryOutput, GraphQueryPort},
-    WorkflowContext,
+    GraphOffReason, WorkflowContext,
 };
 use crate::pb::lancet::v1::{NodeErrorKind, NoticeCode, NoticeSeverity};
 
@@ -147,15 +147,26 @@ impl Node for ExtractGraphContextNode {
                 }
             }
 
-            // Early return for caller-requested graph ablation
+            // Early return when graph context is off. The notice attributes the true cause
+            // (06.4 D-207): the caller's explicit opt-out keeps its GRAPH_ABLATION notice byte for
+            // byte, so the eval ablation arms are unchanged, and a graph that is off only because
+            // the configured default says so carries GRAPH_DISABLED_BY_CONFIG.
             if ctx.disable_graph_context {
                 ctx.graph_context = String::new();
                 ctx.graph_facts = Vec::new();
-                ctx.add_notice(notice(
-                    NoticeCode::GraphAblation,
-                    "Graph context disabled by caller request",
-                    NoticeSeverity::Info,
-                ));
+                let off_notice = match ctx.graph_off_reason {
+                    GraphOffReason::Caller => notice(
+                        NoticeCode::GraphAblation,
+                        "Graph context disabled by caller request",
+                        NoticeSeverity::Info,
+                    ),
+                    GraphOffReason::ConfigDefault => notice(
+                        NoticeCode::GraphDisabledByConfig,
+                        "Graph context disabled by configured default",
+                        NoticeSeverity::Info,
+                    ),
+                };
+                ctx.add_notice(off_notice);
                 return Ok(());
             }
 
