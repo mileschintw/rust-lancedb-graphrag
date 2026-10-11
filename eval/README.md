@@ -6,13 +6,15 @@ The Lancet evaluation harness (`eval/`) is a Python package managed by `uv` that
 
 The harness operates as a black-box HTTP/SSE client driving the `/rag/query` endpoint of the Lancet gateway, asserting streaming contracts, extracting deterministic IR metrics (recall@k, context precision@k, MRR@10, nDCG@k, SQuAD EM/F1, abstention rate) without LLM dependencies, and running cached LLM-as-judge groundedness/faithfulness evaluations.
 
-## Two-Armed Ablation Execution (D-46, D-47)
+## Two-Armed Ablation Execution (D-46, D-47, D-207)
 
-The harness evaluates both arms of every benchmark question against a single running engine instance:
-- **`graph-on`:** Standard RAG execution with graph context enabled (request body omits `disable_graph_context`).
-- **`graph-off`:** Ablated execution without graph context (request body sets `disable_graph_context: true`).
+The harness evaluates the arms of every benchmark question against a single running engine instance. Since D-207 the engine's configured default for graph context is off (`[engine.graph] context_default_enabled = false`), so an absent `disable_graph_context` field means "the configured default", which is now off. Every canonical arm therefore sends the field explicitly:
+- **Graph-on arms** (for example `hybrid+graph`): the request body sets `disable_graph_context: false`, so graph context runs.
+- **Graph-off arms:** the request body sets `disable_graph_context: true` and the response carries the typed notice `GRAPH_ABLATION` (code 18). A request that omits the field and meets the configured default instead carries `GRAPH_DISABLED_BY_CONFIG` (code 25), not `GRAPH_ABLATION`.
+- **Levers:** every canonical arm also sends `disable_default_levers: true` (D-198), so an arm runs exactly the levers it declares and never inherits the engine's configured default levers.
+- **Legacy labels:** the `graph-on` and `graph-off` labels recorded the earlier drives with the graph field absent. Those request bodies stay byte-identical so the recorded runs still re-score, and they are never sent again.
 - **Ablation Delta:** `delta = graph_on_score - graph_off_score`. Near-zero or negative deltas are published as-is to report honest empirical results.
-- **Provenance Verification:** `graph-off` responses must carry the typed notice `GRAPH_ABLATION` (code 18) and must not carry `GRAPH_UNAVAILABLE` (code 10).
+- **Provenance Verification:** graph-off arm responses must carry the typed notice `GRAPH_ABLATION` (code 18) and must not carry `GRAPH_UNAVAILABLE` (code 10).
 
 ## Isolated Evaluation Store (D-56, D-57, D-84)
 
@@ -37,9 +39,12 @@ atlas schema apply --env eval --auto-approve
 # Terminal 1 — Start Engine from repository root with eval overlay:
 LANCET_ENV=eval ./engine/target/debug/engine
 
-# Terminal 2 — Start Gateway with eval schema:
-LANCET_ENV=eval LANCET_GATEWAY__DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval' go run ./gateway
+# Terminal 2 — Start Gateway with eval schema (the Go module lives in gateway/):
+cd gateway
+LANCET_ENV=eval LANCET_GATEWAY__DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval' go run .
 ```
+
+To check a stack that is not the isolated eval store (for example the quickstart stack in the top-level `README.md`), run `uv run --project eval lancet-eval preflight --stack`. It needs no eval store and writes nothing under `eval/runs/`.
 
 ## Running Commands
 
@@ -58,11 +63,11 @@ uv run --project eval lancet-eval preflight --corpus multihop_rag
 # Seed benchmark corpus into isolated evaluation store
 uv run --project eval lancet-eval seed --corpus multihop_rag
 
-# Drive full two-armed benchmark run (resumable across quota interruptions)
-uv run --project eval lancet-eval run --corpus multihop_rag
+# Drive a full benchmark run on a canonical-arm corpus (resumable across quota interruptions)
+uv run --project eval lancet-eval run --corpus <canonical-arm corpus>
 
 # Smoke test a run with limited questions (stamped partial: true)
-uv run --project eval lancet-eval run --corpus multihop_rag --limit 3
+uv run --project eval lancet-eval run --corpus <canonical-arm corpus> --limit 3
 
 # Score completed run offline with zero HTTP requests
 uv run --project eval lancet-eval score --run eval/runs/2026-08-30-multihop_rag --no-judge
@@ -83,7 +88,11 @@ uv run --project eval lancet-eval report --run eval/runs/2026-08-30-multihop_rag
 uv run --project eval lancet-eval report --run eval/runs/2026-08-30-multihop_rag --compare-to eval/runs/2026-08-29-multihop_rag
 ```
 
-The `run` command enables `--resume` by default and resolves to the newest existing dated directory for the corpus. Starting a second recorded run requires either passing `--no-resume` or specifying an explicit new dated `--out` path; otherwise, running `lancet-eval run --corpus multihop_rag` appends to the already-published record.
+`multihop_rag`, `multihop_rag_diag` and `graphrag_bench` list the legacy `graph-on` / `graph-off` labels. `lancet-eval run` refuses them, a resume included (D-198), so they cannot be driven or resumed through `run`; their recorded runs are re-scored with `score` and `report`. The canonical-arm corpora are `multihop_rag_heldout`, `multihop_rag_rehearsal` and the `multihop_rag_levers_*` set. The `preflight` and `seed` examples above name `multihop_rag` because neither starts a drive.
+
+`lancet-eval probe` now defaults to the `hybrid+graph` arm. A probe is a live request, so it refuses legacy labels too.
+
+For a canonical-arm corpus, the `run` command enables `--resume` by default and resolves to the newest existing dated directory for the corpus. Starting a second recorded run requires either passing `--no-resume` or specifying an explicit new dated `--out` path; otherwise, running `lancet-eval run` on the same `<canonical-arm corpus>` appends to the already-published record.
 
 ## LLM-as-Judge Evaluation & Calibration (D-52, D-53)
 
@@ -127,7 +136,7 @@ Perform a manual end-to-end spot-check on roughly 10 scored records (question, r
 | `lancet-eval seed` | **Implemented** | Plan 06.3-04 | Ingest evaluation documents into isolated evaluation store |
 | `lancet-eval reseed` | **Implemented** | Plan 06.3-04 | Drop and recreate isolated evaluation store schema |
 | `lancet-eval probe` | **Implemented** | Plans 06.3-01 / 06.3-03 | Single-question end-to-end smoke check with deterministic scoring |
-| `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions with graph-on / graph-off arms |
+| `lancet-eval run` | **Implemented** | Plan 06.3-05 | Execute benchmark questions across a canonical-arm corpus's arms; refuses legacy-label corpora |
 | `lancet-eval score` | **Implemented** | Plans 06.3-05 / 06.3-06 | Compute offline IR metrics or cached LLM-as-judge scores |
 | `lancet-eval report` | **Implemented** | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
 

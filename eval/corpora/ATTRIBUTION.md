@@ -20,3 +20,14 @@ The ODC-BY 1.0 license applies to the MultiHop-RAG database, query set, and evid
 
 ### Licensing & Fixture Rationale
 Because the GraphRAG-Bench dataset card does not specify an explicit dataset license, no raw or sampled article texts from the original dataset are committed to this repository. The file `eval/corpora/graphrag_bench/questions.sample.jsonl` contains only hand-authored synthetic schema fixtures (`fixture_only = true`) used to test and verify corpus-agnostic loader support offline without network calls.
+
+---
+
+## Lancet quickstart sample
+
+- **Files:** `eval/corpora/quickstart/` (five Markdown documents, `documents.json` and `canary.arms.jsonl`)
+- **Author:** the Lancet project
+- **License:** the repository's own [MIT License](../../LICENSE)
+
+### Provenance
+The quickstart sample is project-authored fiction (06.4 D-221). Every person, company, place and event in it is invented, and it contains no third-party text, no MultiHop-RAG article text and no text from any other dataset. It is bundled so that a reader can ingest a small, licence-clean corpus with document metadata and ask a question that needs three of the five documents. The MultiHop-RAG article texts are not used here because their redistribution terms are unclear.
