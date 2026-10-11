@@ -2870,6 +2870,69 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 			}
 		}
 	})
+
+	// 06.4 D-207: under the committed config a request that leaves disable_graph_context absent runs
+	// graph-off. The response carries NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG (25) and no GRAPH_ABLATION,
+	// and the chat evidence holds no graph fixture content.
+	t.Run("d207_absent_field_runs_graph_off_with_code_25", func(t *testing.T) {
+		state.mu.Lock()
+		state.graphOff = true
+		state.chatEvidence = ""
+		state.mu.Unlock()
+		defer func() {
+			state.mu.Lock()
+			state.graphOff = false
+			state.mu.Unlock()
+		}()
+
+		graphOffBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000008"}`
+		graphOffReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(graphOffBody))
+		if err != nil {
+			t.Fatalf("create request: %v", err)
+		}
+		graphOffReq.Header.Set("Content-Type", "application/json")
+		graphOffReq.Header.Set("Accept", "text/event-stream")
+		graphOffResp, err := httpClient.Do(graphOffReq)
+		if err != nil {
+			t.Fatalf("execute request: %v", err)
+		}
+		defer graphOffResp.Body.Close()
+		if graphOffResp.StatusCode != http.StatusOK {
+			t.Fatalf("graph-off /rag/query status = %d; engine output: %s", graphOffResp.StatusCode, strings.Join(engineLines, " | "))
+		}
+		graphOffRaw, err := io.ReadAll(graphOffResp.Body)
+		if err != nil {
+			t.Fatalf("read SSE response body: %v", err)
+		}
+		graphOffDTO, err := parseTerminalResponseDTO(string(graphOffRaw))
+		if err != nil {
+			t.Fatalf("decode graph-off /rag/query response: %v; body: %s", err, graphOffRaw)
+		}
+		var sawCode25 bool
+		for _, n := range graphOffDTO.Notices {
+			switch n.TypedCode {
+			case int32(pb.NoticeCode_NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG):
+				sawCode25 = true
+				if n.Code != "GRAPH_DISABLED_BY_CONFIG" || n.Severity != int32(pb.NoticeSeverity_NOTICE_SEVERITY_INFO) {
+					t.Fatalf("code-25 notice = %#v, want GRAPH_DISABLED_BY_CONFIG at INFO", n)
+				}
+			case int32(pb.NoticeCode_NOTICE_CODE_GRAPH_ABLATION):
+				t.Fatalf("an absent field must not carry GRAPH_ABLATION: %#v", n)
+			}
+		}
+		if !sawCode25 {
+			t.Fatalf("graph-off response carries no code-25 notice: %#v", graphOffDTO.Notices)
+		}
+		state.mu.Lock()
+		evidence := state.chatEvidence
+		state.mu.Unlock()
+		if evidence == "" {
+			t.Fatal("the mocked chat endpoint saw no evidence for the graph-off request")
+		}
+		if strings.Contains(evidence, "GRAPH_FIXTURE_MARKER") {
+			t.Fatalf("graph-off chat evidence holds graph fixture content: %q", evidence)
+		}
+	})
 }
 
 func TestRAGQuerySSEFirstFrame(t *testing.T) {
