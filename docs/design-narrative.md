@@ -22,6 +22,8 @@ engineering pays. The last three are about not believing a number until it has e
 - [A pre-registered, paired evaluation, not a RAGAS-style framework](#a-pre-registered-paired-evaluation-not-a-ragas-style-framework)
 - [The graph is built, measured, and ships default-off](#the-graph-is-built-measured-and-ships-default-off)
 - [Levers measured as arms, not tuned](#levers-measured-as-arms-not-tuned)
+- Diagrams: [the query path, as shipped](#the-query-path-as-shipped) and
+  [the ingestion path, through rebuild-and-swap](#the-ingestion-path-through-rebuild-and-swap)
 
 ## A lightweight Rust state machine, not LangGraph or Dify
 
@@ -255,3 +257,99 @@ latency is a provider's latency; a local inference endpoint is a separate backlo
 One gap stays open. Rerank and evidence metadata now ship together, and that pair was never measured together
 decisionally. The only evidence about combinations is the descriptive `hybrid+all` arm, which also carries graph-v2 and
 the answer format. Measuring the shipped shape is deferred to `v1.1`.
+
+## The query path, as shipped
+
+This is the five-node state machine of the [first section](#a-lightweight-rust-state-machine-not-langgraph-or-dify)
+as it runs a `/rag/query` today. The node order is `NodeKind` in `engine/src/workflow/node.rs`, and each node is a
+span with the name shown on top (the order a trace shows them in). Admission happens in the engine's `query_rag`
+before any node runs. It resolves the graph state once, from the request's `disable_graph_context` field if it was
+sent and otherwise from `[engine.graph] context_default_enabled`, which ships `false` (D-207). It resolves the levers:
+a request that names levers runs exactly those, and a request that names none runs the configured defaults unless it
+sends `disable_default_levers` (the D-198 opt-out).
+
+```mermaid
+flowchart TD
+    REQ(["POST /rag/query <br> gateway forwards over gRPC, SSE back"]) --> ADM
+    subgraph ADMISSION["Admission in query_rag, before any node runs"]
+        ADM["Graph state: disable_graph_context if sent, <br> else context_default_enabled = false (D-207)"]
+        ADM --> LEV["Levers: named levers run exactly, none named <br> runs the configured defaults unless <br> disable_default_levers = true (D-198)"]
+        LEV --> CHK{"graph_v2 with the graph off, <br> or a named lever without its resource?"}
+        LEV -.->|"a configured default without its resource"| DROP["dropped from this request <br> DEFAULT_LEVER_UNAVAILABLE, degraded"]
+    end
+    CHK -->|yes| REFUSED(["refused before any node: <br> invalid_lever_combination or lever_unavailable"])
+    CHK -->|no| N1["query_reformulation <br> ReformulateQuery"]
+    N1 --> N2["graph_context_extraction <br> ExtractGraphContext: the query embedding first, <br> shared with dense search"]
+    N2 --> GS{"graph state"}
+    GS -->|"off by configured default"| GOFF["GRAPH_DISABLED_BY_CONFIG, INFO <br> early return, not degraded"]
+    GS -->|"off, caller sent true"| GABL["GRAPH_ABLATION, INFO <br> early return, not degraded"]
+    GS -->|"on, caller sent false"| GON["seed entities from mentions, <br> bounded seed-to-seed paths in Cypher"]
+    GON -.->|"no facts"| GUN["GRAPH_UNAVAILABLE, degraded"]
+    GON -.->|"graph query timed out or errored"| GTO["GRAPH_TIMEOUT or GRAPH_DEGRADED, <br> no graph list, degraded"]
+    GOFF --> N3
+    GABL --> N3
+    GON --> N3
+    GUN --> N3
+    GTO --> N3
+    N3["hybrid_retrieval <br> RetrieveHybrid: dense + BM25 + graph list, <br> weighted RRF fusion"]
+    N3 -.->|"the dense or BM25 search fails"| RDEG["RETRIEVAL_DEGRADED_DENSE or <br> RETRIEVAL_DEGRADED_BM25, <br> fusion runs without it, degraded"]
+    N3 -.->|"the node itself errors or times out"| RFAIL(["RETRIEVAL_FAILED, the node fails, <br> the workflow stops"])
+    N3 --> RR{"rerank admitted?"}
+    RR -->|yes| RCALL["rerank_request: reorder the fused list"]
+    RR -->|no| EV
+    RCALL -->|ok| EV
+    RCALL -.->|"provider error or budget spent"| RKEEP["RERANK_DEGRADED: <br> the fused order is kept, degraded"]
+    RKEEP --> EV
+    RDEG --> RR
+    EV{"any evidence?"}
+    EV -->|"none, model-only not allowed"| STOP(["NO_EVIDENCE: zero-evidence short-circuit, <br> no prompt and no LLM call"])
+    EV -->|"none, allow_model_only"| N4
+    EV -->|yes| N4["prompt_assembly <br> AssemblePrompt, with evidence metadata <br> headers when that lever runs"]
+    N4 --> N5["llm_generation <br> GenerateAnswer: citations checked, <br> CITATION_REPAIRED or CITATION_DROPPED"]
+    N5 --> DONE(["WorkflowCompletedEvent <br> degraded_mode from derive_degraded_mode"])
+```
+
+The degraded branches are the ones `derive_degraded_mode` in `engine/src/workflow/mod.rs` counts: a response is
+degraded when its answer basis is not retrieval, or when it carries a degrading notice (the graph's
+`GRAPH_UNAVAILABLE`, `GRAPH_DEGRADED` and `GRAPH_TIMEOUT`, the two `RETRIEVAL_DEGRADED_*` codes, `RETRIEVAL_FAILED`,
+`RERANK_DEGRADED`, `DEFAULT_LEVER_UNAVAILABLE`, `CITATION_DROPPED`, `MODEL_ONLY`, and the three index codes). The two
+graph-off codes, `GRAPH_DISABLED_BY_CONFIG` and `GRAPH_ABLATION`, are informational and never mark a response degraded.
+Three details on the diagram are easy to miss. The graph node runs before retrieval because it computes the query
+embedding that the dense search also uses, so it holds that cost even when the graph is off. The rerank call runs
+inside `hybrid_retrieval`, as a leaf span of that node, not as a sixth node. And any node that times out stops the
+workflow, so the terminal event reports the failure instead of an answer.
+
+## The ingestion path, through rebuild-and-swap
+
+This is where the [embedded store](#embedded-lancedb-not-pgvector-or-qdrant) costs its keep: the engine owns the index
+lifecycle. An upload is admitted and staged synchronously, then chunked, embedded, stored and graph-extracted by a
+background worker, and it becomes visible to queries only when a debounced rebuild swaps in a new index snapshot.
+
+```mermaid
+flowchart TD
+    UP(["POST /documents <br> gateway createDocument: the file, chunk_strategy, <br> doc_title, source, published_date"]) -->|"gRPC IngestDocument stream"| ADM
+    ADM["ingest_admission <br> size cap, document id check, <br> reserve a slot on the bounded worker queue"]
+    ADM -.->|"queue full"| FULL(["RESOURCE_EXHAUSTED, nothing staged"])
+    ADM --> STG["staging write: the raw bytes to <br> staged_documents_v2"]
+    STG --> ACK(["reply queued, the job is on the worker queue"])
+    ACK --> W["ingest_document, on the worker <br> index_document"]
+    W --> CH["chunk_document <br> structure-aware or fixed-size"]
+    CH --> EM["embed_document <br> chunk embeddings over OpenRouter"]
+    EM --> PE["persist_document <br> replace this document's chunks in LanceDB"]
+    PE -.->|"any step fails"| FAIL(["status failed, the staging row deleted"])
+    PE --> GX["graph_extraction <br> LLM entity and relation extraction <br> into entities and entity_edges"]
+    GX -.->|"extraction fails"| GKEEP["the prior graph is kept, logged"]
+    GX --> SIG["status completed, a rebuild is signalled"]
+    GKEEP --> SIG
+    SIG --> DEB["debounce: a 2000 ms quiet period <br> (rebuild_debounce_ms), <br> a new signal restarts it"]
+    DEB --> IR["index_rebuild <br> BM25 index and graph index <br> built off the write lock"]
+    IR -->|ok| SWAP(["swap: one new snapshot and index generation, <br> queries now see the document"])
+    IR -.->|"rebuild fails"| PRIOR(["the prior snapshot is kept whole, <br> queries carry INDEX_REBUILD_FAILED"])
+```
+
+The staging write is what makes an accepted upload durable. If the engine stops before the worker finishes, the staged
+jobs are replayed at the next start. The debounce exists because a batch upload would otherwise rebuild the indexes once
+per document. The `index_rebuild` span carries links to the `ingest_document` spans that triggered it, so the
+[observability walkthrough](observability.md) can follow one upload from the gateway to the swap. The swap is also where
+evidence metadata comes back after a fresh start: over an empty store the engine drops that default lever at boot with
+a warning, and the rebuild that swaps in documents carrying metadata restores it (06.3.6 D-194).
