@@ -228,9 +228,13 @@ def request_fields(label: str) -> dict[str, object]:
     """Returns the ``run_query`` keyword fields that make a request for an arm.
 
     The two legacy labels return exactly the bodies drives 1, 1b and 2 sent, so a
-    legacy request stays byte-identical. A canonical label also names its retrieval
-    mode and asks for the pre-truncation ranking (D-100); a lever arm adds the
-    ``levers`` it names (06.3.6 D-136), and no other arm sends the field.
+    legacy request stays byte-identical; they exist for re-scoring only and no live
+    command sends them (06.4 D-198). A canonical label says exactly what it means
+    (06.4 D-198, D-207): it names its retrieval mode, states its graph state with
+    ``disable_graph_context`` (``False`` is sent too, because an absent field now means
+    the engine's configured default), opts out of the configured default levers with
+    ``disable_default_levers`` and asks for the pre-truncation ranking (D-100). A lever
+    arm adds the ``levers`` it names (06.3.6 D-136), and no other arm sends the field.
 
     Args:
         label: A canonical label or an alias.
@@ -244,13 +248,38 @@ def request_fields(label: str) -> dict[str, object]:
     spec = resolve_arm(label)
     if is_legacy_label(label):
         return {"disable_graph_context": True} if spec.disable_graph_context else {}
-    fields: dict[str, object] = {"retrieval_mode": spec.retrieval_mode}
-    if spec.disable_graph_context:
-        fields["disable_graph_context"] = True
-    fields["include_pre_truncation_ranking"] = True
+    fields: dict[str, object] = {
+        "retrieval_mode": spec.retrieval_mode,
+        "disable_graph_context": spec.disable_graph_context,
+        "disable_default_levers": True,
+        "include_pre_truncation_ranking": True,
+    }
     if spec.levers:
         fields["levers"] = list(spec.levers)
     return fields
+
+
+def explicit_default_fields(label: str) -> dict[str, object]:
+    """Returns only the two explicit fields for a legacy measurement or canary label.
+
+    ``lancet-eval measure`` and the legacy preflight canaries keep the labels
+    ``graph-off`` and ``graph-on`` as record labels, because they key the budget
+    derivation and the committed canary rows. They are live requests, so they must not
+    inherit the engine's configured defaults (06.4 D-198, D-207): the graph state is
+    sent explicitly (``False`` included) and the configured default levers are opted
+    out of. No retrieval mode or ranking field is added, which keeps the wire size and
+    the measured latency semantics unchanged.
+
+    Args:
+        label: ``"graph-off"`` for the graph-off request; any other label is graph-on.
+
+    Returns:
+        Keyword fields for ``client.run_query``.
+    """
+    return {
+        "disable_graph_context": label == "graph-off",
+        "disable_default_levers": True,
+    }
 
 
 def echo_failures(label: str, retrieval_mode_echo: str | None) -> list[str]:

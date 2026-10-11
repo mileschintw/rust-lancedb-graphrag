@@ -314,7 +314,12 @@ def record_index_generation(
         should_close_client = True
 
     try:
-        query_resp = active_client.post("/rag/query", json={"query": probe_query})
+        # 06.4 D-198: opt out of the configured default levers, so the probe makes no
+        # paid rerank call.
+        query_resp = active_client.post(
+            "/rag/query",
+            json={"query": probe_query, "disable_default_levers": True},
+        )
     finally:
         if should_close_client:
             active_client.close()

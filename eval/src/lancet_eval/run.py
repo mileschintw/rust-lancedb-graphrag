@@ -12,7 +12,13 @@ from pathlib import Path
 import httpx
 
 from lancet_eval import gitcheck, preregistration
-from lancet_eval.arms import canonical_arm, plan_work_units, request_fields, resolve_arm
+from lancet_eval.arms import (
+    canonical_arm,
+    is_legacy_label,
+    plan_work_units,
+    request_fields,
+    resolve_arm,
+)
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.corpus import (
@@ -557,6 +563,42 @@ def drive_one(
         outcome="error",
         partial=partial,
         prior_attempts=list(superseded),
+    )
+
+
+def refuse_legacy_labels_for_live_drive(corpus: str) -> None:
+    """Refuses a live drive of a corpus whose arms hold a legacy label (06.4 D-198).
+
+    ``graph-on`` and ``graph-off`` are the labels drives 1, 1b and 2 recorded. Their
+    request bodies omit ``disable_graph_context`` and the lever fields, which under
+    D-207 means "the engine's configured default" and so would run ``graph-on`` with
+    the graph off and every arm with the default levers. They stay readable so the
+    recorded runs re-score (D-201), and they are never sent again. A resume is
+    refused too: it would send new live requests with the same bodies, and the
+    default ``--resume`` resolves to the newest committed run directory.
+
+    The ``lancet-eval run`` command calls this before it resolves a run directory; it
+    is the only production caller of ``drive()``, which keeps its own arm handling so
+    the offline tests that drive legacy-label corpora with a stub gateway are
+    unaffected.
+
+    Args:
+        corpus: The corpus name.
+
+    Raises:
+        ValueError: If any label in the corpus's arms is a legacy label, naming each
+            label and its canonical replacement.
+    """
+    config = load_corpus_config(corpus)
+    legacy = [label for label in config.arms if is_legacy_label(label)]
+    if not legacy:
+        return
+    pairs = ", ".join(f"{label!r} (use {canonical_arm(label)!r})" for label in legacy)
+    raise ValueError(
+        f"D-198: refusing a live drive of corpus {corpus!r}: its arms list holds the "
+        f"legacy label(s) {pairs}. Legacy labels are re-score only: re-score a "
+        "recorded journal with `score` and `report`, and drive a corpus whose arms "
+        "are canonical labels (a resume of a legacy-label journal is refused too)."
     )
 
 

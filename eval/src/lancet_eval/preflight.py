@@ -322,6 +322,8 @@ def check_corpus_generation(
             json={
                 "query": probe_query,
                 "disable_graph_context": False,
+                # 06.4 D-198: no paid rerank call under the configured default levers.
+                "disable_default_levers": True,
             },
         )
     except Exception as exc:
@@ -790,6 +792,7 @@ def check_canary_floors(
     never routed through the accepted-known-miss branch: the D-94 registry names
     ``require_graph_node`` on one row and nothing else.
     """
+    from lancet_eval.arms import explicit_default_fields
     from lancet_eval.client import run_query
     from lancet_eval.dimensions import NOTICE_CODE_GRAPH_ABLATION
 
@@ -860,13 +863,13 @@ def check_canary_floors(
         req_retrieval_completed = row.get("require_retrieval_completed_only", False)
         req_ablation = row.get("require_ablation_notice", False)
 
-        disable_graph = arm == "graph-off"
-
         try:
             outcome = run_query(
                 client,
                 query=qtext,
-                disable_graph_context=disable_graph,
+                # 06.4 D-198, D-207: a live request states its graph state (false
+                # included) and opts out of the configured default levers.
+                **explicit_default_fields(arm),
                 capture_raw_events=False,
             )
         except Exception as exc:

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from pydantic import ConfigDict
 
+from lancet_eval.arms import explicit_default_fields
 from lancet_eval.client import QueryOutcome, run_query
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.corpus import GoldQuestion, load_corpus
@@ -382,13 +383,13 @@ def measure_one(
 
     Never raises: network errors become error records with ordinal intact.
     """
-    disable_graph = arm == "graph-off"
-
     try:
         outcome: QueryOutcome = run_query(
             client,
             query=question.question,
-            disable_graph_context=disable_graph,
+            # 06.4 D-198, D-207: both measurement arms state their graph state and stay
+            # lever-free, exactly as they were before the defaults moved server-side.
+            **explicit_default_fields(arm),
             deadline_s=deadline_s,
             read_timeout_s=read_timeout_s,
             capture_raw_events=raw_sink is not None,

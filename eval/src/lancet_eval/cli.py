@@ -498,7 +498,11 @@ def run_benchmark(
                 param_hint="'--retries'",
             )
     try:
-        from lancet_eval.run import drive
+        from lancet_eval.run import drive, refuse_legacy_labels_for_live_drive
+
+        # D-198: legacy labels are re-score only. Refused before any run directory is
+        # resolved, so no directory, journal I/O or request follows, a resume included.
+        refuse_legacy_labels_for_live_drive(corpus)
 
         if out is None:
             run_dir = resolve_run_dir(corpus=corpus, resume=resume)
@@ -1108,11 +1112,12 @@ def probe(
         typer.Option(
             "--arm",
             help=(
-                "Retrieval arm: dense-only, bm25-only, hybrid, hybrid+graph "
-                "(aliases: graph-off = hybrid, graph-on = hybrid+graph)"
+                "Retrieval arm: dense-only, bm25-only, hybrid, hybrid+graph. The "
+                "legacy labels graph-off and graph-on are re-score only (D-198) and "
+                "are refused."
             ),
         ),
-    ] = "graph-on",
+    ] = "hybrid+graph",
     k: Annotated[
         int,
         typer.Option("--k", "-k", help="Cut-off rank for top-k retrieval evaluation"),
@@ -1123,7 +1128,12 @@ def probe(
     ] = None,
 ) -> None:
     """Probe a single question end-to-end through the evaluation harness."""
-    from lancet_eval.arms import request_fields, resolve_arm
+    from lancet_eval.arms import (
+        canonical_arm,
+        is_legacy_label,
+        request_fields,
+        resolve_arm,
+    )
     from lancet_eval.corpus import GoldQuestion, load_corpus
     from lancet_eval.metrics import (
         context_precision_at_k,
@@ -1137,6 +1147,14 @@ def probe(
     except ValueError as exc:
         console.print(f"[bold red]Error:[/bold red] invalid arm. {exc}")
         raise typer.Exit(code=2) from exc
+    if is_legacy_label(arm):
+        # D-198: the legacy body omits the graph and lever fields, which the engine now
+        # reads as its configured defaults. A probe is a live request.
+        console.print(
+            f"[bold red]Error:[/bold red] arm {arm!r} is a legacy label, re-score "
+            f"only (D-198). Use {canonical_arm(arm)!r}."
+        )
+        raise typer.Exit(code=2)
 
     target_q = question
     target_facts = list(gold_facts or [])

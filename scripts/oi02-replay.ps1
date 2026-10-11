@@ -13,6 +13,14 @@
   Run as: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/oi02-replay.ps1 ...
 
   Env vars this script sets live only in this process tree and vanish when it exits.
+
+.NOTES
+  RETIRED FOR LIVE USE (06.4 D-198). This script is kept as the historical 06.3.4.1 OI-02
+  replay record, and no executable line was changed. After 06.4 D-198 the two
+  `lancet-eval run --corpus multihop_rag` calls below are refused by the harness at HEAD
+  (the default -HarnessFrom head): the arms of multihop_rag hold the legacy labels
+  graph-on and graph-off, which are re-score only (use `score` and `report`). A
+  -HarnessFrom worktree:<path> tree from before plan 06.4-03 does not carry the refusal.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Label,
