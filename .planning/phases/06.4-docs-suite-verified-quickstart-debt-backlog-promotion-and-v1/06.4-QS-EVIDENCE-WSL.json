@@ -1,0 +1,115 @@
+{
+  "plan": "06.4-11",
+  "platform": "wsl-ubuntu-24.04",
+  "commit": "752c8ae0",
+  "queries": {
+    "before_ingest": {
+      "role": "query-before",
+      "exit": 0,
+      "trace_id": "e7eae8969e84afc4d310e1c5a3ccaa0d",
+      "status": "ok",
+      "notice_codes": [
+        24,
+        25,
+        1
+      ],
+      "notices": [
+        "DEFAULT_LEVER_UNAVAILABLE",
+        "GRAPH_DISABLED_BY_CONFIG",
+        "NO_EVIDENCE"
+      ],
+      "degraded_mode": true,
+      "levers": [
+        "rerank"
+      ],
+      "graph_path_found": false
+    },
+    "after_ingest": {
+      "role": "query-after",
+      "exit": 0,
+      "trace_id": "36e1bcd15ec9f502214231ca55bf1672",
+      "status": "ok",
+      "notice_codes": [
+        25
+      ],
+      "notices": [
+        "GRAPH_DISABLED_BY_CONFIG"
+      ],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": false
+    },
+    "two_hop_default": {
+      "role": "two-hop",
+      "exit": 0,
+      "trace_id": "bba3e79b7da311133c02789f8e0921c2",
+      "status": "ok",
+      "notice_codes": [
+        25
+      ],
+      "notices": [
+        "GRAPH_DISABLED_BY_CONFIG"
+      ],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": false
+    },
+    "two_hop_graph": {
+      "role": "two-hop-graph",
+      "exit": 0,
+      "trace_id": "1a6bf4449615c6e4d916f6fa3d96fd73",
+      "status": "ok",
+      "notice_codes": [],
+      "notices": [],
+      "degraded_mode": false,
+      "levers": [
+        "rerank",
+        "evidence_metadata"
+      ],
+      "graph_path_found": true
+    }
+  },
+  "steps": {
+    "ingest": {
+      "exit": 0,
+      "documents": [
+        {
+          "file": "harbor-light-overview.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "kestrel-spectrograph-install.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "alder-optics-profile.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "tidewater-funding-report.md",
+          "status": "completed",
+          "last_status": "completed"
+        },
+        {
+          "file": "cedar-island-ferry.md",
+          "status": "completed",
+          "last_status": "completed"
+        }
+      ]
+    },
+    "wait_swap": {
+      "exit": 0,
+      "coverage_literal_found": true,
+      "availability_literal_found": true
+    }
+  }
+}
