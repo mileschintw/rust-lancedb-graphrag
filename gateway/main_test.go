@@ -2430,7 +2430,10 @@ func TestEmbeddingFailureRestartConvergesAcrossRuntime(t *testing.T) {
 }
 
 type ragMockState struct {
-	mu                 sync.Mutex
+	mu sync.Mutex
+	// graphOff is set by a request that does not opt into graph context (06.4 D-207): the mock then
+	// accepts evidence without the graph fixture markers, and the test asserts they are absent.
+	graphOff           bool
 	embeddingCalls     int
 	metadataCalls      int
 	chatCalls          int
@@ -2527,11 +2530,15 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 				http.Error(w, "strict chat request contract failed", http.StatusBadRequest)
 				return
 			}
+			state.mu.Lock()
+			graphOff := state.graphOff
+			state.mu.Unlock()
+			hasGraphEvidence := strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_SEED") &&
+				strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_NEIGHBOR") &&
+				strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_RELATION")
 			if !strings.Contains(request.Messages[1].Content, "DENSE_FIXTURE_MARKER") ||
 				!strings.Contains(request.Messages[1].Content, "LEXICAL_FIXTURE_IDENTIFIER_2026") ||
-				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_SEED") ||
-				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_NEIGHBOR") ||
-				!strings.Contains(request.Messages[1].Content, "GRAPH_FIXTURE_MARKER_RELATION") {
+				(!graphOff && !hasGraphEvidence) {
 				t.Logf("EVIDENCE FAIL: content=%q", request.Messages[1].Content)
 				http.Error(w, "retrieval evidence is incomplete", http.StatusBadRequest)
 				return
@@ -2715,7 +2722,9 @@ func TestRAGQueryCrossRuntime(t *testing.T) {
 	defer server.Close()
 
 	httpClient := &http.Client{}
-	requestBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000006"}`
+	// 06.4 D-207: graph context is default-off under the committed config, so this request opts in
+	// explicitly to keep exercising the graph fixture evidence.
+	requestBody := `{"query":"What does LEXICAL_FIXTURE_IDENTIFIER_2026 prove?","session_id":"00000000-0000-4000-8000-000000000006","disable_graph_context":false}`
 	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/rag/query", strings.NewReader(requestBody))
 	if err != nil {
 		t.Fatalf("create request: %v", err)

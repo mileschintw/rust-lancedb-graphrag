@@ -591,7 +591,10 @@ type ragQueryRequestBody struct {
 		DocumentIDs  []string `json:"document_ids"`
 		ContentTypes []string `json:"content_types"`
 	} `json:"filter"`
-	AllowModelOnly      *bool `json:"allow_model_only"`
+	AllowModelOnly *bool `json:"allow_model_only"`
+	// DisableGraphContext is tri-state (06.4 D-207, amends 06-CONTEXT D-47). Absent means the
+	// engine's configured graph default (shipped off); false turns graph context on for this
+	// request; true turns it off and the response carries GRAPH_ABLATION.
 	DisableGraphContext *bool `json:"disable_graph_context"`
 	// RetrievalMode names the retrieval path set (06.3.5 D-99). Absent means the engine default
 	// (hybrid); a value outside retrievalModeByName is rejected before the engine is called.
@@ -599,8 +602,9 @@ type ragQueryRequestBody struct {
 	// IncludePreTruncationRanking opts in to the snapshot's pre-rerank ranking (06.3.5 D-100).
 	IncludePreTruncationRanking *bool `json:"include_pre_truncation_ranking"`
 	// Levers names the quality levers this request switches on (06.3.6 D-136). Absent or an empty
-	// array is today's request; a name outside leverByName, a duplicate, or more than
-	// maxRequestLevers entries is rejected before the engine is called.
+	// array means the engine's configured default levers apply unless DisableDefaultLevers is true
+	// (06.4 D-198); a name outside leverByName, a duplicate, or more than maxRequestLevers
+	// entries is rejected before the engine is called.
 	Levers *[]string `json:"levers"`
 	// DisableDefaultLevers opts out of the engine's configured default levers (06.4 D-198). Absent
 	// or false is today's behaviour; true runs exactly the named levers, even none. A pointer, so

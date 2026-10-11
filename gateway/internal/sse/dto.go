@@ -71,8 +71,10 @@ type RetrievalSnapshotDTO struct {
 	// opted in (06.3.5 D-100). IDs and ranks only; omitted otherwise.
 	PreTruncationRanking []RankedCandidateDTO `json:"pre_truncation_ranking,omitzero"`
 	// Levers is the canonical echo of the admitted levers as lowercase names, in ascending enum
-	// number (06.3.6 D-136). It is omitted when no lever was admitted, so a default snapshot keeps
-	// exactly its 10 keys.
+	// number (06.3.6 D-136). It is omitted when no lever ran, which is the case for a request that
+	// sets disable_default_levers (06.4 D-198) and names none. A request that names no lever runs
+	// the engine's configured default levers (06.3.6 D-157), so under the shipped configuration its
+	// snapshot carries this key (11 keys); the 10-key shape is a lever-free snapshot.
 	Levers []string `json:"levers,omitzero"`
 }
 
