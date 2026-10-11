@@ -14,7 +14,6 @@ import sys
 import time
 import unicodedata
 from datetime import datetime
-from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -81,7 +80,7 @@ def _sse(
     }
     return (
         'event: node_started\ndata: {"node_name":"RetrieveHybrid"}\n\n'
-        'event: node_completed\n'
+        "event: node_completed\n"
         'data: {"node_name":"RetrieveHybrid","duration_ms":12.5}\n\n'
         f"event: final_answer\ndata: {json.dumps(final)}\n\n"
         f"event: workflow_completed\ndata: {json.dumps(completed)}\n\n"
@@ -124,9 +123,7 @@ def _add_document_posts(httpx_mock: HTTPXMock, status: str = "queued") -> None:
         match = re.search(rb'filename="([^"]+)"', request.content)
         assert match is not None, "the multipart body carries no file part"
         filename = match.group(1).decode("utf-8")
-        return httpx.Response(
-            202, json={"id": _doc_id(filename), "status": status}
-        )
+        return httpx.Response(202, json={"id": _doc_id(filename), "status": status})
 
     httpx_mock.add_callback(
         respond, method="POST", url=f"{GATEWAY}/documents", is_reusable=True
