@@ -110,11 +110,12 @@ install() {
     $SUDO tar -C /usr/local -xzf "/tmp/${GO_TARBALL}"
   fi
   # README: curl -sSf https://atlasgo.sh | sh. The installer writes into /usr/local/bin, so the shell
-  # that runs it is the privileged one.
+  # that runs it is the privileged one. Run from a terminal the installer asks "Install ... [y/N]?"
+  # on /dev/tty, which nobody can answer in an unattended run; its own -y flag answers yes.
   if command -v atlas >/dev/null 2>&1; then
     echo "atlas: already present, not reinstalled"
   else
-    curl -sSf https://atlasgo.sh | $SUDO sh
+    curl -sSf https://atlasgo.sh | $SUDO sh -s -- -y
   fi
 }
 
