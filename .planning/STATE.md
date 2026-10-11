@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 12
+current_plan: 13
 status: executing
-stopped_at: Phase 06.4 PAUSED by owner after wave 8 (06.4-11 complete, 11/17 plans); resume with /gsd-execute-phase 06.4 at wave 9 (06.4-12)
+stopped_at: Phase 06.4 wave 9 complete (06.4-12); wave 10 (06.4-13 evaluation docs) next
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -22,11 +22,12 @@ last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-pro
 
 ## Current Position
 
-Current Plan: 12
+Current Plan: 13
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-12: 06.4 RESUMED by the owner; wave 9 COMPLETE (plan 12, Opus executor).** Owner decisions for 12-17: no engine/gateway/proto/config changes this phase; defer `default-run = "engine"` and engine retry on `finish_reason: error` to plan 16's debt ledger next to IN-01..06; executors Opus for 12-15, Sonnet for 16-17; scoped post-wave gates (skip for .planning/docs/README-only waves, plan-touched eval test files + drift for eval/ changes, full suite only for engine/gateway/proto/config/scripts; full regression once at phase end). 12: `docs/observability.md` (two traces of the two-entity question, span tables tied to committed trace JSON by `eval/tests/test_observability_doc.py`), OB-23 closed; SUMMARY `54da63bf`. Scoped gate: 5 passed, drift clean. Carried: OB-44 (per-document ingestion span count never measured; needs an owner call before 17's zero-open check), README "What is built" node order (graph extraction runs before hybrid retrieval) for plan 15, human render check of the Mermaid diagrams/screenshots.
 - **2026-10-11: 06.4 PAUSED by the owner after wave 8 (reboot / environment clean-up).** Resume: `/gsd-execute-phase 06.4` picks up at wave 9 (06.4-12 docs; 13-16 then 17 with its D-223 owner checkpoint). Nothing is running: dev stack up (six `lancet-*`), no `lancet-qs`, both clone env files deleted (Windows `D:/lqs/win-20261011`, WSL `~/lqs/wsl-20261011`; clones kept). Last green gate: post-wave-6 (engine 963, gateway 124, eval 2323); waves 7-8 changed only `.planning/` and README. Phase settled spend 0.015884697 USD of 1.00. Still open for the owner: `default-run = "engine"` in engine/Cargo.toml; engine retry on a `finish_reason: error` generation; review IN-01..06 (plan 16).
 - **2026-10-11: 06.4 wave 8 COMPLETE (plan 11, live WSL run, main).** D-194 sequence held; C1 literals present; two-hop `graph_path_found` false by default, true opted in; re-score reproduces (`64bad6f11b7678a2`); preflight 27/27 on attempt 1; WSL spend 0.004727236 USD; README stamp names Windows `1c000271` and WSL Ubuntu 24.04 `752c8ae0` (final quickstart block commit `3ff83415`, the one plan 15 diffs against). No harness fixes. Dev stack down 21:06:29Z-21:17:04Z, restored, volume CreatedAt unchanged. The secret guard blocked the WSL env deletion; the orchestrator ran it via PowerShell. SUMMARY `ea780a70`.
 - **2026-10-11: 06.4 wave 7 COMPLETE (plan 10, WSL part A, main).** Six `qs/qs-wsl-*` scripts (`4ffb430c`), Atlas installer `-y` fix (`ffb89ca4`); prerequisites installed via `wsl -u root` (`sudo -n` unavailable; no password); full WSL clone `/home/user39261580/lqs/wsl-20261011` at `ffb89ca4`; env written over stdin (key_len 73, no CR). Orchestrator cold release build `wsl-build-ok 23m50s` (engine 359668592 bytes). SUMMARY `91ef64f2`. No product code changed; dev stack untouched.
