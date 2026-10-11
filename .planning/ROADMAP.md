@@ -1313,7 +1313,7 @@ Plans:
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
 
-**Plans:** 1/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
+**Plans:** 3/17 plans executed in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
 
 Plans:
 
@@ -1323,8 +1323,8 @@ Plans:
 
 **Wave 2**
 
-- [ ] 06.4-02-PLAN.md — Engine hardening: D-202 bind-first startup with a held-port test, D-203 per-swap coverage logging, the D-227 `rerank_request` span, IN-01/IN-02/IN-03/A-WR-05, D-212 IN-06 `sha2`
-- [ ] 06.4-03-PLAN.md — Harness: explicit per-arm graph and lever fields, D-199 env refusal and per-arm echo check kept outside the score path, B-IN-07/C-WR-06, and the journal-only re-score acceptance
+- [x] 06.4-02-PLAN.md — Engine hardening: D-202 bind-first startup with a held-port test, D-203 per-swap coverage logging, the D-227 `rerank_request` span, IN-01/IN-02/IN-03/A-WR-05, D-212 IN-06 `sha2`
+- [x] 06.4-03-PLAN.md — Harness: explicit per-arm graph and lever fields, D-199 env refusal and per-arm echo check kept outside the score path, B-IN-07/C-WR-06, and the journal-only re-score acceptance
 
 **Wave 3**
 
