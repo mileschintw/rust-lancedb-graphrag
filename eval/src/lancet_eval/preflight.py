@@ -1162,6 +1162,10 @@ def legacy_canary_skip(name: str) -> PreflightCheckResult:
 # corpus without one (the `dev` role, whose pre-registration is not frozen yet).
 PREFLIGHT_RERANK_DEGRADE_HALT: int = 5
 
+#: The quickstart question-ID namespace (06.4 D-221). A split-less arm canary manifest
+#: must hold only IDs with this prefix, which cannot collide with a MultiHop-RAG ID.
+QUICKSTART_ID_PREFIX: str = "qs-"
+
 
 def canary_preregistration(corpus_config: Any) -> Any | None:
     """The pre-registration the arm canaries read their degrade limit from.
@@ -1188,7 +1192,7 @@ def check_arm_mode_canaries(
     *,
     arms: Sequence[str],
     canary_path: Path | str,
-    split_path: Path | str,
+    split_path: Path | str | None,
     config_path: Path | str | None = None,
     answered_snapshots: list[tuple[str, RetrievalSnapshot]] | None = None,
     preregistration: object | None = None,
@@ -1208,6 +1212,13 @@ def check_arm_mode_canaries(
     ID of the split (T-06.3.5-29): a canary must never spend a question the held-out
     drive needs unseen. When `answered_snapshots` is given, the snapshot of each
     answered canary is appended to it, labelled by question and arm.
+
+    With `split_path=None` (the 06.4 D-200 stack preflight, which has no eval store)
+    no split is read and the banned-ID check is skipped. Without a split the manifest
+    cannot be proved free of dev and held-out IDs, so instead every row's
+    `question_id` must start with the quickstart namespace `qs-` (D-221), and any other
+    ID is refused before any request: the same 06.3.5 D-124 rule that
+    `run_preflight_checks` applies to a split-less corpus.
 
     Provenance clause (i), a rerank canary carrying RERANK_DEGRADED (typed code 23), is
     counted and reported per arm rather than failed one by one, because one provider
@@ -1231,7 +1242,7 @@ def check_arm_mode_canaries(
             for line in Path(canary_path).read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        split = load_split(split_path)
+        split = load_split(split_path) if split_path is not None else None
     except Exception as exc:
         return PreflightCheckResult(
             name=name,
@@ -1243,9 +1254,31 @@ def check_arm_mode_canaries(
             name=name, passed=False, message="The arm canary manifest has no rows."
         )
 
-    banned = (
-        set(split.dev_ids) | set(split.heldout_g_ids) | set(split.heldout_null_ids)
-    )
+    if split is None:
+        outside = sorted(
+            {
+                str(r.get("question_id", ""))
+                for r in rows
+                if not str(r.get("question_id", "")).startswith(QUICKSTART_ID_PREFIX)
+            }
+        )
+        if outside:
+            return PreflightCheckResult(
+                name=name,
+                passed=False,
+                message=(
+                    f"Arm canary manifest holds {len(outside)} question ID(s) "
+                    f"{outside} without the {QUICKSTART_ID_PREFIX!r} prefix; refused "
+                    "before any request: with no split the manifest cannot be proved "
+                    "free of dev and held-out IDs (06.3.5 D-124, 06.4 D-200, D-221)."
+                ),
+                detail={"refused_ids": outside},
+            )
+        banned: set[str] = set()
+    else:
+        banned = (
+            set(split.dev_ids) | set(split.heldout_g_ids) | set(split.heldout_null_ids)
+        )
     held = sorted({str(r.get("question_id", "")) for r in rows} & banned)
     if held:
         return PreflightCheckResult(
@@ -1618,4 +1651,73 @@ def run_preflight_checks(
             check_model_differentiation(generation_model, settings.judge_model)
         )
 
+    return results
+
+
+def run_stack_preflight(
+    settings: EvalSettings,
+    canary_path: Path,
+    client: httpx.Client | None = None,
+) -> list[PreflightCheckResult]:
+    """Run the quickstart stack preflight (06.4 D-200): one live check per platform.
+
+    It needs a running gateway and engine and no eval store. In order it runs:
+
+    1. ``drive_environment`` (D-199). A failure returns that result alone, before any
+       HTTP request and before a client is built.
+    2. ``gateway_reachable`` and ``engine_reachable``, both results of
+       ``check_gateway_and_engine``. If either failed, no canary is sent.
+    3. ``arm_mode_canaries``: every row of the ``canary_path`` manifest under every
+       arm of ``ARM_REGISTRY`` with ``split_path=None``. Every ID must carry the ``qs-``
+       prefix; the arm canaries apply the provenance clauses, the retrieval floors and
+       ``explicit_field_failures`` (D-199).
+
+    There is no OpenRouter API check: the harness calls no OpenRouter endpoint in stack
+    mode (the engine's own key is exercised by the canaries), and the check passes
+    without reading the key unless a judged run is requested. It skips store isolation,
+    index identity, corpus generation and the legacy canaries, which are eval-store
+    checks, and it writes nothing under ``eval/runs/``.
+
+    The request count is fixed by construction: manifest rows times nine arms, so 27
+    requests for the three-row quickstart manifest.
+
+    Args:
+        settings: Supplies the gateway URL and timeout when a client is built.
+        canary_path: The quickstart ``canary.arms.jsonl`` manifest.
+        client: An optional client (tests); when None one is built and closed here.
+
+    Returns:
+        The check results in the order above, ending early on a failed stage.
+    """
+    import httpx
+
+    from lancet_eval.arms import ARM_REGISTRY
+
+    environment_check = check_drive_environment(os.environ)
+    if not environment_check.passed:
+        return [environment_check]
+
+    results: list[PreflightCheckResult] = [environment_check]
+    should_close_client = client is None
+    if client is None:
+        client = httpx.Client(
+            base_url=settings.gateway_url,
+            timeout=settings.gateway_timeout_secs,
+        )
+    try:
+        gw_check, eng_check = check_gateway_and_engine(client)
+        results.extend((gw_check, eng_check))
+        if not (gw_check.passed and eng_check.passed):
+            return results
+        results.append(
+            check_arm_mode_canaries(
+                client,
+                arms=tuple(ARM_REGISTRY),
+                canary_path=canary_path,
+                split_path=None,
+            )
+        )
+    finally:
+        if should_close_client:
+            client.close()
     return results

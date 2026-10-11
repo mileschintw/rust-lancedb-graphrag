@@ -147,6 +147,24 @@ def preflight_command(
             ),
         ),
     ] = None,
+    stack: Annotated[
+        bool,
+        typer.Option(
+            "--stack",
+            help=(
+                "06.4 D-200: check a running quickstart stack with no eval store "
+                "(drive environment, gateway and engine reachability, and the "
+                "arm-mode canaries of every arm). Ignores --corpus."
+            ),
+        ),
+    ] = False,
+    canaries: Annotated[
+        Path,
+        typer.Option(
+            "--canaries",
+            help="With --stack: the quickstart arm canary manifest (qs- question IDs).",
+        ),
+    ] = Path("eval/corpora/quickstart/canary.arms.jsonl"),
 ) -> None:
     """Run preflight health, isolation, and model checks."""
     from rich.markup import escape
@@ -154,17 +172,31 @@ def preflight_command(
 
     from lancet_eval import preflight as preflight_module
 
-    accepted = _parse_accepted_known_misses(accept_known_miss or [], preflight_module)
-    if accepted:
-        results = preflight_module.run_preflight_checks(
-            corpus_name=corpus, judged=judged, accepted_known_misses=accepted
-        )
+    if stack:
+        if judged or accept_known_miss:
+            console.print(
+                "[bold red]--stack cannot be combined with --judged or "
+                "--accept-known-miss: it runs no OpenRouter or known-miss check."
+                "[/bold red]"
+            )
+            raise typer.Exit(code=2)
+        results = preflight_module.run_stack_preflight(load_settings(), canaries)
+        title = "Preflight Health Checks — quickstart stack"
     else:
-        results = preflight_module.run_preflight_checks(
-            corpus_name=corpus, judged=judged
+        accepted = _parse_accepted_known_misses(
+            accept_known_miss or [], preflight_module
         )
+        if accepted:
+            results = preflight_module.run_preflight_checks(
+                corpus_name=corpus, judged=judged, accepted_known_misses=accepted
+            )
+        else:
+            results = preflight_module.run_preflight_checks(
+                corpus_name=corpus, judged=judged
+            )
+        title = f"Preflight Health Checks — {corpus}"
 
-    table = Table(title=f"Preflight Health Checks — {corpus}")
+    table = Table(title=title)
     table.add_column("Check", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Details")
