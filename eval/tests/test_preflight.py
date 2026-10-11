@@ -235,10 +235,10 @@ def test_check_index_identity_never_raises_on_exception(
     assert "store unreachable" in res.message
 
 
-def test_run_preflight_checks_index_identity_is_second_check(
+def test_run_preflight_checks_index_identity_follows_store_isolation(
     httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """index_identity runs second, right after store_isolation."""
+    """D-199: drive_environment runs first, then store_isolation, then index_identity."""
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
     doc_map = DocumentMap(corpus="multihop_rag", entries={})
     save_document_map_atomic(doc_map)
@@ -254,8 +254,9 @@ def test_run_preflight_checks_index_identity_is_second_check(
     )
 
     results = run_preflight_checks(corpus_name="multihop_rag", settings=settings)
-    assert results[0].name == "store_isolation"
-    assert results[1].name == "index_identity"
+    assert results[0].name == "drive_environment"
+    assert results[1].name == "store_isolation"
+    assert results[2].name == "index_identity"
 
 
 def test_effective_workflow_config_same_under_eval_env(

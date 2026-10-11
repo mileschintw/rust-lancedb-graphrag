@@ -407,6 +407,45 @@ def _sse(body: str) -> Callable[[httpx.Request], httpx.Response]:
     return respond
 
 
+def _sse_echo_correct(request: httpx.Request) -> httpx.Response:
+    """A well-formed answer that echoes the graph state the request declared (D-199).
+
+    A body whose ``disable_graph_context`` is exactly ``True`` is graph-off; any other
+    body (the field absent or ``False``) is graph-on. Both carry the snapshot and no
+    ``levers``, so clause (h) holds for the lever-free arms.
+    """
+    body = json.loads(request.read().decode("utf-8"))
+    graph_off = body.get("disable_graph_context") is True
+    answer: dict[str, object] = {
+        "answer": "Paris",
+        "snapshot": {"index_generation": "gen1"},
+    }
+    metadata: dict[str, object]
+    if graph_off:
+        answer["notices"] = [
+            {
+                "code": "GRAPH_ABLATION",
+                "typed_code": 18,
+                "message": "Graph disabled by request",
+            }
+        ]
+        metadata = {"graph_node_count": 0}
+    else:
+        metadata = {"graph_node_count": 3, "graph_seed_count": 1}
+    completed = {"success": True, "duration_ms": 100, "metadata": metadata}
+    text = (
+        "event: final_answer\n"
+        f"data: {json.dumps(answer)}\n\n"
+        "event: workflow_completed\n"
+        f"data: {json.dumps(completed)}\n\n"
+    )
+    return httpx.Response(
+        status_code=200,
+        headers={"content-type": "text/event-stream"},
+        text=text,
+    )
+
+
 def _read_timeout(request: httpx.Request) -> httpx.Response:
     raise httpx.ReadTimeout("read timed out")
 
@@ -664,7 +703,8 @@ def test_gate_stage_drive_writes_the_marker_into_the_header(
 ) -> None:
     from lancet_eval.journal import read_journal_header
 
-    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    # D-199: the first-record gate needs an answer that echoes each arm's graph state.
+    httpx_mock.add_callback(_sse_echo_correct, is_reusable=True)
     j_path = tmp_path / "journal.jsonl"
 
     assert _drive_gate(j_path, gate_stage="drive3", max_retries=0) == 2
@@ -767,11 +807,176 @@ def test_non_gate_drive_still_appends_to_an_unmarked_journal(
 def test_a_drive_resumes_a_journal_carrying_its_own_marker(
     gate_stage: str | None, max_retries: int, tmp_path: Path, httpx_mock: HTTPXMock
 ) -> None:
-    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    # D-199: the gate-stage case runs the first-record gate, so the answer echoes each arm.
+    httpx_mock.add_callback(_sse_echo_correct, is_reusable=True)
     j_path = tmp_path / "journal.jsonl"
     _seed_journal(j_path, _header(gate_stage=gate_stage, max_retries=max_retries))
 
     assert _drive_gate(j_path, gate_stage=gate_stage, max_retries=max_retries) == 2
+
+
+def _drive_gate_over_two_questions(path: Path, client: httpx.Client) -> object:
+    return drive(
+        corpus="graphrag_bench",
+        journal_path=path,
+        stage_spend_cap=10.0,
+        limit=2,
+        workers=1,
+        resume=True,
+        max_retries=0,
+        gate_stage="s1",
+        client=client,
+    )
+
+
+def test_d199_first_record_gate_halts_on_code_25_graph_on(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    """D-199: a graph-on first record carrying code 25 stops dispatch; the paid record stays."""
+    from lancet_eval.journal import load_records
+    from lancet_eval.run import DriveResult
+
+    def code_25_on_graph_on(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.read().decode("utf-8"))
+        if body.get("disable_graph_context") is True:
+            return _sse_echo_correct(request)
+        answer = {
+            "answer": "Paris",
+            "snapshot": {"index_generation": "gen1"},
+            "notices": [
+                {
+                    "code": "GRAPH_DISABLED_BY_CONFIG",
+                    "typed_code": 25,
+                    "message": "Graph disabled by configuration",
+                }
+            ],
+        }
+        completed = {
+            "success": True,
+            "duration_ms": 100,
+            "metadata": {"graph_node_count": 0},
+        }
+        return httpx.Response(
+            status_code=200,
+            headers={"content-type": "text/event-stream"},
+            text=(
+                "event: final_answer\n"
+                f"data: {json.dumps(answer)}\n\n"
+                "event: workflow_completed\n"
+                f"data: {json.dumps(completed)}\n\n"
+            ),
+        )
+
+    httpx_mock.add_callback(code_25_on_graph_on, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+
+    result = _drive_gate_over_two_questions(
+        j_path, httpx.Client(base_url="http://testserver")
+    )
+
+    assert isinstance(result, DriveResult)
+    assert any("graph-on" in f for f in result.field_gate_failures)
+    assert any("GRAPH_DISABLED_BY_CONFIG" in f for f in result.field_gate_failures)
+    assert result.stopped_by_field_gate is True
+    assert len(httpx_mock.get_requests()) == 1, "no unit may be dispatched after the halt"
+    records = load_records(j_path)
+    assert len(records) == 1
+    assert records[0].graph_arm == "graph-on"
+
+
+def test_d199_first_record_gate_passes_a_correct_echo(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    from lancet_eval.run import DriveResult
+
+    httpx_mock.add_callback(_sse_echo_correct, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+
+    result = _drive_gate_over_two_questions(
+        j_path, httpx.Client(base_url="http://testserver")
+    )
+
+    assert isinstance(result, DriveResult)
+    assert result.field_gate_failures == ()
+    assert result.stopped_by_field_gate is False
+    assert int(result) == 4
+
+
+def test_d199_a_non_gate_drive_does_not_run_the_first_record_gate(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    """Only a gate-stage drive checks its first records; a plain drive is unchanged."""
+    httpx_mock.add_callback(_sse(_SSE_ANSWER_OK), is_reusable=True)
+    result = drive(
+        corpus="graphrag_bench",
+        journal_path=tmp_path / "journal.jsonl",
+        stage_spend_cap=10.0,
+        limit=1,
+        workers=1,
+        max_retries=0,
+        gate_stage=None,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    assert int(result) == 2
+    assert result.field_gate_failures == ()
+
+
+def test_d199_cli_run_exits_non_zero_on_a_field_gate_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+    from lancet_eval.run import DriveResult
+
+    monkeypatch.setattr(
+        "lancet_eval.run.drive",
+        lambda *a, **k: DriveResult(1, field_gate_failures=("arm 'graph-on': boom",)),
+    )
+
+    res = CliRunner().invoke(
+        app,
+        [
+            "run",
+            "--corpus",
+            "multihop_rag_heldout",
+            "--stage-cap",
+            "0.5",
+            "--out",
+            str(tmp_path / "journal.jsonl"),
+        ],
+    )
+
+    assert res.exit_code == 1
+    assert "arm 'graph-on': boom" in res.output
+
+
+def test_d199_cli_run_keeps_exit_zero_for_cap_and_tripwire_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+    from lancet_eval.run import DriveResult
+
+    for result in (
+        DriveResult(1, stopped_by_cap=True),
+        DriveResult(1, stopped_by_tripwire=True),
+    ):
+        monkeypatch.setattr("lancet_eval.run.drive", lambda *a, _r=result, **k: _r)
+        res = CliRunner().invoke(
+            app,
+            [
+                "run",
+                "--corpus",
+                "multihop_rag_heldout",
+                "--stage-cap",
+                "0.5",
+                "--out",
+                str(tmp_path / "journal.jsonl"),
+            ],
+        )
+        assert res.exit_code == 0, res.output
 
 
 def _invoke_gate_run(tmp_path: Path, extra: list[str]) -> object:

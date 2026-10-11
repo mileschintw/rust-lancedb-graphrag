@@ -356,6 +356,24 @@ def test_default_lever_unavailable_notice_code_equals_the_proto_value() -> None:
     )
 
 
+def test_graph_disabled_by_config_notice_code_equals_the_proto_value() -> None:
+    from lancet_eval import dimensions
+
+    codes = dict(_proto_enum("NoticeCode"))
+    assert (
+        dimensions.NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG
+        == codes["NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG"]
+    )
+    assert dimensions.NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG == 25
+
+
+def test_graph_degraded_notice_code_equals_the_proto_value() -> None:
+    from lancet_eval import dimensions
+
+    codes = dict(_proto_enum("NoticeCode"))
+    assert dimensions.NOTICE_CODE_GRAPH_DEGRADED == codes["NOTICE_CODE_GRAPH_DEGRADED"]
+
+
 def test_journal_wire_meta_names_every_client_workflow_metadata_field() -> None:
     # The preflight copies the client model into the journal model with
     # `model_validate(model_dump())`, and the journal model forbids extra keys: a field

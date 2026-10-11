@@ -385,3 +385,132 @@ def test_rotation_is_balanced_for_six_and_seven_arms(n_arms: int) -> None:
     for position in range(n_arms):
         held = Counter(block[position][1] for block in blocks)
         assert sorted(held.values()) == [base] * (n_arms - extra) + [base + 1] * extra
+
+
+def _record(label: str, *, notices=(), meta=None):  # type: ignore[no-untyped-def]
+    from lancet_eval.client import Notice
+    from lancet_eval.journal import RunRecord, WorkflowWireMeta
+
+    return RunRecord(
+        corpus="c",
+        question_id="q",
+        graph_arm=label,
+        outcome="success",
+        notices=[Notice(**n) for n in notices],
+        workflow_meta=WorkflowWireMeta(**meta) if meta is not None else None,
+    )
+
+
+_N18 = {"code": "GRAPH_ABLATION", "typed_code": 18, "message": "m"}
+_N24 = {"code": "DEFAULT_LEVER_UNAVAILABLE", "typed_code": 24, "message": "m"}
+_N25 = {"code": "GRAPH_DISABLED_BY_CONFIG", "typed_code": 25, "message": "m"}
+_N10 = {"code": "GRAPH_UNAVAILABLE", "typed_code": 10, "message": "m"}
+_N2 = {"code": "GRAPH_TIMEOUT", "typed_code": 2, "message": "m"}
+_RAN = {"graph_node_count": 3, "graph_seed_count": 1}
+
+
+def test_d199_explicit_field_failures_accepts_a_correct_echo_for_each_graph_state() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    off = _record("hybrid", notices=[_N18], meta={"graph_node_count": 0})
+    on = _record("hybrid+graph", meta=_RAN)
+    assert explicit_field_failures(off, resolve_arm("hybrid")) == []
+    assert explicit_field_failures(on, resolve_arm("hybrid+graph")) == []
+
+
+def test_d199_explicit_field_failures_flags_code_24_on_any_arm() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    for label, notices, meta in (
+        ("hybrid", [_N18, _N24], {"graph_node_count": 0}),
+        ("hybrid+graph", [_N24], _RAN),
+    ):
+        failures = explicit_field_failures(
+            _record(label, notices=notices, meta=meta), resolve_arm(label)
+        )
+        assert any("DEFAULT_LEVER_UNAVAILABLE" in f for f in failures), label
+        assert all(f.startswith(f"arm {label!r}:") for f in failures)
+
+
+def test_d199_explicit_field_failures_identifies_notices_by_typed_code_then_name() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    by_number = {"code": "", "typed_code": 24, "message": "m"}
+    by_name = {"code": "DEFAULT_LEVER_UNAVAILABLE", "typed_code": 0, "message": "m"}
+    for notice in (by_number, by_name):
+        record = _record("hybrid+graph", notices=[notice], meta=_RAN)
+        assert explicit_field_failures(record, resolve_arm("hybrid+graph"))
+
+
+def test_d199_explicit_field_failures_graph_off_arm_rules() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    spec = resolve_arm("hybrid")
+    # no code 18
+    assert explicit_field_failures(_record("hybrid", meta={"graph_node_count": 0}), spec)
+    # code 25 beside 18: the explicit true did not reach the engine as such
+    assert explicit_field_failures(
+        _record("hybrid", notices=[_N18, _N25], meta={"graph_node_count": 0}), spec
+    )
+    # GRAPH_UNAVAILABLE
+    assert explicit_field_failures(
+        _record("hybrid", notices=[_N18, _N10], meta={"graph_node_count": 0}), spec
+    )
+    # a non-zero graph counter on a graph-off arm
+    assert explicit_field_failures(
+        _record("hybrid", notices=[_N18], meta={"graph_node_count": 2}), spec
+    )
+    assert explicit_field_failures(
+        _record("hybrid", notices=[_N18], meta={"graph_seed_count": 1}), spec
+    )
+    # a graph-off record with no metadata at all still passes on its notices
+    assert explicit_field_failures(_record("hybrid", notices=[_N18]), spec) == []
+
+
+def test_d199_explicit_field_failures_graph_on_arm_rules() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    spec = resolve_arm("hybrid+graph")
+    assert explicit_field_failures(_record("hybrid+graph", notices=[_N18], meta=_RAN), spec)
+    assert explicit_field_failures(_record("hybrid+graph", notices=[_N25], meta=_RAN), spec)
+    # no sign that the graph node ran
+    assert explicit_field_failures(
+        _record("hybrid+graph", meta={"graph_node_count": 0}), spec
+    )
+    assert explicit_field_failures(_record("hybrid+graph"), spec)
+    # a graph that failed open still ran
+    assert (
+        explicit_field_failures(
+            _record("hybrid+graph", notices=[_N10], meta={"graph_node_count": 0}), spec
+        )
+        == []
+    )
+    assert (
+        explicit_field_failures(
+            _record("hybrid+graph", notices=[_N2], meta={"graph_node_count": 0}), spec
+        )
+        == []
+    )
+    # a measured zero seed count is still proof the node ran
+    assert (
+        explicit_field_failures(
+            _record("hybrid+graph", meta={"graph_node_count": 0, "graph_seed_count": 0}),
+            spec,
+        )
+        == []
+    )
+
+
+def test_d199_legacy_labels_are_held_to_the_same_check() -> None:
+    from lancet_eval.arms import explicit_field_failures
+
+    assert explicit_field_failures(
+        _record("graph-on", meta={"graph_node_count": 0}), resolve_arm("graph-on")
+    )
+    assert (
+        explicit_field_failures(
+            _record("graph-off", notices=[_N18], meta={"graph_node_count": 0}),
+            resolve_arm("graph-off"),
+        )
+        == []
+    )

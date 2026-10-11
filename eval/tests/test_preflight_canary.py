@@ -583,11 +583,15 @@ def _mock_arm_responses(
     lever_echo: dict[str, list[str]] | None = None,
     omit_rerank_meta: tuple[str, ...] = (),
     leak_rerank: tuple[str, ...] = (),
+    extra_notices: dict[str, list[dict[str, Any]]] | None = None,
+    omit_graph_evidence: tuple[str, ...] = (),
 ) -> None:
     """A well-formed answer for each arm, and one fault per keyword when asked.
 
     `degraded` maps an arm to the number of its first canaries that carry the
     RERANK_DEGRADED notice (typed code 23) and a degraded rerank outcome.
+    `extra_notices` adds notices to an arm's answer, and `omit_graph_evidence` makes a
+    graph-on arm answer without any sign that its graph node ran (06.4 D-199).
     """
     seen_calls: dict[str, int] = {}
 
@@ -625,6 +629,8 @@ def _mock_arm_responses(
                     "message": "rerank degraded",
                 }
             )
+        notices.extend((extra_notices or {}).get(arm, []))
+        graph_ran = not graph_off and arm not in omit_graph_evidence
         chunks = [
             {
                 "chunk_id": f"c{i}",
@@ -682,7 +688,9 @@ def _mock_arm_responses(
                             if arm == "dense-only"
                             else chunk_count
                         ),
-                        "graph_node_count": 0,
+                        # 06.4 D-199: a graph-on answer shows its graph node ran.
+                        "graph_node_count": 3 if graph_ran else 0,
+                        **({"graph_seed_count": 1} if graph_ran else {}),
                         **({"rerank": rerank_meta} if rerank_meta else {}),
                     },
                 },
@@ -1000,6 +1008,107 @@ def test_a_lever_arm_canary_sends_its_levers(httpx_mock: HTTPXMock) -> None:
     # D-198 / D-207: every canary request opts out of the defaults and names its graph state.
     assert all(b["disable_default_levers"] is True for b in bodies)
     assert all(isinstance(b["disable_graph_context"], bool) for b in bodies)
+
+
+_CODE_24 = {"code": "DEFAULT_LEVER_UNAVAILABLE", "typed_code": 24, "message": "dropped"}
+_CODE_25 = {
+    "code": "GRAPH_DISABLED_BY_CONFIG",
+    "typed_code": 25,
+    "message": "Graph disabled by configuration",
+}
+_CODE_18 = {"code": "GRAPH_ABLATION", "typed_code": 18, "message": "ablation"}
+
+
+def test_d199_a_control_arm_echoing_the_default_levers_fails_clause_h(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(
+        httpx_mock, lever_echo={"hybrid": ["rerank", "evidence_metadata"]}
+    )
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "provenance clause (h)" in res.message
+    assert "arm 'hybrid'" in res.message
+
+
+def test_d199_code_25_on_a_graph_on_arm_fails_the_explicit_field_check(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, extra_notices={"hybrid+graph": [_CODE_25]})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "explicit-field check" in res.message
+    assert "arm 'hybrid+graph'" in res.message
+    assert "GRAPH_DISABLED_BY_CONFIG" in res.message
+
+
+def test_d199_code_18_on_a_graph_on_arm_fails_the_explicit_field_check(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, extra_notices={"hybrid+graph": [_CODE_18]})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "explicit-field check" in res.message
+    assert "GRAPH_ABLATION" in res.message
+
+
+def test_d199_code_24_on_any_arm_fails_the_explicit_field_check(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, extra_notices={"bm25-only": [_CODE_24]})
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "arm 'bm25-only'" in res.message
+    assert "DEFAULT_LEVER_UNAVAILABLE" in res.message
+
+
+def test_d199_a_graph_off_arm_missing_code_18_fails_the_explicit_field_check(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, omit_ablation=("hybrid",))
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "explicit-field check" in res.message
+    assert "expected GRAPH_ABLATION (18)" in res.message
+
+
+def test_d199_a_graph_on_arm_with_no_sign_of_its_graph_node_fails(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock, omit_graph_evidence=("hybrid+graph",))
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert not res.passed
+    assert "explicit-field check" in res.message
+    assert "graph node ran" in res.message
+
+
+def test_d199_correct_echoes_on_every_arm_pass_the_explicit_field_check(
+    httpx_mock: HTTPXMock,
+) -> None:
+    _mock_arm_responses(httpx_mock)
+    client = httpx.Client(base_url="http://testserver")
+
+    res = _run_arm_canaries(client)
+
+    assert res.passed, res.message
 
 
 def test_one_degraded_rerank_canary_passes_and_is_reported(
