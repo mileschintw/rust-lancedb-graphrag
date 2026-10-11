@@ -15,7 +15,8 @@
 
 1. **One question, asked twice.** The same two-entity question from the [quickstart](../README.md#-quickstart-windows-native-and-linux-via-wsl)
    runs once on the shipped default shape (hybrid retrieval, `rerank` and `evidence_metadata`, graph off) and once with
-   the graph opted in. Both requests leave one trace each, and the two traces differ only where the graph runs.
+   the graph opted in. Both requests leave one trace each, and the two traces differ in structure only where the
+   graph runs.
 2. **One trace crosses both services.** The caller's W3C `traceparent` reaches the gateway. The gateway's root span
    covers the whole SSE stream, the trace crosses the gRPC hop into the engine, and the engine shows its five workflow
    nodes, each with a child span per external call.
@@ -270,8 +271,8 @@ interchangeable; the predicate is documented at the top of `metrics.rs` (`06.2-0
 ![Grafana "Lancet RAG Operations" dashboard over the quickstart's few requests: query duration, evidence set size, ingested documents and chunks, index rebuild duration and corpus generation have data; retrieval path failures, answer degraded rate, citation repairs and generation retries read No data](assets/grafana-rag-operations.png)
 
 *Grafana, captured right after the quickstart's handful of requests.* Several panels read "No data": retrieval path
-failures, answer degraded rate, citation repairs and generation retries. That is honest rather than broken. Those
-counters only record when the event happens, and none happened in this run, so Prometheus has no series yet. With so
+failures, answer degraded rate, citation repairs and generation retries. That is expected rather than broken. Those
+counters only record when their event happens, and Prometheus held no series for them when the capture was taken. With so
 few requests, the latency and rate panels are a handful of points, not a distribution.
 
 ## Logs: joined to traces by `trace_id`
