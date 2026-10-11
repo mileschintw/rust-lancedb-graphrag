@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use super::super::{
     node::{BoxFuture, Node, NodeError, NodeKind},
@@ -47,6 +48,9 @@ struct RerankLever {
     reranker: Arc<dyn Reranker>,
     timeout: Duration,
     node_budget: Duration,
+    /// The configured rerank model, named on the `rerank_request` span. The node's
+    /// `Arc<dyn Reranker>` has no model accessor, so the model is carried in, not read back.
+    model: String,
 }
 
 /// Per-query LanceDB dense sub-stage durations for the `nodes` table.
@@ -163,17 +167,20 @@ impl RetrieveHybridNode {
     /// Sets the reranker of the `rerank` lever, its own time limit and the node budget it nests in.
     ///
     /// `reranker` is `None` for a request that did not name the lever, which keeps the strict
-    /// path of [`new`](Self::new).
+    /// path of [`new`](Self::new). `model` is the configured rerank model; the call's
+    /// `rerank_request` span reports it as `gen_ai.request.model`.
     pub fn with_rerank_lever(
         mut self,
         reranker: Option<Arc<dyn Reranker>>,
         rerank_timeout: Duration,
         node_budget: Duration,
+        model: String,
     ) -> Self {
         self.rerank_lever = reranker.map(|reranker| RerankLever {
             reranker,
             timeout: rerank_timeout,
             node_budget,
+            model,
         });
         self
     }
@@ -285,17 +292,35 @@ impl RetrieveHybridNode {
         let allowed = rerank_allowance(lever.timeout, lever.node_budget, node_start.elapsed());
         // The tokio clock, so a paused-clock test sees the time the call was given.
         let started = tokio::time::Instant::now();
+        // D-227: one leaf span per provider call, created here and not inside the provider's
+        // `rerank`, because a call dropped by the timeout would never record an outcome there. No
+        // call starts when nothing is left of the budget, so no span exists then.
+        let mut call_span: Option<tracing::Span> = None;
         let attempt: Result<RerankOutput, RerankError> = if allowed.is_zero() {
             // Nothing is left after the reserve; no call may start.
             Err(RerankError::timeout())
         } else {
-            let call = lever.reranker.rerank(RerankRequest {
-                query: &ctx.original_query,
-                candidates: &fused,
-            });
+            let span = tracing::info_span!(
+                "rerank_request",
+                gen_ai.request.model = %lever.model,
+                lancet.rerank.candidates = fused.len() as u64,
+                lancet.rerank.outcome = tracing::field::Empty,
+                lancet.rerank.latency_ms = tracing::field::Empty,
+            );
+            call_span = Some(span.clone());
+            let call = lever
+                .reranker
+                .rerank(RerankRequest {
+                    query: &ctx.original_query,
+                    candidates: &fused,
+                })
+                .instrument(span.clone());
             tokio::select! {
                 biased;
-                _ = cancel.cancelled() => return Err(NodeError::cancelled()),
+                _ = cancel.cancelled() => {
+                    span.record("lancet.rerank.outcome", "cancelled");
+                    return Err(NodeError::cancelled());
+                }
                 result = tokio::time::timeout(allowed, call) => {
                     result.unwrap_or_else(|_| Err(RerankError::timeout()))
                 }
@@ -305,6 +330,15 @@ impl RetrieveHybridNode {
         let outcome = attempt.and_then(|output| {
             reorder(&fused, &output.ranked).map(|pairs| (pairs, output.cost_credits))
         });
+        if let Some(span) = &call_span {
+            // Only the model slug, the candidate count, the outcome class and the latency are
+            // recorded: no query text, candidate text or key (T-06.4-07).
+            span.record("lancet.rerank.latency_ms", u64::from(latency_ms));
+            match &outcome {
+                Ok(_) => span.record("lancet.rerank.outcome", "completed"),
+                Err(error) => span.record("lancet.rerank.outcome", error.class().as_str()),
+            };
+        }
         match outcome {
             Ok((pairs, cost_credits)) => {
                 ctx.rerank = Some(RerankMetadata {

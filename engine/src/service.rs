@@ -408,6 +408,7 @@ impl LancetServiceImpl {
                 lever_reranker,
                 std::time::Duration::from_millis(wf.rerank_timeout_ms),
                 std::time::Duration::from_millis(wf.retrieve_timeout_ms),
+                self.effective_settings.rerank_model.clone(),
             ),
         );
         runner.add_node(workflow::nodes::AssemblePromptNode::with_settings(

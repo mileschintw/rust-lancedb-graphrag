@@ -238,6 +238,9 @@ impl Variation {
     }
 }
 
+/// The rerank model slug the fixture's lever reports on its `rerank_request` span.
+pub(super) const TEST_RERANK_MODEL: &str = "test/rerank-model";
+
 /// The fakes and settings one node-chain run uses, kept so a test can read their call counts.
 pub(super) struct Fixture {
     embedding: Arc<FakeQueryEmbeddingPort>,
@@ -325,7 +328,12 @@ impl Fixture {
         };
         match &self.lever {
             Some((reranker, timeout, budget)) => {
-                node.with_rerank_lever(Some(reranker.clone()), *timeout, *budget)
+                node.with_rerank_lever(
+                    Some(reranker.clone()),
+                    *timeout,
+                    *budget,
+                    TEST_RERANK_MODEL.to_owned(),
+                )
             }
             None => node,
         }

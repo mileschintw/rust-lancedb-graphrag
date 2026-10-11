@@ -533,6 +533,14 @@ fi
 #         d204_awr05_admitted_rerank_without_a_lever_reranker_is_an_invariant_error and its
 #         doc-meta twin add four. 954->960. lib rises 837->843; the other targets are unchanged
 #         (0/58/18/14/27).
+#   963 -- Phase 06.4 plan 02 Task 3: D-227 (the `rerank_request` leaf span around the rerank
+#         lever's provider call, carrying gen_ai.request.model, lancet.rerank.candidates,
+#         lancet.rerank.outcome and lancet.rerank.latency_ms) with three lib tests,
+#         d227_rerank_request_is_one_leaf_span_with_completed_outcome,
+#         d227_rerank_request_records_timeout and d227_no_rerank_request_span_without_the_lever.
+#         D-212 IN-06 (inspect_lancedb hashes with the sha2 crate) keeps its 58 tests, which
+#         include the published SHA-256 vectors. 960->963. lib rises 843->846; the other targets
+#         are unchanged (0/58/18/14/27).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -575,18 +583,18 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
 # Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 960 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 960, got $TOTAL" >&2
+if [ "$TOTAL" -ne 963 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 963, got $TOTAL" >&2
   exit 1
 fi
 
-if [ "$LIB_BIN_SUM" -ne 843 ]; then
-  echo "FAIL: lib + bin test count mismatch: expected 843, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
+if [ "$LIB_BIN_SUM" -ne 846 ]; then
+  echo "FAIL: lib + bin test count mismatch: expected 846, got $LIB_BIN_SUM (lib=$LIB_COUNT, bin=$BIN_MAIN_COUNT)" >&2
   exit 1
 fi
 
-if [ "$LIB_COUNT" -ne 843 ]; then
-  echo "FAIL: engine (lib) test count mismatch: expected 843, got $LIB_COUNT" >&2
+if [ "$LIB_COUNT" -ne 846 ]; then
+  echo "FAIL: engine (lib) test count mismatch: expected 846, got $LIB_COUNT" >&2
   exit 1
 fi
 

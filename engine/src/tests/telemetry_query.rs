@@ -20,6 +20,7 @@ use crate::generation::{
 };
 use crate::ingest::EmbeddingProvider;
 use crate::pb::lancet::v1::QueryRagRequest;
+use crate::rerank::Reranker;
 use crate::retrieval::bm25::{Bm25Config, Bm25Index};
 use crate::retrieval::{Candidate, RetrievalSettings};
 use crate::service::{
@@ -1481,5 +1482,148 @@ fn graph_spans_survive_a_dropped_parent_through_the_tracing_layer() {
         !exported_names.contains(&"query_rag".to_string()),
         "query_rag parent must NOT be exported under AlwaysOff sampler: got {:?}",
         exported_names
+    );
+}
+
+const TEST_RERANK_MODEL: &str = "test/rerank-model";
+
+/// Runs the whole fake-port workflow with `lever_reranker` as the `rerank` lever's reranker, the
+/// lever named or not, and returns the exported `rerank_request` spans.
+async fn rerank_request_spans(
+    lever_reranker: Option<Arc<dyn Reranker>>,
+    rerank_timeout: std::time::Duration,
+    name_the_lever: bool,
+) -> Vec<opentelemetry_sdk::trace::SpanData> {
+    crate::telemetry::ensure_propagators();
+
+    let (exporter, mut rx, _rx_shutdown) = new_test_exporter();
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter)
+        .build();
+    let tracer = tracer_provider.tracer("test_tracer");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+    let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
+    let _guard = tracing::subscriber::set_default(subscriber);
+
+    // Only the context and the sink are borrowed from the shared builder; the runner is rebuilt
+    // below so the retrieve node carries the lever.
+    let (_default_runner, mut ctx, sink, _rx_events) = build_runner_with_fakes(None);
+    if name_the_lever {
+        ctx.levers = crate::workflow::LeverSet::try_from_wire(&[
+            crate::pb::lancet::v1::Lever::Rerank as i32,
+        ])
+        .expect("rerank is a declared lever");
+    }
+    let mut runner = WorkflowRunner::new();
+    runner.add_node(ReformulateQueryNode::with_reformulator(Some(Arc::new(
+        FakeQueryReformulator::new(vec!["What is Lancet?".to_string()]),
+    ))));
+    runner.add_node(ExtractGraphContextNode::new(
+        Some(Arc::new(FakeQueryEmbeddingPort::success(vec![0.1; 2048]))),
+        Some(Arc::new(FakeGraphQueryPort::success("Lancet -- uses -- LanceDB"))),
+    ));
+    runner.add_node(
+        RetrieveHybridNode::new(
+            Some(Arc::new(FakeDenseRetrievalPort::success(vec![make_candidate(
+                "doc-1", "chk-1", 0.9,
+            )]))),
+            Some(Arc::new(FakeBm25RetrievalPort::success(vec![make_candidate(
+                "doc-1", "chk-2", 0.8,
+            )]))),
+            None,
+            RetrievalSettings::default(),
+        )
+        .with_rerank_lever(
+            lever_reranker,
+            rerank_timeout,
+            std::time::Duration::from_millis(2500),
+            TEST_RERANK_MODEL.to_owned(),
+        ),
+    );
+    runner.add_node(AssemblePromptNode::default());
+    runner.add_node(GenerateAnswerNode::new(None));
+    let _ = runner
+        .run_workflow(ctx, CancellationToken::new(), sink)
+        .await;
+    let _ = tracer_provider.force_flush();
+
+    let mut spans = Vec::new();
+    while let Ok(span) = rx.try_recv() {
+        if span.name == "rerank_request" {
+            spans.push(span);
+        }
+    }
+    spans
+}
+
+fn string_attribute(span: &opentelemetry_sdk::trace::SpanData, key: &str) -> Option<String> {
+    span.attributes
+        .iter()
+        .find(|kv| kv.key.as_str() == key)
+        .map(|kv| kv.value.as_str().into_owned())
+}
+
+/// D-227: the lever's provider call is one leaf span with the model, the outcome and the latency.
+#[tokio::test]
+async fn d227_rerank_request_is_one_leaf_span_with_completed_outcome() {
+    let spans = rerank_request_spans(
+        Some(Arc::new(FakeReranker::success())),
+        std::time::Duration::from_millis(1706),
+        true,
+    )
+    .await;
+
+    assert_eq!(spans.len(), 1, "one provider call is exactly one rerank_request span");
+    let span = &spans[0];
+    assert_eq!(
+        string_attribute(span, "gen_ai.request.model").as_deref(),
+        Some(TEST_RERANK_MODEL),
+        "the span names the configured rerank model"
+    );
+    assert_eq!(
+        string_attribute(span, "lancet.rerank.outcome").as_deref(),
+        Some("completed")
+    );
+    for key in ["lancet.rerank.latency_ms", "lancet.rerank.candidates"] {
+        assert!(
+            span.attributes.iter().any(|kv| kv.key.as_str() == key),
+            "{key} is recorded"
+        );
+    }
+}
+
+/// D-227: a call the timeout drops still exports its span, with the `timeout` outcome.
+#[tokio::test(start_paused = true)]
+async fn d227_rerank_request_records_timeout() {
+    let spans = rerank_request_spans(
+        Some(Arc::new(FakeReranker::stall())),
+        std::time::Duration::from_millis(100),
+        true,
+    )
+    .await;
+
+    assert_eq!(spans.len(), 1, "a timed-out call is one span too");
+    assert_eq!(
+        string_attribute(&spans[0], "lancet.rerank.outcome").as_deref(),
+        Some("timeout")
+    );
+}
+
+/// D-227: no provider call, no span. A request that does not name the lever emits none, and
+/// neither does a node with no lever reranker.
+#[tokio::test]
+async fn d227_no_rerank_request_span_without_the_lever() {
+    let reranker: Arc<dyn Reranker> = Arc::new(FakeReranker::success());
+    assert!(
+        rerank_request_spans(Some(reranker), std::time::Duration::from_millis(1706), false)
+            .await
+            .is_empty(),
+        "a lever reranker is wired but the request names no lever"
+    );
+    assert!(
+        rerank_request_spans(None, std::time::Duration::from_millis(1706), false)
+            .await
+            .is_empty(),
+        "no lever reranker and no lever named"
     );
 }
