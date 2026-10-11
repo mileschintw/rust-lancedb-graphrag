@@ -3,10 +3,10 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: Not started
 status: executing
-stopped_at: Phase 06.3.6 complete, ready to plan Phase 06.4
-last_updated: "2026-10-11T00:59:42.851Z"
+stopped_at: Phase 06.4 context gathered
+last_updated: "2026-10-11T01:33:27.542Z"
 last_activity: 2026-10-11
-state_head: 6e6fc411814489b98888d23e336d102edbc72414
+state_head: 2afa6f333bfdccce7e41cb3decf3e0ee95246efa
 progress:
   total_phases: 18
   completed_phases: 10
@@ -15,7 +15,7 @@ progress:
 milestone_name: milestone
 current_phase: "06.4"
 current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
-last_activity_desc: "Phase 06.3.6 complete (UAT 6/6, VALIDATION 0 gaps, SECURITY 85/85, verification passed); OBS-06 ticked"
+last_activity_desc: Phase 06.3.6 complete (UAT 6/6, VALIDATION 0 gaps, SECURITY 85/85, verification passed); OBS-06 ticked
 ---
 
 # Project State
@@ -324,7 +324,7 @@ Total Plans in Phase: 23
 
 ## Active Phase
 
-- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Discussion in progress (`/gsd-discuss-phase 06.4`). Carried from 06.3.6, decided in `06.4-CONTEXT.md`: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
+- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
@@ -591,10 +591,10 @@ Total Plans in Phase: 23
 
 ## Session
 
-**Last session:** 2026-10-11T01:10:00Z
+**Last session:** 2026-10-11T01:33:25.633Z
 **Last activity:** 2026-10-11
-**Stopped at:** Phase 06.3.6 complete, ready to plan Phase 06.4
-**Resume file:** None
+**Stopped at:** Phase 06.4 context gathered
+**Resume file:** .planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-CONTEXT.md
 
 ## Accumulated Context
 
