@@ -10,6 +10,8 @@ are byte-identical, and the committed ``docs/assets`` files equal a fresh render
 
 from __future__ import annotations
 
+import copy
+import importlib.util
 import json
 import re
 import subprocess
@@ -171,11 +173,21 @@ def test_d218_marks_descriptive_and_holm_rows(rendered: dict[str, Any]) -> None:
         ("hybrid+graph", "paper_hits_at_4"),
     ]
     assert all(r["source_file"] == LEVERS for r in rows if r["mark"] == "descriptive")
+    # Every group header and the caption say "vs same-day hybrid".
+    assert all(r["reference"] == "hybrid" for r in rows), sorted(
+        {r["reference"] for r in rows}
+    )
     for row in rows:
         if row["mark"] in ("descriptive", "not-in-family"):
             continue
-        expected = "holm-significant" if row["decision"] == "significant" else "not-significant"
-        assert row["mark"] == expected, (row["arm"], row["panel"])
+        # The stored vocabulary, spelled out rather than mirrored from the generator.
+        assert row["decision"] in {"significant", "not significant"}, (
+            row["arm"],
+            row["panel"],
+            row["decision"],
+        )
+        assert row["mark"] in {"holm-significant", "not-significant"}
+        assert (row["mark"] == "holm-significant") == (row["decision"] == "significant")
     significant = sorted(
         (r["group"].split()[0], r["arm"], r["panel"]) for r in rows if r["mark"] == "holm-significant"
     )
@@ -185,6 +197,20 @@ def test_d218_marks_descriptive_and_holm_rows(rendered: dict[str, Any]) -> None:
         ("06.3.6", "hybrid+metadata", "answer_usable"),
         ("06.3.6", "hybrid+rerank", "answer_usable"),
         ("06.3.6", "hybrid+rerank", "paper_hits_at_4"),
+    ]
+    not_significant = sorted(
+        (r["group"].split()[0], r["arm"], r["panel"])
+        for r in rows
+        if r["mark"] == "not-significant"
+    )
+    assert not_significant == [
+        ("06.3.5", "dense-only", "answer_usable"),
+        ("06.3.5", "dense-only", "paper_hits_at_4"),
+        ("06.3.5", "hybrid+graph", "answer_usable"),
+        ("06.3.5", "hybrid+graph", "paper_hits_at_4"),
+        ("06.3.6", "hybrid+answer-format", "answer_usable"),
+        ("06.3.6", "hybrid+graph-v2", "answer_usable"),
+        ("06.3.6", "hybrid+graph-v2", "paper_hits_at_4"),
     ]
 
     root = _svg_root(rendered["svg"])
@@ -228,7 +254,8 @@ def _panel_scale(panel: ET.Element) -> tuple[float, float, float, float, float]:
     sign flip or a wrong scale in the generator's `x_of` shows up as a point off that line.
     """
     ticks = sorted(
-        (float(t.text or ""), float(t.get("x") or "")) for t in _by_class(panel, "text", "tick-label")
+        (float(t.text or ""), float(t.get("x") or ""))
+        for t in _by_class(panel, "text", "tick-label")
     )
     assert len(ticks) >= 2, "a panel draws fewer than two labelled ticks"
     (v0, x0), (v1, x1) = ticks[0], ticks[-1]
@@ -293,6 +320,43 @@ def test_d218_each_drawn_cell_matches_its_json_row(rendered: dict[str, Any]) -> 
         assert filled == (row["mark"] == "holm-significant"), where
         checked += 1
     assert checked == 16
+
+
+def _generator() -> Any:
+    """The generator loaded by path, in process, so its row builder runs on edited copies."""
+    spec = importlib.util.spec_from_file_location("render_forest_plot_under_test", SCRIPT)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    ("source", "field", "value"),
+    [
+        ("levers", "reference", "dense-only"),
+        ("baseline", "reference", "hybrid+graph"),
+        ("levers", "decision", "Significant"),
+        ("levers", "decision", "significant (Holm)"),
+        ("baseline", "decision", None),
+        ("baseline", "decision", "not evaluable"),
+    ],
+)
+def test_d218_generator_refuses_a_non_hybrid_reference_or_unknown_decision(
+    source: str, field: str, value: Any
+) -> None:
+    """A family row plotted under "vs hybrid" must compare against hybrid, and its decision
+    must be one the legend draws; anything else is a SourceLayoutError, not an open circle."""
+    generator = _generator()
+    documents = {
+        "levers": json.loads((REPO_ROOT / LEVERS).read_text(encoding="utf-8")),
+        "baseline": json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8")),
+    }
+    assert len(generator.build_rows(documents["levers"], documents["baseline"])) == 18
+    edited = copy.deepcopy(documents)
+    edited[source]["families"][1]["comparisons"][0][field] = value
+    with pytest.raises(generator.SourceLayoutError, match=field):
+        generator.build_rows(edited["levers"], edited["baseline"])
 
 
 def test_d218_committed_assets_equal_a_fresh_render(rendered: dict[str, Any]) -> None:

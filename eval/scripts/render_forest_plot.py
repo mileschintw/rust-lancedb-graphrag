@@ -94,8 +94,11 @@ def _family(document: dict[str, Any], index: int, primary: str, source: str) -> 
     return family["comparisons"]
 
 
-def _mark(decision: str) -> str:
-    return "holm-significant" if decision == "significant" else "not-significant"
+REFERENCE_ARM = "hybrid"
+# The two Holm decisions the comparison modules store (DECISION_SIGNIFICANT and
+# DECISION_NOT_SIGNIFICANT), mapped to the drawn mark. Any other value, including the
+# comparison modules' "not evaluable", has no mark in the legend and is refused.
+DECISION_MARKS = {"significant": "holm-significant", "not significant": "not-significant"}
 
 
 def _family_row(
@@ -104,6 +107,16 @@ def _family_row(
     _expect(
         comparison.get("ci_label") == CI_LABEL,
         f"{source} {path} ci_label is {comparison.get('ci_label')!r}",
+    )
+    # Every group header and the caption say "vs same-day hybrid".
+    _expect(
+        comparison.get("reference") == REFERENCE_ARM,
+        f"{source} {path} reference is {comparison.get('reference')!r}, expected {REFERENCE_ARM!r}",
+    )
+    _expect(
+        comparison.get("decision") in DECISION_MARKS,
+        f"{source} {path} decision is {comparison.get('decision')!r}, "
+        f"expected one of {sorted(DECISION_MARKS)}",
     )
     return {
         "group": group,
@@ -118,7 +131,7 @@ def _family_row(
         "adjusted_p": comparison["adjusted_p"],
         "decision": comparison["decision"],
         "n_pairs": comparison["n_pairs"],
-        "mark": _mark(comparison["decision"]),
+        "mark": DECISION_MARKS[comparison["decision"]],
         "footnote": None,
         "source_file": source,
         "source_path": path,
