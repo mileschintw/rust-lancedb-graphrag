@@ -396,8 +396,9 @@ wide. So the paired total-latency readings disagree from run to
 run: drive 2 reads +1596.3 and +1220.6 ms, the baseline 404.1 ms, and the lever run -18.538961038961038 and
 -30.328947368419904 ms. They mostly measure provider conditions on the drive day. The costs that repeat across runs are
 the prompt tokens (+209.6, 198.9 and 199.54934210526335 in the three runs) and the RetrieveHybrid time (15.9020 and
-14.04276315789474 ms). The graph node's own median time, 283.0, 617.0 and 600.0 ms, is real wall time that this variance
-hides.
+14.04276315789474 ms). The graph node's median time, 283.0, 617.0 and 600.0 ms, is not the graph's cost per request:
+the node also holds the query embedding, which a graph-off `hybrid` request pays in the same node before it returns, so
+the median is an upper bound on the graph's own time, not its marginal cost.
 
 The README once gave the graph's cost as +1.2 to +1.6 s per query. That was one run's paired reading, drive 2's two
 populations, and this page does not repeat it as the graph's cost. The question the 06.3.4.1 run of record left open,
