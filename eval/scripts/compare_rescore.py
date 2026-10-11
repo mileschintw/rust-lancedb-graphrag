@@ -5,7 +5,9 @@ Usage: ``python eval/scripts/compare_rescore.py <committed_run_dir> <rescored_di
 Both directories hold a ``report.json``. The re-score reproduces the published values
 when the ``dimensions`` and ``metadata.result_hash`` are equal and every other metadata
 key that differs is one of ``commit_sha``, ``run_date`` and ``dependency_lock_hash``
-(a CRLF checkout changes the lock hash). The script reads only; it writes nothing in
+(a CRLF checkout changes the lock hash). Both reports must carry non-empty
+``dimensions`` and a ``metadata.result_hash``, and the two directories must differ,
+or the check refuses rather than reproduces. The script reads only; it writes nothing in
 either directory. Exit 0 on reproduction, 1 with one line per failing reason, 2 on a
 usage error.
 """
@@ -41,7 +43,19 @@ def compare(committed_dir: Path, rescored_dir: Path) -> list[str]:
         return [f"cannot read report.json: {exc}"]
 
     reasons: list[str] = []
-    if committed.get("dimensions") != rescored.get("dimensions"):
+    if committed_dir.resolve() == rescored_dir.resolve():
+        # The same directory trivially equals itself; it proves no re-score ran.
+        return ["committed and re-scored directories are the same directory"]
+
+    # An absent key reads as ``None`` on both sides and would compare equal, so a
+    # report with no scored dimensions (wrong schema, an aborted ``report``, a
+    # wrong directory) must be refused rather than reproduced (fail closed).
+    dims_old = committed.get("dimensions")
+    dims_new = rescored.get("dimensions")
+    for side, dims in (("committed", dims_old), ("re-scored", dims_new)):
+        if not isinstance(dims, (list, dict)) or not dims:
+            reasons.append(f"{side} report.json has no scored dimensions")
+    if not reasons and dims_old != dims_new:
         reasons.append("scored dimensions differ")
 
     old_meta = committed.get("metadata")
@@ -50,6 +64,10 @@ def compare(committed_dir: Path, rescored_dir: Path) -> list[str]:
         reasons.append("metadata is missing or not an object in a report.json")
         return reasons
 
+    for side, meta in (("committed", old_meta), ("re-scored", new_meta)):
+        result_hash = meta.get("result_hash")
+        if not isinstance(result_hash, str) or not result_hash:
+            reasons.append(f"{side} metadata.result_hash is missing")
     if old_meta.get("result_hash") != new_meta.get("result_hash"):
         reasons.append(
             "metadata.result_hash differs: "

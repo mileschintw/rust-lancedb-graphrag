@@ -161,6 +161,54 @@ def test_d200_compare_rescore_reports_every_failing_reason(tmp_path: Path) -> No
     assert "corpus" in proc.stdout
 
 
+def test_d200_compare_rescore_empty_objects_do_not_reproduce(tmp_path: Path) -> None:
+    committed, rescored = _pair(tmp_path, {}, committed={})
+
+    proc = _run(committed, rescored)
+
+    assert proc.returncode == 1
+    assert "reproduces the published values" not in proc.stdout
+
+
+def test_d200_compare_rescore_reports_lacking_dimensions_exit_1(
+    tmp_path: Path,
+) -> None:
+    no_dimensions = {"metadata": _report()["metadata"]}
+    committed, rescored = _pair(tmp_path, no_dimensions, committed=no_dimensions)
+
+    proc = _run(committed, rescored)
+
+    assert proc.returncode == 1
+    assert "no scored dimensions" in proc.stdout
+    assert "reproduces the published values" not in proc.stdout
+
+
+def test_d200_compare_rescore_reports_lacking_result_hash_exit_1(
+    tmp_path: Path,
+) -> None:
+    no_hash = _report()
+    del no_hash["metadata"]["result_hash"]
+    committed, rescored = _pair(tmp_path, no_hash, committed=no_hash)
+
+    proc = _run(committed, rescored)
+
+    assert proc.returncode == 1
+    assert "result_hash is missing" in proc.stdout
+    assert "reproduces the published values" not in proc.stdout
+
+
+def test_d200_compare_rescore_the_same_directory_twice_exit_1(
+    tmp_path: Path,
+) -> None:
+    only = _write_run(tmp_path / "only", _report())
+
+    proc = _run(only, only)
+
+    assert proc.returncode == 1
+    assert "same directory" in proc.stdout
+    assert "reproduces the published values" not in proc.stdout
+
+
 def test_d200_compare_rescore_missing_report_exits_1(tmp_path: Path) -> None:
     committed = _write_run(tmp_path / "committed", _report())
     empty = tmp_path / "rescored"
