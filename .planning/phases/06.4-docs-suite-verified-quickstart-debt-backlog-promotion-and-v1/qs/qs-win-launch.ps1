@@ -213,7 +213,7 @@ $code = 0
 try {
     switch ($Role) {
         'engine' {
-            $code = Invoke-Combined 'cargo run --manifest-path engine/Cargo.toml --release'
+            $code = Invoke-Combined 'cargo run --manifest-path engine/Cargo.toml --release --bin engine'
         }
         'gateway' {
             Set-Location -LiteralPath (Join-Path $Clone 'gateway')

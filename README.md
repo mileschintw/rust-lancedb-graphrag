@@ -184,10 +184,10 @@ cd ..
 
 **5. Config.** `config/config.toml` is tracked and carries the shipped defaults, so nothing is copied over it.
 
-**6. Start the engine** in its own terminal (repeat the step 2 export there). The first build takes about 20 minutes on a cold clone.
+**6. Start the engine** in its own terminal (repeat the step 2 export there). The first build takes about 20 minutes on a cold clone. The engine crate holds several binaries, so `--bin engine` names the one to run.
 
 ```bash
-cargo run --manifest-path engine/Cargo.toml --release
+cargo run --manifest-path engine/Cargo.toml --release --bin engine
 ```
 
 The engine also logs many `lance::` dataset lines. Filtered, a start over the empty store prints these, in this order (`build_ms` varies):
@@ -287,7 +287,7 @@ docker compose -p lancet-qs --profile observability down -v
 - The committed `[engine.levers] defaults = ["rerank", "evidence_metadata"]` make every query that names no lever a paid rerank call.
 - A store without document metadata boots with the startup WARN above, and responses carry `DEFAULT_LEVER_UNAVAILABLE` and `degraded_mode = true` until documents with metadata are ingested or the store is backfilled (D-194).
 - A legacy 19-column store needs `backfill_evidence_metadata --migrate-only` first (D-197).
-- An empty `LANCET_ENGINE__LEVERS__DEFAULTS` starts the engine lever-free (bash: `LANCET_ENGINE__LEVERS__DEFAULTS= cargo run --manifest-path engine/Cargo.toml --release`). PowerShell cannot hold an empty environment variable, so there set `defaults = []` under `[engine.levers]` in `config/config.toml`.
+- An empty `LANCET_ENGINE__LEVERS__DEFAULTS` starts the engine lever-free (bash: `LANCET_ENGINE__LEVERS__DEFAULTS= cargo run --manifest-path engine/Cargo.toml --release --bin engine`). PowerShell cannot hold an empty environment variable, so there set `defaults = []` under `[engine.levers]` in `config/config.toml`.
 - Graph context is off by default and opted into per request with `"disable_graph_context": false` (D-207). `quickstart.py query ... --graph` sends it.
 - `"disable_default_levers": true` runs exactly the levers a request names, even none (D-198). `quickstart.py query ... --no-default-levers` sends it.
 
