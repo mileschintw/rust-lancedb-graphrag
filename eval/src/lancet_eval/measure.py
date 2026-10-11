@@ -617,7 +617,13 @@ _OVERRIDE_PREFIX = "PREREGISTRATION_"
 
 
 def _override_problem(token: str) -> str | None:
-    """Why `token` is not a committed pre-registration constant, or None if it is."""
+    """Why `token` is not a committed pre-registration constant, or None if it is.
+
+    Beyond the name and the existence of the constant, this applies the same proof
+    `run` demands of a held-out drive (`gitcheck.preregistration_problems`): a commit
+    introduces the constant, that commit is an ancestor of HEAD, the source tree is
+    clean and the constant's assignment is unchanged since its introducing commit.
+    """
     from lancet_eval import gitcheck
     from lancet_eval.preregistration import PreregistrationError, resolve
 
@@ -628,11 +634,13 @@ def _override_problem(token: str) -> str | None:
     except PreregistrationError as exc:
         return str(exc)
     try:
-        introducing = gitcheck.introducing_commit(token, gitcheck.THRESHOLDS_PATH)
+        problems = gitcheck.preregistration_problems(
+            (token,), require_clean_tree=True, unchanged_since_introduction=True
+        )
     except gitcheck.GitCheckError as exc:
         return f"git could not prove it is committed: {exc}"
-    if introducing is None:
-        return f"no commit in {gitcheck.THRESHOLDS_PATH} introduces it"
+    if problems:
+        return "; ".join(problems)
     return None
 
 
@@ -645,10 +653,14 @@ def _enforce_measure_split_role(
     holds questions the pre-registered drive needs unseen, and a corpus with no
     `[split]` has no committed role to check, so both are refused unless
     `preregistered_override` names a `PREREGISTRATION_*` constant in
-    `lancet_eval.thresholds` whose introducing commit exists. A supplied token is
-    validated even where it is not needed, so a typo never passes unnoticed. Runs
-    before any request and before any journal I/O, in the style of
-    `run._enforce_split_role`.
+    `lancet_eval.thresholds` that passes `_override_problem` (committed, an ancestor
+    of HEAD, a clean tree, unchanged since its introducing commit). A supplied token
+    is validated even where it is not needed, so a typo never passes unnoticed. For a
+    `heldout` corpus the token must also be the corpus's own declared
+    `preregistration_token`, so one corpus's pre-registration cannot unlock another's
+    held-out questions. A role-less corpus declares no role to bind to, so any
+    committed pre-registration token unlocks it. Runs before any request and before
+    any journal I/O, in the style of `run._enforce_split_role`.
 
     Args:
         corpus_name: The corpus the pass will measure.
@@ -670,10 +682,17 @@ def _enforce_measure_split_role(
                 f"{_OVERRIDE_PREFIX}* constant of lancet_eval.thresholds that a "
                 "commit introduced"
             )
-    role = load_corpus_config(corpus_name).split_role
+    config = load_corpus_config(corpus_name)
+    role = config.split_role
     if role is not None and role != "heldout":
         return None
     if preregistered_override is not None:
+        if role == "heldout" and preregistered_override != config.preregistration_token:
+            raise ValueError(
+                f"refusing to measure {corpus_name!r}: {preregistered_override!r} is "
+                "not the pre-registered override of this held-out corpus; its "
+                f"corpus config declares {config.preregistration_token!r}"
+            )
         return preregistered_override
     described = (
         "no committed split role (its corpus config has no [split])"

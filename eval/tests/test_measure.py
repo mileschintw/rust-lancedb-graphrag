@@ -1332,6 +1332,18 @@ def _d211_pass(corpus_name: str, run_dir: Path, **kwargs):
         )
 
 
+@pytest.fixture
+def _source_tree_clean(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report the eval source tree clean so a D-211 test never reads the live tree.
+
+    The override guard demands a clean tree (as `run` does); a test that edits
+    `eval/src` mid-change would otherwise flip on whatever is uncommitted.
+    """
+    from lancet_eval import gitcheck
+
+    monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, **kwargs: True)
+
+
 def test_d211_heldout_corpus_is_refused_before_any_request(tmp_path):
     run_dir = tmp_path / "pass"
     client = MagicMock()
@@ -1384,7 +1396,7 @@ def test_d211_dev_corpus_proceeds(tmp_path):
     assert (run_dir / "journal.jsonl").is_file()
 
 
-def test_d211_committed_override_proceeds(tmp_path):
+def test_d211_committed_override_proceeds(tmp_path, _source_tree_clean):
     run_dir, summary = _d211_pass(
         "multihop_rag_levers_heldout",
         tmp_path / "pass",
@@ -1426,7 +1438,9 @@ def test_d211_bogus_override_is_refused(tmp_path, monkeypatch, token):
     assert not run_dir.exists()
 
 
-def test_d211_a_bad_override_is_refused_even_where_none_is_needed(tmp_path):
+def test_d211_a_bad_override_is_refused_even_where_none_is_needed(
+    tmp_path, _source_tree_clean
+):
     run_dir = tmp_path / "pass"
     with pytest.raises(ValueError, match="pre-registered override"):
         _d211_pass(
@@ -1435,6 +1449,81 @@ def test_d211_a_bad_override_is_refused_even_where_none_is_needed(tmp_path):
             preregistered_override="PREREGISTRATION_NOT_A_CONSTANT",
         )
     assert not run_dir.exists()
+
+
+def test_d211_heldout_override_must_be_the_corpus_own_token(
+    tmp_path, _source_tree_clean
+):
+    # PREREGISTRATION_06_3_5 is committed and valid, but it is not the token the
+    # held-out corpus declares (WR-02): it must not unlock another pre-registration's
+    # held-out questions.
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="pre-registered override") as excinfo:
+        _d211_pass(
+            "multihop_rag_levers_heldout",
+            run_dir,
+            preregistered_override="PREREGISTRATION_06_3_5",
+        )
+
+    message = str(excinfo.value)
+    assert "PREREGISTRATION_06_3_6" in message
+    assert not run_dir.exists()
+
+
+def test_d211_override_with_an_uncommitted_source_tree_is_refused(
+    tmp_path, monkeypatch
+):
+    from lancet_eval import gitcheck
+
+    monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, **kwargs: False)
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="pre-registered override") as excinfo:
+        _d211_pass(
+            "multihop_rag_levers_heldout",
+            run_dir,
+            preregistered_override="PREREGISTRATION_06_3_6",
+        )
+
+    assert "uncommitted change" in str(excinfo.value)
+    assert not run_dir.exists()
+
+
+def test_d211_override_drifted_since_its_introducing_commit_is_refused(
+    tmp_path, monkeypatch, _source_tree_clean
+):
+    from lancet_eval import gitcheck
+
+    monkeypatch.setattr(
+        gitcheck,
+        "preregistered_value_problem",
+        lambda token, sha, **kwargs: f"{token} no longer has its committed value",
+    )
+    run_dir = tmp_path / "pass"
+    with pytest.raises(ValueError, match="pre-registered override") as excinfo:
+        _d211_pass(
+            "multihop_rag_levers_heldout",
+            run_dir,
+            preregistered_override="PREREGISTRATION_06_3_6",
+        )
+
+    assert "no longer has its committed value" in str(excinfo.value)
+    assert not run_dir.exists()
+
+
+def test_d211_override_not_an_ancestor_of_head_is_refused(
+    tmp_path, monkeypatch, _source_tree_clean
+):
+    from lancet_eval import gitcheck
+
+    monkeypatch.setattr(gitcheck, "is_ancestor", lambda *args, **kwargs: False)
+    with pytest.raises(ValueError, match="pre-registered override") as excinfo:
+        _d211_pass(
+            "multihop_rag_levers_heldout",
+            tmp_path / "pass",
+            preregistered_override="PREREGISTRATION_06_3_6",
+        )
+
+    assert "not an ancestor of HEAD" in str(excinfo.value)
 
 
 def test_d211_a_bad_stage_cap_still_raises_its_own_error_first(tmp_path):
@@ -1449,7 +1538,9 @@ def test_d211_a_bad_stage_cap_still_raises_its_own_error_first(tmp_path):
         )
 
 
-def test_d211_guard_returns_the_override_only_when_it_was_needed():
+def test_d211_guard_returns_the_override_only_when_it_was_needed(
+    _source_tree_clean,
+):
     from lancet_eval.measure import _enforce_measure_split_role
 
     assert _enforce_measure_split_role("multihop_rag_levers_dev", None) is None
