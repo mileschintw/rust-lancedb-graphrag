@@ -133,6 +133,24 @@ def _engine_degraded_classes() -> dict[str, set[str]]:
     return classes
 
 
+_BASIS_EARLY_RETURN = re.compile(
+    r"if\s+answer_basis\s*!=\s*AnswerBasis::Retrieval\s*\{\s*return\s+true;\s*\}"
+)
+
+
+def _has_basis_early_return(text: str) -> bool:
+    """Whether `derive_degraded_mode` still returns true for a non-retrieval basis before its
+    notice match. The doc's `_ANSWER_BASIS_FRAGMENT` sentence states this early return; the
+    match-arm slice in `_engine_degraded_classes` starts after it and never sees it.
+    """
+    start = text.find("pub fn derive_degraded_mode")
+    assert start != -1, "derive_degraded_mode not found in engine/src/workflow/mod.rs"
+    body = text[start:]
+    match_at = body.find("match code {")
+    assert match_at != -1, "derive_degraded_mode no longer matches on `code`"
+    return _BASIS_EARLY_RETURN.search(body[:match_at]) is not None
+
+
 def test_d76_notice_table_matches_the_proto_enum() -> None:
     proto = {(n, v) for n, v in _proto_enum("NoticeCode") if n != _UNSPECIFIED}
     rows = _doc_notice_rows()
@@ -166,7 +184,22 @@ def test_d76_degraded_mode_column_matches_derive_degraded_mode() -> None:
     assert engine["conditional"] == {_norm("NOTICE_CODE_BASIS_RECONCILED")}
     assert _norm("NOTICE_CODE_GRAPH_DISABLED_BY_CONFIG") in engine["no"]
     assert _norm("NOTICE_CODE_GRAPH_ABLATION") in engine["no"]
+    assert _has_basis_early_return(_read(_WORKFLOW)), (
+        "derive_degraded_mode lost its answer_basis early return, which the doc states"
+    )
     assert _ANSWER_BASIS_FRAGMENT in _doc_text()
+
+
+def test_d76_basis_early_return_check_fails_a_deleted_or_inverted_guard() -> None:
+    """The early-return check has teeth, on in-memory copies of the engine source only."""
+    text = _read(_WORKFLOW)
+    assert _has_basis_early_return(text)
+    guard = _BASIS_EARLY_RETURN.search(text, text.find("pub fn derive_degraded_mode"))
+    assert guard is not None
+    deleted = text[: guard.start()] + text[guard.end() :]
+    inverted = text[: guard.start()] + guard.group(0).replace("!=", "==") + text[guard.end() :]
+    assert not _has_basis_early_return(deleted)
+    assert not _has_basis_early_return(inverted)
 
 
 def test_d76_reserved_and_unused_values_are_stated() -> None:
