@@ -3,8 +3,9 @@
 The generator, ``eval/scripts/render_forest_plot.py``, is the only code that reads the
 run directories' JSON for the docs. These tests hold it to D-214 (never re-derive): every
 plotted number is re-read from the file and JSON path the row records, the two
-out-of-family Hits@4 cells carry a footnote and no number (D-228), two renders are
-byte-identical, and the committed ``docs/assets`` files equal a fresh render.
+out-of-family Hits@4 cells carry a footnote and no number (D-228), every drawn cell's
+printed value, x position and significance marking agree with its JSON row, two renders
+are byte-identical, and the committed ``docs/assets`` files equal a fresh render.
 """
 
 from __future__ import annotations
@@ -203,6 +204,95 @@ def test_d218_marks_descriptive_and_holm_rows(rendered: dict[str, Any]) -> None:
     assert LEVERS in caption and BASELINE in caption
     legend = " ".join((t.text or "") for t in _by_class(root, "text", "legend-label"))
     assert "Holm" in legend and "descriptive" in legend
+
+
+def _four(value: float) -> str:
+    """A value at four decimals, with no `-0.0000`."""
+    text = f"{abs(value):.4f}"
+    return text if text == "0.0000" or value >= 0 else "-" + text
+
+
+def _signed_four(value: float) -> str:
+    text = _four(value)
+    return text if text == "0.0000" or text.startswith("-") else "+" + text
+
+
+_VALUE_SUFFIX = {"holm-significant": " Holm", "descriptive": " descriptive", "not-significant": ""}
+_X_TOLERANCE = 0.02  # two-decimal coordinates, plus the rounding of the tick positions
+
+
+def _panel_scale(panel: ET.Element) -> tuple[float, float, float, float, float]:
+    """`(intercept, slope, zero_x, x_min, x_max)` of one panel, read from the drawn axis only.
+
+    The value-to-x line is fitted through the outermost labelled ticks, so a panel offset, a
+    sign flip or a wrong scale in the generator's `x_of` shows up as a point off that line.
+    """
+    ticks = sorted(
+        (float(t.text or ""), float(t.get("x") or "")) for t in _by_class(panel, "text", "tick-label")
+    )
+    assert len(ticks) >= 2, "a panel draws fewer than two labelled ticks"
+    (v0, x0), (v1, x1) = ticks[0], ticks[-1]
+    slope = (x1 - x0) / (v1 - v0)
+    zero = _by_class(panel, "line", "zero-line")
+    axis = _by_class(panel, "line", "axis-line")
+    assert len(zero) == 1 and len(axis) == 1
+    return (
+        x0 - slope * v0,
+        slope,
+        float(zero[0].get("x1") or ""),
+        float(axis[0].get("x1") or ""),
+        float(axis[0].get("x2") or ""),
+    )
+
+
+def test_d218_each_drawn_cell_matches_its_json_row(rendered: dict[str, Any]) -> None:
+    """The SVG is held to the JSON rows, not only to its own structure: the printed value
+    text, the x position of the whisker and point, and the significance fill and shape."""
+    root = _svg_root(rendered["svg"])
+    scales = {p.get("data-panel"): _panel_scale(p) for p in _by_class(root, "g", "panel")}
+    cells = _cells(root)
+    checked = 0
+    for row in rendered["rows"]:
+        if row["delta"] is None:
+            continue
+        where = (row["group"], row["panel"], row["arm"])
+        cell = cells[where]
+        intercept, slope, zero_x, x_min, x_max = scales[row["panel"]]
+        assert abs(intercept + slope * 0.0 - zero_x) <= _X_TOLERANCE, row["panel"]
+
+        values = _by_class(cell, "text", "value")
+        assert len(values) == 1, where
+        expected = (
+            f"{_signed_four(row['delta'])} [{_four(row['ci_lo'])}, {_four(row['ci_hi'])}]"
+            f"{_VALUE_SUFFIX[row['mark']]}"
+        )
+        if row["adjusted_p"] == 0.0:
+            expected += " (Holm p below stored precision)"
+        assert values[0].text == expected, where
+
+        ci = _by_class(cell, "line", "ci")
+        assert len(ci) == 1, where
+        x1, x2 = float(ci[0].get("x1") or ""), float(ci[0].get("x2") or "")
+        assert abs(x1 - (intercept + slope * row["ci_lo"])) <= _X_TOLERANCE, where
+        assert abs(x2 - (intercept + slope * row["ci_hi"])) <= _X_TOLERANCE, where
+        assert x_min <= x1 <= x2 <= x_max, where
+
+        points = [e for e in cell.iter() if "point" in (e.get("class") or "").split()]
+        assert len(points) == 1, where
+        point = points[0]
+        if row["mark"] == "descriptive":
+            assert point.tag == f"{SVG_NS}polygon", where
+            cx = float((point.get("points") or "").split()[0].split(",")[0])
+        else:
+            assert point.tag == f"{SVG_NS}circle", where
+            cx = float(point.get("cx") or "")
+        assert abs(cx - (intercept + slope * row["delta"])) <= _X_TOLERANCE, where
+        assert x1 <= cx <= x2, where
+        assert (cx > zero_x) == (row["delta"] > 0) or abs(cx - zero_x) <= _X_TOLERANCE, where
+        filled = point.get("fill") != "#ffffff"
+        assert filled == (row["mark"] == "holm-significant"), where
+        checked += 1
+    assert checked == 16
 
 
 def test_d218_committed_assets_equal_a_fresh_render(rendered: dict[str, Any]) -> None:
