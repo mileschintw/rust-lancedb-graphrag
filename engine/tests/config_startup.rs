@@ -1300,7 +1300,13 @@ fn a_migrated_legacy_store_boots_the_committed_config_with_a_warning() {
 
     let serving = line_with(&logs, &["Rust RAG Engine serving"]).unwrap();
     let warned = line_with(&logs, &["WARN", "evidence_metadata", "unavailable"]).unwrap();
-    let covered = line_with(&logs, &["WARN", "0 of 1 documents"]).unwrap();
+    // The committed configuration makes `evidence_metadata` a default lever, so the partial
+    // coverage is a WARN about a configured default (D-203 IN-01); the counts are named fields.
+    let covered = line_with(
+        &logs,
+        &["WARN", "evidence metadata covers only part", "configured default"],
+    )
+    .unwrap();
     assert!(
         warned < serving && covered < serving,
         "both warnings precede serving: lever WARN ({warned}), coverage WARN ({covered}), serving ({serving})"

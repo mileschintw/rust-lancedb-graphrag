@@ -196,15 +196,28 @@ impl RetrieveHybridNode {
     ///
     /// A block whose document has no entry keeps `None`, so it renders the same bytes as it does
     /// without the lever.
-    fn attach_doc_meta(&self, blocks: &mut [crate::prompt::EvidenceBlock]) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an internal-invariant [`NodeError`] when the request admitted `evidence_metadata`
+    /// and the node holds no document metadata: a silent no-op would let the snapshot echo claim a
+    /// lever that did not run (A-WR-05).
+    fn attach_doc_meta(
+        &self,
+        blocks: &mut [crate::prompt::EvidenceBlock],
+    ) -> Result<(), NodeError> {
         let Some(doc_meta) = &self.doc_meta else {
-            return;
+            return Err(NodeError::new(
+                NodeErrorKind::Internal,
+                "evidence_metadata lever admitted but no document metadata is wired",
+            ));
         };
         for block in blocks {
             if let Some(meta) = doc_meta.get(&block.document_id) {
                 block.attach_evidence_meta(meta.clone());
             }
         }
+        Ok(())
     }
 
     /// Reorders the fused list with the reranker this request selected.
@@ -212,6 +225,11 @@ impl RetrieveHybridNode {
     /// A request that names `rerank` and has a lever reranker takes the lever path; any other
     /// request takes the service reranker's strict path, where a failure fails the query exactly
     /// as it did before the lever existed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an internal-invariant [`NodeError`] when the request admitted `rerank` and the node
+    /// holds no lever reranker, instead of falling through to the strict path (A-WR-05).
     async fn rerank_step(
         &self,
         ctx: &mut WorkflowContext,
@@ -219,11 +237,13 @@ impl RetrieveHybridNode {
         node_start: Instant,
         fused: Vec<FusedCandidate>,
     ) -> Result<Vec<FusedCandidate>, NodeError> {
-        if let Some(lever) = self
-            .rerank_lever
-            .as_ref()
-            .filter(|_| ctx.levers.contains(Lever::Rerank))
-        {
+        if ctx.levers.contains(Lever::Rerank) {
+            let Some(lever) = self.rerank_lever.as_ref() else {
+                return Err(NodeError::new(
+                    NodeErrorKind::Internal,
+                    "rerank lever admitted but no lever reranker is wired",
+                ));
+            };
             return self
                 .rerank_with_lever(lever, ctx, cancel, node_start, fused)
                 .await;
@@ -606,7 +626,7 @@ impl RetrieveHybridNode {
         // after the final list, the result hash and the ranking are fixed, and only for a request
         // that names the lever; the citations below keep their filename title.
         if ctx.levers.contains(Lever::EvidenceMetadata) {
-            self.attach_doc_meta(&mut ctx.evidence_blocks);
+            self.attach_doc_meta(&mut ctx.evidence_blocks)?;
         }
         ctx.final_candidates = ctx
             .evidence_blocks

@@ -339,6 +339,17 @@ pub(super) async fn run_chain(
     disable_graph: bool,
     variation: Variation,
 ) -> WorkflowContext {
+    try_run_chain(fixture, disable_graph, variation)
+        .await
+        .expect("retrieve hybrid")
+}
+
+/// [`run_chain`], returning the `RetrieveHybrid` node's error instead of panicking on it.
+pub(super) async fn try_run_chain(
+    fixture: &Fixture,
+    disable_graph: bool,
+    variation: Variation,
+) -> Result<WorkflowContext, crate::workflow::node::NodeError> {
     let mut request = test_query_request("alpha", "sess-pin");
     request.disable_graph_context = Some(disable_graph);
     variation.apply(&mut request);
@@ -356,16 +367,12 @@ pub(super) async fn run_chain(
         .run(&mut ctx, &cancel)
         .await
         .expect("extract graph context");
-    fixture
-        .retrieve_node()
-        .run(&mut ctx, &cancel)
-        .await
-        .expect("retrieve hybrid");
+    fixture.retrieve_node().run(&mut ctx, &cancel).await?;
     AssemblePromptNode::with_settings(DEFAULT_MAX_PROMPT_TOKENS, DEFAULT_ANSWER_TOKEN_BUDGET, 1.0)
         .run(&mut ctx, &cancel)
         .await
         .expect("assemble prompt");
-    ctx
+    Ok(ctx)
 }
 
 async fn node_chain(disable_graph: bool, variation: Variation) -> String {

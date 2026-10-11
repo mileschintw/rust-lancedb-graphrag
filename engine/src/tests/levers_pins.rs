@@ -31,7 +31,7 @@ use crate::workflow::ports::FakeReranker;
 use crate::workflow::WorkflowContext;
 
 use super::retrieval_mode_pins::{
-    hex, render_scenarios, run_chain, run_runner, Fixture, Variation, DOC_A, DOC_B,
+    hex, render_scenarios, run_chain, run_runner, try_run_chain, Fixture, Variation, DOC_A, DOC_B,
 };
 use super::{
     configured_service, database_path, reranker_query_fixture, stage_document, FailingReranker,
@@ -1962,6 +1962,24 @@ fn capture_logs() -> (
     (tracing::subscriber::set_default(subscriber), sink)
 }
 
+/// [`capture_logs`] with ANSI styling on, the way the engine's default log layer styles `engine.log`.
+///
+/// Styling paints each field name italic and the `=` dim, so a field-rendered `key=value` is not
+/// contiguous text here; only a message is. A test over this capture proves a literal survives in
+/// the real log file.
+fn capture_logs_styled() -> (
+    tracing::subscriber::DefaultGuard,
+    Arc<std::sync::Mutex<Vec<u8>>>,
+) {
+    let sink = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let writer = LogSink(Arc::clone(&sink));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(true)
+        .with_writer(move || writer.clone())
+        .finish();
+    (tracing::subscriber::set_default(subscriber), sink)
+}
+
 fn captured(sink: &Arc<std::sync::Mutex<Vec<u8>>>) -> String {
     String::from_utf8(
         sink.lock()
@@ -1971,40 +1989,301 @@ fn captured(sink: &Arc<std::sync::Mutex<Vec<u8>>>) -> String {
     .expect("log output is UTF-8")
 }
 
+/// A snapshot over one chunk of each of `documents`, with metadata for the first `with_metadata` of them.
+fn snapshot_covering(
+    documents: usize,
+    with_metadata: usize,
+) -> crate::workflow::ports::CorpusSnapshot {
+    let chunks = (0..documents)
+        .map(|index| chunk_of(&format!("doc-{index}"), 0))
+        .collect();
+    let meta = DocMetaMap::from_entries(
+        (0..with_metadata).map(|index| (format!("doc-{index}"), headline_meta())),
+    );
+    snapshot_of_chunks(chunks, meta)
+}
+
+/// D-203 (WR-02): every swap logs the coverage at INFO, in a message a `grep` over `engine.log`
+/// finds even though the log layer styles field names. A steady partial store does not warn.
 #[test]
-fn a_swap_that_empties_or_refills_document_metadata_is_logged() {
-    use crate::ingest::log_doc_meta_availability_change;
+fn d203_every_swap_logs_coverage_at_info() {
+    use crate::ingest::log_doc_meta_coverage_change;
 
-    let held = DocMetaMap::from_entries([("doc-a".to_owned(), headline_meta())]);
-    let none = DocMetaMap::default();
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(2, 1), &snapshot_covering(2, 1));
+    drop(guard);
+    let steady = captured(&sink);
+    assert!(
+        steady.contains("index.swap.metadata_coverage: documents_with_metadata=1 documents=2"),
+        "the C1 literal is in the message text: {steady}"
+    );
+    assert!(steady.contains("INFO"), "{steady}");
+    assert!(
+        !steady.contains("WARN") && !steady.contains("index.swap.metadata_coverage_fell:"),
+        "a steady partial store stays quiet: {steady}"
+    );
 
-    let (guard, sink) = capture_logs();
-    log_doc_meta_availability_change(&held, &none);
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(2, 2), &snapshot_covering(5, 5));
+    drop(guard);
+    let grown = captured(&sink);
+    assert!(
+        grown.contains("index.swap.metadata_coverage: documents_with_metadata=5 documents=5"),
+        "the quickstart sample's line: {grown}"
+    );
+    assert!(!grown.contains("WARN"), "{grown}");
+
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(0, 0), &snapshot_covering(0, 0));
+    drop(guard);
+    assert!(
+        captured(&sink)
+            .contains("index.swap.metadata_coverage: documents_with_metadata=0 documents=0"),
+        "an empty store is reported too"
+    );
+}
+
+/// D-203: a falling covered ratio warns, and a swap that empties the map also says the lever is gone.
+#[test]
+fn d203_a_falling_ratio_warns() {
+    use crate::ingest::log_doc_meta_coverage_change;
+
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(2, 2), &snapshot_covering(2, 1));
+    drop(guard);
+    let fell = captured(&sink);
+    assert!(fell.contains("WARN"), "{fell}");
+    assert!(
+        fell.contains(
+            "index.swap.metadata_coverage_fell: prior_documents_with_metadata=2 prior_documents=2 documents_with_metadata=1 documents=2"
+        ),
+        "{fell}"
+    );
+
+    // The ratio is compared across different totals: 1 of 2 to 2 of 5 fell, 1 of 2 to 3 of 5 rose.
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(2, 1), &snapshot_covering(5, 2));
+    log_doc_meta_coverage_change(&snapshot_covering(2, 1), &snapshot_covering(5, 3));
+    drop(guard);
+    assert_eq!(
+        captured(&sink).matches("metadata_coverage_fell:").count(),
+        1,
+        "only the 2 of 5 swap fell"
+    );
+
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(
+        &snapshot_covering(1, 1),
+        &snapshot_of_chunks(vec![chunk_of("doc-0", 0)], DocMetaMap::default()),
+    );
     drop(guard);
     let emptied = captured(&sink);
     assert!(
         emptied.contains("WARN") && emptied.contains("evidence_metadata became unavailable"),
         "a swap that empties the map warns: {emptied}"
     );
+}
 
-    let (guard, sink) = capture_logs();
-    log_doc_meta_availability_change(&none, &held);
+/// D-203: the empty to non-empty transition informs and never warns.
+#[test]
+fn d203_no_warn_when_the_prior_snapshot_was_empty() {
+    use crate::ingest::log_doc_meta_coverage_change;
+
+    let (guard, sink) = capture_logs_styled();
+    log_doc_meta_coverage_change(&snapshot_covering(0, 0), &snapshot_covering(2, 2));
     drop(guard);
     let refilled = captured(&sink);
     assert!(
-        refilled.contains("INFO") && refilled.contains("evidence_metadata became available again"),
-        "a swap that refills the map informs: {refilled}"
+        refilled.contains("index.swap.metadata_coverage: documents_with_metadata=2 documents=2"),
+        "{refilled}"
+    );
+    assert!(
+        refilled.contains("evidence_metadata became available again"),
+        "{refilled}"
     );
     assert!(!refilled.contains("WARN"), "{refilled}");
+}
+
+/// D-203 IN-01: the boot line and the swap-path warning assert a configured default only when
+/// `[engine.levers] defaults` names `evidence_metadata`.
+#[test]
+fn d203_in01_wording_is_neutral_when_metadata_is_not_a_default() {
+    use crate::ingest::{log_boot_doc_meta_coverage, log_doc_meta_coverage_change};
+
+    let partial = snapshot_covering(2, 1);
 
     let (guard, sink) = capture_logs();
-    log_doc_meta_availability_change(&held, &held);
-    log_doc_meta_availability_change(&none, &none);
+    log_boot_doc_meta_coverage(&partial, false);
+    drop(guard);
+    let neutral = captured(&sink);
+    assert!(neutral.contains("INFO"), "{neutral}");
+    assert!(
+        !neutral.contains("WARN") && !neutral.contains("configured default"),
+        "a lever-free engine does not warn about a default it has not set: {neutral}"
+    );
+
+    let (guard, sink) = capture_logs();
+    log_boot_doc_meta_coverage(&partial, true);
+    drop(guard);
+    let configured = captured(&sink);
+    assert!(
+        configured.contains("WARN") && configured.contains("configured default"),
+        "{configured}"
+    );
+
+    let (guard, sink) = capture_logs();
+    log_boot_doc_meta_coverage(&snapshot_covering(2, 2), true);
+    log_boot_doc_meta_coverage(&snapshot_covering(0, 0), true);
     drop(guard);
     assert!(
         captured(&sink).is_empty(),
-        "unchanged emptiness logs nothing"
+        "a fully covered or empty snapshot logs nothing at boot"
     );
+
+    let (guard, sink) = capture_logs();
+    log_doc_meta_coverage_change(
+        &snapshot_covering(1, 1),
+        &snapshot_of_chunks(vec![chunk_of("doc-0", 0)], DocMetaMap::default()),
+    );
+    drop(guard);
+    let emptied = captured(&sink);
+    let unavailable = emptied
+        .lines()
+        .find(|line| line.contains("evidence_metadata became unavailable"))
+        .expect("the emptied swap warns");
+    assert!(
+        unavailable.contains("if it is a configured default"),
+        "the configured-default claim is conditional: {unavailable}"
+    );
+    assert!(
+        !unavailable.contains("a configured default is dropped"),
+        "the warning never states unconditionally that a default is dropped: {unavailable}"
+    );
+}
+
+/// D-204 IN-03: the per-request notice reaches the caller, so its text names no server
+/// configuration key, section or provider variable.
+#[tokio::test]
+async fn d204_in03_per_request_notice_names_no_server_config_key() {
+    use crate::service::lever_unavailable_notice_text;
+
+    let forbidden = ["[engine.", "graph_v2_chunk_precision", "OPENROUTER", "config.toml"];
+    for lever in [Lever::Rerank, Lever::EvidenceMetadata, Lever::GraphV2] {
+        let phrase = lever_unavailable_notice_text(lever);
+        assert!(!phrase.is_empty());
+        for key in forbidden {
+            assert!(!phrase.contains(key), "{lever:?} phrase names {key}: {phrase}");
+        }
+    }
+
+    // (defaults, reranker wired, metadata held, graph_v2 is the no-op `all`, lever, the phrase)
+    let cases: [(&str, &[&str], bool, bool, bool, &str, &str); 3] = [
+        (
+            "in03-rerank",
+            &["rerank"],
+            false,
+            true,
+            false,
+            "rerank",
+            "rerank provider not configured",
+        ),
+        (
+            "in03-metadata",
+            &["evidence_metadata"],
+            true,
+            false,
+            false,
+            "evidence_metadata",
+            "the index holds no document metadata",
+        ),
+        (
+            "in03-graph",
+            &["graph_v2"],
+            true,
+            true,
+            true,
+            "graph_v2",
+            "graph v2 chunk selection not enabled",
+        ),
+    ];
+    for (name, defaults, reranker, metadata, graph_all, wire, phrase) in cases {
+        let (path, mut service) =
+            service_with_default_levers(name, defaults, reranker, metadata).await;
+        if graph_all {
+            service.effective_settings.graph.graph_v2_chunk_precision = ChunkPrecision::All;
+            service.effective_settings.graph.context_default_enabled = true;
+        }
+        let response = super::execute_query_rag(&service, fresh_no_lever_request())
+            .await
+            .unwrap_or_else(|status| panic!("{name}: a dropped default is admitted: {status}"));
+        let notices = default_lever_notices(&response.notices);
+        assert_eq!(notices.len(), 1, "{name}");
+        assert_eq!(
+            notices[0].message,
+            format!("configured default lever {wire} was not applied: {phrase}"),
+            "{name}"
+        );
+        for key in forbidden {
+            assert!(
+                !notices[0].message.contains(key),
+                "{name}: the notice names {key}: {}",
+                notices[0].message
+            );
+        }
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
+/// A-WR-05: a node asked to run an admitted `rerank` lever that holds no lever reranker fails
+/// with an internal-invariant error instead of falling through to the strict path, where the
+/// snapshot echo would claim a lever that did not run.
+#[tokio::test]
+async fn d204_awr05_admitted_rerank_without_a_lever_reranker_is_an_invariant_error() {
+    use crate::pb::lancet::v1::NodeErrorKind;
+
+    let error = try_run_chain(&Fixture::recorded(), true, Variation::DEFAULT.with_levers(RERANK))
+        .await
+        .expect_err("rerank admitted with no lever reranker must not run");
+    assert_eq!(error.kind, NodeErrorKind::Internal);
+    assert!(
+        error.message.contains("rerank lever admitted but no lever reranker is wired"),
+        "{}",
+        error.message
+    );
+
+    // The same fixture with the lever reranker wired runs.
+    let wired = Fixture::recorded().with_lever(
+        Arc::new(FakeReranker::success()),
+        Duration::from_millis(1706),
+        Duration::from_millis(2500),
+    );
+    try_run_chain(&wired, true, Variation::DEFAULT.with_levers(RERANK))
+        .await
+        .expect("a wired lever reranker serves the admitted lever");
+}
+
+/// A-WR-05 twin: an admitted `evidence_metadata` lever with no document metadata wired is the same
+/// class of invariant error.
+#[tokio::test]
+async fn d204_awr05_admitted_metadata_without_a_doc_meta_port_is_an_invariant_error() {
+    use crate::pb::lancet::v1::NodeErrorKind;
+
+    let error = try_run_chain(&Fixture::recorded(), true, Variation::DEFAULT.with_levers(METADATA))
+        .await
+        .expect_err("evidence_metadata admitted with no metadata map must not run");
+    assert_eq!(error.kind, NodeErrorKind::Internal);
+    assert!(
+        error
+            .message
+            .contains("evidence_metadata lever admitted but no document metadata is wired"),
+        "{}",
+        error.message
+    );
+
+    let wired = Fixture::recorded().with_doc_meta(fixture_doc_meta());
+    try_run_chain(&wired, true, Variation::DEFAULT.with_levers(METADATA))
+        .await
+        .expect("a wired metadata map serves the admitted lever");
 }
 
 /// D-202 (WR-01): `main` runs every fallible startup step (the lever check, the generator, the
@@ -2059,7 +2338,7 @@ fn d202_main_binds_and_reads_staged_jobs_before_the_workers_and_the_replay() {
         .find("// Swap under a short write lock")
         .expect("the rebuild swaps under a write lock");
     let logged = body
-        .find("log_doc_meta_availability_change(")
-        .expect("the rebuild logs a metadata availability change");
-    assert!(swap < logged, "the change is logged after the swap");
+        .find("log_doc_meta_coverage_change(")
+        .expect("the rebuild logs the metadata coverage of the swap");
+    assert!(swap < logged, "the coverage is logged after the swap");
 }

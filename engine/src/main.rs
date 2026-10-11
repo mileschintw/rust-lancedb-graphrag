@@ -78,18 +78,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "BM25 snapshot built"
     );
     // A store whose documents only partly carry metadata still serves `evidence_metadata`, but
-    // adds no header to the documents without it (review A-WR-03). An empty snapshot is skipped.
-    let coverage = initial_snapshot.doc_meta_coverage();
-    if coverage.documents > 0 && coverage.with_metadata < coverage.documents {
-        tracing::warn!(
-            documents = coverage.documents,
-            documents_with_metadata = coverage.with_metadata,
-            "evidence metadata covers {} of {} documents in the corpus snapshot; the \
-             evidence_metadata lever adds no header for the others",
-            coverage.with_metadata,
-            coverage.documents
-        );
-    }
+    // adds no header to the documents without it (review A-WR-03). The wording depends on whether
+    // the lever is a configured default (review IN-01).
+    engine::ingest::log_boot_doc_meta_coverage(
+        &initial_snapshot,
+        effective_settings
+            .default_levers
+            .contains(engine::pb::lancet::v1::Lever::EvidenceMetadata),
+    );
     let corpus_store = Arc::new(tokio::sync::RwLock::new(initial_snapshot));
 
     let table = database.staged_documents_table().await?;

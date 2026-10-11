@@ -1944,7 +1944,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
         let mut write_guard = corpus_store.write().await;
         *write_guard = Arc::clone(&new_snapshot);
     }
-    log_doc_meta_availability_change(&prior.doc_meta, &new_snapshot.doc_meta);
+    log_doc_meta_coverage_change(&prior, &new_snapshot);
     tracing::info!(
         generation = %new_snapshot.generation,
         nodes_version = new_snapshot.nodes_version,
@@ -1965,27 +1965,90 @@ pub async fn rebuild_and_swap_with_graph_builder(
     Ok(new_snapshot)
 }
 
-/// Logs when a rebuild swap moves the corpus between holding document metadata and holding none.
+/// Logs the document-metadata coverage of a rebuild swap, and the changes worth an operator's eye.
 ///
-/// The `evidence_metadata` lever is available exactly while the snapshot holds metadata (D-136),
-/// so a swap that empties the map drops a configured default from every request that names no
-/// lever, and a swap that refills it brings the default back (D-194). Unchanged emptiness logs
-/// nothing.
-pub(crate) fn log_doc_meta_availability_change(
-    prior: &crate::doc_meta::DocMetaMap,
-    next: &crate::doc_meta::DocMetaMap,
+/// Every swap logs one INFO line with the covered and total document counts, empty stores
+/// included. A WARN follows only when the covered ratio falls against the prior snapshot, so a
+/// steady partial store stays quiet. A swap that empties the metadata map also warns that the
+/// `evidence_metadata` lever became unavailable (D-136, D-194), and one that refills it informs.
+///
+/// Availability is read from `doc_meta.is_empty()`, the predicate `lever_availability_for` uses,
+/// so this log and request admission cannot disagree about a store whose metadata map covers none
+/// of its indexed documents.
+///
+/// The coverage values are rendered into the message text, not only attached as fields. The
+/// engine's log layer prints no event name and styles every field name, so a field-rendered
+/// `documents_with_metadata=5` is not contiguous text in `engine.log`. The quickstart and the
+/// observability walkthrough grep these literals, which makes this a deliberate deviation from
+/// M-LOG-STRUCTURED's "avoid string formatting"; the named fields stay for the OTLP log bridge.
+pub(crate) fn log_doc_meta_coverage_change(
+    prior: &crate::workflow::ports::CorpusSnapshot,
+    next: &crate::workflow::ports::CorpusSnapshot,
 ) {
-    match (prior.is_empty(), next.is_empty()) {
+    let before = prior.doc_meta_coverage();
+    let after = next.doc_meta_coverage();
+    let (documents, with_metadata) = (after.documents, after.with_metadata);
+    tracing::info!(
+        name: "index.swap.metadata_coverage",
+        documents,
+        documents_with_metadata = with_metadata,
+        "index.swap.metadata_coverage: documents_with_metadata={with_metadata} documents={documents}"
+    );
+    // Compared by cross-multiplication, so no float is involved: after/after_total < before/before_total.
+    let ratio_fell = before.documents > 0
+        && after.documents > 0
+        && (after.with_metadata as u128) * (before.documents as u128)
+            < (before.with_metadata as u128) * (after.documents as u128);
+    if ratio_fell {
+        let (prior_with_metadata, prior_documents) = (before.with_metadata, before.documents);
+        tracing::warn!(
+            name: "index.swap.metadata_coverage_fell",
+            prior_documents,
+            prior_documents_with_metadata = prior_with_metadata,
+            documents,
+            documents_with_metadata = with_metadata,
+            "index.swap.metadata_coverage_fell: prior_documents_with_metadata={prior_with_metadata} prior_documents={prior_documents} documents_with_metadata={with_metadata} documents={documents}"
+        );
+    }
+    match (prior.doc_meta.is_empty(), next.doc_meta.is_empty()) {
         (false, true) => tracing::warn!(
-            "evidence_metadata became unavailable: the swapped-in corpus snapshot holds no \
-             document metadata; a configured default is dropped with a notice and a request \
-             naming it is refused"
+            "evidence_metadata became unavailable: the swapped-in corpus snapshot holds no document metadata; a request naming the lever is refused, and if it is a configured default it is dropped with a DEFAULT_LEVER_UNAVAILABLE notice"
         ),
         (true, false) => tracing::info!(
-            "evidence_metadata became available again: the swapped-in corpus snapshot holds \
-             document metadata"
+            "evidence_metadata became available again: the swapped-in corpus snapshot holds document metadata"
         ),
         _ => {}
+    }
+}
+
+/// Logs how much of the first corpus snapshot carries document metadata (D-194, review A-WR-03).
+///
+/// A store whose documents only partly carry metadata still serves `evidence_metadata`, but adds
+/// no header to the documents without it. An empty or fully covered snapshot logs nothing.
+/// `metadata_is_default_lever` says whether `[engine.levers] defaults` names the lever: only then
+/// is the partial coverage a WARN about a configured default; otherwise it is an INFO that
+/// asserts no configuration, so a lever-free engine no longer warns about a lever it never runs.
+pub fn log_boot_doc_meta_coverage(
+    snapshot: &crate::workflow::ports::CorpusSnapshot,
+    metadata_is_default_lever: bool,
+) {
+    let coverage = snapshot.doc_meta_coverage();
+    if coverage.documents == 0 || coverage.with_metadata >= coverage.documents {
+        return;
+    }
+    let (documents, documents_with_metadata) = (coverage.documents, coverage.with_metadata);
+    if metadata_is_default_lever {
+        tracing::warn!(
+            documents,
+            documents_with_metadata,
+            "evidence metadata covers only part of the corpus snapshot; the configured default lever evidence_metadata adds no header for the documents without it"
+        );
+    } else {
+        tracing::info!(
+            documents,
+            documents_with_metadata,
+            "evidence metadata covers only part of the corpus snapshot; requests that name evidence_metadata add no header for the others"
+        );
     }
 }
 

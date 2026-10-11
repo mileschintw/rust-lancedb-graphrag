@@ -195,7 +195,8 @@ pub fn lever_availability_for(
 
 /// Why `lever` cannot be served when its resource is absent (D-194).
 ///
-/// The same text feeds the startup warning and the per-request notice.
+/// This server-side text feeds the startup warning only; the per-request notice uses the fixed
+/// phrase of [`lever_unavailable_notice_text`], which names no configuration key.
 pub fn lever_unavailable_reason(lever: v1::Lever) -> &'static str {
     match lever {
         v1::Lever::Rerank => "no lever reranker is wired",
@@ -230,6 +231,21 @@ pub fn unavailable_default_levers(
                 unavailable
             }
         })
+}
+
+/// The fixed phrase a per-request DEFAULT_LEVER_UNAVAILABLE notice gives for an unavailable lever
+/// (D-204 IN-03).
+///
+/// The notice reaches the caller, so the phrase names no server configuration key, config section
+/// or provider variable. [`lever_unavailable_reason`] keeps the specific wording for the
+/// server-side startup log.
+pub fn lever_unavailable_notice_text(lever: v1::Lever) -> &'static str {
+    match lever {
+        v1::Lever::Rerank => "rerank provider not configured",
+        v1::Lever::EvidenceMetadata => "the index holds no document metadata",
+        v1::Lever::GraphV2 => "graph v2 chunk selection not enabled",
+        v1::Lever::BinaryAnswerFormat | v1::Lever::Unspecified => "it cannot be served",
+    }
 }
 
 /// The remedy a startup warning names for a configured default lever that is unavailable (D-204 IN-02).
@@ -1425,7 +1441,7 @@ impl LancetService for LancetServiceImpl {
                 format!(
                     "configured default lever {} was not applied: {}",
                     workflow::levers::wire_name(lever),
-                    lever_unavailable_reason(lever)
+                    lever_unavailable_notice_text(lever)
                 ),
                 v1::NoticeSeverity::Warning,
             ));
