@@ -302,3 +302,50 @@ the same day. Treat these facts as ground truth.
 6. Sample documents for D-221: license-clean, with `doc_title` / `source` / `published_date`.
 7. The D-210 obligations grep across every phase directory, and the reconciliation of the graph-latency figures.
 8. Each of the 40 open 06.3.6 ledger rows routed per D-204, plus an inventory of the J5 rows from other ledgers.
+
+---
+
+## Q. Corrections after research (2026-10-11)
+
+`06.4-RESEARCH.md` "Corrections to verified-facts" lists 15 items. The orchestrator re-checked the ones marked
+**re-checked** against source; the rest are taken from the research with its cited evidence.
+
+1. **§G5 (re-checked).** `preflight.py:866` is the legacy `check_canary_floors` (graph-on/graph-off canaries), not the
+   arm-mode canaries; only `:1203` is the arm-mode call. Two more direct `/rag/query` posters exist:
+   `preflight.py:321` (`check_corpus_generation`, already sends `"disable_graph_context": False`) and `seed.py:317`
+   (sends only the query). Both need the D-198 opt-out.
+2. **§L (WSL).** `uv` lives at `~/.local/bin/uv` and is not on a non-login `bash script.sh` PATH. `libssl-dev` is needed
+   with `pkg-config` (Linux `openssl-sys` via `native-tls` <- `hyper-tls` <- `reqwest` <- lance crates). `cmake` and
+   `node` are also absent. The protoc need is real (`lance-table-1.0.4/build.rs:9-25`).
+3. **§C4 answered.** `config.<LANCET_ENV>.toml` is a later source over `config.toml` (`engine/src/config.rs:1082-1105`);
+   neither overlay defines `[engine.graph]` / `[engine.levers]`, so one key in `config.toml` covers every environment.
+4. **§I (shallow clone).** Confirmed by a run: a depth-1 clone fails `score` with the D-73 message
+   (`gitcheck.py:108,308`). Full clone only.
+5. **§I (`metadata.json`).** The expected re-score differences are `commit_sha` and `run_date`, plus
+   `dependency_lock_hash` on a CRLF (Windows `core.autocrlf=true`) checkout. `dimensions` and `result_hash` are equal.
+6. **§J4.** Adding `sha2` as a direct dependency requires updating and committing `engine/Cargo.lock` in the same commit.
+7. **§K.** Also stale: `go run ./gateway` fails from the repo root (`gateway/` is its own module; use
+   `cd gateway && go run .`); `eval/README.md:11-15` states the pre-D-207 graph semantics; scripted
+   `atlas schema apply --env local` needs `--auto-approve`; there is no `.env` or `.env.example`.
+8. **§N / D-68.** `.planning/WINDOWS.md` is the "Broken Windows Ledger" (`open_count: 9`), a defect register.
+9. **§N (re-checked in part).** STATE's `GAP-06.2-SC5-SC6` (Prometheus double prefix) and `GAP-06.2-SC6-EXE`
+   (committed `dashboard_gen.exe`) are stale: the series are single-prefixed and no `.exe` is tracked.
+10. **CONTEXT D-210 latency row (re-checked).** `06.3.6-RUN-OF-RECORD.md:169-170`: `hybrid` 8301 ms total, 96.4 ms
+    RetrieveHybrid, 2255 prompt tokens; `hybrid+graph` 8407 / 108.7 / 2431. The CONTEXT's +106 ms / +12 ms / +176 tokens
+    are these unpaired arm-mean differences. Paired readings: research Finding 10.
+11. **CONTEXT D-217 / SC-1 (re-checked).** No `info_span!`, `#[instrument]` or other span macro exists in
+    `engine/src/rerank/` or `engine/src/workflow/nodes/retrieve.rs`. Resolved by D-227.
+12. **CONTEXT D-03 label.** `DEBT-CR-04-EXT` is not a literal string; its record is
+    `03-hybrid-retrieval-basic-rag-path/deferred-items.md:157`.
+13. **New, re-checked: gateway rejects unknown JSON fields.** `dec.DisallowUnknownFields()` at `gateway/main.go:757`, so
+    the D-198 field must be added to the gateway body struct or a client sending it gets HTTP 400.
+14. **New, re-checked: `score` scans every record with `provenance_failures`.** `_provenance_scan`
+    (`eval/src/lancet_eval/score.py:613-633`) tallies `dict.fromkeys("abcdefghij", 0)` and refuses on any code in
+    `ZERO_TOLERANCE_CODES = frozenset("abcdfhj")` (`provenance.py:71`). New per-arm checks (code 24, graph state) must
+    live outside that path, or the frozen runs of record could stop scoring; a new clause letter would also raise
+    `KeyError` in the tally.
+15. **New, re-checked: tonic nodelay.** tonic 0.14.6's own `bind_incoming` sets `.with_nodelay(Some(self.tcp_nodelay))`
+    with the builder default `tcp_nodelay: true` (`tonic-0.14.6/src/transport/server/mod.rs:132,653-660`).
+    `serve_with_incoming_shutdown` bypasses it, so the D-202 reorder must call `.with_nodelay(Some(true))` itself.
+16. **New, re-checked: cold build time.** A cold `cargo build --release --locked` of the engine in a fresh Windows clone
+    finished in 20 m 58 s (`research/cold_cargo_build.out:28`). It cannot run inside one 10-minute executor Bash call.
