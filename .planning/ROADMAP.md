@@ -1313,6 +1313,69 @@ Plans:
    - the IN-05/IN-06/outbound-call follow-ups (D-212);
    - the fixes the D-204 triage routes here.
 
+**Plans:** 17 plans in 14 waves. Five offline code plans (01-05, worktree-safe except where noted); one orchestrator-run code-review gate (06); live, paid fresh-clone verification that runs sequentially on main, never in a worktree (08-11, each platform split A plus orchestrator build / B); planning and docs plans (07, 12-17). Owner checkpoints: the one-way naming decision before the single `buf generate` (01), the D-208 override (07), the D-223 reconciliation (17); orchestrator checkpoints: the review gate (06) and the two cold builds (08, 10). Decisions in `06.4-CONTEXT.md` D-198..D-233, inheriting `06-CONTEXT.md`.
+
+Plans:
+
+**Wave 1**
+
+- [ ] 06.4-01-PLAN.md — One-way checkpoint on the published names, then the single regeneration: D-198 `disable_default_levers` opt-out end to end (tracer), D-207 graph default-off with code 25, the interaction rule and the single flip commit; A-WR-06, A-IN-01, IN-05
+
+**Wave 2**
+
+- [ ] 06.4-02-PLAN.md — Engine hardening: D-202 bind-first startup with a held-port test, D-203 per-swap coverage logging, the D-227 `rerank_request` span, IN-01/IN-02/IN-03/A-WR-05, D-212 IN-06 `sha2`
+- [ ] 06.4-03-PLAN.md — Harness: explicit per-arm graph and lever fields, D-199 env refusal and per-arm echo check kept outside the score path, B-IN-07/C-WR-06, and the journal-only re-score acceptance
+
+**Wave 3**
+
+- [ ] 06.4-04-PLAN.md — `lancet-eval preflight --stack`, `compare_rescore.py`, the D-211 `measure` split-role guard with the script retirement, D-212 IN-05
+- [ ] 06.4-05-PLAN.md — Quickstart assets: the D-221 project-authored sample, `quickstart.py`, `.env.example`, the README quickstart block, `eval/README.md` fixes
+
+**Wave 4**
+
+- [ ] 06.4-06-PLAN.md — Orchestrator-run D-205 code review of the code-first wave (`/gsd-code-review 06.4 --files=...`, fix cycle, re-review); every later plan depends on it
+
+**Wave 5**
+
+- [ ] 06.4-07-PLAN.md — Obligations ledger seed (D-210), the owner-confirmed D-208 override, the D-209 closure rows
+- [ ] 06.4-08-PLAN.md — Windows A: run scripts, full clone from the local repo, `.env`, D-230 stop, orchestrator cold build
+
+**Wave 6**
+
+- [ ] 06.4-09-PLAN.md — Windows B: verbatim quickstart run, D-194 sequence, D-217 Jaeger/Grafana captures from the fresh store, offline re-score, stack preflight, settled spend, teardown, D-230 restore
+
+**Wave 7**
+
+- [ ] 06.4-10-PLAN.md — WSL A: WSL scripts, D-231 prerequisites, WSL clone, `.env` by stdin, D-230 stop, orchestrator cold build
+
+**Wave 8**
+
+- [ ] 06.4-11-PLAN.md — WSL B: verbatim quickstart run, re-score, stack preflight, settled spend, teardown, D-230 restore, owner UAT hook
+
+**Wave 9**
+
+- [ ] 06.4-12-PLAN.md — Observability walkthrough (D-72/D-217): one question default and graph opt-in, span tables tied to the committed trace JSON, diagrams 1 and 4
+
+**Wave 10**
+
+- [ ] 06.4-13-PLAN.md — Evaluation methodology and results with the D-218 forest plot (D-228 footnotes), the graph-cost reconciliation, and the quote check
+
+**Wave 11**
+
+- [ ] 06.4-14-PLAN.md — Design narrative: the seven alternatives (D-67, D-219), the D-216 graph positioning, diagrams 2 and 3
+
+**Wave 12**
+
+- [ ] 06.4-15-PLAN.md — README front door (D-213, D-214, D-215, D-216), limitations (D-71), `docs/api-contract.md` with its drift test (SC-5), `docs/build-history.md`
+
+**Wave 13**
+
+- [ ] 06.4-16-PLAN.md — Backlog promotion 999.13-999.17 (the 18 DEBT items) plus 999.18/999.19 (the 27 review deferrals), the debt ledger, the 06.3.6 ledger at zero open
+
+**Wave 14**
+
+- [ ] 06.4-17-PLAN.md — v1 closure: D-229 residual debt, STATE reconciliation, obligations ledger at zero, the owner-approved D-223 reconciliation, the milestone summary
+
 ## Backlog
 
 ### Phase 999.1: Community Summaries (Global Graph Summarization) (BACKLOG)
