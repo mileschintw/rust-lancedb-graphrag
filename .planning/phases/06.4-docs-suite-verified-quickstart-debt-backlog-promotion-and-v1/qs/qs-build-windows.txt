@@ -1,0 +1,26 @@
+06.4 plan 08, Task 3: the cold Windows release build, run by the ORCHESTRATOR (not an executor).
+
+Why not an executor: the cold build takes about 21 minutes (research/cold_cargo_build.out:28, measured 20 m 58 s),
+longer than an executor's 10-minute Bash cap, and executors have no Monitor. Run the single command below in a
+background Git Bash shell of your own (run_in_background), then wait with a background until-loop on the existence of
+build.exit (no foreground sleep).
+
+Working directory: the clone, D:/lqs/win-20261011
+Evidence directory: D:/Repos/lancet/data/qs-evidence/windows-20261011 (exists, gitignored)
+Build log: <evidence dir>/build.log (stdout and stderr)
+Exit code: <evidence dir>/build.exit (written LAST, after the end time, so the until-loop never fires early)
+Start and end UTC: <evidence dir>/build.times (line 1 start, line 2 end)
+
+Command (one Git Bash line; CARGO_BUILD_JOBS=4 is the owner's resource limit for this machine):
+
+cd D:/lqs/win-20261011 && export CARGO_BUILD_JOBS=4 && EV=D:/Repos/lancet/data/qs-evidence/windows-20261011 && date -u +%Y-%m-%dT%H:%M:%SZ > "$EV/build.times" && cargo build --release --locked --manifest-path engine/Cargo.toml > "$EV/build.log" 2>&1; rc=$?; date -u +%Y-%m-%dT%H:%M:%SZ >> "$EV/build.times"; echo "$rc" > "$EV/build.exit"
+
+The cargo command itself is: cargo build --release --locked --manifest-path engine/Cargo.toml
+
+After build.exit appears:
+  - 0: check that D:/lqs/win-20261011/engine/target/release/engine.exe exists and is newer than the clone time
+    (the clone was made 2026-10-11T11:00:32Z), then reply "win-build-ok <elapsed>".
+  - non-zero: stop for the owner with the tail of build.log, and reply "win-build-failed".
+
+The owner's dev stack keeps running during the build (D-230, contract C2: plan 06.4-09 stops it right before its
+compose-up), so a failed build has nothing to restore.
