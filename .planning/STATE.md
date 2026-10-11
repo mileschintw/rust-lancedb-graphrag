@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 14
+current_plan: 15
 status: executing
-stopped_at: Phase 06.4 wave 10 complete (06.4-13); wave 11 (06.4-14 design narrative) next
+stopped_at: Phase 06.4 wave 11 complete (06.4-14); wave 12 (06.4-15 API contract / README) next
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -22,11 +22,12 @@ last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-pro
 
 ## Current Position
 
-Current Plan: 14
+Current Plan: 15
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-12: 06.4 wave 11 COMPLETE (plan 14, Opus).** `docs/design-narrative.md`: seven alternatives in prose with source links, graph described as built/measured/off-by-default (~42% no-path, 149/150/148 of 351), query-path and ingestion Mermaid diagrams (ordering and degraded-branch labels follow the code). OB-25 and OB-38 closed; ledger 18 open / 26 closed / 104 n-a. quote_check passes unchanged. SUMMARY `0efe6eeb`. Docs-only wave: gate skipped per owner rule. Owed: owner visual check of the Mermaid diagrams on GitHub.
 - **2026-10-12: 06.4 wave 10 COMPLETE (plan 13, Opus).** D-218 forest plot generated from the two committed run JSONs (`eval/scripts/render_forest_plot.py` + template, `docs/assets/eval-forest.{svg,json}`, 18 cells, D-228 Hits@4 footnote cells carry no number), `docs/evaluation.md`, fidelity-note addendum only, never-re-derive `quote_check.py` (+ allow file, 3 phrases; two checker bugs fixed: thousands grouping, unsigned-vs-negative match). Ledger open 20 / closed 24 (OB-39/40/41/43 also closed). SUMMARY `e50824bd`. Scoped gate: test_forest_plot 6 passed, drift clean. Known checker limit: short figures can match unrelated tokens in large report.json files.
 - **2026-10-12: 06.4 RESUMED by the owner; wave 9 COMPLETE (plan 12, Opus executor).** Owner decisions for 12-17: no engine/gateway/proto/config changes this phase; defer `default-run = "engine"` and engine retry on `finish_reason: error` to plan 16's debt ledger next to IN-01..06; executors Opus for 12-15, Sonnet for 16-17; scoped post-wave gates (skip for .planning/docs/README-only waves, plan-touched eval test files + drift for eval/ changes, full suite only for engine/gateway/proto/config/scripts; full regression once at phase end). 12: `docs/observability.md` (two traces of the two-entity question, span tables tied to committed trace JSON by `eval/tests/test_observability_doc.py`), OB-23 closed; SUMMARY `54da63bf`. Scoped gate: 5 passed, drift clean. Carried: OB-44 (per-document ingestion span count never measured; needs an owner call before 17's zero-open check), README "What is built" node order (graph extraction runs before hybrid retrieval) for plan 15, human render check of the Mermaid diagrams/screenshots.
 - **2026-10-11: 06.4 PAUSED by the owner after wave 8 (reboot / environment clean-up).** Resume: `/gsd-execute-phase 06.4` picks up at wave 9 (06.4-12 docs; 13-16 then 17 with its D-223 owner checkpoint). Nothing is running: dev stack up (six `lancet-*`), no `lancet-qs`, both clone env files deleted (Windows `D:/lqs/win-20261011`, WSL `~/lqs/wsl-20261011`; clones kept). Last green gate: post-wave-6 (engine 963, gateway 124, eval 2323); waves 7-8 changed only `.planning/` and README. Phase settled spend 0.015884697 USD of 1.00. Still open for the owner: `default-run = "engine"` in engine/Cargo.toml; engine retry on a `finish_reason: error` generation; review IN-01..06 (plan 16).
