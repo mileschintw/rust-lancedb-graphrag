@@ -1,10 +1,23 @@
 # Lancet 🚀
 
 > [!NOTE]
-> **Project Status (2026-10-06): v1 engineering complete through Phase 06.3.4.1 — evaluation closure in progress, docs phase parked.**
-> 192 plans have been executed across 15 completed phases (Phases 1–5, Phase 04.1, and the Phase 6 family 6, 6.1, 6.2, 6.3, 6.3.1–6.3.4.1). A Go API gateway, a Rust RAG/GraphRAG engine, a full OpenTelemetry stack and a Python evaluation harness exist and are tested in this repository — see [`gateway/`](./gateway), [`engine/`](./engine), [`proto/`](./proto), [`deploy/`](./deploy) and [`eval/`](./eval). The validated run of record is [`eval/runs/2026-10-06-drive2-multihop_rag_diag/`](./eval/runs/2026-10-06-drive2-multihop_rag_diag). Two evaluation phases (06.3.5 retrieval ablation matrix, 06.3.6 quality levers) are planned next; the docs-and-closure phase (6.4) stays parked until they publish. The honest headline so far: **the graph path works mechanically and buys no measurable answer quality yet** — see [Evaluation results](#-evaluation-results-so-far).
+> **v1 complete (2026-10-11).** Lancet's v1 is built, measured on held-out data, and documented, with a quickstart verified from a fresh clone on Windows and on WSL. The results are in [`docs/evaluation.md`](docs/evaluation.md), and the phase-by-phase record of how it was built is in [`docs/build-history.md`](docs/build-history.md).
 
-**Lancet** is an end-to-end, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform. It is built to show data-plane engineering depth and evaluation discipline: a Go control plane and a Rust data plane joined by gRPC, custom chunking, hybrid dense + BM25 + graph retrieval over embedded LanceDB, a lightweight Rust state machine with degraded modes, production-style observability, and a benchmark harness whose results can be believed — including when they are negative.
+**Lancet** is an end-to-end, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform. It is built to show data-plane engineering depth and evaluation discipline: a Go control plane and a Rust data plane joined by gRPC, custom chunking, hybrid dense + BM25 retrieval over embedded LanceDB with an optional rerank step and an opt-in knowledge graph, a lightweight Rust state machine with degraded modes, production-style observability, and a benchmark harness whose results can be believed — including when they are negative.
+
+## 📊 What v1 found
+
+**The two standard levers that now ship as defaults measurably helped on held-out data: reranking added about +8 points to `answer_usable` and about +16 points to Hits@4, and evidence metadata added about +6 points, all three Holm-significant ([results](docs/evaluation.md#defaults-that-shipped)). Reranking is not free: it adds latency to every default request, and when the rerank provider is in its slow mode a request can pay up to the 2,286 ms rerank budget ([the caveat](docs/evaluation.md#defaults-that-shipped)).** The knowledge graph is the honest other half. It is built and observable, and it costs latency and prompt tokens, but it bought no significant gain, and neither did graph-v2, the repair a per-question diagnosis chose ([graph cost](docs/evaluation.md#graph-cost-reconciled)). So the graph ships off, and a request turns it on with `"disable_graph_context": false`.
+
+| Lever | Effect on held-out | Significant? | Cost |
+|---|---|---|---|
+| rerank (default on) | about +8 points `answer_usable`, about +16 points Hits@4 ([results](docs/evaluation.md#defaults-that-shipped)) | yes | a paid rerank call per request: +289 ms mean total latency and +458 ms of retrieval time, up to the 2,286 ms budget in the provider's slow mode ([results](docs/evaluation.md#defaults-that-shipped)) |
+| evidence_metadata (default on) | about +6 points `answer_usable` ([results](docs/evaluation.md#defaults-that-shipped)) | yes | +471 prompt tokens, no latency change ([results](docs/evaluation.md#lever-run-seven-arms)) |
+| graph, v1 (opt-in) | -0.0101 `answer_usable`, -0.0101 Hits@4 ([results](docs/evaluation.md#baseline-run-four-retrieval-arms)) | no | +198.9 prompt tokens and +15.9020 ms of retrieval time per request ([results](docs/evaluation.md#graph-cost-reconciled)) |
+| graph-v2 (off) | -0.0195 `answer_usable`, -0.0130 Hits@4 ([results](docs/evaluation.md#lever-run-seven-arms)) | no | the graph's own cost, since it runs the graph ([results](docs/evaluation.md#lever-run-seven-arms)) |
+| answer-format (off) | -0.0423 `answer_usable`, on the harmful side ([results](docs/evaluation.md#lever-run-seven-arms)) | no | a longer prompt: 2340 against 2255 mean prompt tokens ([results](docs/evaluation.md#lever-run-seven-arms)) |
+
+"Points" are the owner's plain-language reading of the stored deltas, which are fractions of 1, so one point is a hundredth. The other effects are quoted as stored. Each effect is a paired comparison against plain `hybrid` retrieval on the same day's run. The full tables, with sample sizes, intervals and gate readings, are on the [results page](docs/evaluation.md).
 
 ---
 
@@ -14,10 +27,23 @@ Most RAG applications are built on high-level orchestration frameworks and pre-p
 
 Lancet builds the core data plane from scratch instead: custom chunkers, index lifecycle, hybrid retrieval and fusion, graph seeding and path search, prompt assembly and a state-machine orchestrator in **Rust**, behind a lightweight **Go** gateway, with **gRPC/Protobuf** as the boundary. Mature tools are used where they are commodity — PostgreSQL, LanceDB, OpenTelemetry, Jaeger, Prometheus, Loki, Grafana, OpenRouter — and rebuilt where building them demonstrates understanding.
 
-The second half of the project is the way it was built. All 192 plans were planned and executed with an AI-agent-assisted workflow (the GSD methodology, run with Claude Code), and the trail is under [`.planning/`](.planning): every phase has its PLAN, SUMMARY, VERIFICATION, code review, security audit and UAT record. This is human-directed collaboration, not autonomous authorship. The human part is directing, reviewing, holding the agent to explicit verification gates, and making the calls it cannot make. Two kinds of call stand out:
+The second half of the project is the way it was built. Every plan was planned and executed with an AI-agent-assisted workflow (the GSD methodology, run with Claude Code), and the trail is under [`.planning/`](.planning): the phases carry their PLAN, SUMMARY, VERIFICATION, code review, security audit and UAT records. This is human-directed collaboration, not autonomous authorship. The human part is directing, reviewing, holding the agent to explicit verification gates, and making the calls it cannot make. Two kinds of call stand out:
 
-- **Force-closing on schedule with a debt ledger.** [ADR-02-004](.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md) and [ADR-03-003](.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md) closed Phases 2 and 3 with their remaining gaps named as `DEBT-*` items and carried forward, rather than letting them block progress or silently drop. Phases 6 and 6.1 then paid most of that debt down.
-- **Refusing a result that looked good.** The first full benchmark run (2026-09-03) reported 1,000 successful queries and a positive graph effect. The harness's own provenance checks showed that 966 of the 1,000 answers were empty, 904 queries had been clipped at a retrieval timeout, and the ablation delta had been computed over two arms that shared 1.6% of their questions. That finding spawned the 06.3.1–06.3.4.1 family: fail-closed reporting, paired per-question ablation, censoring-aware latency measurement and derived timeout budgets, pre-registered gates committed before each paid drive, and a graph-retrieval redesign — ending in a run of record whose numbers are modest and trustworthy. The forensic trail is [`06.3.1-ROOT-CAUSE.md`](.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md) and the public note is [`docs/evaluation-fidelity-and-graph-yield.md`](docs/evaluation-fidelity-and-graph-yield.md).
+- **Force-closing on schedule with a debt ledger.** [ADR-02-004](.discussion/decisions/phases/02/2026-07-30-ADR-02-004-all-the-way-to-ship-mvp.md) and [ADR-03-003](.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md) closed Phases 2 and 3 with their remaining gaps named as `DEBT-*` items and carried forward, rather than letting them block progress or silently drop. Phases 6 and 6.1 then paid most of that debt down, and Phase 6.4 promoted the rest to themed backlog phases.
+- **Refusing a result that looked good.** The first full benchmark run (2026-09-03) reported 1,000 successful queries and a positive graph effect. The harness's own provenance checks showed that 966 of the 1,000 answers were empty, 904 queries had been clipped at a retrieval timeout, and the ablation delta had been computed over two arms that shared 1.6% of their questions. That finding spawned the 06.3.1–06.3.4.1 family: fail-closed reporting, paired per-question ablation, censoring-aware latency measurement and derived timeout budgets, pre-registered gates committed before each paid drive, and a graph-retrieval redesign. Two more phases then measured standard baselines and quality levers on a held-out split. The result is three runs of record whose numbers are modest and trustworthy. The forensic trail is [`06.3.1-ROOT-CAUSE.md`](.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md), the public note is [`docs/evaluation-fidelity-and-graph-yield.md`](docs/evaluation-fidelity-and-graph-yield.md), and the history is told once on the [results page](docs/evaluation.md#history).
+
+### How it was built
+
+250 plans across 18 phases, from the first ping to the v1 docs. One line per group; the full per-phase list is in [`docs/build-history.md`](docs/build-history.md).
+
+- **Phase 1 (1 plan, 2026-07-13).** The Go gateway, the Rust engine and the gRPC contract, pinging each other.
+- **Phases 2 and 3 (51 plans, to 2026-08-05).** Ingestion, chunking, LanceDB storage, hybrid retrieval and the first answer path, both force-closed with a named debt ledger.
+- **Phase 4 and Phase 04.1 (10 plans, to 2026-08-09).** A `lance-graph` compatibility spike, then entity and relation extraction and graph query.
+- **Phase 5 (27 plans, to 2026-08-19).** The Rust state machine and typed workflow events streamed over SSE.
+- **Phases 6, 6.1 and 6.2 (32 plans, to 2026-08-27).** The consolidated wire contract and degraded modes, index rebuild-and-swap, and OpenTelemetry end to end.
+- **Phase 6.3 and Phases 06.3.1 to 06.3.4.1 (71 plans, to 2026-10-06).** The evaluation harness, the refused first run, and the work that made the evaluation signal trustworthy, ending with a repaired graph path.
+- **Phases 06.3.5 and 06.3.6 (41 plans, to 2026-10-11).** Four retrieval baselines, then four quality levers measured as arms on held-out data, with defaults chosen by a pre-registered rule.
+- **Phase 6.4 (17 plans, 2026-10-11).** A small code-first slice (the default-lever opt-out, the graph default-off, harness preflight checks), this README, the four `docs/` pages, the verified quickstart and the v1 closure.
 
 ---
 
@@ -36,9 +62,9 @@ graph TD
         RustEngine --> Chunker[Custom Chunker <br> fixed-size + Markdown structure-aware]
         RustEngine --> Store[LanceDB <br> chunks + vectors, rebuild-and-swap index]
         RustEngine --> GraphStore[LanceDB entities / entity_edges <br> seeding + bounded path search]
-        RustEngine --> Retriever[Hybrid Retriever <br> dense + BM25 + graph list, weighted RRF]
+        RustEngine --> Retriever[Hybrid Retriever <br> dense + BM25 + graph list, weighted RRF, optional rerank]
         RustEngine --> Orchestrator[Rust State Machine <br> 5 nodes, timeouts, retries, degraded modes]
-        RustEngine -->|HTTPS| LLM[OpenRouter <br> embeddings + chat]
+        RustEngine -->|HTTPS| LLM[OpenRouter <br> embeddings, chat + rerank]
     end
 
     subgraph Observability
@@ -51,54 +77,41 @@ graph TD
     end
 
     subgraph Evaluation
-        Eval[lancet-eval <br> Python / uv harness] -.->|/rag/query, two arms| GoGateway
+        Eval[lancet-eval <br> Python / uv harness] -.->|/rag/query, paired arms| GoGateway
         Eval -.->|LLM-as-judge| LLM
     end
 ```
+
+**The default request.** A request that sets nothing runs hybrid retrieval with the `rerank` and `evidence_metadata` levers and no graph: graph context is opt-in per request with `"disable_graph_context": false` (D-207). Those two levers were each measured against plain hybrid, but never together as one arm; the results page carries that [interaction caveat](docs/evaluation.md#defaults-that-shipped).
 
 ### What is built
 
 1. **Go API Gateway (control plane, [`gateway/`](./gateway)).** HTTP REST server with document upload and ingestion, the `/rag/query` endpoint streaming workflow events over SSE, graph query, session handling, PostgreSQL persistence for documents, sessions and workflow checkpoints (Atlas-managed schema, separate `local` and `eval` environments), graceful shutdown that drains buffered checkpoints, and an OTel pipeline with a rate-limited exporter error handler. The listener binds to loopback only (see [Local-only constraint](#-local-only-exposure-constraint--debt-triggers-debt-cr-04)).
 2. **Rust RAG Engine (data plane, [`engine/`](./engine)).** An asynchronous gRPC server implementing:
-   - **Ingestion and chunking.** Markdown, plain text and JSON sources; fixed-size and Markdown structure-aware chunkers; embeddings via OpenRouter; staged writes with an index **rebuild-and-swap** lifecycle and cross-index corpus generation so a query never reads a half-built index.
-   - **Hybrid retrieval.** Embedded LanceDB dense search, a local BM25 lexical index, metadata filtering, deduplication and deterministic weighted Reciprocal Rank Fusion with documented tie rules; multi-variant reformulation fusion; a `Reranker` port with a pass-through default.
-   - **GraphRAG.** Entity and relation extraction at ingestion into `entities` / `entity_edges` LanceDB tables; at query time, model-free mention extraction, seed matching (exact name, normalised name, then name-vector nearest neighbour), bounded seed-to-seed one- and two-hop path search with a degree cap derived from the store's p99, path facts injected into the prompt under a token-budget-derived cap, and the path entities' source chunks fused as a third RRF list. Cypher-style pattern queries via `lance-graph` for the graph API.
-   - **Orchestration.** A five-node state machine (reformulate → retrieve hybrid → extract graph context → assemble prompt → generate answer) with per-node timeouts derived from measured p95s, retries, cancellation, PostgreSQL-backed checkpoints with strict FIFO drain, and typed client-facing events.
-   - **Degraded modes as contract, not accident.** Every fallback is a typed notice on the wire: `NO_EVIDENCE`, `GRAPH_TIMEOUT`, `GRAPH_DEGRADED`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_DEGRADED_DENSE`, `RETRIEVAL_FAILED`, `CITATION_REPAIRED`, `CITATION_DROPPED`, `MODEL_ONLY`, `BASIS_RECONCILED`, `GRAPH_ABLATION`, `INDEX_STALE`, `INDEX_GENERATION_MISMATCH`, among others. Model-only answers are opt-in and fail closed by default. Citation repair never ships an excerpt the model did not see.
-3. **gRPC contract ([`proto/`](./proto)).** The Protobuf boundary between the two services, including the per-request ablation flag the evaluation harness uses.
-4. **Observability ([`deploy/`](./deploy), `docker-compose.yml`).** OpenTelemetry traces, metrics and structured logs from both services through an OTel Collector to Jaeger, Prometheus and Loki, with a provisioned Grafana dashboard (`histogram_quantile` latency panels, trace-to-log correlation via `trace_id`). Ingestion is traced end to end through chunking, embedding, graph extraction and index swap.
-5. **Evaluation harness ([`eval/`](./eval), `lancet-eval`).** A `uv`-managed Python package that drives the gateway as a black box over the MultiHop-RAG benchmark with two arms per question (graph-on, graph-off), journals every attempt with provenance, computes deterministic retrieval and answer metrics without an LLM, runs cached LLM-as-judge groundedness and faithfulness scoring with a human calibration path, enforces per-stage spend caps reconciled against the provider account, refuses to publish an incomplete journal as complete, and reads pre-committed gates. Isolated from the dev stack by a separate LanceDB path and PostgreSQL schema.
+   - **Ingestion and chunking.** Markdown, plain text and JSON sources; fixed-size and Markdown structure-aware chunkers; embeddings via OpenRouter; document metadata (title, source, published date); staged writes with an index **rebuild-and-swap** lifecycle and cross-index corpus generation so a query never reads a half-built index.
+   - **Hybrid retrieval.** Embedded LanceDB dense search, a local BM25 lexical index, metadata filtering, deduplication and deterministic weighted Reciprocal Rank Fusion with documented tie rules; multi-variant reformulation fusion; a per-request retrieval mode (`hybrid`, `dense_only`, `bm25_only`); and a reranker port that the `rerank` lever fills with an OpenRouter rerank model, keeping the fused order if the call fails.
+   - **Quality levers.** Four levers a request can name: `rerank`, `evidence_metadata` (title, source and date headers on each evidence block), `binary_answer_format` and `graph_v2`. The snapshot echoes the levers that actually ran. The first two are the configured defaults, and a default the engine cannot serve is dropped with a notice rather than silently claimed.
+   - **GraphRAG.** Entity and relation extraction at ingestion into `entities` / `entity_edges` LanceDB tables; at query time, model-free mention extraction, seed matching (exact name, normalised name, then name-vector nearest neighbour), bounded seed-to-seed one- and two-hop path search with a degree cap derived from the store's p99, path facts injected into the prompt under a token-budget-derived cap, and the path entities' source chunks fused as a third RRF list. Cypher-style pattern queries via `lance-graph` for the graph API. Off by default, on per request.
+   - **Orchestration.** A five-node state machine (reformulate → extract graph context → retrieve hybrid → assemble prompt → generate answer; graph context runs before retrieval because its node also computes the query embedding) with per-node timeouts derived from measured p95s, retries, cancellation, PostgreSQL-backed checkpoints with strict FIFO drain, and typed client-facing events.
+   - **Degraded modes as contract, not accident.** Every fallback is a typed notice on the wire: `NO_EVIDENCE`, `GRAPH_TIMEOUT`, `GRAPH_DEGRADED`, `GRAPH_UNAVAILABLE`, `RETRIEVAL_DEGRADED_DENSE`, `RETRIEVAL_FAILED`, `CITATION_REPAIRED`, `CITATION_DROPPED`, `MODEL_ONLY`, `BASIS_RECONCILED`, `GRAPH_ABLATION`, `INDEX_REBUILD_FAILED`, `RERANK_DEGRADED`, `DEFAULT_LEVER_UNAVAILABLE` and `GRAPH_DISABLED_BY_CONFIG`, among others; [`docs/api-contract.md`](docs/api-contract.md) lists every code and whether it sets `degraded_mode`. Model-only answers are opt-in and fail closed by default. Citation repair never ships an excerpt the model did not see.
+3. **gRPC contract ([`proto/`](./proto)).** The Protobuf boundary between the two services, including the per-request graph, retrieval-mode and lever fields the evaluation harness uses. The request fields, refusals and notice codes are published as API contract in [`docs/api-contract.md`](docs/api-contract.md).
+4. **Observability ([`deploy/`](./deploy), `docker-compose.yml`).** OpenTelemetry traces, metrics and structured logs from both services through an OTel Collector to Jaeger, Prometheus and Loki, with a provisioned Grafana dashboard (`histogram_quantile` latency panels, trace-to-log correlation via `trace_id`). Every node is a span, with leaf spans for each external call, the rerank call included. Ingestion is traced end to end through chunking, embedding, graph extraction and index swap.
+5. **Evaluation harness ([`eval/`](./eval), `lancet-eval`).** A `uv`-managed Python package that drives the gateway as a black box over the MultiHop-RAG benchmark. Each question runs through several arms (retrieval baselines, graph on and off, and one arm per lever), each compared per question against plain `hybrid`. The harness journals every attempt with provenance, computes deterministic retrieval and answer metrics without an LLM, applies exact paired tests with Holm correction against pre-registered gates, runs cached LLM-as-judge groundedness and faithfulness scoring with a human calibration path, enforces per-stage spend caps reconciled against the provider account, and refuses to publish an incomplete journal as complete. A preflight checks, per arm, that the engine echoes the graph and lever settings the arm declares. Isolated from the dev stack by a separate LanceDB path and PostgreSQL schema.
 
-Tests: roughly 700 Rust, 120 Go and 1,000+ Python test functions, all runnable offline except the explicitly live-evidence suites.
+Tests: 963 Rust and 124 Go test functions (the counts the local gate scripts pin) and 2,338 Python tests, all runnable offline except the explicitly live-evidence suites.
 
 ---
 
-## 📊 Evaluation results so far
+## 📚 Documentation
 
-The run of record is [`eval/runs/2026-10-06-drive2-multihop_rag_diag/`](./eval/runs/2026-10-06-drive2-multihop_rag_diag) (full readings and the decision record in [`06.3.4.1-RUN-OF-RECORD.md`](.planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-RUN-OF-RECORD.md)). It is a 100-question diagnostic sample of MultiHop-RAG (90 answerable, 10 unanswerable) over a 346-document index, two arms per question, generation by `deepseek/deepseek-v4-flash-0731` and embeddings by `voyageai/voyage-4-large` through OpenRouter.
+The README is the front door; the deep-dives are in [`docs/`](docs):
 
-| What was measured | Reading | Notes |
-|---|---|---|
-| Hybrid retrieval latency (node, on the wire) | p50 116 ms, p95 166 ms | flat across the drive; slope −0.02 ms/query |
-| Graph path found (graph-on, answerable pairs) | 59 / 89 = 0.66 | Wilson 95% CI [0.56, 0.75]; zero `GRAPH_TIMEOUT` |
-| Graph changed the final retrieved set | 35 / 65 = 0.54 of gold-in-vector pairs | pre-committed floor 0.10 |
-| Answer usable, graph-off (answerable) | 52 / 90 = 0.58 | by type: inference 0.90, comparison 0.58, temporal 0.13 |
-| Paired delta, graph-on − graph-off, `answer_usable` | −0.03 | 95% CI includes 0 |
-| Paired delta, ranking quality | −0.08 | 95% CI excludes 0 (negative) |
-| Graph cost per query | +1.2 to +1.6 s, +210 prompt tokens | 95% CIs exclude 0 |
-| Abstention on unanswerable questions | 9 / 9 | both arms |
-| Drive spend | $0.07 of a $0.91 pre-authorised cap | reconciled against the provider account |
-
-What this says, plainly: the pre-registered gates passed with margin, the measurement is trustworthy, the graph path is mechanically alive, and **on this benchmark the graph does not yet improve answers**. Three disclosures stand with the result and are not toggled off: the negative but non-significant quality deltas with a real latency and token cost, a mid-drive provider switch that was not a controlled variable, and a small graph-off retrieved-set difference against the previous drive of undetermined cause.
-
-What has **not** been measured yet, and is the subject of the next two phases:
-
-- Standard-RAG baselines. Dense-only, BM25-only and hybrid have never been compared; the contract's only ablation flag is the graph one.
-- LLM-judged faithfulness and groundedness, and a human-calibrated slice. The machinery exists; the pass has not been run on the repaired system.
-- Anything on a sample larger than 100 questions on the repaired system. Confidence intervals are about ±10 points.
-- Chunking strategy comparison (fixed-size versus structure-aware).
-
-The 2026-09-03 and 2026-09-09 runs under `eval/runs/` are retained as superseded evidence; their numbers are not comparable to the run of record and say so in their markers.
+* [`docs/design-narrative.md`](docs/design-narrative.md) — the alternatives considered and why each was rejected: the state machine, LanceDB, chunking, the two-language split, the evaluation design, the graph shipping off, and levers measured as arms.
+* [`docs/observability.md`](docs/observability.md) — one question followed through two real Jaeger traces, the default request and the same question with the graph opted in, then the metrics, logs and sampling.
+* [`docs/evaluation.md`](docs/evaluation.md) — the methodology and the three runs of record, quoted verbatim, with a paired-delta forest plot, the defaults that shipped and the graph cost reconciled across runs.
+* [`docs/api-contract.md`](docs/api-contract.md) — the request fields, refusals and every notice code, pinned to the proto by a test.
+* [`docs/build-history.md`](docs/build-history.md) — every phase, with its plan count and date.
+* [`docs/evaluation-fidelity-and-graph-yield.md`](docs/evaluation-fidelity-and-graph-yield.md) — the operational note on the refused first run and the graph-yield repair.
 
 ---
 
@@ -293,6 +306,22 @@ docker compose -p lancet-qs --profile observability down -v
 
 The evaluation harness runs against an isolated store under `LANCET_ENV=eval`; its commands and the isolation setup are in [`eval/README.md`](./eval/README.md).
 <!-- quickstart:end -->
+---
+
+## ✅ How it's verified
+
+There is no CI (06-CONTEXT D-85). Every change passes the local gates instead, run from the repository root:
+
+```bash
+cargo test --manifest-path engine/Cargo.toml --locked && sh scripts/engine-test-targets.sh
+(cd gateway && go test -count=1 ./...) && sh scripts/gateway-test-targets.sh
+uv run --project eval pytest eval/tests
+```
+
+- The two `scripts/*-test-targets.sh` scripts pin the number of test functions in every target, so a test that stops compiling fails the gate instead of quietly vanishing from a total.
+- `-count=1` turns off Go's test cache, which could otherwise replay a cached pass for a test that reads the config files.
+- Beyond the tests, every phase after Phase 1 has a code review on record (its `*-REVIEW.md`), and Phase 6.4's code-first slice was reviewed before the quickstart was verified (D-205).
+- The quickstart above was followed verbatim from a fresh clone on both platforms, and the runs are committed as transcripts: [`06.4-QS-TRANSCRIPT-WINDOWS.md`](.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-QS-TRANSCRIPT-WINDOWS.md) and [`06.4-QS-TRANSCRIPT-WSL.md`](.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-QS-TRANSCRIPT-WSL.md).
 
 ---
 
@@ -300,12 +329,13 @@ The evaluation harness runs against an isolated store under `LANCET_ENV=eval`; i
 
 ### 💻 Source and deployment
 * [gateway/](./gateway) — Go control plane: HTTP API, SSE streaming, PostgreSQL, Atlas schema.
-* [engine/](./engine) — Rust data plane: ingestion, chunking, LanceDB, hybrid retrieval, graph, state machine, OTel.
+* [engine/](./engine) — Rust data plane: ingestion, chunking, LanceDB, hybrid retrieval, rerank, graph, state machine, OTel.
 * [proto/](./proto) — Protobuf service contract shared between gateway and engine.
-* [eval/](./eval) — `lancet-eval` Python harness, corpora definitions and committed run records.
+* [eval/](./eval) — `lancet-eval` Python harness, corpora definitions and committed run records; [`eval/corpora/quickstart/`](eval/corpora/quickstart) holds the five project-authored sample documents the quickstart ingests and the preflight's canary questions.
 * [deploy/](./deploy) — OTel Collector, Prometheus, Loki and Grafana provisioning.
-* [config/](./config) — engine configuration (`config.toml`, the `eval` overlay, the example file with derived timeout budgets documented).
-* [docs/](./docs) — public-facing notes; today the evaluation-fidelity and graph-yield note.
+* [config/](./config) — engine configuration (`config.toml` with the shipped defaults, the `eval` overlay, the example file with derived timeout budgets documented).
+* [scripts/](./scripts) — the local gate scripts and dashboard generation.
+* [docs/](./docs) — the design narrative, the observability walkthrough, the evaluation results, the API contract, the build history and the evaluation-fidelity note, with their charts and screenshots under [`docs/assets/`](docs/assets).
 
 ### 🧠 Design & Discussion Documents
 * [.discussion/rag_side_project_brainstorming_document.md](.discussion/rag_side_project_brainstorming_document.md) — initial brainstorming on trade-offs, technology choices and resume impact.
@@ -323,60 +353,9 @@ The evaluation harness runs against an isolated store under `LANCET_ENV=eval`; i
 
 ---
 
-## 🗺️ Implementation Roadmap
-
-Fifteen phases are complete (192 plans). Two are planned. One is parked. Details, success criteria and plan lists are in [`.planning/ROADMAP.md`](.planning/ROADMAP.md).
-
-### ✅ Phase 1: Basic Gateway & Rust Engine Ping (1 plan — 2026-07-13)
-Repo structure, Go HTTP API, Rust gRPC server, Protobuf contract, Docker Compose for PostgreSQL and Jaeger.
-
-### ✅ Phase 2: Ingestion, Chunking & Vector Storage (28 plans — 2026-07-30, force-closed per ADR-02-004)
-Markdown, plain-text and JSON ingestion; fixed-size and structure-aware chunkers; embeddings and metadata in LanceDB; schema ports for future community and summary columns. Remaining gaps recorded as `DEBT-*` and paid down in Phases 6 and 6.1.
-
-### ✅ Phase 3: Hybrid Retrieval & Basic RAG Path (23 plans — 2026-08-05, force-closed per ADR-03-003)
-Dense + BM25 hybrid retrieval with metadata filters, deterministic fusion and deduplication; the first end-to-end RAG answer path; the `Reranker` port. Degraded-mode hardening (RAG-03) deliberately deferred to Phase 6.
-
-### ✅ Phase 4: Knowledge Graph — Compatibility Spike (1 plan — 2026-08-06)
-De-risked the `lance-graph` / LanceDB / Arrow version compatibility with a feature-gated proof before committing to the full build.
-
-### ✅ Phase 04.1: Knowledge Graph Extraction & Query (9 plans — 2026-08-09)
-Entity and relation extraction into `entities` / `entity_edges` at ingestion; Cypher-style pattern queries; graph context compiled into the prompt beside chunk evidence; the `ContextAssemblyStrategy` port.
-
-### ✅ Phase 5: State Machine & Workflow Events (27 plans; UAT 10/10)
-The Rust state machine with typed client-facing events streamed through the gateway over SSE; timeouts, retries and cancellation; PostgreSQL checkpoints with FIFO drain and graceful-shutdown guarantees; verified live against OpenRouter. Two quality-gate requirements (GATE-01 wire framing, GATE-02 checkpoint ownership) were formalized here.
-
-### ✅ Phase 6: Module Graph, Wire Contract and Degraded-Mode Hardening (16 plans — 2026-08-22)
-Rust and Go module-graph restructure; one consolidated additive wire-contract change; RAG-03 delivered: opt-in model-only answers with explicit notices, per-path `RETRIEVAL_DEGRADED`, citation repair with `CITATION_REPAIRED` / `CITATION_DROPPED` and basis downgrade, a table-driven bad-input matrix, `GRAPH_UNAVAILABLE` on both silent-degrade paths. Two human UAT rulings tightened the contract (a total citation drop must not bypass the model-only flag; citations resolve only against what the model actually saw).
-
-### ✅ Phase 6.1: Index Rebuild-and-Swap and Deterministic Proofs (4 plans — 2026-08-23)
-Index rebuild-and-swap with cross-index corpus generation (`DEBT-RAG-04`), deterministic proofs for two staging-race debt items, and the documented review of the local-only exposure constraint.
-
-### ✅ Phase 6.2: OpenTelemetry Traces, Metrics and Logs (12 plans — 2026-08-27)
-OTel across Go and Rust through a Collector to Jaeger, Prometheus and Loki, Grafana provisioned as code with a typed dashboard generator, trace-to-log correlation, and rate-limited exporter diagnostics under Collector outage.
-
-### ✅ Phase 6.3: Evaluation Harness, Corpora and Recorded Run (11 plans — 2026-09-04)
-The `lancet-eval` harness: MultiHop-RAG corpus sampling with fixed seeds, isolated eval store, two-arm drive, deterministic IR and answer metrics, cached LLM-as-judge scoring with a calibration worksheet, dated run records with pinned provenance. Its first full run (2026-09-03) is what the next five phases had to correct.
-
-### ✅ Phases 6.3.1 – 6.3.4: Making the evaluation signal trustworthy (26 plans — 2026-09-05 to 2026-09-13)
-A new requirement, OBS-05, formalized mid-milestone: a failed query path must be visible on the wire and in the report, every record carries provenance, retrieval and graph health are measured per path, and the graph effect is a per-question paired comparison. Delivered as: engine and config failure signalling (6.3.1); harness diagnostics, scored dimensions and paired ablation with bootstrap CIs (6.3.2); a censoring-aware latency measurement pass that replaced guessed timeouts with six p95-derived budgets and an enforced provider-attempt invariant (6.3.3); a staged re-drive with pre-committed gates, fail-closed journal completeness, and the root-cause record (6.3.4; its own full drive halted and is marked not a run of record).
-
-### ✅ Phase 06.3.4.1: Retrieval Diagnosis, Index Identity and Graph-Yield Repair (34 plans — 2026-10-06)
-Separated corpus/index drift from retrieval health from graph architecture. Fixed index identity (the eval index may contain only the mapped document set, with a regenerated gold-coverage table), fixed a `RetrieveHybrid` slowdown, added answer-usability metrics, and replaced whole-question cosine seeding with mention extraction, multi-seed matching, bounded seed-to-seed path search and a graph RRF list. Three paid drives under per-stage caps; the third is the run of record and passed all pre-committed unpark gates. UAT 4/4, verification 10/10, security audit 156/156 threats closed.
-
-### 🔜 Phase 06.3.5: Retrieval Ablation Matrix, Paper-Convention Metrics, Judged Pass and Calibration (planned)
-A retrieval mode on the contract and four arms — dense-only, BM25-only, hybrid, hybrid+graph — on a committed dev/held-out split; MultiHop-RAG's own Hits@k and MRR beside Lancet's metrics; the judged pass with a human-calibrated slice; one four-arm comparison against hybrid as the reference. The system under test is unchanged so results stay comparable to the run of record.
-
-### 🔜 Phase 06.3.6: Quality Levers Measured as Arms (planned)
-Reranker (promoted from the backlog), a graph repair selected by a per-question diagnosis of the no-path questions (entity resolution or graph-evidence precision), publish-date metadata, and answer-format prompting — each developed on the dev set and read once on held-out with a pre-registered primary metric. A lever becomes a default only when its paired delta's CI excludes zero. More hops is explicitly not a lever.
-
-### ⏸️ Phase 6.4: Docs Suite, Verified Quickstart and v1 Milestone Closure (parked)
-README front door, design narrative, observability walkthrough, evaluation methodology and results pages, four diagrams, a verified quickstart on Windows and WSL, the honest-limitations section, backlog promotion of the remaining debt, and milestone closure. Parked until 06.3.5 and 06.3.6 publish; the unpark is an explicit owner decision.
-
----
-
 ## 🔑 Key Decisions & Trade-offs
 
-A selection of the most discussable calls (full log in [`.planning/PROJECT.md`](.planning/PROJECT.md)):
+A selection of the most discussable calls (full log in [`.planning/PROJECT.md`](.planning/PROJECT.md); the reasoning behind each, with the alternatives, is in the [design narrative](docs/design-narrative.md)):
 
 * **Go gateway + Rust engine over gRPC.** Separates control-plane concerns from the latency-sensitive data plane and makes the boundary explicit and type-safe.
 * **Embedded LanceDB for vectors and graph.** Local-first, Arrow-native, no separate database service; the graph lives in two tables beside the chunks.
@@ -386,38 +365,47 @@ A selection of the most discussable calls (full log in [`.planning/PROJECT.md`](
 * **Force-close discipline with a named debt ledger (ADR-02-004, ADR-03-003).** Phases close on schedule; gaps become tracked items, not silence.
 * **Evaluation fidelity as a requirement (OBS-05), then comparative evaluation (OBS-06).** Reports fail closed on incomplete journals; gates and floors are committed before a paid drive; negative results are published, not re-run until they look better; spend is capped per stage and reconciled to the bill.
 * **Timeout budgets derived from censoring-aware measurement, not guessed.** The original budgets were unit-test guesses that clipped 90% of queries; the replacements come from a measured p95 with the censoring explicitly counted.
-* **Graph retrieval redesigned around seeds and bounded paths.** Whole-question cosine seeding with `limit(1)` gave 9.8% presence; mention extraction, multi-seed matching and a degree-capped seed-to-seed path search give 66%, with the fact cap and degree cap derived from the store and the prompt budget. The value of that path is now measured honestly and is still an open question.
+* **Graph retrieval redesigned around seeds and bounded paths.** Whole-question cosine seeding with `limit(1)` gave 9.8% presence; mention extraction, multi-seed matching and a degree-capped seed-to-seed path search give 66%, with the fact cap and degree cap derived from the store and the prompt budget. Measured on held-out, that path still bought no significant gain, so it ships off by default and on per request.
+* **Levers measured as arms, defaults only by a pre-registered rule.** Each lever was developed on the dev split, read once on held-out against the same day's `hybrid`, and made a default only on a significant gain with its guards passing. Rerank is the one exception: its latency-flatness gate missed, and it ships on by an owner decision with that caveat beside it.
 
 ---
 
-## ⚠️ Honest limitations (current)
+## ⚠️ Honest limitations
 
-* **Local-only by design.** No authentication, TLS or per-principal rate limiting; loopback listeners only (see below).
-* **The graph has not paid for itself yet.** On MultiHop-RAG it changes retrieval composition on about half the questions, costs 1.2–1.6 s and about 210 prompt tokens per query, and produces no significant answer-quality gain; ranking quality is slightly worse. This is reported, not hidden, and is the subject of 06.3.6.
-* **No standard-RAG baseline yet.** Dense-only, BM25-only and hybrid have not been compared; 06.3.5 adds them.
-* **Judged dimensions are unrun on the repaired system** and no human calibration has been performed yet.
-* **Small sample.** 100 questions; intervals of roughly ±10 points.
-* **The LLM provider is not a controlled variable.** OpenRouter may route a model across providers mid-drive, and did; a local endpoint is a v1.1 backlog item.
-* **Unmeasured claims are labelled as such** in the run reports and will be in the 6.4 docs: chunking strategy comparison, community-level questions, and the evidence-versus-priors behaviour of the generator.
+* **Local-only by design.** There is no end-user identity, authentication, access control, TLS, quota or per-principal rate limiting; a `session_id` groups requests and authenticates nobody. The listeners bind to loopback. `DEBT-CR-04`'s trigger conditions, [below](#-local-only-exposure-constraint--debt-triggers-debt-cr-04), say what must not happen before that is revisited (06-CONTEXT D-06).
+* **Committed local-dev credentials.** The Postgres (`postgres`/`postgres`) and Grafana (`admin`/`admin`) logins are committed local-dev credentials. They are fine on loopback and wrong anywhere else.
+* **A fired debt trigger kept in backlog.** `DEBT-D1-SAFE-LOG` names a shared log sink as its trigger, and that trigger fired when Phase 6.2 began exporting full engine logs to Loki. It stays in backlog because Loki runs in the same local compose, for one user, bound to loopback (06-CONTEXT D-09).
+* **The open debt is in backlog, by theme.** The debt v1 did not pay is promoted to backlog phases with these names: 999.13 Security and transport hardening, 999.14 Ingestion and staging robustness, 999.15 Config and settings hygiene, 999.16 API contract and DX, and 999.17 Test and evidence hygiene. Two more hold the 06.3.6 review carry-forwards: 999.18, eval-harness provenance and protocol hardening, and 999.19, engine, gateway and test robustness. They are listed in the [ROADMAP backlog](.planning/ROADMAP.md#backlog).
+* **What the evaluation stands on.** Every reading is on one corpus (MultiHop-RAG: a 346-document subset of mostly two-document news questions), one generation model from one provider, and one seed, and the null-abstention guard rests on n = 43 unanswerable questions. The models are pinned, paid OpenRouter models, not free-tier ones: `deepseek/deepseek-v4-flash-0731` for generation, `voyageai/voyage-4-large` for embeddings and `voyageai/rerank-2.5-lite` for rerank. A default chosen here is a statement about this system on this population. How the evaluation was made trustworthy in the first place is in [`docs/evaluation-fidelity-and-graph-yield.md`](docs/evaluation-fidelity-and-graph-yield.md).
+* **What it does not measure.** The evidence-vs-priors claim, that the generator prefers retrieved evidence over its own knowledge, is enforced by the prompt contract but ships unmeasured (06-CONTEXT D-17, D-45). Chunking strategy (fixed-size against structure-aware) is unmeasured, and so are community-level questions, which MultiHop-RAG does not ask. The shipped default, rerank and metadata together, was never measured as one arm; the only evidence about combinations is a descriptive arm that also carries the two levers that stayed off.
+* **The graph costs without a measured gain.** On held-out, `hybrid+graph` read -0.0101 on `answer_usable` against `hybrid`, not significant, and it adds prompt tokens and retrieval time on every graph request ([graph cost](docs/evaluation.md#graph-cost-reconciled)). Its paths often find nothing on this benchmark: `GRAPH_UNAVAILABLE` ("graph query returned no facts") appears on about 42% of graph-arm records. Before the redesign, Phase 06.3.3 measured the graph's hub expansion at tens of seconds and raised the budget rather than hide the cost ([`06.3.3-BUDGETS.md`](.planning/phases/06.3.3-retrieval-latency-measurement-pass-and-timeout-budget-deriva/06.3.3-BUDGETS.md)); Phase 06.3.4.1 replaced that design, and its figures do not compare with today's.
+* **Two levers stayed off, with their readings.** graph-v2, the graph repair chosen by diagnosis, read -0.0195 on `answer_usable`, not significant. The answer-format lever read -0.0423, on the harmful side, and not significant after correction. Both are built and can be named per request; neither is a default ([`06.3.6-CLOSEOUT.md`](.planning/phases/06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-CLOSEOUT.md)).
+* **The judge is uncalibrated.** The LLM-as-judge groundedness and faithfulness scores failed their human calibration, so no judged figure is a v1 finding, and the results page labels the judged rows as not findings. A fresh calibration and the judge's carry-forwards move to `v1.1` (Phase 06.3.6 D-153, Phase 06.4 D-208).
+* **Rerank latency.** Rerank is on by default by an owner decision rather than by the pre-registered rule, because its latency-flatness gate missed: the rerank provider drifted into a slow mode partway through the drive. Every request that names no lever pays a rerank call, and in that slow mode it can pay up to the 2,286 ms rerank budget. The slow mode was seen once, on that drive.
+* **The LLM provider is not a controlled variable.** OpenRouter may route a model across providers mid-drive, and did once; a local inference endpoint is a backlog item.
+* **Accepted v1 residual debt.** Open review findings and ledger rows that no Phase 6.4 decision covers are accepted as listed v1 residual debt, recorded by source in [`06.4-CLOSURE.md`](.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-CLOSURE.md#v1-residual-debt-d-229) (D-229).
 
 ---
 
 ## 🚀 Backlog & Extension Points
 
-Triage as of 2026-10-06 ([details](.planning/research/NEXT-STEPS-2026-10-06.md#3-backlog-triage)):
+The backlog is in [`.planning/ROADMAP.md`](.planning/ROADMAP.md#backlog); the 2026-10-06 triage is in [`NEXT-STEPS-2026-10-06.md`](.planning/research/NEXT-STEPS-2026-10-06.md#3-backlog-triage).
 
-**Promoted into v1 (Phase 06.3.6):**
-1. **Reranking (999.2)** — cross-encoder re-scoring behind the existing `Reranker` port.
-2. **Entity resolution, lite (999.6)** — alias merging behind the existing `EntityResolver` port, if the no-path diagnosis selects it.
+**Built in v1 from the backlog:**
+1. **Reranking (999.2)** — shipped as the `rerank` lever, default-on.
+2. **Entity resolution, lite (999.6)** — considered for Phase 06.3.6, but the no-path diagnosis selected graph-list precision (graph-v2) instead, so it was not built.
 
-**v1.1 candidates:**
-3. **Local inference endpoint (999.11)** — an OpenAI-compatible local endpoint so the provider becomes a controlled variable.
-4. **Query reformulation strategies (999.3)** — HyDE and multi-query as additional arms; the `reformulate` node and multi-variant fusion already exist.
-5. **S3-compatible storage for LanceDB (999.8)**.
+**Debt themes promoted at v1 close:** 999.13 Security and transport hardening, 999.14 Ingestion and staging robustness, 999.15 Config and settings hygiene, 999.16 API contract and DX, 999.17 Test and evidence hygiene, 999.18 eval-harness provenance and protocol hardening, and 999.19 engine, gateway and test robustness.
+
+**`v1.1` candidates:**
+3. **Local inference endpoint (999.11)** — an OpenAI-compatible local endpoint so the provider becomes a controlled variable; a local rerank endpoint would also remove the rerank latency caveat.
+4. **Measuring the shipped default** — rerank plus metadata as one decisional arm, and a fresh judge calibration.
+5. **Query reformulation strategies (999.3)** — HyDE and multi-query as additional arms; the `reformulate` node and multi-variant fusion already exist. One direction for the graph, with no promise attached.
+6. **S3-compatible storage for LanceDB (999.8)**.
 
 **v2:**
-6. **Community summaries (999.1), compile-time node semantics (999.5), ingestion-time synthesis (999.4)** — global GraphRAG; needs a benchmark with community-level questions.
-7. **Knowledge drift detection and LLM-verified node merging (999.6, full)**, **Rayon CPU isolation (999.7)**, **LLM wiki second brain (999.9)**, **session memory in LanceDB (999.10)**, **PageIndex retrieval (999.12)**.
+7. **Community summaries (999.1), compile-time node semantics (999.5), ingestion-time synthesis (999.4)** — global GraphRAG, the other direction for the graph; it needs a benchmark with community-level questions.
+8. **Knowledge drift detection and LLM-verified node merging (999.6, full)**, **Rayon CPU isolation (999.7)**, **LLM wiki second brain (999.9)**, **session memory in LanceDB (999.10)**, **PageIndex retrieval (999.12)**.
 
 ---
 
