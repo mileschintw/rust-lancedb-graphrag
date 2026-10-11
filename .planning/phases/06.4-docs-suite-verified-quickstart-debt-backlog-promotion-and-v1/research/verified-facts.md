@@ -349,3 +349,16 @@ the same day. Treat these facts as ground truth.
     `serve_with_incoming_shutdown` bypasses it, so the D-202 reorder must call `.with_nodelay(Some(true))` itself.
 16. **New, re-checked: cold build time.** A cold `cargo build --release --locked` of the engine in a fresh Windows clone
     finished in 20 m 58 s (`research/cold_cargo_build.out:28`). It cannot run inside one 10-minute executor Bash call.
+
+---
+
+## R. After planning (2026-10-11)
+
+- The planning-time facts above now live in the plans (`06.4-01..17-PLAN.md`); where a plan and this file differ, the
+  plan's later, re-verified line wins.
+- §M's trackable count is now **36** (D-198..D-233): the owner answers at plan-phase added D-227..D-233. The gate passed
+  36/36 at `3dc62412`.
+- Two further facts found at plan-check time: the engine's plain `tracing_subscriber::fmt::layer()`
+  (`engine/src/telemetry/mod.rs:287`) prints the message and fields but never an event's `name:`, so any log token a
+  consumer greps must be in the message text (D-203); `scripts/oi02-replay.ps1:487,496` call `lancet-eval run` on the
+  legacy-label `multihop_rag` corpus (retired for live use by plan 06.4-03).
