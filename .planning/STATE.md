@@ -1,9 +1,9 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 11
+current_plan: 12
 status: executing
-stopped_at: Phase 06.4 wave 7 complete (06.4-10 WSL part A); wave 8 (06.4-11 live WSL run) next; owner asked to PAUSE after 06.4-11
+stopped_at: Phase 06.4 PAUSED by owner after wave 8 (06.4-11 complete, 11/17 plans); resume with /gsd-execute-phase 06.4 at wave 9 (06.4-12)
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -22,11 +22,13 @@ last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-pro
 
 ## Current Position
 
-Current Plan: 11
+Current Plan: 12
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-11: 06.4 PAUSED by the owner after wave 8 (reboot / environment clean-up).** Resume: `/gsd-execute-phase 06.4` picks up at wave 9 (06.4-12 docs; 13-16 then 17 with its D-223 owner checkpoint). Nothing is running: dev stack up (six `lancet-*`), no `lancet-qs`, both clone env files deleted (Windows `D:/lqs/win-20261011`, WSL `~/lqs/wsl-20261011`; clones kept). Last green gate: post-wave-6 (engine 963, gateway 124, eval 2323); waves 7-8 changed only `.planning/` and README. Phase settled spend 0.015884697 USD of 1.00. Still open for the owner: `default-run = "engine"` in engine/Cargo.toml; engine retry on a `finish_reason: error` generation; review IN-01..06 (plan 16).
+- **2026-10-11: 06.4 wave 8 COMPLETE (plan 11, live WSL run, main).** D-194 sequence held; C1 literals present; two-hop `graph_path_found` false by default, true opted in; re-score reproduces (`64bad6f11b7678a2`); preflight 27/27 on attempt 1; WSL spend 0.004727236 USD; README stamp names Windows `1c000271` and WSL Ubuntu 24.04 `752c8ae0` (final quickstart block commit `3ff83415`, the one plan 15 diffs against). No harness fixes. Dev stack down 21:06:29Z-21:17:04Z, restored, volume CreatedAt unchanged. The secret guard blocked the WSL env deletion; the orchestrator ran it via PowerShell. SUMMARY `ea780a70`.
 - **2026-10-11: 06.4 wave 7 COMPLETE (plan 10, WSL part A, main).** Six `qs/qs-wsl-*` scripts (`4ffb430c`), Atlas installer `-y` fix (`ffb89ca4`); prerequisites installed via `wsl -u root` (`sudo -n` unavailable; no password); full WSL clone `/home/user39261580/lqs/wsl-20261011` at `ffb89ca4`; env written over stdin (key_len 73, no CR). Orchestrator cold release build `wsl-build-ok 23m50s` (engine 359668592 bytes). SUMMARY `91ef64f2`. No product code changed; dev stack untouched.
 - **2026-10-11: 06.4 wave 6 COMPLETE (plan 09, live Windows quickstart run, main).** Three owner decisions: (1) sample-text fix authorised as a second repeat, then superseded when the executor showed the old demo question had one capitalised mention so `find_seed_paths` (<2 seeds) could never find a path; (2) owner chose the two-exact-names question (Harbor Light Observatory + Marisol Vega), `84aa285c`, README/canary/pinned test; (3) one extra stack-preflight attempt after attempt 1 hit a provider `finish_reason: error` (not D-233 timeout-class) — attempt 2 passed 27/27. Other fixes: README step 6 `--bin engine` (`418c4bfa`, engine crate has 7 binaries, no default-run), flat-array `pids.json` (`d48f3231`). Windows stamp + OB-27 closed (`b40872e7`), SUMMARY `65774376`. Spend 0.011157461 USD settled (cap 0.30 / phase 1.00). The clone `.env` vanished once between 08 and 09 (cause unknown); the orchestrator re-wrote it (owner-authorised PowerShell) before each live attempt. Dev stack restored every exit. Gate green after: engine 963, gateway 124, eval 2323. Open owner items: `default-run = "engine"`, engine retry on `finish_reason: error`. **Owner: pause execution after 06.4-11 completes (reboot/clean environment).**
 - **2026-10-11: 06.4 wave 5 COMPLETE (plans 07, 08, sequential on main).** 08: `qs/` Windows scripts (`b2b8ecc3`), full local clone `D:/lqs/win-20261011` (HEAD `b2b8ecc3`, not shallow), orchestrator cold release build `win-build-ok 35m25s` (slow: 07 ran concurrently). **Blocker resolved by the owner:** the `gsd-secret-read-guard` hook denies any Bash command naming `.env`, so the executor could not write the clone `.env`; owner chose "Orchestrator via PowerShell" — the orchestrator wrote the key line from the User-scope variable with the PowerShell tool (key length 73 only, never printed), gitignored. Applies to the WSL clone in plan 10 too. 07: D-210 obligations ledger (148 rows), D-208 override `write-as-drafted` (owner, 2026-10-11T17:59:17Z) applied to 06.3.4-VERIFICATION.md (now passed, 8/8 with 2 overrides), D-209 closure rows in `06.4-CLOSURE.md`; ledger 34 open / 10 closed. No product code changed; dev stack untouched.
