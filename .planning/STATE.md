@@ -3,7 +3,7 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_plan: 17
 status: executing
-stopped_at: Phase 06.4 wave 13 complete (06.4-16); wave 14 (06.4-17 closure, D-223 owner checkpoint) next
+stopped_at: Phase 06.4 all 17 plans complete; phase gates (code review, regression, verification, phase.complete) next
 last_updated: "2026-10-11T07:13:53.716Z"
 last_activity: 2026-10-11
 state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
@@ -27,6 +27,7 @@ Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-12: 06.4 wave 14 COMPLETE (plan 17, Sonnet) - all 17 plans done.** D-229 residual-debt listing, STATE Completed Phases/GAP reconciliation (OB-34), 06.3.5 IN-03..06 flipped, milestone summary, README banner link. **D-223 owner reply (2026-10-11T23:31:25Z): approve-with-changes** - DATA-01/02/06/07/08/09 ticked (06/07 note the `entities` relocation, 04.1 D-11/D-15); RAG-06 accepted-partial (real worker, no NoOp default; ADR-02-004); DATA-03 carried to v1.1 (06.3.4.1 owner decision kept). OB-44 carried to 999.17 by pointer; obligations ledger 0 open / 44 closed. OBS-03 left for phase.complete. SUMMARY `068a9c65`. Stale rows for follow-up: 06.3.4.1 WR-10 (closed by D-211), WINDOWS.md rows 1-3; init.manager reports Phase 2 VERIFICATION unparseable and 06.3.3-06.3.6 `stale` (expect override_closeout at complete-milestone).
 - **2026-10-12: 06.4 wave 13 COMPLETE (plan 16, Sonnet).** 18 debt items promoted to backlog phases 999.13-999.17 and 27 06.3.6 review deferrals to 999.18-999.19 (ROADMAP appended after 999.12); `06.4-DEBT-LEDGER.md`; 06.3.6 review ledger merged to 0 open (18 fixed / 27 deferred / 1 skipped). Owner deferrals added: `DEBT-06.4-DEFAULT-RUN` (999.16), `DEBT-06.4-ENGINE-GEN-RETRY` (999.19); IN-01/02/05 -> 999.18, IN-03 -> 999.15, IN-04/06 -> 999.19 (ledger table (d), outside the Member-ID lines). SUMMARY `2516e89c`. .planning-only wave: gate skipped.
 - **2026-10-12: 06.4 wave 12 COMPLETE (plan 15, Opus).** `docs/api-contract.md` (request fields incl. tri-state flags, gRPC/HTTP refusals, 20 notice codes with severity and degraded_mode, D-15 matrix verbatim from `bad_input_matrix.rs` header) guarded by `eval/tests/test_notice_docs.py` (RED `b7a6f493`, GREEN `102aa291`); README rewritten as the v1 front door (quickstart block byte-identical to `3ff83415`; node order, plan count 250, reranker, notice codes, test counts, entity resolution corrected); `docs/build-history.md`. Ledger open 4 (OB-34/35/36 for 17; OB-44 awaits the owner) / closed 40. SUMMARY `ae6a155a`. Scoped gate: 4 passed, drift clean. Owner reviews owed: D2 (README read-through, rerank latency caveat placement), D4 (build-history fairness); banner date 2026-10-11 (UTC).
 - **2026-10-12: 06.4 wave 11 COMPLETE (plan 14, Opus).** `docs/design-narrative.md`: seven alternatives in prose with source links, graph described as built/measured/off-by-default (~42% no-path, 149/150/148 of 351), query-path and ingestion Mermaid diagrams (ordering and degraded-branch labels follow the code). OB-25 and OB-38 closed; ledger 18 open / 26 closed / 104 n-a. quote_check passes unchanged. SUMMARY `0efe6eeb`. Docs-only wave: gate skipped per owner rule. Owed: owner visual check of the Mermaid diagrams on GitHub.
