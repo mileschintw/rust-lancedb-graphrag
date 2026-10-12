@@ -1,32 +1,33 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: 17
+current_plan: Not started
 status: executing
-stopped_at: Phase 06.4 verified human_needed (8/8 SC); awaiting owner UAT via /gsd-verify-work 06.4 before phase.complete
-last_updated: "2026-10-11T07:13:53.716Z"
-last_activity: 2026-10-11
-state_head: 9489af27ad7a8acd977da89f8e2fd2c7a68e9047
+stopped_at: Phase 06.4 complete — all phases complete; next /gsd-complete-milestone
+last_updated: "2026-10-12T01:04:13.750Z"
+last_activity: 2026-10-12
+state_head: 173a8e35c66c5cbcba1af60c3ecdcff5018aa500
 progress:
   total_phases: 18
   completed_phases: 10
   total_plans: 250
-  completed_plans: 233
+  completed_plans: 250
 milestone_name: milestone
-current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
 current_phase: "06.4"
-last_activity_desc: Phase 06.4 execution started; plan 01 Task 1 answered as-proposed (owner, 2026-10-11T07:13:50Z)
+current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
+last_activity_desc: "Phase 06.4 complete: UAT 4/4, VALIDATION 0 gaps, SECURITY 64/64, phase.complete (only OBS-03 flipped)"
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: 17
+Current Plan: Not started
 Total Plans in Phase: 17
 
 ## Current Status
 
+- **2026-10-12: Phase 06.4 COMPLETE.** Owner UAT 4/4 passed (`8d3cb569`); validate-phase: Nyquist-compliant, 0 gaps (`903d00d9`); secure-phase: 64/64 threats closed, threats_open 0, one accepted risk T-06.4-14 (`173a8e35`); ui-review skipped (no frontend in scope, onError skip); VERIFICATION canonicalised human_needed -> passed; `phase.complete` ran and the REQUIREMENTS diff flipped only OBS-03 (RAG-06 and DATA-03 stay unchecked). All 18 v1.0 phases are complete; next is `/gsd-complete-milestone`.
 - **2026-10-12: 06.4 phase gates.** Regression gate green (engine 963, gateway 124, eval 2338, buf idempotent, drift clean). Phase-end code review (`e5394f93`): 0C/5W/5I; owner chose fix-all: WR-04..08 fixed (`c06fd16c`..`851f156a`, WR-07 iteration 2 `0d9aeee2`; WR-04 changed one prose sentence at README:252 inside the verified quickstart block, no command/question/stamp changed); re-review `6e24d13c`; disposition `647a8099` (open 0 / fixed 8 / deferred 12; IN-07..12 + ATTRIBUTION.md:33 routed to 999.17/999.18). Verification: **human_needed, 8/8 SC verified, no gaps**; 4 human items in `06.4-UAT.md` (D-220 owner quickstart spot-check, GitHub rendering, D2 README read-through, D4 build-history fairness). Not yet phase.complete: run `/gsd-verify-work 06.4`; after phase.complete diff REQUIREMENTS.md (only OBS-03 should flip).
 - **2026-10-12: 06.4 wave 14 COMPLETE (plan 17, Sonnet) - all 17 plans done.** D-229 residual-debt listing, STATE Completed Phases/GAP reconciliation (OB-34), 06.3.5 IN-03..06 flipped, milestone summary, README banner link. **D-223 owner reply (2026-10-11T23:31:25Z): approve-with-changes** - DATA-01/02/06/07/08/09 ticked (06/07 note the `entities` relocation, 04.1 D-11/D-15); RAG-06 accepted-partial (real worker, no NoOp default; ADR-02-004); DATA-03 carried to v1.1 (06.3.4.1 owner decision kept). OB-44 carried to 999.17 by pointer; obligations ledger 0 open / 44 closed. OBS-03 left for phase.complete. SUMMARY `068a9c65`. Stale rows for follow-up: 06.3.4.1 WR-10 (closed by D-211), WINDOWS.md rows 1-3; init.manager reports Phase 2 VERIFICATION unparseable and 06.3.3-06.3.6 `stale` (expect override_closeout at complete-milestone).
 - **2026-10-12: 06.4 wave 13 COMPLETE (plan 16, Sonnet).** 18 debt items promoted to backlog phases 999.13-999.17 and 27 06.3.6 review deferrals to 999.18-999.19 (ROADMAP appended after 999.12); `06.4-DEBT-LEDGER.md`; 06.3.6 review ledger merged to 0 open (18 fixed / 27 deferred / 1 skipped). Owner deferrals added: `DEBT-06.4-DEFAULT-RUN` (999.16), `DEBT-06.4-ENGINE-GEN-RETRY` (999.19); IN-01/02/05 -> 999.18, IN-03 -> 999.15, IN-04/06 -> 999.19 (ledger table (d), outside the Member-ID lines). SUMMARY `2516e89c`. .planning-only wave: gate skipped.
@@ -346,7 +347,7 @@ Total Plans in Phase: 17
 
 ## Active Phase
 
-- **Phase:** 06.4 (Docs Suite, Verified Quickstart and v1 Milestone Closure, OBS-03) is next and **UNPARKED by the owner on 2026-10-11** (both runs of record published; ROADMAP success criteria rewritten against the shipped defaults: rerank by D-193 with the D-192 caveat, evidence_metadata by rule; graph-v2 and answer-format off). Context gathered 2026-10-11 (`06.4-CONTEXT.md`, D-198..D-226; inherits 06-CONTEXT.md, inject both by hand at plan-phase). **Planned 2026-10-11:** 17 plans in 14 waves, plan check passed at iteration 3; owner answers at plan-phase recorded as D-227..D-233. **Executing since 2026-10-11** (`/gsd-execute-phase 06.4`). Graph context ships default-off (D-207). Carried from 06.3.6, now decided: D-195 lever-free control-arm path (decide before any future drive; arms that omit `levers` now run the committed defaults), review WR-01 (fallible startup steps after the staged-job replay) and WR-02 (metadata coverage logged only at boot), the 06.3.6 SECURITY observation on `measure-latency` corpus guards.
+- **Phase:** none active. Phase 06.4 completed 2026-10-12, and with it every v1.0 phase. Next: `/gsd-complete-milestone` (archive v1.0); the backlog lives in ROADMAP 999.13-999.19.
 - **06.3.4.1 follow-ups:** closed on 2026-10-06 (UAT 4/4, VALIDATION 0 gaps, SECURITY 156/156, re-verification 10/10). Two non-blocking security follow-ups remain: register the 14-SUMMARY `outbound-call` flag, and route `eval/scripts/drive_measurement_pass.py` through `require_index_identity` or retire it.
 - **Execution mode note (kept for later live-stack phases):** 06.3.4.1 ran sequentially on main, not in harness worktrees, because its plans read the gitignored live eval store and ran latency soaks. Executors run on Sonnet and sign with their own trailer (user decision, 2026-10-05).
 
@@ -369,7 +370,7 @@ Total Plans in Phase: 17
 - **Phase 06.3.4.1: Retrieval diagnosis, index identity, and graph-yield repair** (Completed: 2026-10-06 — 34/34 plans; run of record drive 2, D-83 `all-pass-close`; UAT gaps closed by plans 31-34; re-verification `passed` 10/10; 6.4 stays parked)
 - **Phase 06.3.5: Retrieval ablation matrix, paper-convention metrics, judged pass and calibration** (Completed: 2026-10-09 — 18/18 plans; held-out run of record with SC-2 MISS under continue-with-disclosure; UAT 2/2; VALIDATION 0 gaps; SECURITY 68/68; re-verification `passed` 9/9 with G-1 owner override; OBS-06 stays open for 06.3.6)
 - **Phase 06.3.6: Quality levers measured as arms** (Completed: 2026-10-11 — 23/23 plans incl. gap-closure 06.3.6-23; held-out lever run of record: rerank and evidence_metadata default, graph-v2 and answer-format off; UAT 6/6; VALIDATION 0 gaps; SECURITY 85/85; re-verification `passed` 21/21; OBS-06 closed)
-- **Phase 06.4: Docs Suite, Verified Quickstart and v1 Milestone Closure** (PENDING `phase.complete`: executing; plans 06.4-01..06.4-16 complete, 06.4-17 closure content written 2026-10-11; OBS-03 is ticked once, by `phase.complete`)
+- **Phase 06.4: Docs Suite, Verified Quickstart and v1 Milestone Closure** (Completed: 2026-10-12 — 17/17 plans; verification passed 8/8 SC; UAT 4/4; VALIDATION 0 gaps; SECURITY 64/64; OBS-03 ticked by `phase.complete`; residual debt promoted to 999.13-999.19)
 
 ## Known Issues & Debt
 
@@ -619,10 +620,10 @@ Total Plans in Phase: 17
 
 ## Session
 
-**Last session:** 2026-10-11T01:33:25.633Z
-**Last activity:** 2026-10-11
-**Stopped at:** Phase 06.4 planned
-**Resume file:** .planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-01-PLAN.md
+**Last session:** 2026-10-12T01:10:00Z
+**Last activity:** 2026-10-12
+**Stopped at:** Phase 06.4 complete; milestone v1.0 ready to close (`/gsd-complete-milestone`)
+**Resume file:** None
 
 ## Accumulated Context
 

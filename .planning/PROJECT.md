@@ -27,6 +27,7 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Empirically measure retrieval node latency distributions, establish collapse root cause (budget undersizing vs memory decay), enforce engine provider-contract invariant at startup, and derive/apply six synchronized production timeout budgets. — Phase 06.3.3
 
 - ✓ Report standard-RAG baselines (dense-only, BM25-only, hybrid, hybrid+graph) beside the graph on a committed held-out question set with the benchmark's own retrieval convention, judged dimensions and a human-calibrated slice, and measure each quality lever (reranker, graph repair, evidence metadata, answer format) as its own arm before it becomes a default. — OBS-06, Phases 06.3.5 and 06.3.6 (closed 2026-10-10: 06.3.6 run of record; rerank and evidence_metadata ship as default levers, graph-v2 and answer-format stay off)
+- ✓ Provide a README/design narrative that explains the architecture, alternatives considered, custom-vs-existing-tool choices, and how to run/evaluate the system. — Phase 06.4 (README front door plus `docs/observability.md`, `docs/evaluation.md`, `docs/design-narrative.md`, `docs/api-contract.md`, `docs/build-history.md`; quickstart verified from fresh clones on Windows and WSL; owner UAT 4/4)
 
 ### Active
 - [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
@@ -37,7 +38,6 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
   - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
 - [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
 - [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
-- [ ] Provide a README/design narrative that explains the architecture, alternatives considered, custom-vs-existing-tool choices, and how to run/evaluate the system.
 
 ### Out of Scope
 
@@ -114,6 +114,8 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | 06.3.6 held-out lever drive is the run of record: rerank (+0.0812 `answer_usable`, Holm p 0.0032; Hits@4 +0.1558) and evidence metadata (+0.0621, Holm p 0.0077) become default levers; graph-v2 and answer-format stay off | Pre-registered Holm family over four lever arms against the same-day `hybrid` on one index generation (lance-703). Metadata flips by rule; rerank's arm read SC-2 MISS (a provider-side latency regime change), so its default is the owner's disposition D-193 with the D-192 latency caveat disclosed. The single D-157 flip commit `3d765ea3` postdates the record | ✓ Shipped, Phase 06.3.6 (plans 21-22) |
 | An unavailable configured default lever degrades with a notice instead of refusing startup; an explicitly named lever still fails closed | UAT gap D-194: the committed defaults made the engine unbootable over empty, metadata-less and legacy stores, and the refusal ran after the staged-job replay. Now a per-request `DEFAULT_LEVER_UNAVAILABLE` (24) WARNING notice (joins `degraded_mode`), a startup WARN before the workers and replay, and coverage/rebuild warnings. The legacy dev store was migrated once by `--migrate-only` (D-197); the engine still never upgrades `nodes` (D-144) | ✓ Shipped, Phase 06.3.6 (gap plan 23) |
 | The lever-free control-arm path is deferred to the next measurement phase's freeze | D-195: arms that omit `levers` now run the committed defaults, so a future drive must choose an empty `LANCET_ENGINE__LEVERS__DEFAULTS`, an eval overlay or a proto opt-out, and launchers must refuse `LANCET_ENGINE__LEVERS__*`. Recorded runs are unaffected (provenance clauses h/j would flag such records) | — Deferred (owner, 2026-10-10) |
+| The client can opt out of the default levers (`disable_default_levers`), and graph context is off by default with notice code 25 | D-198/D-207 (06.4): a lever-free control arm needs a wire opt-out, and the graph arm did not earn a default at the 06.3.6 read. Every harness arm now sends graph and lever state explicitly, and a drive refuses `LANCET_ENGINE__GRAPH__*` overrides (D-199) | ✓ Good (06.4) |
+| v1 docs quote run-of-record figures only, under a quote checker, and the quickstart is verified live from fresh clones on both platforms before it ships | D-213/D-220 (06.4): a README number that cannot be traced, or a quickstart nobody ran, is the failure the docs phase exists to prevent | ✓ Good (06.4): Windows `1c000271`, WSL `752c8ae0`, spend $0.0159 |
 
 ## Evolution
 
@@ -134,4 +136,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Update Roadmap status
 
 ---
-*Last updated: 2026-10-11 after Phase 06.3.6*
+*Last updated: 2026-10-12 after Phase 06.4*
