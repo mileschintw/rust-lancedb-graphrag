@@ -1549,7 +1549,7 @@ Plans:
 **Member IDs:** DEBT-P3-WARN-API, DEBT-P3-WARN-DX, DEBT-WR-02
 **Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:189` (DEBT-P3-WARN-API), `:180` (DEBT-P3-WARN-DX); `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:74` (DEBT-WR-02)
 
-**Also routed here (06.4 owner decision, counted separately from the 18 and the 27):** DEBT-06.4-DEFAULT-RUN, add `default-run = "engine"` to `engine/Cargo.toml` so a plain `cargo run` works (the engine crate has seven binaries; the README uses `--bin engine`; found by plan 06.4-09); see `06.4-DEBT-LEDGER.md` table (d).
+**Also routed here (06.4 owner decision, counted separately from the 18 and the 27):** DEBT-06.4-DEFAULT-RUN, add `default-run = "engine"` to `engine/Cargo.toml` so a plain `cargo run` works (the engine crate has seven binaries; the README uses `--bin engine`; found by plan 06.4-09); see `06.4-DEBT-LEDGER.md` table (d). Also from the v1.0 milestone audit (2026-10-12): G1 (no gateway HTTP route for `QueryGraph`, 04 D-25), G2 (no session table) and G3 (unused `users` table and sqlc queries); see `.planning/v1.0-MILESTONE-AUDIT.md` and table (d).
 
 Plans:
 

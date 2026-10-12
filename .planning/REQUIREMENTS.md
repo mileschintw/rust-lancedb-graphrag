@@ -50,6 +50,7 @@
 
 | Requirement | Current phase mapping | Scope status |
 |---|---|---|
+| ARCH-02 | Phase 01 (Phases 02-05 built on it) | Satisfied with narrowed wording (v1.0 milestone audit G1/G2, owner 2026-10-12): the gateway ships document upload, the streaming `/rag/query` endpoint and PostgreSQL persistence for documents and workflow checkpoints. Graph query is served as graph context inside `/rag/query`; the standalone `QueryGraph` RPC stays gRPC-only (04-CONTEXT D-25), with no HTTP route. "Session handling" means engine-issued session IDs echoed in `X-Lancet-Session-ID`; there is no session table. The HTTP graph route, a session table and the unused `users` table are routed to backlog 999.16. |
 | RAG-02 | Phase 03 | Current MVP acceptance: successful dense/BM25 hybrid retrieval, valid filters, deterministic fusion, and deduplication. |
 | RAG-03 | Phase 06, Phase 06.1 | Deferred hardening target; not covered or accepted by Phase 03. Split during Phase 6 discussion (06-CONTEXT.md D-77/D-78): DEBT-RAG-01, DEBT-RAG-03, DEBT-RAG-05 and DEBT-RAG-06 clauses → Phase 06; DEBT-RAG-04 (index rebuild-and-swap) → Phase 06.1. |
 | RAG-04 | Phase 03 | Current MVP acceptance: async `Reranker` port and `NoOpReranker` pass-through. Phase 06.3.6 consumes the port for its reranker lever without re-mapping the ID. |

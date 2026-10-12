@@ -55,7 +55,7 @@ graph TD
     GoGateway -->|gRPC / Protobuf| RustEngine[Rust RAG Engine <br> Data Plane]
 
     subgraph Control Plane Storage
-        GoGateway -->|SQL via Atlas-managed schema| Postgres[(PostgreSQL <br> Documents, Sessions, Workflow Checkpoints)]
+        GoGateway -->|SQL via Atlas-managed schema| Postgres[(PostgreSQL <br> Documents, Workflow Checkpoints)]
     end
 
     subgraph Data Plane Components
@@ -86,7 +86,7 @@ graph TD
 
 ### What is built
 
-1. **Go API Gateway (control plane, [`gateway/`](./gateway)).** HTTP REST server with document upload and ingestion, the `/rag/query` endpoint streaming workflow events over SSE, graph query, session handling, PostgreSQL persistence for documents, sessions and workflow checkpoints (Atlas-managed schema, separate `local` and `eval` environments), graceful shutdown that drains buffered checkpoints, and an OTel pipeline with a rate-limited exporter error handler. The listener binds to loopback only (see [Local-only constraint](#-local-only-exposure-constraint--debt-triggers-debt-cr-04)).
+1. **Go API Gateway (control plane, [`gateway/`](./gateway)).** HTTP REST server with document upload and ingestion, the `/rag/query` endpoint streaming workflow events over SSE (graph context is served inside it; the engine's standalone `QueryGraph` RPC stays gRPC-only, Phase 4 D-25), session IDs that the engine issues and the gateway echoes in `X-Lancet-Session-ID` (no session table), PostgreSQL persistence for documents and workflow checkpoints (Atlas-managed schema, separate `local` and `eval` environments), graceful shutdown that drains buffered checkpoints, and an OTel pipeline with a rate-limited exporter error handler. The listener binds to loopback only (see [Local-only constraint](#-local-only-exposure-constraint--debt-triggers-debt-cr-04)).
 2. **Rust RAG Engine (data plane, [`engine/`](./engine)).** An asynchronous gRPC server implementing:
    - **Ingestion and chunking.** Markdown, plain text and JSON sources; fixed-size and Markdown structure-aware chunkers; embeddings via OpenRouter; document metadata (title, source, published date); staged writes with an index **rebuild-and-swap** lifecycle and cross-index corpus generation so a query never reads a half-built index.
    - **Hybrid retrieval.** Embedded LanceDB dense search, a local BM25 lexical index, metadata filtering, deduplication and deterministic weighted Reciprocal Rank Fusion with documented tie rules; multi-variant reformulation fusion; a per-request retrieval mode (`hybrid`, `dense_only`, `bm25_only`); and a reranker port that the `rerank` lever fills with an OpenRouter rerank model, keeping the fused order if the call fails.

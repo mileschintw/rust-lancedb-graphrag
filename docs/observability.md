@@ -39,7 +39,7 @@ Diagram 1 shows the system and deployment topology the captures came from.
 graph LR
     Client(["Client <br> quickstart.py, curl, lancet-eval"]) -->|"HTTP + SSE, port 8080"| GW["Go gateway <br> lancet-gateway"]
     GW -->|"gRPC, 127.0.0.1:50051"| EN["Rust engine <br> lancet-engine"]
-    GW -->|"SQL, 127.0.0.1:5432"| PG[("PostgreSQL <br> documents, sessions, checkpoints")]
+    GW -->|"SQL, 127.0.0.1:5432"| PG[("PostgreSQL <br> documents, checkpoints")]
     EN --> LDB[("LanceDB, embedded <br> ./data/lancedb")]
     EN -->|HTTPS| OR["OpenRouter <br> embeddings, rerank, chat"]
     GW -.->|"OTLP gRPC, 127.0.0.1:4317"| COL

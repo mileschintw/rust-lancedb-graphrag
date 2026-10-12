@@ -77,7 +77,7 @@ database and storage landscape" and "Storage decision space for this project"). 
 written in Rust and built for production vector search, and the survey called it "a very strong fit for a Rust-centered
 RAG project". It was rejected because it is a service, one more process to deploy and run beside the engine, and the decision
 favoured a store with minimal deployment overhead that the engine owns outright. pgvector was attractive for the opposite reason, because the gateway
-already runs PostgreSQL for documents and sessions, and one store for metadata and vectors is a genuine simplification.
+already runs PostgreSQL for documents and workflow checkpoints, and one store for metadata and vectors is a genuine simplification.
 It was rejected because it would have tied retrieval to the control plane's database, while the point of the design is
 a data plane that owns its own storage and access patterns.
 
@@ -121,14 +121,14 @@ README lists the comparison among its unmeasured claims.
 ## A Go gateway and a Rust engine, not one language
 
 Lancet is two services. A Go gateway is the control plane: the HTTP API, document upload, the streaming `/rag/query`
-endpoint, sessions, and PostgreSQL persistence for documents, sessions and workflow checkpoints. A Rust engine is the
+endpoint, and PostgreSQL persistence for documents and workflow checkpoints. A Rust engine is the
 data plane: chunking, embedding, storage, retrieval, graph traversal and the state machine. They talk gRPC over one
 Protocol Buffers contract.
 
 The survey left this open too ("Should the project be pure Rust or split between Go and Rust?",
 [`rag_side_project_brainstorming_document.md`](../.discussion/rag_side_project_brainstorming_document.md), "Planning
 questions that remain intentionally open"). One language would have been simpler to build and to run. The split won
-because the two halves have different jobs. The control plane is commodity work, HTTP handlers, sessions and SQL, and
+because the two halves have different jobs. The control plane is commodity work, HTTP handlers, streaming and SQL, and
 Go does it with little friction. The data plane is where memory, concurrency and latency matter, and Rust is the
 language for that. The final decision document records the split as "a clear separation between the control plane and
 data plane", with services communicating "via gRPC over a structured Protobuf schema"
