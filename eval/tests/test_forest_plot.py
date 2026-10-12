@@ -272,14 +272,37 @@ def _panel_scale(panel: ET.Element) -> tuple[float, float, float, float, float]:
     )
 
 
+_OPEN_FILL = "#ffffff"  # the literal open-marker fill the generator emits
+
+
+def _colour(value: str | None) -> str:
+    """A colour attribute normalised for comparison: trimmed and lower-cased."""
+    return (value or "").strip().lower()
+
+
+def _expected_point_colours(mark: str) -> tuple[str, str]:
+    """`(fill, stroke)` the generator emits for a plotted mark, read from its own `COLORS`.
+
+    Holm-significant points are filled with the Holm colour; every other plotted point is
+    open (the literal white fill) and stroked in its row's colour.
+    """
+    colors = _generator().COLORS
+    stroke = _colour(colors["descriptive"] if mark == "descriptive" else colors["holm"])
+    fill = _colour(colors["holm"]) if mark == "holm-significant" else _OPEN_FILL
+    return fill, stroke
+
+
 def test_d218_each_drawn_cell_matches_its_json_row(rendered: dict[str, Any]) -> None:
     """The SVG is held to the JSON rows, not only to its own structure: the printed value
     text, the x position of the whisker and point, and the significance fill and shape."""
-    root = _svg_root(rendered["svg"])
+    _check_drawn_cells(_svg_root(rendered["svg"]), rendered["rows"])
+
+
+def _check_drawn_cells(root: ET.Element, rows: list[dict[str, Any]]) -> None:
     scales = {p.get("data-panel"): _panel_scale(p) for p in _by_class(root, "g", "panel")}
     cells = _cells(root)
     checked = 0
-    for row in rendered["rows"]:
+    for row in rows:
         if row["delta"] is None:
             continue
         where = (row["group"], row["panel"], row["arm"])
@@ -316,10 +339,54 @@ def test_d218_each_drawn_cell_matches_its_json_row(rendered: dict[str, Any]) -> 
         assert abs(cx - (intercept + slope * row["delta"])) <= _X_TOLERANCE, where
         assert x1 <= cx <= x2, where
         assert (cx > zero_x) == (row["delta"] > 0) or abs(cx - zero_x) <= _X_TOLERANCE, where
-        filled = point.get("fill") != "#ffffff"
-        assert filled == (row["mark"] == "holm-significant"), where
+        # The exact fill and stroke for the mark, so an open marker on a significant row
+        # (`none`, `white`, `#FFFFFF`, `transparent`, ...) fails, not only the reverse.
+        fill, stroke = _colour(point.get("fill")), _colour(point.get("stroke"))
+        assert (fill, stroke) == _expected_point_colours(row["mark"]), (
+            f"fill/stroke for {row['mark']}",
+            where,
+            fill,
+            stroke,
+        )
         checked += 1
     assert checked == 16
+
+
+def _first_cell(rows: list[dict[str, Any]], mark: str) -> tuple[str, str, str]:
+    row = next(r for r in rows if r["mark"] == mark)
+    return (row["group"], row["panel"], row["arm"])
+
+
+def _point(cell: ET.Element) -> ET.Element:
+    return next(e for e in cell.iter() if "point" in (e.get("class") or "").split())
+
+
+@pytest.mark.parametrize("fill", ["none", "white", "#FFFFFF", "#ffffff", "transparent", ""])
+def test_d218_a_significant_point_drawn_open_fails_the_cell_check(
+    rendered: dict[str, Any], fill: str
+) -> None:
+    root = _svg_root(rendered["svg"])
+    _point(_cells(root)[_first_cell(rendered["rows"], "holm-significant")]).set("fill", fill)
+    with pytest.raises(AssertionError, match="fill/stroke for holm-significant"):
+        _check_drawn_cells(root, rendered["rows"])
+
+
+@pytest.mark.parametrize("fill", ["#1f4e79", "none", "white", "transparent"])
+def test_d218_an_open_point_drawn_any_other_way_fails_the_cell_check(
+    rendered: dict[str, Any], fill: str
+) -> None:
+    root = _svg_root(rendered["svg"])
+    _point(_cells(root)[_first_cell(rendered["rows"], "not-significant")]).set("fill", fill)
+    with pytest.raises(AssertionError, match="fill/stroke for not-significant"):
+        _check_drawn_cells(root, rendered["rows"])
+
+
+def test_d218_the_fill_comparison_ignores_case_and_whitespace(rendered: dict[str, Any]) -> None:
+    root = _svg_root(rendered["svg"])
+    cells = _cells(root)
+    _point(cells[_first_cell(rendered["rows"], "holm-significant")]).set("fill", " #1F4E79 ")
+    _point(cells[_first_cell(rendered["rows"], "not-significant")]).set("fill", "#FFFFFF")
+    _check_drawn_cells(root, rendered["rows"])
 
 
 def _generator() -> Any:
