@@ -346,7 +346,7 @@ uv run --project eval pytest eval/tests
 
 ### 📋 GSD Planning Blueprint (under [.planning/](.planning))
 * [PROJECT.md](.planning/PROJECT.md) — project definition, validated requirements and the key-decision log.
-* [REQUIREMENTS.md](.planning/REQUIREMENTS.md) — requirement IDs with traceability to phases (ARCH, RAG, DATA, ORCH, GATE, OBS).
+* [v1.0-REQUIREMENTS.md](.planning/milestones/v1.0-REQUIREMENTS.md) — the archived v1.0 requirement IDs with traceability to phases (ARCH, RAG, DATA, ORCH, GATE, OBS).
 * [ROADMAP.md](.planning/ROADMAP.md) — every phase with goals, success criteria, plan lists and the backlog.
 * [STATE.md](.planning/STATE.md) — the living progress log.
 * [research/NEXT-STEPS-2026-10-06.md](.planning/research/NEXT-STEPS-2026-10-06.md) — the analysis that inserted Phases 06.3.5 and 06.3.6 and triaged the backlog.

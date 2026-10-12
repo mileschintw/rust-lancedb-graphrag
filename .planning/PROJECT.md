@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Lancet is an end-to-end, high-performance, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform designed as a resume-oriented engineering artifact. It uses a split-service architecture: a Go API gateway as the control plane for HTTP APIs, sessions, metadata, and document management, and a Rust RAG engine as the data plane for document parsing, custom chunking, hybrid retrieval, graph traversal, and lightweight workflow orchestration.
+Lancet is an end-to-end, high-performance, systems-oriented Retrieval-Augmented Generation (RAG) and GraphRAG platform designed as a resume-oriented engineering artifact. It uses a split-service architecture: a Go API gateway as the control plane for HTTP APIs, document management, workflow-checkpoint persistence and metadata, and a Rust RAG engine as the data plane for document parsing, custom chunking, hybrid retrieval, graph traversal, and lightweight workflow orchestration.
 
 The first version should be local-first and demoable: ingest a coherent corpus, answer questions with cited evidence, emit streaming workflow events, and expose traces/metrics that make the system's retrieval and orchestration decisions explainable.
 
@@ -29,15 +29,23 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - ✓ Report standard-RAG baselines (dense-only, BM25-only, hybrid, hybrid+graph) beside the graph on a committed held-out question set with the benchmark's own retrieval convention, judged dimensions and a human-calibrated slice, and measure each quality lever (reranker, graph repair, evidence metadata, answer format) as its own arm before it becomes a default. — OBS-06, Phases 06.3.5 and 06.3.6 (closed 2026-10-10: 06.3.6 run of record; rerank and evidence_metadata ship as default levers, graph-v2 and answer-format stay off)
 - ✓ Provide a README/design narrative that explains the architecture, alternatives considered, custom-vs-existing-tool choices, and how to run/evaluate the system. — Phase 06.4 (README front door plus `docs/observability.md`, `docs/evaluation.md`, `docs/design-narrative.md`, `docs/api-contract.md`, `docs/build-history.md`; quickstart verified from fresh clones on Windows and WSL; owner UAT 4/4)
 
+- ✓ Build a Go API gateway with document upload, RAG query and metadata persistence. — v1.0 (narrowed at the v1.0 audit: graph context is served inside `/rag/query`, the standalone `QueryGraph` RPC stays gRPC-only per 04 D-25, and session IDs are engine-issued with no session table; the HTTP graph route and a session table are backlog 999.16)
+- ✓ Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries. — v1.0 (Phases 01-06)
+- ✓ Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources before attempting PDF-heavy ingestion. — v1.0 (Phase 02, DATA-01)
+- ✓ Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies for comparison. — v1.0 (Phase 02, DATA-02)
+- ✓ Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication. — v1.0 (Phase 03, RAG-02 MVP scope under ADR-03-003; measured as arms in 06.3.5)
+- ✓ Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger. — v1.0 (quickstart verified from fresh clones on Windows and WSL, Phase 06.4; the optional local LLM fallback was not built, see backlog 999.11)
+- ✓ The LanceDB `nodes`/`edges` port tables with nullable summary columns. — v1.0 (DATA-06..08; the summary and community columns live on `entities` after the 04.1 relocation)
+
 ### Active
-- [ ] Build a Go API gateway with document upload, RAG query, graph query, session handling, and metadata persistence.
-- [ ] Build a Rust RAG engine with gRPC server, async runtime, tracing, and service boundaries.
-- [ ] Implement document ingestion for Markdown, plain text, JSON, and other lightweight text-like sources before attempting PDF-heavy ingestion.
-- [ ] Implement custom structure-aware recursive chunking with at least fixed-size and structure-aware strategies for comparison.
-- [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store.
-  - *Port:* Define separate `nodes` and `edges` tables with nullable `summary`, `summary_vector`, and `unsummarized_refs` columns.
-- [ ] Implement hybrid retrieval that combines dense vector search, local lexical/BM25 retrieval, metadata filtering, and deduplication.
-- [ ] Provide a local development path with `go run`, `cargo run`, and Docker Compose for PostgreSQL/Jaeger and optional local LLM fallback.
+
+Next milestone (v1.1) candidates; `/gsd-new-milestone` turns these into fresh requirements.
+
+- [ ] Persist chunks and metadata in LanceDB as the local-first vector/graph store (DATA-03, carried from v1.0 by owner decision; the 06.3.4.1 data-state gap on the earlier corpus is unresolved).
+- [ ] Give the background worker structure a NoOp default execution path (RAG-06 NoOp clause; v1.0 accepted it as partial).
+- [ ] Measure the actual default shape decisionally: hybrid plus rerank plus evidence metadata together (v1.0 tested the combination only descriptively).
+- [ ] Fresh human calibration of the judged dimensions and the 06.3.6 D-153 judge carry-forwards.
+- [ ] Settle the rerank latency regime (a local rerank endpoint or a provider comparison; related to 999.11).
 
 ### Out of Scope
 
@@ -49,6 +57,18 @@ Demonstrate strong engineering judgment by building a narrow but deep RAG/GraphR
 - Distributed workflow execution or production cloud deployment — local-first demo and evaluation come first.
 - Product-facing web UI as a primary goal — CLI/API and minimal response streaming are sufficient unless a later phase explicitly adds UI.
 
+## Current State
+
+**Shipped:** v1.0 MVP on 2026-10-11 (tag `v1.0`; override closeout, known gaps in `.planning/MILESTONES.md`). 18 phases, 250 plans, 118 days. About 79k lines of Rust, 15k of Go and 92k of Python.
+
+A Go gateway and a Rust engine ingest Markdown, text and JSON into LanceDB. They answer over hybrid dense plus BM25 retrieval with rerank and evidence metadata as default levers, and graph context is opt-in. Answers stream as SSE workflow events. Every request is traced through OpenTelemetry to Jaeger, Prometheus, Loki and Grafana. A Python harness evaluates against MultiHop-RAG with runs of record on a held-out split. A README and a `docs/` suite document the system, with a quickstart verified from fresh clones.
+
+**Known debt:** `06.4-DEBT-LEDGER.md`, promoted into backlog phases 999.13-999.19.
+
+## Next Milestone Goals
+
+v1.1 is not yet defined. See the Active list above and the "What's next" section of `06.4-MILESTONE-SUMMARY.md`. Start it with `/gsd-new-milestone`.
+
 ## Context
 
 The project is intended to be attractive to North American engineering interviews, especially for infrastructure, backend, data systems, AI platform, and RAG/AI-agent roles. It should show that the builder can make mature trade-offs: use existing tools for commodity infrastructure, rebuild high-leverage layers where custom implementation demonstrates understanding, and avoid overbuilding frameworks.
@@ -58,7 +78,7 @@ The current architectural direction is a Go/Rust split:
 - **Go API Gateway / control plane:** HTTP API, authentication/session state, document metadata, PostgreSQL or SQLite fallback, request orchestration.
 - **Rust RAG Engine / data plane:** gRPC server, async RAG pipeline, custom chunking, LanceDB vector/graph storage, hybrid retrieval, GraphRAG context extraction, prompt assembly, LLM generation, event streaming.
 - **Inter-service communication:** gRPC with Protocol Buffers.
-- **Storage:** LanceDB embedded in Rust for vector/graph data; PostgreSQL for metadata/sessions; Jaeger for traces.
+- **Storage:** LanceDB embedded in Rust for vector/graph data; PostgreSQL for document metadata and workflow checkpoints; Jaeger, Prometheus and Loki for traces, metrics and logs.
 - **Evaluation:** offline Python/Rust evaluation script with a fixed corpus/test set and metrics such as retrieval recall, context precision, groundedness, and faithfulness.
 
 The `.discussion/` folder contains prior brainstorming, implementation planning, final architectural decisions, and a lightweight state-machine plan. The final implementation decisions should be treated as the strongest source of current direction.
@@ -116,6 +136,8 @@ The `.discussion/` folder contains prior brainstorming, implementation planning,
 | The lever-free control-arm path is deferred to the next measurement phase's freeze | D-195: arms that omit `levers` now run the committed defaults, so a future drive must choose an empty `LANCET_ENGINE__LEVERS__DEFAULTS`, an eval overlay or a proto opt-out, and launchers must refuse `LANCET_ENGINE__LEVERS__*`. Recorded runs are unaffected (provenance clauses h/j would flag such records) | — Deferred (owner, 2026-10-10) |
 | The client can opt out of the default levers (`disable_default_levers`), and graph context is off by default with notice code 25 | D-198/D-207 (06.4): a lever-free control arm needs a wire opt-out, and the graph arm did not earn a default at the 06.3.6 read. Every harness arm now sends graph and lever state explicitly, and a drive refuses `LANCET_ENGINE__GRAPH__*` overrides (D-199) | ✓ Good (06.4) |
 | v1 docs quote run-of-record figures only, under a quote checker, and the quickstart is verified live from fresh clones on both platforms before it ships | D-213/D-220 (06.4): a README number that cannot be traced, or a quickstart nobody ran, is the failure the docs phase exists to prevent | ✓ Good (06.4): Windows `1c000271`, WSL `752c8ae0`, spend $0.0159 |
+| ARCH-02 narrowed to what the gateway ships instead of building a graph route and session table before v1.0 | v1.0 milestone audit G1-G3 (owner, 2026-10-11): 04 D-25 had deliberately kept `QueryGraph` gRPC-only, so the claim was wrong, not the design | ✓ Good (v1.0): docs-only change `08903e06`; route and session table in backlog 999.16 |
+| Close v1.0 with `--no-archive-phases` and an override closeout | D-232: the docs link into `.planning/phases/`; phases 01-03 predate the verification conventions and were force-closed under ADRs | ✓ Good (v1.0): 53 open artifacts acknowledged, reasons recorded in MILESTONES.md |
 
 ## Evolution
 
@@ -136,4 +158,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. Update Roadmap status
 
 ---
-*Last updated: 2026-10-12 after Phase 06.4*
+*Last updated: 2026-10-11 after v1.0 milestone*

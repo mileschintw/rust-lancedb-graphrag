@@ -1,12 +1,11 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_plan: Not started
-status: executing
-stopped_at: Phase 06.4 complete — all phases complete; next /gsd-complete-milestone
-last_updated: "2026-10-12T01:04:13.750Z"
+status: Awaiting next milestone
+stopped_at: Milestone v1.0 MVP complete; next /gsd-new-milestone
+last_updated: "2026-10-12T02:26:42.928Z"
 last_activity: 2026-10-12
-state_head: 173a8e35c66c5cbcba1af60c3ecdcff5018aa500
+state_head: d2c1fb7ab9f032bfb0ad0bfb41b6962a3e160087
 progress:
   total_phases: 18
   completed_phases: 10
@@ -15,18 +14,21 @@ progress:
 milestone_name: milestone
 current_phase: "06.4"
 current_phase_name: Docs Suite, Verified Quickstart and v1 Milestone Closure (OBS-03)
-last_activity_desc: "Phase 06.4 complete: UAT 4/4, VALIDATION 0 gaps, SECURITY 64/64, phase.complete (only OBS-03 flipped)"
+last_activity_desc: "Milestone v1.0 MVP archived (override closeout, 53 items acknowledged, tag v1.0)"
 ---
 
 # Project State
 
 ## Current Position
 
-Current Plan: Not started
-Total Plans in Phase: 17
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-11 — Milestone v1.0 completed and archived
 
 ## Current Status
 
+- **2026-10-11: Milestone v1.0 MVP COMPLETE.** Audit `gaps_found` (25/31 requirements, 5/6 flows; no blocker), ARCH-02 narrowed (`08903e06`), 53 open artifacts acknowledged (`d2c1fb7a`), archived with `--no-archive-phases` (D-232) to `.planning/milestones/v1.0-*`, override closeout recorded in `MILESTONES.md`. Next: `/gsd-new-milestone`.
 - **2026-10-12: Phase 06.4 COMPLETE.** Owner UAT 4/4 passed (`8d3cb569`); validate-phase: Nyquist-compliant, 0 gaps (`903d00d9`); secure-phase: 64/64 threats closed, threats_open 0, one accepted risk T-06.4-14 (`173a8e35`); ui-review skipped (no frontend in scope, onError skip); VERIFICATION canonicalised human_needed -> passed; `phase.complete` ran and the REQUIREMENTS diff flipped only OBS-03 (RAG-06 and DATA-03 stay unchecked). All 18 v1.0 phases are complete; next is `/gsd-complete-milestone`.
 - **2026-10-12: 06.4 phase gates.** Regression gate green (engine 963, gateway 124, eval 2338, buf idempotent, drift clean). Phase-end code review (`e5394f93`): 0C/5W/5I; owner chose fix-all: WR-04..08 fixed (`c06fd16c`..`851f156a`, WR-07 iteration 2 `0d9aeee2`; WR-04 changed one prose sentence at README:252 inside the verified quickstart block, no command/question/stamp changed); re-review `6e24d13c`; disposition `647a8099` (open 0 / fixed 8 / deferred 12; IN-07..12 + ATTRIBUTION.md:33 routed to 999.17/999.18). Verification: **human_needed, 8/8 SC verified, no gaps**; 4 human items in `06.4-UAT.md` (D-220 owner quickstart spot-check, GitHub rendering, D2 README read-through, D4 build-history fairness). Not yet phase.complete: run `/gsd-verify-work 06.4`; after phase.complete diff REQUIREMENTS.md (only OBS-03 should flip).
 - **2026-10-12: 06.4 wave 14 COMPLETE (plan 17, Sonnet) - all 17 plans done.** D-229 residual-debt listing, STATE Completed Phases/GAP reconciliation (OB-34), 06.3.5 IN-03..06 flipped, milestone summary, README banner link. **D-223 owner reply (2026-10-11T23:31:25Z): approve-with-changes** - DATA-01/02/06/07/08/09 ticked (06/07 note the `entities` relocation, 04.1 D-11/D-15); RAG-06 accepted-partial (real worker, no NoOp default; ADR-02-004); DATA-03 carried to v1.1 (06.3.4.1 owner decision kept). OB-44 carried to 999.17 by pointer; obligations ledger 0 open / 44 closed. OBS-03 left for phase.complete. SUMMARY `068a9c65`. Stale rows for follow-up: 06.3.4.1 WR-10 (closed by D-211), WINDOWS.md rows 1-3; init.manager reports Phase 2 VERIFICATION unparseable and 06.3.3-06.3.6 `stale` (expect override_closeout at complete-milestone).
@@ -621,8 +623,8 @@ Total Plans in Phase: 17
 ## Session
 
 **Last session:** 2026-10-12T01:10:00Z
-**Last activity:** 2026-10-12
-**Stopped at:** Phase 06.4 complete; milestone v1.0 ready to close (`/gsd-complete-milestone`)
+**Last activity:** 2026-10-11
+**Stopped at:** Milestone v1.0 MVP completed and archived; next `/gsd-new-milestone`
 **Resume file:** None
 
 ## Accumulated Context
@@ -699,3 +701,74 @@ Total Plans in Phase: 17
 - 06.3.4.1-07 REPLANNED (2026-09-24, user decision): revised to diagnose the OI-02 decay cause across the whole pipeline (forensics → full-stack replay → bisection), with checkpoints after the primary replay and before any fix, then fix and same-replay proof. Plan-checker passed (warning fixed); downstream 08/09/11/12 aligned to its `## Fix` section. Resume with /gsd-execute-phase 06.3.4.1 at wave 4. Note: the 06.3.4 drive's Prometheus export is preserved only in gitignored data/oi02-evidence/prometheus-06.3.4-drive/ (Task 1 input).
 - OI-02 (RetrieveHybrid 4.9s->29.0s growth, 06.3.4 drive) NOT reproduced or fixed in 06.3.4.1-07. Checkpoint resolved diagnose-in-drive-1 (2026-09-26) after every free Route B arm (drive-era, drive-era-prewarm, paced) and one paid arm (paid-drive-era, real provider+embeddings) stayed flat. D-64: no paid drive 1 (06.3.4.1-11/-12) should run without expecting to hit its own decay gate on an unfixed engine; full account and carry-forward instrumentation list in .planning/phases/06.3.4.1-retrieval-diagnosis-index-identity-and-graph-yield-repair/06.3.4.1-OI02-MEMO.md.
 - 06.3.4.1-27 preflight FAILED (2026-09-29): first query on a fresh engine timed out at AssemblePrompt (78.6 ms vs the 65 ms prompt floor); canary mhr-0d5e238015ef graph floor also missed (0 graph nodes, GRAPH_UNAVAILABLE, no timeout). Plan 11 not closed; drive 1 (06.3.4.1-12) waits on a gap plan and a passing preflight. See 06.3.4.1-BUDGETS.md 'Budgets written (06.3.4.1-27)'.
+
+## Project Reference
+
+See: .planning/PROJECT.md (updated 2026-10-11)
+
+**Core value:** see PROJECT.md "Core Value".
+**Current focus:** Planning the next milestone (v1.1); v1.0 MVP shipped 2026-10-11 (override closeout; known gaps in `.planning/MILESTONES.md`).
+
+## Deferred Items
+
+Items acknowledged and deferred at milestone close, most recent first. The three Phase 03 "D-11 through D-16", "D-24" and "D-41 through D-43" rows were mapping-table rows the CLI cannot acknowledge; they were rewritten as prose in `03/deferred-items.md` (pointers to DEBT-RAG-01/03/04, themselves acknowledged).
+
+| Category | Item | Status | Deferred At | Milestone |
+|----------|------|--------|-------------|-----------|
+| debug_sessions | collector-degrade-to-stdout | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | d18-total-drop-flag-off | investigating | 2026-10-11 | v1.0 |
+| debug_sessions | g-05-1-engine-startup-blockers | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | g-05-1-models-metadata-body-limit | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | gate-stage-retries-erase-evidence | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | grafana-trace-log-correlation | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | measure-ignores-spend-cap-parallel | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | operations-dashboard-duration-metric | diagnosed | 2026-10-11 | v1.0 |
+| debug_sessions | truncated-citation-resolution | investigating | 2026-10-11 | v1.0 |
+| debug_sessions | unpark-gates-score-partial-journal | diagnosed | 2026-10-11 | v1.0 |
+| quick_tasks | 260831-az7-phase-6-3-is-currently-stuck-the-previou | unknown | 2026-10-11 | v1.0 |
+| uat_gaps | 06/06-UAT.md | diagnosed | 2026-10-11 | v1.0 |
+| verification_gaps | 03/03-VERIFICATION.md | gaps_found | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: Pre-existing production stubs found during the 02-07 audit - engine/src/main.rs:329-330:… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: DEBT-CR-04 — Network authentication, authorization, TLS, and quotas - **ADR rationale:**… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: DEBT-CR-05 — Resource bounds before queue admission - **ADR rationale:** Hostile slow cli… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: DEBT-BU-01 — Complete run-window behavioral proof - **ADR rationale:** The unproven exact… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: DEBT-BU-02 — Caller-owned input preservation across all paths - **ADR rationale:** The de… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 02/deferred-items.md: Accepted Phase 02 ADR-02-004 technical debt Source of record: .discussion/decisions/phase… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-01 — Degraded retrieval and model-only fallback D1 infrastructure failures now f… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-D1-SAFE-LOG — Preserved full-message tracing under accepted D1-LOG waiver D1 infrast… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-02 — Provider failure, timeout, retry, and fallback behavior - **Rationale:** Th… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-03 — Citation repair and transparent downgrade D3 retains fail-closed citation v… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-04 — Re-ingestion/restart recovery and cross-index atomic visibility D4 preserve… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-06 — Graph-extraction unavailability in RAG-03 D5 keeps Phase 03 source-chunk-on… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-RAG-05 — Full invalid-input and filter edge coverage Only D2's valid zero-match succ… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEFERRED-03-11-01 — Pre-existing citation test working-tree edit - **Found during:** Plan… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEFERRED-03-12-01 — Preserved citation-test edit and repository formatting drift - **Foun… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEFERRED-03-12-02 — User-stopped Go and protobuf gates - **Found during:** Plan 03-12 ove… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-BODY-BOUND — Provider body bound post-chunk (Plan 03-20 T1) - **Rationale:** reqw… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-STAGING-GEN-RACE — Staging generation allocation race (Plan 03-23 T1) - **Rationa… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-STAGING-PHYSICAL-BU — Physical row retention after delete failure (Plan 03-23 T2)… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-CONFIG-DB-PLAINTEXT — Committed database credentials and disabled TLS - **Rationa… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-CR-04 — Insecure Gateway→Engine gRPC (Extended with Phase 03 evidence) - **Rationale… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-PROVIDER-ENDPOINT-TRUST — Provider endpoint trust and bearer exfiltration - **Rat… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-WARN-DX — Fixture and upload DX issues - **Rationale:** Non-idempotent seeder app… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-WARN-API — API semantics and D1 identity gaps - **Rationale:** Mixed answer basis… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-WARN-SETTINGS — Settings consistency warnings - **Rationale:** Invalid numeric en… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-WARN-VALIDATE — Validation gaps (nulls and non-finite) - **Rationale:** Staging r… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: DEBT-P3-MODULE-GRAPH — Dual library/binary module graph - **Rationale:** lib.rs and main.… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: D-11 through D-16: degraded retrieval, model-only behavior, and degraded answer-basis/war… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: D-24: citation repair, unsupported-marker removal, and transparent downgrade — DEBT-RAG-03 | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 03/deferred-items.md: D-41 through D-43: re-ingestion atomic visibility and restart rebuild/failure behavior —… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 05/deferred-items.md: Deferred Items - 05-20 Task 2 binary verification remains incomplete for workflow_phase5_… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: Pre-existing ruff debt in eval/src and eval/tests, mostly line-too-long (~250-300 errors… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: flatness.records_from_run_journal returns n=0 on every measure journal (06.3.4.1-11) stat… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: OI-02 instrumentation reaches Loki lossily under the engine's unfiltered log volume (06.3… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: measure.compute_spend undercounts real provider spend (06.3.4.1-11) status: open **What:*… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: uv run --project eval pytest -q from the repo root fails one Phase 02 test under plain py… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: Ruff findings already in eval/src/lancet_eval/cli.py make 06.3.4.1-28 Task 3's ruff verif… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.4.1/deferred-items.md: config_startup::initial_bm25_failure_blocks_readiness can fail on a port race (06.3.4.1-1… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.5/deferred-items.md: 06.3.5-10: eval/src/lancet_eval/score.py carries 22 pre-existing ruff findings status: op… | acknowledged | 2026-10-11 | v1.0 |
+| deferred_items | 06.3.6/deferred-items.md: The eval full-suite command uv run --project eval pytest, run from the repo root, also co… | acknowledged | 2026-10-11 | v1.0 |
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
