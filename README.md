@@ -98,7 +98,7 @@ graph TD
 4. **Observability ([`deploy/`](./deploy), `docker-compose.yml`).** OpenTelemetry traces, metrics and structured logs from both services through an OTel Collector to Jaeger, Prometheus and Loki, with a provisioned Grafana dashboard (`histogram_quantile` latency panels, trace-to-log correlation via `trace_id`). Every node is a span, with leaf spans for each external call, the rerank call included. Ingestion is traced end to end through chunking, embedding, graph extraction and index swap.
 5. **Evaluation harness ([`eval/`](./eval), `lancet-eval`).** A `uv`-managed Python package that drives the gateway as a black box over the MultiHop-RAG benchmark. Each question runs through several arms (retrieval baselines, graph on and off, and one arm per lever), each compared per question against plain `hybrid`. The harness journals every attempt with provenance, computes deterministic retrieval and answer metrics without an LLM, applies exact paired tests with Holm correction against pre-registered gates, runs cached LLM-as-judge groundedness and faithfulness scoring with a human calibration path, enforces per-stage spend caps reconciled against the provider account, and refuses to publish an incomplete journal as complete. A preflight checks, per arm, that the engine echoes the graph and lever settings the arm declares. Isolated from the dev stack by a separate LanceDB path and PostgreSQL schema.
 
-Tests: 963 Rust and 124 Go test functions (the counts the local gate scripts pin) and 2,338 Python tests, all runnable offline except the explicitly live-evidence suites.
+Tests: 963 Rust and 124 Go test functions (the counts the local gate scripts pin) and 2,357 Python tests, all runnable offline except the explicitly live-evidence suites.
 
 ---
 
