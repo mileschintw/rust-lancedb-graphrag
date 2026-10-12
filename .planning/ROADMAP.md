@@ -160,11 +160,11 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Member IDs:** DEBT-CR-04-EXT, DEBT-P3-PROVIDER-ENDPOINT-TRUST, DEBT-P3-CONFIG-DB-PLAINTEXT, DEBT-P3-BODY-BOUND, DEBT-D1-SAFE-LOG
-**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:162` (DEBT-CR-04-EXT, the "Extended with Phase 03 evidence" record), `:171` (DEBT-P3-PROVIDER-ENDPOINT-TRUST), `:153` (DEBT-P3-CONFIG-DB-PLAINTEXT), `:126` (DEBT-P3-BODY-BOUND), `:34` (DEBT-D1-SAFE-LOG)
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:176` (DEBT-CR-04-EXT, the "Extended with Phase 03 evidence" record), `:187` (DEBT-P3-PROVIDER-ENDPOINT-TRUST), `:165` (DEBT-P3-CONFIG-DB-PLAINTEXT), `:132` (DEBT-P3-BODY-BOUND), `:31` (DEBT-D1-SAFE-LOG)
 
 DEBT-D1-SAFE-LOG's shared-log-sink trigger fired with the Phase 6.2 Loki export; kept in backlog by owner decision (06-CONTEXT D-09). The loopback-bound single-user compose stack is why the multi-tenant risk the debt describes does not apply here.
 
-DEBT-CR-04 is three unrelated issues sharing one label (06-CONTEXT D-03): the plain DEBT-CR-04 (network auth, TLS, quotas; `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`) is documented-only per D-06 and is NOT promoted; DEBT-CR-04-EXT (the insecure Gateway to Engine dial) is promoted here; DEBT-CR-04 / VER-20 (the evidence helper that forges human approval) is promoted to Phase 999.17.
+DEBT-CR-04 is three unrelated issues sharing one label (06-CONTEXT D-03): the plain DEBT-CR-04 (network auth, TLS, quotas; `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:13`) is documented-only per D-06 and is NOT promoted; DEBT-CR-04-EXT (the insecure Gateway to Engine dial) is promoted here; DEBT-CR-04 / VER-20 (the evidence helper that forges human approval) is promoted to Phase 999.17.
 
 The 06.3.6 review finding A-IN-02 (an unvalidated `rerank_endpoint`) is the same class as DEBT-P3-PROVIDER-ENDPOINT-TRUST and lives in Phase 999.19.
 
@@ -178,7 +178,7 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Member IDs:** DEBT-CR-01, DEBT-CR-02, DEBT-CR-03, DEBT-P3-STAGING-GEN-RACE, DEBT-P3-STAGING-PHYSICAL-BU
-**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:54` (DEBT-CR-01 / VER-16), `:58` (DEBT-CR-02), `:62` (DEBT-CR-03); `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:135` (DEBT-P3-STAGING-GEN-RACE), `:144` (DEBT-P3-STAGING-PHYSICAL-BU)
+**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:59` (DEBT-CR-01 / VER-16), `:63` (DEBT-CR-02), `:67` (DEBT-CR-03); `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:143` (DEBT-P3-STAGING-GEN-RACE), `:154` (DEBT-P3-STAGING-PHYSICAL-BU)
 
 Plans:
 
@@ -190,7 +190,7 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Member IDs:** DEBT-P3-WARN-SETTINGS, DEBT-P3-WARN-VALIDATE
-**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:198` (DEBT-P3-WARN-SETTINGS), `:207` (DEBT-P3-WARN-VALIDATE)
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:220` (DEBT-P3-WARN-SETTINGS), `:231` (DEBT-P3-WARN-VALIDATE)
 
 **Also routed here (06.4 code review, counted separately from the 18 and the 27):** 06.4-REVIEW IN-03, the compiled-in `context_default_enabled = true` that is the opposite of the shipped default (`engine/src/config.rs:204-221`); see `06.4-DEBT-LEDGER.md` table (d).
 
@@ -204,7 +204,7 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Member IDs:** DEBT-P3-WARN-API, DEBT-P3-WARN-DX, DEBT-WR-02
-**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:189` (DEBT-P3-WARN-API), `:180` (DEBT-P3-WARN-DX); `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:74` (DEBT-WR-02)
+**Sources:** `.planning/phases/03-hybrid-retrieval-basic-rag-path/deferred-items.md` at `:209` (DEBT-P3-WARN-API), `:198` (DEBT-P3-WARN-DX); `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:79` (DEBT-WR-02)
 
 **Also routed here (06.4 owner decision, counted separately from the 18 and the 27):** DEBT-06.4-DEFAULT-RUN, add `default-run = "engine"` to `engine/Cargo.toml` so a plain `cargo run` works (the engine crate has seven binaries; the README uses `--bin engine`; found by plan 06.4-09); see `06.4-DEBT-LEDGER.md` table (d). Also from the v1.0 milestone audit (2026-10-12): G1 (no gateway HTTP route for `QueryGraph`, 04 D-25), G2 (no session table) and G3 (unused `users` table and sqlc queries); see `.planning/milestones/v1.0-MILESTONE-AUDIT.md` and table (d).
 
@@ -218,9 +218,9 @@ Plans:
 **Requirements:** TBD
 **Plans:** 0 plans
 **Member IDs:** DEBT-WR-01, DEBT-WR-03, DEBT-CR-04 / VER-20
-**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:70` (DEBT-WR-01 / VER-19), `:78` (DEBT-WR-03), `:66` (DEBT-CR-04 / VER-20)
+**Sources:** `.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md` at `:75` (DEBT-WR-01 / VER-19), `:83` (DEBT-WR-03), `:71` (DEBT-CR-04 / VER-20)
 
-The plain DEBT-CR-04 (`.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`, network auth, TLS, quotas) is documented-only per 06-CONTEXT D-06 and is NOT promoted; DEBT-CR-04 / VER-20 above is a different, unrelated item that shares its label.
+The plain DEBT-CR-04 (`.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:13`, network auth, TLS, quotas) is documented-only per 06-CONTEXT D-06 and is NOT promoted; DEBT-CR-04 / VER-20 above is a different, unrelated item that shares its label.
 
 **Also routed here (06.4 owner decision of 2026-10-11, counted separately from the 18 and the 27):** OB-44, the per-document ingestion span count that 06.2-04 never measured (`06.4-OBLIGATIONS.md`); see `06.4-DEBT-LEDGER.md`, "Also routed to 999.17". Also from the 06.4 phase-end code review (2026-10-12): IN-07, IN-09, IN-10 and IN-11 (doc-drift test blind spots) and the stale "three of the five documents" line in `eval/corpora/ATTRIBUTION.md:33`; see `06.4-DEBT-LEDGER.md` table (d).
 
