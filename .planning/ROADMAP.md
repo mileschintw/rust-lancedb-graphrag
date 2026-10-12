@@ -1565,7 +1565,7 @@ Plans:
 
 The plain DEBT-CR-04 (`.planning/phases/02-ingestion-chunking-vector-storage/deferred-items.md:12`, network auth, TLS, quotas) is documented-only per 06-CONTEXT D-06 and is NOT promoted; DEBT-CR-04 / VER-20 above is a different, unrelated item that shares its label.
 
-**Also routed here (06.4 owner decision of 2026-10-11, counted separately from the 18 and the 27):** OB-44, the per-document ingestion span count that 06.2-04 never measured (`06.4-OBLIGATIONS.md`); see `06.4-DEBT-LEDGER.md`, "Also routed to 999.17".
+**Also routed here (06.4 owner decision of 2026-10-11, counted separately from the 18 and the 27):** OB-44, the per-document ingestion span count that 06.2-04 never measured (`06.4-OBLIGATIONS.md`); see `06.4-DEBT-LEDGER.md`, "Also routed to 999.17". Also from the 06.4 phase-end code review (2026-10-12): IN-07, IN-09, IN-10 and IN-11 (doc-drift test blind spots) and the stale "three of the five documents" line in `eval/corpora/ATTRIBUTION.md:33`; see `06.4-DEBT-LEDGER.md` table (d).
 
 Plans:
 
@@ -1579,7 +1579,7 @@ Plans:
 **Member IDs:** B-WR-01, B-WR-02, B-WR-03, B-WR-04, B-WR-05, B-IN-02, B-IN-03, B-IN-04, B-IN-05, B-IN-06, B-IN-08
 **Sources:** `06.3.6-REVIEW.md @ c73dbe3c` (text preserved in `.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/research/06.3.6-REVIEW-c73dbe3c.md`); dispositions in `.planning/phases/06.3.6-quality-levers-measured-as-arms-reranker-graph-repair-by-dia/06.3.6-REVIEW-DISPOSITION.md`
 
-**Also routed here (06.4 code review, counted separately from the 18 and the 27):** 06.4-REVIEW IN-01 (`explicit_field_failures` graph-ran evidence is vacuous for `graph_seed_count`), IN-02 (`load_official` re-opens the path after verifying the hash) and IN-05 (the `--preregistered-override` help omits the held-out binding); see `06.4-DEBT-LEDGER.md` table (d).
+**Also routed here (06.4 code review, counted separately from the 18 and the 27):** 06.4-REVIEW IN-01 (`explicit_field_failures` graph-ran evidence is vacuous for `graph_seed_count`), IN-02 (`load_official` re-opens the path after verifying the hash) and IN-05 (the `--preregistered-override` help omits the held-out binding); see `06.4-DEBT-LEDGER.md` table (d). Also from the 06.4 phase-end code review (2026-10-12): IN-08 and IN-12 (`render_forest_plot.py` error handling); see table (d).
 
 Plans:
 
