@@ -3,6 +3,10 @@ status: investigating
 trigger: "Decide the intended flag-off semantics on the D-18 total-drop path"
 created: 2026-08-22T20:26:00.000Z
 updated: 2026-08-22T20:26:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: investigating
 ---
 
 ## Current Focus

@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "G-06.2-2: Operations dashboard panel 1 'RAG Query Duration' queries query throughput instead of latency distribution histogram _bucket data"
 created: 2026-08-26T19:15:00.000Z
 updated: 2026-08-26T19:15:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus

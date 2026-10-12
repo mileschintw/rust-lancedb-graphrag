@@ -33,6 +33,7 @@ re_verification:
     - "Committed configuration and configurable provider/engine transports do not enforce the reviewed security boundary."
   regressions:
     - "The current provider resource and staging concurrency findings remain live after the late plans."
+
 gaps:
   - truth: "03-20: every provider response is bounded while streamed, before untrusted response allocation."
     status: failed
@@ -74,6 +75,7 @@ gaps:
       - "Remove committed reusable credentials and define the supported local-only/TLS boundary."
       - "Add authenticated/TLS engine transport or enforce a safe local-only deployment boundary."
       - "Validate provider endpoint scheme/host/allowlist before any bearer-authenticated request."
+
 deferred:
   - truth: "RAG-03 degraded/model-only behavior and its citation/lifecycle/negative-input/graph hardening contracts"
     addressed_in: "Phase 06"
@@ -89,6 +91,10 @@ behavior_unverified_items:
     test: "Inject append, verification, and old-generation deletion failures, then inspect staged_documents_v2 physical rows and payloads rather than only calling the latest-row reader."
     expected: "Append or verification failure leaves the old row; deletion failure leaves both old and successor rows, returns an error, and does not delete the successor."
     why_human: "The existing deletion-failure test reads through latest-generation selection and asserts only the selected filename; it does not prove that the old physical row remains, and no concurrent/physical-row assertion exercises the full invariant."
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: gaps_found
 ---
 
 # Phase 03: Hybrid Retrieval and Basic RAG Path Verification Report

@@ -4,6 +4,10 @@ phase: 06-observability-evaluation-polish
 source: [06-VERIFICATION.md]
 started: 2026-08-22T21:30:00.000Z
 updated: 2026-08-22T22:15:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  gap_snapshot: "diagnosed::scenarios=0"
 ---
 
 ## Current Test

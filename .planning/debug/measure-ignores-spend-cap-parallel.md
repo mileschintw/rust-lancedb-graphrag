@@ -4,6 +4,10 @@ trigger: "CR-01: measure honours the stage spend cap when workers > 1. (UAT test
 created: 2026-10-06T19:00:00Z
 updated: 2026-10-06T19:20:00Z
 goal: find_root_cause_only
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus

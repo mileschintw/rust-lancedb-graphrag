@@ -12,11 +12,7 @@ The gap closure plans 03-13 through 03-18 implement specific accepted ADR-03-001
 
 ### Deferred decision mapping
 
-| Future target contract | Current source-of-record debt |
-|---|---|
-| D-11 through D-16: degraded retrieval, model-only behavior, and degraded answer-basis/warning semantics | DEBT-RAG-01 |
-| D-24: citation repair, unsupported-marker removal, and transparent downgrade | DEBT-RAG-03 |
-| D-41 through D-43: re-ingestion atomic visibility and restart rebuild/failure behavior | DEBT-RAG-04 |
+Each future target contract maps to its current source-of-record debt: D-11 through D-16 (degraded retrieval, model-only behavior, and degraded answer-basis/warning semantics) to DEBT-RAG-01; D-24 (citation repair, unsupported-marker removal, and transparent downgrade) to DEBT-RAG-03; D-41 through D-43 (re-ingestion atomic visibility and restart rebuild/failure behavior) to DEBT-RAG-04.
 
 These mappings preserve the target behavior and decision IDs for later work; none is a Phase 03 implementation task or acceptance gate.
 
@@ -30,6 +26,7 @@ D1 infrastructure failures now fail closed with session, correlation, and error-
 - **Trigger:** Any claim that RAG-03 is fully implemented, any deployment with unreliable indexes/providers, or any shared/public use.
 - **Target:** Phase 06 hardening/evaluation, or earlier if the trigger occurs.
 - **Future acceptance criteria:** One-path failure returns a useful surviving-path answer with a machine-readable warning; both-path failure returns an explicit model-only basis and notice with no citations; weak/empty evidence follows the documented answer-basis contract.
+  status: acknowledged
 
 ### DEBT-D1-SAFE-LOG — Preserved full-message tracing under accepted D1-LOG waiver
 
@@ -42,6 +39,7 @@ D1 infrastructure failures fail closed with session, correlation, and error-kind
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** Identity-only structured logging without raw provider detail leakage across shared log sinks.
 - **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-RAG-02 — Provider failure, timeout, retry, and fallback behavior
 
@@ -51,6 +49,7 @@ D1 infrastructure failures fail closed with session, correlation, and error-kind
 - **Trigger:** Provider instability, workflow orchestration, or a requirement for production-grade availability.
 - **Target:** Phase 05 orchestration for retry/fallback policy, with Phase 06 hardening for evaluation.
 - **Future acceptance criteria:** Timeout/cancellation and provider errors are classified and surfaced with session/correlation identity; retry and fallback policy is explicit, bounded, and tested without fabricating answers.
+  status: acknowledged
 
 ### DEBT-RAG-03 — Citation repair and transparent downgrade
 
@@ -62,6 +61,7 @@ D3 retains fail-closed citation validation: illegal markers do not produce a pub
 - **Trigger:** Any invalid-marker production trace or a requirement to claim full citation-integrity coverage.
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** One bounded repair attempt is made without another provider call; unresolved markers are removed, the answer basis is downgraded transparently, and a machine-readable warning is emitted.
+  status: acknowledged
 
 ### DEBT-RAG-04 — Re-ingestion/restart recovery and cross-index atomic visibility
 
@@ -73,6 +73,7 @@ D4 preserves initial BM25 build-before-readiness; after in-process ingest, an en
 - **Trigger:** Re-ingestion, engine restart during index updates, or any deployment where stale or mixed evidence is unacceptable.
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** BM25 rebuild completes before readiness; old and new representations switch together; generation metadata proves no mixed evidence is served during replacement or recovery.
+  status: acknowledged
 
 ### DEBT-RAG-06 — Graph-extraction unavailability in RAG-03
 
@@ -86,6 +87,7 @@ D5 keeps Phase 03 source-chunk-only; the graph seam belongs to Phase 04 and grap
 - **Future acceptance criteria:** Graph-unavailable queries retain a useful typed response or documented model-only/degraded basis, with machine-readable warning behavior and tests that do not require graph data for source-chunk queries.
 
 This item is part of the explicit RAG-03 deferred scope. Phase 03 may preserve typed warning/answer-basis fields, but it must not claim graph-extraction failure handling or graph-backed degraded answers.
+  status: acknowledged
 
 ### DEBT-RAG-05 — Full invalid-input and filter edge coverage
 
@@ -97,6 +99,7 @@ Only D2's valid zero-match success branch is shipped; the malformed, bound, unma
 - **Trigger:** External callers, fuzzing/property testing, or a requirement for complete public API contract coverage.
 - **Target:** Phase 06 hardening/evaluation.
 - **Future acceptance criteria:** Empty/oversized queries, malformed IDs, unsupported content types, and filter limits are rejected before retrieval/provider work with stable HTTP 400 and gRPC `InvalidArgument` behavior.
+  status: acknowledged
 
 ### DEFERRED-03-11-01 — Pre-existing citation test working-tree edit
 
@@ -104,6 +107,7 @@ Only D2's valid zero-match success branch is shipped; the malformed, bound, unma
 - **Evidence:** The mandated full engine suite passed 63 tests and failed only `query_rag_citation_identity_and_notices` at `engine/src/tests.rs:2754`, where the existing unstaged edit expects `Root` but the generated citation is `/Document Beta`.
 - **Scope:** This edit predates the 03-11 continuation and was explicitly requested to remain untouched; no plan commit includes it.
 - **Resolution:** Preserve the working-tree edit and defer its test reconciliation to the owner of that change. The six focused 03-11 verification tests pass.
+  status: acknowledged
 
 ### DEFERRED-03-12-01 — Preserved citation-test edit and repository formatting drift
 
@@ -111,6 +115,7 @@ Only D2's valid zero-match success branch is shipped; the malformed, bound, unma
 - **Evidence:** The full Rust suite passed all 24 library tests and 70 of 71 binary tests; `query_rag_citation_identity_and_notices` failed at `engine/src/tests.rs:2842` because the preserved unstaged edit expects `Root` while the fixture produces `/Document Beta`. Repository-wide `cargo fmt --check` also reports pre-existing drift in `engine/src/generation/*` and `engine/src/prompt.rs`; the 03-12 Rust files pass file-local rustfmt.
 - **Scope:** Both conditions are outside the 03-12 production changes. The citation edit was explicitly requested to remain untouched, and unrelated formatting changes were not applied.
 - **Resolution:** Defer reconciliation to the owner of the citation edit and a dedicated formatting cleanup; do not claim the full repository gate passed.
+  status: acknowledged
 
 ### DEFERRED-03-12-02 — User-stopped Go and protobuf gates
 
@@ -118,12 +123,14 @@ Only D2's valid zero-match success branch is shipped; the malformed, bound, unma
 - **Evidence:** The Go, cross-runtime `TestRAGQueryCrossRuntime`, `buf lint`, and `buf format --diff --exit-code` gates were not completed after the user directed execution to stop phase-final gates.
 - **Scope:** No production defect was inferred; the remaining verification was intentionally stopped by the user after all substantive 03-12 commits were present.
 - **Resolution:** Run these gates only when the user requests phase-final/regression verification.
+  status: acknowledged
 
 ## ADR-03-003 Force-Close Deferred Items Ledger
 
 Accepted force-close disposition recorded in `.discussion/decisions/phases/03/2026-08-05-ADR-03-003-all-the-way-to-ship-mvp.md`.
 
 ### DEBT-P3-BODY-BOUND — Provider body bound post-chunk (Plan 03-20 T1)
+
 - **Rationale:** `reqwest::Response::chunk` limit check is post-materialization. Local MVP trusts the configured provider; full stream cap is Phase 06 hardening.
 - **Known risk:** Untrusted or malicious upstream can force large frame allocation before reject.
 - **Current constraints:** MVP trusts configured provider transport. Do not expose Engine provider egress to untrusted networks.
@@ -131,8 +138,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 resource/security hardening.
 - **Future acceptance criteria:** Reader never retains frame exceeding remaining budget; shared 256 KiB policy enforced pre-materialization.
 - **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-STAGING-GEN-RACE — Staging generation allocation race (Plan 03-23 T1)
+
 - **Rationale:** `persist_raw_with_boundary` max generation RMW lacks lock/CAS. Single-writer per doc local MVP avoids concurrent ingest of same doc.
 - **Known risk:** Duplicate generation values; fail-closed read sticks document requiring manual repair.
 - **Current constraints:** Single writer per document_id at a time. Int64 generation column & append-verify-delete protocol unchanged.
@@ -140,8 +149,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 ingestion hardening.
 - **Future acceptance criteria:** Generation allocation atomic/serialized per document; concurrent replace test passes.
 - **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-STAGING-PHYSICAL-BU — Physical row retention after delete failure (Plan 03-23 T2)
+
 - **Rationale:** Delete failure leaving both physical rows unproven under injected delete faults.
 - **Known risk:** Unproven physical row retention under fault paths.
 - **Current constraints:** Rely on sequential happy-path replace only for confidence.
@@ -149,8 +160,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 test hardening.
 - **Future acceptance criteria:** Injected delete failure leaves old + successor physical rows; error returned; successor not deleted.
 - **Promoted:** Phase 999.14 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-CONFIG-DB-PLAINTEXT — Committed database credentials and disabled TLS
+
 - **Rationale:** `config.toml` contains plaintext dev credentials and `sslmode=disable` for local docker-style MVP defaults under R4.
 - **Known risk:** Unencrypted DB traffic if remote; credential exposure if mis-copied.
 - **Current constraints:** Single-host local Postgres only. Do not deploy committed defaults to shared/prod databases.
@@ -158,8 +171,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 secrets/config hygiene.
 - **Future acceptance criteria:** No live credentials in committed config; placeholders used; TLS required for non-local.
 - **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-CR-04 — Insecure Gateway→Engine gRPC (Extended with Phase 03 evidence)
+
 - **Rationale:** `gateway/main.go` dials engine with `insecure.NewCredentials()`. Extended Phase 02 `DEBT-CR-04` with Phase 03 evidence; loopback single-host MVP makes plaintext gRPC acceptable.
 - **Known risk:** Plaintext gRPC if `engine_addr` is remote.
 - **Current constraints:** Engine reachable only via loopback / single-host path.
@@ -167,8 +182,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 transport hardening.
 - **Future acceptance criteria:** TLS with cert validation for non-local; fail startup when insecure dials non-loopback.
 - **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-PROVIDER-ENDPOINT-TRUST — Provider endpoint trust and bearer exfiltration
+
 - **Rationale:** Effective settings validate endpoints only as non-blank. Bearer token sent to configured URL.
 - **Known risk:** Typo/malicious endpoint URL receives API bearer key.
 - **Current constraints:** Provider endpoint is operator-trusted input. Do not accept endpoint values from untrusted multi-tenant config.
@@ -176,8 +193,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 security hardening.
 - **Future acceptance criteria:** HTTPS required except loopback dev; endpoint host allowlist before attaching bearer.
 - **Promoted:** Phase 999.13 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-WARN-DX — Fixture and upload DX issues
+
 - **Rationale:** Non-idempotent seeder appends duplicate stable IDs on re-run; empty multipart upload ambiguity.
 - **Known risk:** Duplicate corpus rows on re-seed; ambiguous empty file upload error.
 - **Current constraints:** Treat seeder as non-idempotent; reset DB/fixtures when re-seeding.
@@ -185,8 +204,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 DX overhaul.
 - **Future acceptance criteria:** Seeder reset/upsert; empty upload rejected with 400.
 - **Promoted:** Phase 999.16 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-WARN-API — API semantics and D1 identity gaps
+
 - **Rationale:** Mixed answer basis without conflict disclosure; `NoEvidenceFits` mapped to 400 (blaming client for capacity); missing D1 session/correlation identity on some retrieval errors.
 - **Known risk:** Misleading status codes; incomplete error correlation.
 - **Current constraints:** Do not assume Mixed always carries conflict notices; capacity failure may show as 400.
@@ -194,8 +215,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 API contract hardening.
 - **Future acceptance criteria:** Mixed requires conflict notice; `NoEvidenceFits` maps to capacity status; error kinds attached.
 - **Promoted:** Phase 999.16 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-WARN-SETTINGS — Settings consistency warnings
+
 - **Rationale:** Invalid numeric env overrides silently ignored; public scalar grounding budgets vs private carrier; chunk limits saturate to `i32::MAX`.
 - **Known risk:** Effective config differs from env override intent.
 - **Current constraints:** Validate critical overrides manually when using env.
@@ -203,8 +226,10 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 settings refactor.
 - **Future acceptance criteria:** Present-but-invalid env overrides fail startup; carrier is single authority; fail-closed chunk settings.
 - **Promoted:** Phase 999.15 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-WARN-VALIDATE — Validation gaps (nulls and non-finite)
+
 - **Rationale:** Staging readers call `value(i)` without null checks on required fields; embeddings missing `f32::is_finite` check; BM25 finite boosts overflow before fusion reject.
 - **Known risk:** Panic on corrupt rows or non-finite provider outputs.
 - **Current constraints:** Do not feed untrusted embedding providers; treat staging corruption as stop-the-line issue.
@@ -212,12 +237,14 @@ Accepted force-close disposition recorded in `.discussion/decisions/phases/03/20
 - **Target:** Phase 06 validation sweep.
 - **Future acceptance criteria:** Required staging fields null-checked; embeddings finite-checked; BM25 boost ceilings.
 - **Promoted:** Phase 999.15 (06.4, 06-CONTEXT D-03)
+  status: acknowledged
 
 ### DEBT-P3-MODULE-GRAPH — Dual library/binary module graph
+
 - **Rationale:** `lib.rs` and `main.rs` both declare overlapping production modules, risking drift between test library and running binary.
 - **Known risk:** Silent dual implementation drift.
 - **Current constraints:** Critical fixes must land on the path binary uses.
 - **Trigger:** Next large engine module change or observed drift.
 - **Target:** Phase 06 engine layout refactor.
 - **Future acceptance criteria:** Binary imports shared modules from library crate.
-
+  status: acknowledged

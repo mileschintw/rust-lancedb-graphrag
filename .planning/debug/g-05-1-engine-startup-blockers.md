@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "G-05-1: Engine fails to start / fails a live end-to-end RAG query for two independent reasons discovered during Phase 05 UAT."
 created: 2026-08-18T23:35:00Z
 updated: 2026-08-19T00:20:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -130,6 +134,7 @@ started: "Discovered 2026-08-18 during /gsd-verify-work 5 (Test 1). Blocker B's 
 root_cause:
   - "BLOCKER A: engine/src/db/mod.rs::open_and_validate / initialize_tables performs a fail-closed, exact-field-equality LanceDB schema check (validate_schema, line 166: `actual.fields() != expected.fields()`) with no migration path for the `nodes` table. Commit 2302f79 (2026-08-07, Phase 04.1-01 graph-schema restructure) removed 4 fields (community_ids, summary, summary_vector, unsummarized_refs) from nodes_schema() and moved them onto a new entities_schema(), narrowing the code's expected nodes schema from 23 to 19 fields. The default local dev LanceDB store at ./data/lancedb (config.toml's engine.lancedb_path) was created by an engine binary built before that commit and was never regenerated/migrated afterward, so it still has the wider pre-04.1-01 schema. On next startup the strict equality check fails closed on the 4 extra (now-orphaned) columns, exiting with code 1 before the gateway/gRPC server ever starts."
   - "BLOCKER B: gateway/main_test.go's TestRAGQueryCrossRuntime and TestRAGQueryClientDisconnectCancelsRustWorkflow spawn the real engine binary against a httptest mock whose /api/v1/models handler hardcodes a single canned entry (id: openai/gpt-4o-mini) and whose chat-completion handler asserts/echoes the same hardcoded model string. These tests override the OpenRouter endpoint URLs via LANCET_OPENROUTER__*_ENDPOINT env vars for the spawned engine subprocess but never override generation_model, so the engine reads it from the ambient config/config.toml. Commit f776296 (2026-08-18, today, single-line unreviewed 'chore' commit with no design record) changed config.toml's [openrouter].generation_model from openai/gpt-4o-mini to nvidia/nemotron-3.5-lightning:free without updating either test's hardcoded mock fixture, and landed after the last full regression-gate run, so nothing caught the break before UAT. Separately confirmed via web search: nvidia/nemotron-3.5-lightning:free IS a real, currently-listed free-tier OpenRouter model (released 2026-08-11) — the 'not found' failure is test-double staleness, not proof the model ID is invalid; whether it would pass the engine's live structured-output capability preflight against the real OpenRouter /models endpoint is unconfirmed and untested."
+
 fix: "Not applied — goal is find_root_cause_only. See suggested fix directions in the diagnosis report."
 verification: ""
 files_changed: []

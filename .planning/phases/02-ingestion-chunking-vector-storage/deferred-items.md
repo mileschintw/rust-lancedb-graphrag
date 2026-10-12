@@ -4,6 +4,7 @@
 
 - `engine/src/main.rs:329-330`: `query_rag` still returns a placeholder answer and empty citations. This predates 02-07 and belongs to the Phase 03 RAG implementation; it does not affect replacement rollback, retry convergence, or failed-ingest compensation.
 - `engine/src/main.rs:340`: `query_graph` still returns a scaffolding status payload. This predates 02-07 and belongs to the Phase 04 graph-query implementation; it does not affect replacement rollback, retry convergence, or failed-ingest compensation.
+  status: acknowledged
 
 ## Accepted Phase 02 verification debt
 
@@ -18,6 +19,7 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Target:** Before the trigger; if still untriggered, review at Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Ingestion requires authentication and authorization; ingress uses TLS; request-rate and per-principal ingestion/storage/provider quotas exist; unauthorized/over-quota callers are behaviorally proven unable to consume provider or durable-storage resources.
 - **Disposition:** documented-only (06-CONTEXT D-06); not promoted
+  status: acknowledged
 
 ### DEBT-CR-05 — Resource bounds before queue admission
 
@@ -27,6 +29,7 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Trigger:** External/shared access, background bulk ingestion, scheduled/automated/concurrent ingestion, or larger/uncontrolled uploads.
 - **Target:** Before the trigger; if still untriggered, review at Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Gateway `ReadTimeout`, `WriteTimeout`, and `IdleTimeout`; a bounded upload semaphore acquired before multipart body reads; Rust admission capacity reserved or accounted before full buffering; slow-body, concurrent-stream, permit-release, and memory-bound tests pass.
+  status: acknowledged
 
 ### DEBT-BU-01 — Complete run-window behavioral proof
 
@@ -36,6 +39,7 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Trigger:** The live gate becomes release criteria, CI release criteria, public/shared-deployment evidence, or external-audit evidence.
 - **Target:** Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Use a controlled clock; keep challenge/evidence identity and issue times matching; exceed only `issued_at` to `generated_at`; assert the dedicated complete-run-window error classification.
+  status: acknowledged
 
 ### DEBT-BU-02 — Caller-owned input preservation across all paths
 
@@ -45,6 +49,7 @@ Source of record for every item below: accepted ADR `.discussion/decisions/phase
 - **Trigger:** Before documenting the live runner as safe for arbitrary user-owned source files.
 - **Target:** Phase 6 / v1 MVP closure.
 - **Future acceptance criteria:** Successful plus representative early and post-upload failures preserve caller fixture SHA-256 and bytes; script-created temporary files are removed only when owned by the script.
+  status: acknowledged
 
 ## Accepted Phase 02 ADR-02-004 technical debt
 
@@ -79,4 +84,4 @@ All open Phase 02 findings listed below are accepted as technical debt deferred 
   - **Target**: Final hardening phase
   - **Constraints**: Run tests with external timeouts.
   - **Promoted:** Phase 999.17 (06.4, 06-CONTEXT D-03)
-
+  status: acknowledged

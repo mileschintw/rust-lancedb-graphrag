@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "G-05-1: Live OpenRouter end-to-end SSE run fails at GenerateAnswer with 'model capabilities response exceeds maximum body limit of 262144 bytes'."
 created: 2026-08-19T06:15:00Z
 updated: 2026-08-19T06:15:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus

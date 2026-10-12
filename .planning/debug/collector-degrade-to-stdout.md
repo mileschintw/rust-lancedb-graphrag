@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "Investigate issue G-06.2-4: Stopping Collector produces unbounded OTLP exporter-error stream instead of bounding/silencing exporter errors when degrading to stdout."
 created: 2026-08-26T12:12:00.000Z
 updated: 2026-08-26T12:12:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus

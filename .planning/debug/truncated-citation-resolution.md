@@ -3,6 +3,10 @@ status: investigating
 trigger: "T-06-15-03 / backstop must_have — citation naming a retrieved-but-truncated block"
 created: 2026-08-22T20:26:00.000Z
 updated: 2026-08-22T20:26:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: investigating
 ---
 
 ## Current Focus

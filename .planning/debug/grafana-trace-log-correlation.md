@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "Investigate issue G-06.2-1: Grafana trace<->log<->metric correlation click-through: Grafana does not render the Logs for this span trace-to-logs action."
 created: 2026-08-26T12:10:00.000Z
 updated: 2026-08-26T12:10:00.000Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus

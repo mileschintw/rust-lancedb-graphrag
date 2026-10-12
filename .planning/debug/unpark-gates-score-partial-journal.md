@@ -5,6 +5,10 @@ created: 2026-10-06T19:00:00Z
 updated: 2026-10-06T19:00:00Z
 goal: find_root_cause_only
 symptoms_prefilled: true
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -173,5 +177,6 @@ suggested_fix_direction: |
   - coverage floors: after n is computed - SC-3 at :430, SC-4 at :765, SC-5 at :1073 (use composition["n"] for rule (a), since unmeasured pairs leave it). Denominator = expected sample & G (90) for SC-3/SC-4 and expected sample & V (65) for SC-5, passed in by main as a keyword-only argument (the corpus= pattern). NOT len(g_ids)/len(v_ids) (corpus-wide 398/291 -> drive 2 reads 0.226/0.224/0.223 and any floor above ~0.22 flips all three recorded gates). NOT the journal-relative pairing_coverage. Report n, expected, coverage in detail; WR-04's excluded_by_class belongs beside SC-3's.
   - threshold discipline: completeness gating and the SC-1 predicate are logic changes, not thresholds. The only new pre-registered literal is the coverage floor; candidate value is gate.py STAGED_PAIRING_COVERAGE_FLOOR = 0.80 (committed 2026-09-09, before any 06.3.4.1 drive). Its provenance comment must scope it to drives started after its commit. Do not rewrite gates-drive2.{md,json}; any re-read of drive 2 under the new code is a labelled disclosure. Do not touch SC5_VISIBILITY_RULE / _KNOWN_SC5_RULES.
   - tests: new red tests for honest-partial SC-1 and for main MISSing every reading on a truncated journal; update the exact payload key lists at test_unpark_gates.py:1627 and :1653-1661 only if a payload key is added.
+
 verification:
 files_changed: []

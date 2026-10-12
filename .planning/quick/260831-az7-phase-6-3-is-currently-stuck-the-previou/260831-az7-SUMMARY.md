@@ -1,3 +1,10 @@
+---
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-12
+  status: unknown
+---
+
 # Quick Task Summary: 260831-az7 — Paid Model Migration and Eval Reseed Execution
 
 **Date:** 2026-08-31 (execution) / 2026-09-02 (reseed completion, verified)  
@@ -27,6 +34,7 @@ This task migrated the engine and evaluation harness from free models to paid-ti
 ## 3. Key Changes Made
 
 ### Engine & Configuration (Task 1)
+
 - **Embedding Wire Protocol (engine/src/client/mod.rs)**:
   - Repinned EMBEDDING_MODEL to voyageai/voyage-4-large.
   - Added dimensions: usize to EmbeddingRequest and populated from self.config.expected_dimension (2048) in send_embedding.
@@ -40,6 +48,7 @@ This task migrated the engine and evaluation harness from free models to paid-ti
   - Updated gateway tests in gateway/main_test.go.
 
 ### Evaluation Harness (Task 2)
+
 - **Judge & Generator Defaults**:
   - Updated eval/corpora/multihop_rag.toml, eval/corpora/graphrag_bench.toml, eval/src/lancet_eval/corpus.py, eval/src/lancet_eval/preflight.py, eval/src/lancet_eval/score.py, and eval/src/lancet_eval/cli.py.
   - Updated eval/README.md documentation.
