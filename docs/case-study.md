@@ -36,7 +36,7 @@ The harness's own journal, [read closely](evaluation.md#history), said otherwise
 search over a real corpus. A stream-truncation bug in the gateway then recorded the aborted runs as successes. On top
 of that, the comparison wasn't paired, so the arms were measured on different questions.
 
-**Fix.** I didn't tune until the numbers looked better. I opened a family of phases (06.3.1 to 06.3.4.1) to make the
+**Fix.** I didn't tune the system to make the numbers look better. I opened a family of phases (06.3.1 to 06.3.4.1) to make the
 signal trustworthy first:
 
 1. **Fail-closed reporting.** An incomplete journal can't be published as complete.
@@ -68,8 +68,8 @@ All readings are on held-out data, each paired against plain hybrid retrieval on
   gain**. Neither did graph-v2, the repair a per-question diagnosis chose. **The graph ships off**, and a request can
   turn it on.
 
-Shipping the graph off after weeks of work on it was the hard call. The rule was committed before the run, so the
-result decided, not me.
+Shipping the graph off after weeks of work on it was the hard call. Its rule was committed before the run, so for
+the graph the result decided, not me.
 
 ## Design calls worth discussing
 
@@ -81,7 +81,7 @@ Each of these has a full write-up with the alternatives in the [design narrative
 | Embedded LanceDB for vectors **and** graph | pgvector, Qdrant, Neo4j | local-first, Arrow-native, no extra service; the graph is two tables beside the chunks |
 | A 5-node Rust state machine | LangGraph, Dify | keeps the useful ideas (timeouts, retries, checkpoints, typed events) at a finishable scope |
 | Weighted RRF with documented tie rules | a framework's retriever | the graph joins fusion as a third ranked list instead of replacing retrieval |
-| Degraded modes as typed wire notices | silent fallbacks | [20 typed notice codes](api-contract.md#notice-codes); a client can always tell what the system did not do, and model-only answers fail closed |
+| Degraded modes as typed wire notices | silent fallbacks | [18 emitted notice codes (20 declared)](api-contract.md#notice-codes); a client can always tell what the system did not do, and model-only answers fail closed |
 | Index rebuild-and-swap | in-place writes | a query never reads a half-built index |
 | Levers measured as arms, defaults by a pre-registered rule | tuning by eye | each lever is developed on dev, read once on held-out, and becomes a default only on a significant gain |
 

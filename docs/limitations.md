@@ -2,8 +2,8 @@
 
 # Limitations, Debt and Backlog
 
-What v1 does not do, what it does not measure, and where the open debt went. The README keeps one line on each of
-these; this page holds the full list.
+What v1 does not do, what it does not measure, and where the open debt went. The README keeps one line on this;
+this page holds the full list.
 
 ## Honest limitations
 

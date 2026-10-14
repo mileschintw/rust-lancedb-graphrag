@@ -11,9 +11,9 @@ after I threw out its own first benchmark.**
 ![Status](https://img.shields.io/badge/v1-complete-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-| **+16 pts** | **3,444** | **250** | **20** |
+| **+16 / +6 pts** | **3,444** | **250** | **18** |
 |:---:|:---:|:---:|:---:|
-| Hits@4 from reranking, [significant on held-out data, at +289 ms per request](docs/evaluation.md#defaults-that-shipped) | [tests across Rust, Go and Python](docs/case-study.md#directing-ai-agents-at-scale) | [plans across 18 phases in 3 months](docs/build-history.md) | [typed notice codes, each saying whether it degraded the answer](docs/api-contract.md#notice-codes) |
+| [Hits@4 from rerank (+289 ms) / answer usable from metadata](docs/evaluation.md#defaults-that-shipped) | [tests: Rust, Go, Python](docs/case-study.md#directing-ai-agents-at-scale) | [plans, 18 phases, 3 months](docs/build-history.md) | [notice codes on the wire](docs/api-contract.md#notice-codes) |
 
 ---
 
@@ -67,7 +67,7 @@ graph LR
     EVAL[lancet-eval<br>paired-arm harness] -.-> GW
 ```
 
-What's built from scratch, and why each part is hard:
+What's built from scratch:
 
 - **Hybrid retrieval in Rust.** Dense and BM25 search fused with deterministic weighted Reciprocal Rank Fusion, with
   documented tie rules. Reranking is a pluggable port that falls back to the fused order if the provider fails.
