@@ -8,8 +8,8 @@ without losing control of quality. Each section links to the deeper record.
 
 ## The goal
 
-Most RAG projects wrap a framework and call an API. They hide the parts that decide whether a system holds up: data
-layout, retrieval fusion, timeouts, failure handling, and whether the benchmark measures what it claims to.
+A framework hides the parts that decide whether a RAG system holds up: data layout, retrieval fusion, timeouts,
+failure handling, and whether the benchmark measures what it claims to.
 
 Lancet builds that data plane from scratch and treats evaluation as a product requirement:
 
@@ -19,12 +19,12 @@ Lancet builds that data plane from scratch and treats evaluation as a product re
   OpenRouter.
 - **The proof.** A benchmark harness whose results hold up, including the negative ones.
 
-## The run I refused to publish
+## The result I refused to trust
 
 On 2026-09-03 the first full benchmark run finished. The report said **1,000 successful queries** and a **positive
 graph effect**. It looked like the headline result.
 
-The harness's own provenance checks said otherwise:
+The harness's own journal, [read closely](evaluation.md#history), said otherwise:
 
 | What the report said | What was true |
 |---|---|
@@ -42,12 +42,14 @@ signal trustworthy first:
 1. **Fail-closed reporting.** An incomplete journal can't be published as complete.
 2. **Paired, per-question comparison.** Every arm runs the same questions, with exact paired tests and Holm
    correction.
-3. **Measured timeout budgets.** Budgets come from a censoring-aware p95 measurement. The old budgets clipped 90% of
-   queries.
+3. **Measured timeout budgets.** Budgets come from a censoring-aware p95 measurement. The old budgets clipped 904 of
+   1,000 queries.
 4. **Pre-registered gates.** Each gate is committed to git before the paid run it judges, and the harness checks
    that the commit is older than the run.
-5. **Graph retrieval redesign.** Graph presence went from **9.8% to 66%**, using question-mention seeding and
-   degree-capped seed-to-seed path search.
+5. **Graph retrieval redesign.** Using question-mention seeding and degree-capped seed-to-seed path search, graph
+   presence went from [9.8% on the halted re-drive](evaluation.md#history) to
+   [66% on drive 2](evaluation.md#graph-repair-run-drive-2). The two readings come from different systems, so they
+   show the repair worked, not an exact size of the gain.
 
 **Outcome.** Three runs of record with modest numbers I trust. The forensic trail is
 [`06.3.1-ROOT-CAUSE.md`](../.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md),
@@ -62,12 +64,12 @@ All readings are on held-out data, each paired against plain hybrid retrieval on
   default.
 - **Evidence metadata** (title, source and date headers on each evidence block): about **+6 points**,
   significant. It ships on by default.
-- **Knowledge graph:** built, observable, and costs about +199 prompt tokens per request, with **no significant
+- **Knowledge graph:** built, observable, and costs [+198.9 prompt tokens per request](evaluation.md#graph-cost-reconciled), with **no significant
   gain**. Neither did graph-v2, the repair a per-question diagnosis chose. **The graph ships off**, and a request can
   turn it on.
 
-Shipping the graph turned off was a hard call after weeks of work on it. It was also the right one: a default
-should follow the evidence, not the plan.
+Shipping the graph off after weeks of work on it was the hard call. The rule was committed before the run, so the
+result decided, not me.
 
 ## Design calls worth discussing
 
@@ -79,7 +81,7 @@ Each of these has a full write-up with the alternatives in the [design narrative
 | Embedded LanceDB for vectors **and** graph | pgvector, Qdrant, Neo4j | local-first, Arrow-native, no extra service; the graph is two tables beside the chunks |
 | A 5-node Rust state machine | LangGraph, Dify | keeps the useful ideas (timeouts, retries, checkpoints, typed events) at a finishable scope |
 | Weighted RRF with documented tie rules | a framework's retriever | the graph joins fusion as a third ranked list instead of replacing retrieval |
-| Degraded modes as typed wire notices | silent fallbacks | 18 notice codes; a client can always tell what the system did not do, and model-only answers fail closed |
+| Degraded modes as typed wire notices | silent fallbacks | [20 typed notice codes](api-contract.md#notice-codes); a client can always tell what the system did not do, and model-only answers fail closed |
 | Index rebuild-and-swap | in-place writes | a query never reads a half-built index |
 | Levers measured as arms, defaults by a pre-registered rule | tuning by eye | each lever is developed on dev, read once on held-out, and becomes a default only on a significant gain |
 

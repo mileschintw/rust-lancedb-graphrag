@@ -1,7 +1,7 @@
 # Lancet
 
-**A retrieval-augmented generation (RAG) engine built from scratch in Rust and Go, with an evaluation harness strict
-enough to reject its own first benchmark.**
+**A retrieval-augmented generation (RAG) engine built from scratch in Rust and Go, with an evaluation harness rebuilt
+after I threw out its own first benchmark.**
 
 ![Rust](https://img.shields.io/badge/Rust-data_plane-b7410e?logo=rust)
 ![Go](https://img.shields.io/badge/Go-control_plane-00add8?logo=go)
@@ -11,19 +11,19 @@ enough to reject its own first benchmark.**
 ![Status](https://img.shields.io/badge/v1-complete-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-| **+16 pts** | **3,444** | **250** | **18** |
+| **+16 pts** | **3,444** | **250** | **20** |
 |:---:|:---:|:---:|:---:|
-| Hits@4 from reranking, [significant on held-out data](docs/evaluation.md#defaults-that-shipped) | tests across Rust, Go and Python | plans across 18 phases in 3 months | typed degraded-mode notices on the wire |
+| Hits@4 from reranking, [significant on held-out data, at +289 ms per request](docs/evaluation.md#defaults-that-shipped) | [tests across Rust, Go and Python](docs/case-study.md#directing-ai-agents-at-scale) | [plans across 18 phases in 3 months](docs/build-history.md) | [typed notice codes, each saying whether it degraded the answer](docs/api-contract.md#notice-codes) |
 
 ---
 
 ## The benchmark I refused to trust
 
 The first full benchmark run reported **1,000 successful queries** and a **positive graph effect**. The harness's
-provenance checks said otherwise:
+own records, [read closely](docs/evaluation.md#history), said otherwise:
 
 - **966** of those answers were empty.
-- **904** queries had been clipped at a retrieval timeout.
+- **904** queries had been clipped at a retrieval timeout ([root cause](.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md)).
 - The two arms being compared, graph on and graph off, shared **1.6%** of their questions.
 
 I threw the result out and rebuilt the measurement before tuning anything:
@@ -44,7 +44,7 @@ The numbers that came out are smaller, and I trust them.
 |---|---|---|
 | **Rerank** | [**+16 pts Hits@4, +8 pts answer usable**](docs/evaluation.md#defaults-that-shipped) (significant) | on by default |
 | **Evidence metadata** | [**+6 pts answer usable**](docs/evaluation.md#defaults-that-shipped) (significant) | on by default |
-| Knowledge graph (opt-in) | [no significant gain](docs/evaluation.md#graph-cost-reconciled), +199 prompt tokens per request | off; a request can turn it on |
+| Knowledge graph (opt-in) | [no significant gain, +198.9 prompt tokens per request](docs/evaluation.md#graph-cost-reconciled) | off; a request can turn it on |
 | Graph-v2, answer format | [no significant gain](docs/evaluation.md#lever-run-seven-arms) | off |
 
 Reranking has a cost: about [+289 ms mean latency](docs/evaluation.md#defaults-that-shipped) per request.
@@ -95,21 +95,24 @@ The full walkthrough is in [observability](docs/observability.md).
 
 ## Try it
 
-You need Docker, Rust, Go, Atlas, uv and an OpenRouter key. Then, from the repository root:
+You need Docker, Rust, `protoc`, Go, Atlas, uv and an OpenRouter key. Then, from the repository root (bash; the
+PowerShell variants are in the full quickstart):
 
 ```bash
-cp .env.example .env && set -a && . ./.env && set +a            # after adding your OPENROUTER_API_KEY to .env
+cp .env.example .env                                            # then set OPENROUTER_API_KEY in .env
+set -a && . ./.env && set +a                                    # repeat in each terminal below
 docker compose -p lancet-qs --profile observability up -d       # Postgres + the observability stack
 (cd gateway && atlas schema apply --env local --auto-approve)
 cargo run --manifest-path engine/Cargo.toml --release --bin engine   # terminal 1
 cd gateway && go run .                                               # terminal 2
 uv run --project eval python eval/scripts/quickstart.py ingest       # terminal 3
+# wait for "documents_with_metadata=5 documents=5" in the engine log, then:
 uv run --project eval python eval/scripts/quickstart.py query "Who directs Harbor Light Observatory?"
 ```
 
 The **[full quickstart](docs/quickstart.md)** covers schema setup, the sample corpus, a two-hop question with and
-without the graph, an offline re-score of a recorded run, and teardown. It was verified from a fresh clone on Windows
-11 and on WSL Ubuntu.
+without the graph, an offline re-score of a recorded run, and teardown. That page, not this summary, was followed
+verbatim from a fresh clone on Windows 11 and on WSL Ubuntu.
 
 ## Read more
 
