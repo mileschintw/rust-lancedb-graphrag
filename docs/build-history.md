@@ -1,7 +1,7 @@
 # Build History
 
-Every phase of Lancet v1, in order, with its plan count and completion date. The [README](../README.md#how-it-was-built)
-gives the same history in one line per group. Goals, success criteria and full plan lists are in
+Every phase of Lancet v1, in order, with its plan count and completion date. The [case study](case-study.md#directing-ai-agents-at-scale)
+tells the story behind it. Goals, success criteria and full plan lists are in
 [`.planning/ROADMAP.md`](../.planning/ROADMAP.md), and each phase's PLAN, SUMMARY, VERIFICATION, review and UAT
 records are under [`.planning/phases/`](../.planning/phases).
 
@@ -56,5 +56,5 @@ A code-first slice before the docs: a request field to opt out of the configured
 ## Backlog
 
 The backlog phases (999.x) are listed, with their status, in the
-[ROADMAP backlog](../.planning/ROADMAP.md#backlog) and summarised in the README's
-[Backlog & Extension Points](../README.md#-backlog--extension-points).
+[ROADMAP backlog](../.planning/ROADMAP.md#backlog) and summarised in
+[Backlog and extension points](limitations.md#backlog-and-extension-points).

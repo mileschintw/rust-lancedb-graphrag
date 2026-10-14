@@ -448,7 +448,7 @@ This is the history of how the eval became trustworthy. It is told once, here.
 ## Reproduce
 
 - **Offline re-score, free and keyless.** The README quickstart's step 13
-  ([Quickstart](../README.md#-quickstart-windows-native-and-linux-via-wsl)) re-scores a temporary copy of the 06.3.6
+  ([Quickstart](quickstart.md)) re-scores a temporary copy of the 06.3.6
   journal with `lancet-eval score --no-judge` and `report`, then checks the result with
   [`eval/scripts/compare_rescore.py`](../eval/scripts/compare_rescore.py). It reproduces when every scored dimension and
   the `result_hash` are equal. Nothing under `eval/runs/` is written.

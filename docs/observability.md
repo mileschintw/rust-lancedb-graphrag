@@ -13,7 +13,7 @@
 
 ## Summary
 
-1. **One question, asked twice.** The same two-entity question from the [quickstart](../README.md#-quickstart-windows-native-and-linux-via-wsl)
+1. **One question, asked twice.** The same two-entity question from the [quickstart](quickstart.md)
    runs once on the shipped default shape (hybrid retrieval, `rerank` and `evidence_metadata`, graph off) and once with
    the graph opted in. Both requests leave one trace each, and the two traces differ in structure only where the
    graph runs.
@@ -361,7 +361,7 @@ trace is evidence when a run or a quickstart step goes wrong. At production volu
 
 ## Related pages
 
-- The [quickstart](../README.md#-quickstart-windows-native-and-linux-via-wsl): how to reproduce both traces and open
+- The [quickstart](quickstart.md): how to reproduce both traces and open
   them in Jaeger and Grafana.
 - The results page, [`docs/evaluation.md`](evaluation.md): the measured cost and value of the graph and of the rerank
   and metadata levers, and the latency readings across runs.
