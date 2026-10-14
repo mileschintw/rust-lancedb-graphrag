@@ -11,7 +11,7 @@ after I threw out its own first benchmark.**
 ![Status](https://img.shields.io/badge/v1-complete-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
-| **+16 / +6 pts** | **3,444** | **250** | **18** |
+| **+16 pts / +6 pts** | **3,444** | **250** | **18** |
 |:---:|:---:|:---:|:---:|
 | [Hits@4 from rerank (+289 ms) / answer usable from metadata](docs/evaluation.md#defaults-that-shipped) | [tests: Rust, Go, Python](docs/case-study.md#directing-ai-agents-at-scale) | [plans, 18 phases, 3 months](docs/build-history.md) | [notice codes on the wire](docs/api-contract.md#notice-codes) |
 
