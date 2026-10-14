@@ -66,8 +66,8 @@ All readings are on held-out data, each paired against plain hybrid retrieval on
   gain**. Neither did graph-v2, the repair a per-question diagnosis chose. **The graph ships off**, and a request can
   turn it on.
 
-Shipping the headline feature turned off was the hardest call in the project. It was also the right one: a
-default should follow the evidence, not the plan.
+Shipping the graph turned off was a hard call after weeks of work on it. It was also the right one: a default
+should follow the evidence, not the plan.
 
 ## Design calls worth discussing
 

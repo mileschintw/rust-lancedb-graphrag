@@ -1,19 +1,19 @@
 # Lancet
 
-**A GraphRAG engine built from scratch in Rust and Go, with an evaluation harness strict enough to reject its own
-first benchmark.**
+**A retrieval-augmented generation (RAG) engine built from scratch in Rust and Go, with an evaluation harness strict
+enough to reject its own first benchmark.**
 
 ![Rust](https://img.shields.io/badge/Rust-data_plane-b7410e?logo=rust)
 ![Go](https://img.shields.io/badge/Go-control_plane-00add8?logo=go)
 ![gRPC](https://img.shields.io/badge/gRPC-Protobuf-244c5a)
-![LanceDB](https://img.shields.io/badge/LanceDB-vectors_+_graph-6b4fbb)
+![LanceDB](https://img.shields.io/badge/LanceDB-embedded-6b4fbb)
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces_·_metrics_·_logs-425cc7?logo=opentelemetry)
 ![Status](https://img.shields.io/badge/v1-complete-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 | **+16 pts** | **3,444** | **250** | **18** |
 |:---:|:---:|:---:|:---:|
-| Hits@4 from reranking, Holm-significant on held-out data | tests across Rust, Go and Python | plans across 18 phases in 3 months | typed degraded-mode notices on the wire |
+| Hits@4 from reranking, [significant on held-out data](docs/evaluation.md#defaults-that-shipped) | tests across Rust, Go and Python | plans across 18 phases in 3 months | typed degraded-mode notices on the wire |
 
 ---
 
@@ -24,12 +24,12 @@ provenance checks said otherwise:
 
 - **966** of those answers were empty.
 - **904** queries had been clipped at a retrieval timeout.
-- The two arms being compared shared **1.6%** of their questions.
+- The two arms being compared, graph on and graph off, shared **1.6%** of their questions.
 
 I threw the result out and rebuilt the measurement before tuning anything:
 
 - fail-closed reporting
-- paired per-question tests with Holm correction
+- paired per-question statistical tests
 - timeout budgets derived from measured latency
 - gates committed to git before each paid run
 
@@ -42,14 +42,14 @@ The numbers that came out are smaller, and I trust them.
 
 | Lever | Held-out effect vs. plain hybrid | Ships |
 |---|---|---|
-| **Rerank** | **+16 pts Hits@4, +8 pts answer usable** (significant) | on by default |
-| **Evidence metadata** | **+6 pts answer usable** (significant) | on by default |
-| Knowledge graph | no significant gain, +199 prompt tokens per request | **off**; a request can turn it on |
-| Graph-v2, answer format | no significant gain | off |
+| **Rerank** | [**+16 pts Hits@4, +8 pts answer usable**](docs/evaluation.md#defaults-that-shipped) (significant) | on by default |
+| **Evidence metadata** | [**+6 pts answer usable**](docs/evaluation.md#defaults-that-shipped) (significant) | on by default |
+| Knowledge graph (opt-in) | [no significant gain](docs/evaluation.md#graph-cost-reconciled), +199 prompt tokens per request | off; a request can turn it on |
+| Graph-v2, answer format | [no significant gain](docs/evaluation.md#lever-run-seven-arms) | off |
 
-**The graph is built, traced and measured. It didn't earn its cost, so it ships off.** A default should follow the
-evidence, not the roadmap. Reranking has a cost too: about +289 ms mean latency. Methods, sample sizes and caveats are
-in [evaluation](docs/evaluation.md).
+Reranking has a cost: about [+289 ms mean latency](docs/evaluation.md#defaults-that-shipped) per request.
+An optional knowledge graph is built, traced and measured too. On this benchmark it didn't earn its cost, so it ships
+off, and a request can turn it on. Methods, sample sizes and caveats are in [evaluation](docs/evaluation.md).
 
 ## Architecture
 
@@ -59,8 +59,9 @@ graph LR
     GW -->|gRPC| EN[Rust engine<br>data plane]
     GW --> PG[(PostgreSQL<br>docs, checkpoints)]
     EN --> SM[5-node state machine<br>timeouts · retries · degraded modes]
-    SM --> RET[Hybrid retrieval<br>dense + BM25 + graph · weighted RRF · rerank]
-    RET --> LDB[(LanceDB<br>chunks · vectors · entity graph)]
+    SM --> RET[Hybrid retrieval<br>dense + BM25 · weighted RRF · rerank]
+    RET --> LDB[(LanceDB<br>chunks · vectors)]
+    RET -.->|opt-in| KG[Knowledge graph<br>entity paths]
     SM -->|HTTPS| LLM[OpenRouter<br>embed · chat · rerank]
     GW & EN -.->|OTLP| OBS[OTel → Jaeger · Prometheus · Loki · Grafana]
     EVAL[lancet-eval<br>paired-arm harness] -.-> GW
@@ -70,9 +71,6 @@ What's built from scratch, and why each part is hard:
 
 - **Hybrid retrieval in Rust.** Dense and BM25 search fused with deterministic weighted Reciprocal Rank Fusion, with
   documented tie rules. Reranking is a pluggable port that falls back to the fused order if the provider fails.
-- **GraphRAG on LanceDB.** Entities and edges are extracted at ingestion. At query time the engine extracts mentions
-  without a model, matches them to seed entities, and runs a degree-capped 2-hop path search. The graph's results
-  join fusion as a third ranked list instead of replacing retrieval.
 - **Custom orchestrator.** A 5-node async state machine with per-node timeouts derived from measured p95s, retries,
   cancellation, PostgreSQL checkpoints, and typed events streamed over SSE.
 - **Degraded modes are part of the API.** Every fallback is a typed notice on the wire, so a client can always tell
@@ -81,6 +79,9 @@ What's built from scratch, and why each part is hard:
 - **An evaluation harness built for statistics.** Each question runs once per arm, compared question by question.
   Every request is journaled with provenance. Spend is capped per stage and reconciled to the provider bill, and an
   incomplete run is refused, never published as complete.
+- **Opt-in knowledge graph.** Entities and edges are extracted at ingestion. At query time the engine matches the
+  question's entity mentions and searches short paths between them, adding the results as one more ranked list. It is
+  fully built and observable, and ships off because it didn't measurably help on this benchmark.
 
 ## Observability
 
