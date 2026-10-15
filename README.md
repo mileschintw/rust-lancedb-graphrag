@@ -17,25 +17,6 @@ after I threw out its own first benchmark.**
 
 ---
 
-## The benchmark I refused to trust
-
-The first full benchmark run reported **1,000 successful queries** and a **positive graph effect**. The harness's
-own records, [read closely](docs/evaluation.md#history), said otherwise:
-
-- **966** of those answers were empty.
-- **904** queries had been clipped at a retrieval timeout ([root cause](.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md)).
-- The two arms being compared, graph on and graph off, shared **1.6%** of their questions.
-
-I threw the result out and rebuilt the measurement before tuning anything:
-
-- fail-closed reporting
-- paired per-question statistical tests
-- timeout budgets derived from measured latency
-- gates committed to git before each paid run
-
-The numbers that came out are smaller, and I trust them.
-**[Read the case study →](docs/case-study.md)**
-
 ## What actually helped
 
 ![Paired deltas against same-day hybrid retrieval on held-out MultiHop-RAG, with 95% confidence intervals](docs/assets/eval-forest.svg)
@@ -50,6 +31,22 @@ The numbers that came out are smaller, and I trust them.
 Reranking has a cost: about [+289 ms mean latency](docs/evaluation.md#defaults-that-shipped) per request.
 An optional knowledge graph is built, traced and measured too. On this benchmark it didn't earn its cost, so it ships
 off, and a request can turn it on. Methods, sample sizes and caveats are in [evaluation](docs/evaluation.md).
+
+## Why you can trust these numbers
+
+Every result above was produced under four guards built into the evaluation harness:
+
+- **Fail-closed reporting.** An incomplete run can't be published as complete.
+- **Paired comparisons.** Every arm answers the same questions, compared question by question.
+- **Measured timeout budgets.** Budgets come from measured latency, not guesses.
+- **Pre-registered gates.** Each pass/fail rule is committed to git before the paid run it judges.
+
+I built them after the first full run reported **1,000 successful queries** and a **positive graph effect**. Its own
+records, [read closely](docs/evaluation.md#history), showed **966** empty answers, **904** queries clipped at a
+retrieval timeout ([root cause](.planning/phases/06.3.1-fix-retrieval-citation-collapse-and-graph-ablation-measureme/06.3.1-ROOT-CAUSE.md)),
+and graph-on and graph-off arms that shared only **1.6%** of their questions. I threw that result out and rebuilt the
+measurement before tuning anything. The numbers that came out are smaller, and I trust them.
+**[Read the case study →](docs/case-study.md)**
 
 ## Architecture
 
