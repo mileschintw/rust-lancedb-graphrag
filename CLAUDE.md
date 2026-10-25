@@ -1,5 +1,11 @@
 # Claude Code Guidelines
 
+## Planning Archive
+- `.planning/` and `.discussion/` are the v1.0 build record (phases, runs of record, decisions). The docs and README
+  link into them, so do not move, rename or rewrite them.
+- The GSD workflow tooling was removed after v1.0. Do not run `/gsd-*` commands or recreate GSD files. New work is
+  planned in plain docs and branches.
+
 ## Language-Specific Rules
 
 ### Rust Guidelines

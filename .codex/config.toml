@@ -17,9 +17,3 @@ hide_spawn_agent_metadata = false
 tool_namespace = "agents"
 # optional:
 # max_concurrent_threads_per_session = 8
-
-# GSD Agent Configuration — managed by gsd-core installer
-
-[agents]
-max_depth = 1
-
