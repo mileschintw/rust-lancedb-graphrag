@@ -1,8 +1,4 @@
-# Exclude AI agent framework files & node scripts from GitHub language statistics
-.agents/** linguist-vendored
-.claude/** linguist-vendored
-.codex/** linguist-vendored
-.cursor/** linguist-vendored
+# Keep the build record out of GitHub language statistics
 .planning/** linguist-documentation
 .discussion/** linguist-documentation
 

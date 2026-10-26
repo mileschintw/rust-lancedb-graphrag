@@ -140,7 +140,9 @@ eval/corpora/**/.cache/**
 logs/
 *.log
 
-# GSD runtime & transient state
-.gsd/
-.gsd-review-tmp/
-.planning/*.lock
+# Local AI agent tool state (per-user settings, worktrees)
+# ------------------------------------------------------------------------------
+.agents/
+.claude/
+.codex/
+.cursor/
