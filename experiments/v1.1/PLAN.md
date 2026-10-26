@@ -22,7 +22,7 @@ before its held-out read.
 | **S0 Baseline** | Where does Lancet stand against the MultiHop-RAG paper's own pipeline? | Lancet shipped default (hybrid + rerank + metadata); LlamaIndex paper config with Lancet's prompt | MultiHop-RAG held-out | OpenRouter, small |
 | **S1 Chunking** | Do merged chunks of about 256 tokens beat paragraph fragments? | small vs merged chunks, each with graph off and on (deepseek extraction) | MultiHop-RAG dev, then held-out | OpenRouter, re-embed and re-extract, a few dollars |
 | **S2 Reader** | How much does the answering model matter on identical context? | deepseek vs Claude reading the same replayed prompts | MultiHop-RAG held-out, S1's winning chunking | Claude Batch, about $2-4 per Sonnet arm |
-| **S3 Writer and graph** | Does the extraction model matter where a graph has room to help? | closed-book; Lancet hybrid; Lancet + graph (deepseek writer); Lancet + graph (Claude writer); LlamaIndex; optional HippoRAG 2 | 2WikiMultiHopQA subset (or MuSiQue) | most of the Claude credit |
+| **S3 Writer and graph** | Does the extraction model matter where a graph has room to help? | closed-book; Lancet hybrid; Lancet + graph (deepseek writer); Lancet + graph (Claude writer); LlamaIndex; optional HippoRAG 2 | 2WikiMultiHopQA subset (HippoRAG 2 packaging) | most of the Claude credit |
 
 ### S0 details
 
@@ -55,7 +55,11 @@ before its held-out read.
 
 ### S3 details
 
-- Ingest the 2Wiki subset (passages already split; about 6,119 extraction calls).
+- Benchmark: the 2WikiMultiHopQA subset from `osunlp/HippoRAG_2` (1,000 questions, 6,119 passages, about 0.75M
+  tokens), decided 2026-10-25 (see Decisions). Ingest its passages as given (already split; about 6,119 extraction
+  calls).
+- Before any run, confirm the license from the dataset's original source (Apache-2.0 so far comes from secondary
+  sources only) and record the exact dataset revision used.
 - Claude extraction runs offline through Batch into graph side tables, as graph-v2 did; entity names re-embedded with
   Voyage.
 - A closed-book arm guards against memorised Wikipedia answers; report gains over it.
@@ -83,10 +87,16 @@ before its held-out read.
 - New decisions get IDs continuing from v1.0 (next free D-ID) and are logged in the stage file.
 - `.planning/` stays read-only as the v1.0 record.
 
+## Decisions
+
+- **Second benchmark: 2WikiMultiHopQA** (owner, 2026-10-25). It has real bridge entities, short gold answers with
+  supporting facts, the clearest published graph gain (HippoRAG 2 71.0 vs dense 61.5 F1) and the smallest pre-split
+  corpus. MuSiQue was the alternative (harder, CC BY 4.0 in its repo, about twice the extraction cost). MultiHop-RAG
+  stays the primary benchmark.
+
 ## Open decisions
 
-1. **Second benchmark:** 2WikiMultiHopQA (cheaper, clearest published graph gain, license from secondary sources) or
-   MuSiQue (harder, CC BY 4.0 in the source repo, about twice the cost).
+1. **2Wiki license:** confirm Apache-2.0 from the original dataset source before publishing results.
 2. **Claude credit:** confirm it is Console API credit and when it expires.
 3. **Graph baseline in S3:** HippoRAG 2 depends on a one-document OpenRouter embedding test; LightRAG is the fallback.
 4. **Reader integration beyond S2:** build a native Anthropic Messages adapter in the engine, or use OpenRouter BYOK.
