@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "relay": {
+      "source": {
+        "source": "github",
+        "repo": "mileschintw/relay"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "relay@relay": true
+  }
+}
