@@ -133,7 +133,7 @@ What OpenRouter's docs and one test call showed (2026-10-25):
 | `reasoning: {effort: none}` (sent by the engine) | How OpenRouter maps it for Haiku 5.5 and Sonnet 5.5 is unverified. Check `reasoning_tokens` in the pilot's usage. | not verified |
 | BYOK in practice | After the owner added the key: a sync Haiku 5.5 call returned `provider: Anthropic`, `is_byok: true`, OpenRouter cost 0. | test call |
 | `:batch` model variants | The `anthropic/claude-*:batch` slugs cannot be called on `/chat/completions` (404, "AnthropicBatchAdapter"). Batch runs through the separate Batch API instead: submit with the normal slug (`anthropic/claude-haiku-5.5`), one model and one endpoint per batch, requests inline as `{custom_id, body}` (no JSONL upload), `endpoint`/`model`/`provider` fields before `requests`, results inline from `GET /api/v1/batches/{id}` matched by `custom_id`, 24-hour window, results kept 30 days. Pin `provider: {only: ["anthropic"]}`; BYOK batches skip the balance check. Unknown parameters are dropped as on the sync API; `stream`, `speed` and Anthropic beta features are not supported. | Batch API docs; test submit |
-| End-to-end batch test | Submitted 2026-10-25: two Haiku 5.5 requests (one with `temperature: 0`, one with a strict `json_schema` `response_format`), pinned to Anthropic. Result pending. | test batch `batch-1792978663-0z5qxO2SosYhWBRRNDtP` |
+| End-to-end batch test | Submitted 2026-10-25: two Haiku 5.5 requests (one with `temperature: 0`, one with a strict `json_schema` `response_format`), pinned to Anthropic. Completed in 10.9 minutes, 2 of 2 succeeded, `provider: Anthropic`, `is_byok: true`, OpenRouter cost 0, upstream cost billed at the batch rate (half price). The temperature request answered normally (parameter dropped); the schema request returned valid JSON (`{"word": "yes"}`). The schema added about 184 prompt tokens (202 vs 18), a measured input for extraction cost estimates. `reasoning_tokens` was 0 with no reasoning setting sent. | test batch `batch-1792978663-0z5qxO2SosYhWBRRNDtP` |
 
 Test calls so far cost $0.0000038 of OpenRouter credit plus BYOK traffic billed to Anthropic.
 
@@ -166,8 +166,8 @@ unverified; check it in the pilot.
 1. **2Wiki license:** confirm Apache-2.0 from the original dataset source before publishing results.
 2. **Claude credit:** confirm it is Console API credit and when it expires.
 3. **Graph baseline in S3:** HippoRAG 2 depends on a one-document OpenRouter embedding test; LightRAG is the fallback.
-4. **BYOK batch path:** the key is set up and sync calls are confirmed BYOK. Confirm the test batch completes with
-   both requests answered (temperature dropped, schema honoured), then confirm `cache_control` in a pilot batch.
+4. **BYOK batch path:** sync and batch calls are confirmed BYOK end to end (2026-10-25). Left for the pilot:
+   `cache_control` passing through the Batch API, and how the engine's `reasoning: {effort: none}` maps for Claude.
 5. **Chunker intent:** confirm whether paragraph-level chunking was deliberate before S1 changes it.
 
 ## Risks
