@@ -140,9 +140,7 @@ eval/corpora/**/.cache/**
 logs/
 *.log
 
-# Local AI agent tool state (per-user settings, worktrees)
+# Local AI agent tool state (shared project config under .claude/ stays tracked)
 # ------------------------------------------------------------------------------
-.agents/
-.claude/
-.codex/
-.cursor/
+.claude/settings.local.json
+.claude/worktrees/
