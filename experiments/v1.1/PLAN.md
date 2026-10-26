@@ -8,26 +8,28 @@ Show where Lancet stands against reference points it did not choose, then improv
 
 - **Usable:** answer quality on held-out questions, compared with a standard pipeline on the same models.
 - **Credible:** every decisional reading keeps the v1.0 guards: paired arms, a pre-registration committed before the
-  paid run, Holm correction, fail-closed reporting, held-out read once per stage.
+  paid run, Holm correction, fail-closed reporting, and a fixed budget of held-out reads (D-237).
 
 Non-goals: tuning until the graph looks good; reporting gains measured only against Lancet's own earlier versions.
 
 ## Stages
 
 Each stage gates the next. Each stage gets its own pre-registration (arms, primary metric, decision rule) committed
-before its held-out read.
+before its paid run.
 
 | Stage | Question | Arms | Benchmark | Paid by |
 |---|---|---|---|---|
 | **S0 Baseline** | Where does Lancet stand against the MultiHop-RAG paper's own pipeline? | Lancet shipped default (hybrid + rerank + metadata); LlamaIndex paper config with Lancet's prompt | MultiHop-RAG held-out | OpenRouter, small |
-| **S1 Chunking** | Do merged chunks of about 256 tokens beat paragraph fragments? | small vs merged chunks, each with graph off and on (deepseek extraction) | MultiHop-RAG dev, then held-out | OpenRouter, re-embed and re-extract, a few dollars |
-| **S2 Reader** | How much does the answering model matter on identical context? | deepseek vs Haiku 5.5 vs Sonnet 5.5 reading the same replayed prompts | MultiHop-RAG held-out, S1's winning chunking | Claude Batch, about $2-4 per Sonnet arm, cents per Haiku arm |
+| **S1 Chunking** | Do merged chunks of about 256 tokens beat paragraph fragments? | small vs merged chunks, each with graph off and on (deepseek extraction) | MultiHop-RAG dev | OpenRouter, re-embed and re-extract, a few dollars |
+| **S2 Reader** | How much does the answering model matter on identical context? | deepseek vs Haiku 5.5 vs Sonnet 5.5 reading the same replayed prompts | MultiHop-RAG dev, S1's chosen chunking | Claude Batch, about $2-4 per Sonnet arm, cents per Haiku arm |
 | **S3 Writer and graph** | Does the extraction model matter where a graph has room to help? | closed-book; Lancet hybrid; Lancet + graph with deepseek, Haiku 5.5 and Sonnet 5.5 as writers; LlamaIndex; optional HippoRAG 2; one reader fixed by S2 | 2WikiMultiHopQA subset (HippoRAG 2 packaging) | most of the Claude credit |
+| **Confirm** | Does the configuration chosen on dev hold on held-out? | v1.0 default vs the final configuration from S1 and S2, plus the LlamaIndex baseline | MultiHop-RAG held-out (second and last read) | small |
 
 ### S0 details
 
-- Build the LlamaIndex arm per RESEARCH.md section 3: `SentenceSplitter(256, 25)`, dense top 20, rerank with
-  `voyageai/rerank-2.5-lite`, keep 8, document metadata as in the paper, Lancet's generation prompt.
+- Two arms only (D-238): Lancet's shipped default (hybrid + rerank + evidence metadata, graph off) and the LlamaIndex
+  arm per RESEARCH.md section 3: `SentenceSplitter(256, 25)`, dense top 20, rerank with `voyageai/rerank-2.5-lite`,
+  keep 8, title/source/published_at metadata attached as in the paper, Lancet's generation prompt.
 - Add evidence-substring Hits@4 to the harness and score every arm with it. Keep the chunk-ID Hits@4 as a
   Lancet-only secondary.
 - Primary metric: `answer_usable` on the G population. Supporting: substring Hits@4, context tokens, latency.
@@ -39,8 +41,12 @@ before its held-out read.
 
 ### S1 details
 
-- Change the chunker to merge consecutive paragraphs up to a token target, keeping section boundaries. Decide first
-  whether paragraph-per-chunk was a deliberate "structure-aware" choice, and write the new rule down.
+- Paragraph-per-chunk was deliberate: it comes from the original structure-aware chunker (D-07, D-08: Markdown AST,
+  headings and paragraphs as split markers). S1 keeps that design and adds the merge step it lacks (D-242): paragraph
+  and heading boundaries stay the only split points, consecutive paragraphs in the same section merge up to the
+  target, a paragraph longer than the target still splits by window, and no chunk crosses a heading.
+- One target, 256 tokens (o200k), chosen to match the MultiHop-RAG paper (D-241). It replaces D-09's 500-character
+  default for the S1 store only; no size sweep.
 - Rebuild a second store (new embeddings, new deepseek extraction); keep the v1.0 store untouched.
 - Re-map gold evidence to the new chunks; compare arms on `answer_usable` and substring Hits@4 only.
 - Change chunking and nothing else. Model changes wait for S2 and S3.
@@ -82,8 +88,9 @@ before its held-out read.
 | Item | Estimate |
 |---|---|
 | S0, S1 (OpenRouter only) | a few dollars plus re-embedding |
-| S2 Sonnet reader, dev and held-out | about $10-20 of Claude credit |
-| S2 Haiku reader, dev and held-out | under $1 |
+| S2 Sonnet reader, dev | about $3-8 of Claude credit |
+| S2 Haiku reader, dev | under $1 |
+| Confirm, held-out (final reader) | about $4-10 |
 | S3 pilots | under $5 |
 | S3 Haiku extraction (2Wiki, Batch) | under $1 |
 | S3 Sonnet extraction (2Wiki, Batch) | about $7-14 |
@@ -95,21 +102,47 @@ before its held-out read.
 
 - No full GSD phase loop. One `EXPERIMENT-S{n}.md` per stage holds the hypothesis, arms, metrics, decision rule and,
   after the run, the result. Committed before the run, it is the pre-registration.
-- Code changes (harness arm, substring Hits@4, chunker, prompt dump) go on branches with code review; small ones via
-  `/gsd-quick` if convenient.
+- Code changes (harness arm, substring Hits@4, chunker, prompt dump) go on their own branches with a code review
+  before merge. The GSD harness has been removed from main; no GSD commands are part of this plan.
+- This plan merges to main through a PR before S0 starts, so experiment branches can reference it.
 - New decisions get IDs continuing from v1.0 (next free D-ID) and are logged in the stage file.
 - `.planning/` stays read-only as the v1.0 record.
 
 ## Decisions
 
-- **Second benchmark: 2WikiMultiHopQA** (owner, 2026-10-25). It has real bridge entities, short gold answers with
+IDs continue from v1.0's last (D-233). All were accepted by the owner on 2026-10-25.
+
+- **D-234 Second benchmark: 2WikiMultiHopQA** (owner, 2026-10-25). It has real bridge entities, short gold answers with
   supporting facts, the clearest published graph gain (HippoRAG 2 71.0 vs dense 61.5 F1) and the smallest pre-split
   corpus. MuSiQue was the alternative (harder, CC BY 4.0 in its repo, about twice the extraction cost). MultiHop-RAG
   stays the primary benchmark.
-- **Model roles** (owner, 2026-10-25). S0 and S1 keep deepseek for writing and reading, so their numbers connect to
+- **D-235 Model roles** (owner, 2026-10-25). S0 and S1 keep deepseek for writing and reading, so their numbers connect to
   v1.0. S2 compares readers (deepseek, Haiku 5.5, Sonnet 5.5) on identical prompts. S3 compares writers (deepseek,
   Haiku 5.5, Sonnet 5.5) with one fixed reader. Opus 5.5 is conditional on pilot results.
-- **Engine-path Claude calls use OpenRouter BYOK** (owner, 2026-10-25), not a native adapter; see Model access.
+- **D-236 Engine-path Claude calls use OpenRouter BYOK** (owner, 2026-10-25), not a native adapter; see Model access.
+- **D-237 Held-out budget.** MultiHop-RAG held-out (351: 308 G, 43 null) is read twice in v1.1: once in S0 to set the
+  starting point, once in Confirm with the final configuration. Every S1 and S2 choice is made on dev. The dev pool is
+  only 100 questions (90 G, 10 null), so dev readings are direction-finding: they can only show large effects, and
+  only the Confirm reading is decisional for MultiHop-RAG.
+- **D-238 S0 arms.** Lancet's shipped default against the LlamaIndex paper configuration with document metadata
+  attached, one arm each. No extra plain-hybrid arm.
+- **D-239 Decision rule.** Reuse the v1.0 form: paired comparisons on `answer_usable` with a Holm family per reading,
+  the null-abstention guard, pre-registration committed before the paid run. Each stage file states the smallest
+  effect its sample can detect (about 4-5 points on 308 held-out pairs).
+- **D-240 Process.** No GSD; stage files are the pre-registrations; this plan merges to main by PR before S0.
+- **D-241 Chunk target.** 256 tokens, to match the paper; no sweep.
+- **D-242 Chunker merge rule.** Keep D-07/D-08 split markers; add merging of consecutive same-section paragraphs up to
+  the target (see S1 details).
+- **D-243 2Wiki split.** Before any 2Wiki run, fix a dev/held-out split of the 1,000 questions with a committed seed
+  and record its SHA-256 in each journal header, as MultiHop-RAG does. The held-out part is read once.
+- **D-244 2Wiki metrics.** `answer_usable` is decisional. Token F1 and EM are reported alongside for readers who know
+  the literature, with a note that published numbers used other models and are not directly comparable.
+- **D-245 Default-model switch rule.** Lancet's default generation model changes from deepseek to Haiku 5.5 only if,
+  on the reading that decides it, Haiku's `answer_usable` is not significantly worse than deepseek's, the null guard
+  holds, and cost per answered question is lower. Written into the S2 stage file before S2 runs.
+- **D-246 Spend caps** (hard stops, not estimates): S0 $5 and S1 $15 of OpenRouter credit; S2 $30, S3 $110 and
+  Confirm $10 of Claude credit. Claude total cap $150, leaving $50 of the $200 in reserve. A stage that hits its cap
+  stops and is re-planned.
 
 ## Model access
 
@@ -168,7 +201,6 @@ unverified; check it in the pilot.
 3. **Graph baseline in S3:** HippoRAG 2 depends on a one-document OpenRouter embedding test; LightRAG is the fallback.
 4. **BYOK batch path:** sync and batch calls are confirmed BYOK end to end (2026-10-25). Left for the pilot:
    `cache_control` passing through the Batch API, and how the engine's `reasoning: {effort: none}` maps for Claude.
-5. **Chunker intent:** confirm whether paragraph-level chunking was deliberate before S1 changes it.
 
 ## Risks
 
