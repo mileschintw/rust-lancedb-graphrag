@@ -5,10 +5,19 @@ recount of an existing journal, not a pre-registered reading.
 
 ## 1. Starting question
 
-An article on agent memory (Mem0, Zep) reported that the model that *writes* a memory store sets answer quality more
-than the model that *reads* it. Lancet's graph was extracted and read by the same cheap model, and the graph never beat
-plain hybrid on held-out ([evaluation.md](../../docs/evaluation.md#graph-cost-reconciled)). Was the extractor the
-cause?
+*MemoryTax: The Bitter Lesson of Agent Memory* (arXiv 2610.29823) ran four memory methods (full context, BM25, Mem0,
+Zep) and three coding agents with GPT-4o-mini, GPT-6 Luna and Claude Opus 5.5 as writers and readers. One finding is
+that agent memory "has a ceiling, set by the model that writes it: a stronger reader does not recover what a weaker
+writer left out" (on Zep, GPT-4o-mini wrote and read at 43%; Opus reading the same graph reached 45%; Opus writing and
+reading reached 87%). Its broader thesis is that designed memory is a costly patch for a weak model, and that keeping
+the raw history for a strong model to search does better.
+
+Two limits matter when carrying this over. The study is small by its own account: one LoCoMo conversation (419 turns,
+152 questions) and one run per cell. And its memory stores *replace* the raw history for the reader, while Lancet
+always keeps the raw chunks and adds the graph as one more ranked list, which is the safeguard the paper recommends.
+
+Lancet's graph was extracted and read by the same cheap model, and the graph never beat plain hybrid on held-out
+([evaluation.md](../../docs/evaluation.md#graph-cost-reconciled)). Was the extractor the cause?
 
 ## 2. What the existing store and runs show ($0 probes)
 
@@ -167,6 +176,7 @@ Engineering facts that affect cost and design:
 
 ## Sources
 
+- MemoryTax (starting question): https://arxiv.org/html/2610.29823
 - MultiHop-RAG: https://arxiv.org/html/2401.15391, https://github.com/yixuantt/MultiHop-RAG
 - Han et al., RAG vs. GraphRAG: https://arxiv.org/html/2502.11371v2
 - HippoRAG 2: https://arxiv.org/html/2502.14802v2, https://huggingface.co/datasets/osunlp/HippoRAG_2,
