@@ -562,6 +562,18 @@ def run_benchmark(
             ),
         ),
     ] = None,
+    arms: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--arms",
+            help=(
+                "D-251: drive only these arms of the corpus (repeat the option or "
+                "separate labels with commas). They must declare one store; a corpus "
+                "whose arms span two stores (S1) needs it, and the drive loads that "
+                "store's settings."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run evaluation benchmark questions across the corpus's arms."""
     if gate_stage is not None:
@@ -578,11 +590,28 @@ def run_benchmark(
             )
     field_gate_failures: tuple[str, ...] = ()
     try:
-        from lancet_eval.run import drive, refuse_legacy_labels_for_live_drive
+        from lancet_eval.arms import arm_store
+        from lancet_eval.config import V1_STORE, get_eval_store
+        from lancet_eval.corpus import load_corpus_config
+        from lancet_eval.run import (
+            drive,
+            refuse_legacy_labels_for_live_drive,
+            select_arms,
+        )
 
         # D-198: legacy labels are re-score only. Refused before any run directory is
         # resolved, so no directory, journal I/O or request follows, a resume included.
         refuse_legacy_labels_for_live_drive(corpus)
+        # D-251: the arm subset and the store its prefixes declare, also before any run
+        # directory; the drive's settings are that store's.
+        selected_arms = (
+            None
+            if not arms
+            else [a.strip() for value in arms for a in value.split(",") if a.strip()]
+        )
+        drive_arms = select_arms(load_corpus_config(corpus), selected_arms)
+        store_name = arm_store(drive_arms[0])
+        drive_store = V1_STORE if store_name is None else get_eval_store(store_name)
 
         if out is None:
             run_dir = resolve_run_dir(corpus=corpus, resume=resume)
@@ -595,7 +624,7 @@ def run_benchmark(
             f"gate_stage={gate_stage}, stage_cap=${stage_cap:.2f})...[/bold blue]"
         )
         console.print(msg)
-        settings = load_settings()
+        settings = load_settings(store=drive_store)
         count = drive(
             corpus=corpus,
             journal_path=out,
@@ -606,6 +635,7 @@ def run_benchmark(
             workers=workers,
             max_retries=retries,
             gate_stage=gate_stage,
+            arms=selected_arms,
         )
         stopped = getattr(count, "stopped_by_cap", False)
         spend = getattr(count, "observed_spend", 0.0)

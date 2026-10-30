@@ -1140,10 +1140,17 @@ def test_a_test_constant_with_store_prefixed_labels_resolves(
 ) -> None:
     from lancet_eval import preregistration
 
-    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_S1", _s1_stage(), raising=False)
+    monkeypatch.setattr(
+        thresholds, "PREREGISTRATION_TEST_S1", _s1_stage(), raising=False
+    )
     pre = preregistration.resolve("PREREGISTRATION_TEST_S1")
     assert isinstance(pre, thresholds.LeverPreRegistration)
-    assert preregistration.arms_of(pre) == (_S1_OFF[0], _S1_OFF[1], _S1_ON[1], _S1_ON[0])
+    assert preregistration.arms_of(pre) == (
+        _S1_OFF[0],
+        _S1_OFF[1],
+        _S1_ON[1],
+        _S1_ON[0],
+    )
     assert preregistration.external_pipelines_of(pre) == {}
 
 

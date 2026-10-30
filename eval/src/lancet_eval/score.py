@@ -82,7 +82,6 @@ from lancet_eval.measure import (
 )
 from lancet_eval.arms import (
     ARM_REGISTRY,
-    EXTERNAL_ARMS,
     LEGACY_ARM_LABELS,
     arm_slug,
     arm_store,

@@ -2037,3 +2037,197 @@ def test_the_rotation_over_a_lever_arm_list_stays_the_seeded_balanced_one(
     assert _drive_split("multihop_rag_heldout", j_path) == 3 * len(arms)
     planned = plan_work_units(questions, arms, load_split(_split_path()).order_seed)
     assert _journal_units(j_path) == [(q.question_id, arm) for q, arm in planned]
+
+
+# --- v1.1 S1: `run --arms` drives one store's subset (D-251) --------------------------
+
+S1_CORPUS = "multihop_rag_s1_dev"
+SMALL = ["small/hybrid+rerank+metadata", "small/hybrid+graph+rerank+metadata"]
+MERGED = ["merged/hybrid+rerank+metadata", "merged/hybrid+graph+rerank+metadata"]
+
+
+def _s1_settings():  # type: ignore[no-untyped-def]
+    from lancet_eval.config import EvalSettings
+
+    return EvalSettings(
+        lancedb_path="./data/lancedb-eval-s1",
+        database_url="postgres://localhost/lancet?search_path=lancet_eval_s1",
+    )
+
+
+def test_select_arms_keeps_the_corpus_order_of_a_one_store_subset() -> None:
+    from lancet_eval.run import select_arms
+
+    config = load_corpus_config(S1_CORPUS)
+    assert select_arms(config, list(reversed(MERGED))) == MERGED
+    assert select_arms(config, SMALL[:1]) == SMALL[:1]
+
+
+def test_select_arms_without_a_subset_keeps_an_unprefixed_corpus_unchanged() -> None:
+    from lancet_eval.run import select_arms
+
+    for corpus in ("graphrag_bench", "multihop_rag_heldout"):
+        config = load_corpus_config(corpus)
+        assert select_arms(config, None) == config.arms
+    config = load_corpus_config("multihop_rag_heldout")
+    assert select_arms(config, ["hybrid", "dense-only"]) == ["dense-only", "hybrid"]
+
+
+@pytest.mark.parametrize(
+    ("arms", "message"),
+    [
+        ([SMALL[0], MERGED[0]], "two stores"),
+        (None, "--arms"),
+        (["merged/hybrid"], "not an arm of corpus"),
+        (["large/hybrid"], "large/hybrid"),
+        ([MERGED[0], MERGED[0]], "twice"),
+        ([], "--arms"),
+    ],
+    ids=[
+        "mixed",
+        "whole-two-store-corpus",
+        "not-listed",
+        "bad-prefix",
+        "repeat",
+        "empty",
+    ],
+)
+def test_select_arms_refuses(arms, message: str) -> None:  # type: ignore[no-untyped-def]
+    from lancet_eval.run import select_arms
+
+    with pytest.raises(ValueError, match=message):
+        select_arms(load_corpus_config(S1_CORPUS), arms)
+
+
+def test_a_drive_mixing_two_stores_is_refused_before_any_journal_io(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    j_path = tmp_path / "journal.jsonl"
+    with pytest.raises(ValueError, match="two stores"):
+        drive(
+            corpus=S1_CORPUS,
+            journal_path=j_path,
+            stage_spend_cap=10.0,
+            settings=_s1_settings(),
+            arms=[SMALL[0], MERGED[0]],
+            client=httpx.Client(base_url="http://testserver"),
+        )
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_a_drive_against_another_stores_stack_is_refused_before_any_journal_io(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.config import EvalSettings
+
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    j_path = tmp_path / "journal.jsonl"
+    with pytest.raises(ValueError, match="eval-s1"):
+        drive(
+            corpus=S1_CORPUS,
+            journal_path=j_path,
+            stage_spend_cap=10.0,
+            settings=EvalSettings(lancedb_path="./data/lancedb-eval"),
+            arms=MERGED,
+            client=httpx.Client(base_url="http://testserver"),
+        )
+    assert not j_path.exists()
+    assert httpx_mock.get_requests() == []
+
+
+def test_a_drive_runs_only_the_selected_arms(
+    tmp_path: Path, httpx_mock: HTTPXMock
+) -> None:
+    httpx_mock.add_callback(_sse_echo_correct, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    count = drive(
+        corpus="graphrag_bench",
+        journal_path=j_path,
+        stage_spend_cap=10.0,
+        limit=2,
+        arms=["graph-off"],
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    assert count == 2
+    assert {key.split(":")[-1] for key in load_done(j_path)} == {"graph-off"}
+
+
+def test_a_split_drive_with_limit_takes_whole_questions_of_the_subset(
+    tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.journal import load_records
+
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    monkeypatch.setattr("lancet_eval.run.require_index_identity", lambda *a, **k: None)
+    httpx_mock.add_callback(_sse_echo_correct, is_reusable=True)
+    j_path = tmp_path / "journal.jsonl"
+    count = drive(
+        corpus=S1_CORPUS,
+        journal_path=j_path,
+        stage_spend_cap=10.0,
+        settings=_s1_settings(),
+        limit=2,
+        arms=MERGED,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+    assert count == 4
+    records = load_records(j_path)
+    assert sorted({r.graph_arm for r in records}) == sorted(MERGED)
+    assert len({r.question_id for r in records}) == 2
+
+
+def test_run_arms_option_forwards_the_subset_and_that_stores_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    captured: dict[str, object] = {}
+
+    def mock_drive(**kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("lancet_eval.run.drive", mock_drive)
+    out = str(tmp_path / "journal.jsonl")
+    base = ["run", "--corpus", S1_CORPUS, "--stage-cap", "2.0", "--out", out]
+
+    res = CliRunner().invoke(app, [*base, "--arms", ",".join(MERGED)])
+    assert res.exit_code == 0, res.output
+    assert captured["arms"] == MERGED
+    assert Path(captured["settings"].lancedb_path) == Path("./data/lancedb-eval-s1")  # type: ignore[attr-defined]
+
+    captured.clear()
+    res = CliRunner().invoke(app, [*base, "--arms", SMALL[0], "--arms", SMALL[1]])
+    assert res.exit_code == 0, res.output
+    assert captured["arms"] == SMALL
+    assert Path(captured["settings"].lancedb_path) != Path("./data/lancedb-eval-s1")  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    "arms",
+    [[f"{SMALL[0]},{MERGED[0]}"], []],
+    ids=["mixed", "none-on-a-two-store-corpus"],
+)
+def test_run_arms_option_refuses_before_any_run_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arms: list[str]
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    reached: list[str] = []
+    monkeypatch.setattr("lancet_eval.run.drive", lambda **k: reached.append("drive"))
+    monkeypatch.setattr(
+        "lancet_eval.cli.resolve_run_dir", lambda **k: reached.append("run dir")
+    )
+    args = ["run", "--corpus", S1_CORPUS, "--stage-cap", "2.0"]
+    for value in arms:
+        args += ["--arms", value]
+    res = CliRunner().invoke(app, args)
+    assert res.exit_code == 1, res.output
+    assert "two stores" in " ".join(res.output.split())
+    assert reached == []

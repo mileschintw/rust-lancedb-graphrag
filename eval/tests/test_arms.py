@@ -600,7 +600,8 @@ def test_the_s1_graph_on_row_uses_the_basic_graph_context() -> None:
     assert spec.levers == ("rerank", "evidence_metadata")
     assert "graph_v2" not in spec.levers
     assert list(ARM_REGISTRY)[-1] == "hybrid+graph+rerank+metadata"
-    assert request_fields("hybrid+graph+rerank+metadata")["disable_graph_context"] is False
+    fields = request_fields("hybrid+graph+rerank+metadata")
+    assert fields["disable_graph_context"] is False
 
 
 @pytest.mark.parametrize("label", S1_ARMS)

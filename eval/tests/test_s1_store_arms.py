@@ -80,6 +80,12 @@ def _record(arm: str, qid: str, spec: Spec, qs, *, doc: str) -> RunRecord:  # ty
     return base.model_copy(update={"graph_arm": arm, "snapshot": snapshot})
 
 
+STORES = (
+    '[stores.small]\nchunk_strategy = "structure-aware"\n'
+    "chunk_size = 500\nchunk_overlap = 50\n"
+    '[stores.merged]\nchunk_strategy = "structure-merge"\n'
+    "chunk_size = 256\nchunk_overlap = 25\n"
+)
 SMALL_DOC = "doc-small-store"
 MERGED_DOC = "doc-merged-store"
 
@@ -110,6 +116,8 @@ def _build(
     qs = make_questions(10, 5)
     root = tmp_path / "repo"
     gold = write_corpus(root, qs, S1_ARMS)
+    toml = root / "eval" / "corpora" / "levers_split.toml"
+    toml.write_text(toml.read_text(encoding="utf-8") + STORES, encoding="utf-8")
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     monkeypatch.setattr(thresholds, TOKEN, _prereg(), raising=False)
     seen: list[str] = []
@@ -117,9 +125,12 @@ def _build(
     run = tmp_path / "run"
     journal = Journal(run / "journal.jsonl")
     journal.write_header(corpus="levers_split", partial=False)
+    doc_of = doc_of or (
+        lambda a: SMALL_DOC if a.startswith("small/") else MERGED_DOC
+    )
     for qid in [*qs.g_ids, *qs.nulls]:
         for arm in S1_ARMS:
-            doc = (doc_of or (lambda a: SMALL_DOC if a.startswith("small/") else MERGED_DOC))(arm)
+            doc = doc_of(arm)
             journal.append(_record(arm, qid, spec_fn(arm, qid), qs, doc=doc))
     return run, gold, seen
 

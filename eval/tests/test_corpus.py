@@ -374,7 +374,7 @@ def test_the_committed_06_3_5_corpora_declare_a_judge_section() -> None:
     assert load_corpus("multihop_rag").has_judge is False
 
 
-# --- v1.1 S1: store-prefixed arms and per-store chunking (D-251) -----------------------
+# --- v1.1 S1: store-prefixed arms and per-store chunking (D-251) ---------------------
 
 _S1_ARMS = (
     '[arms]\narms = ["small/hybrid+rerank+metadata", '
@@ -448,7 +448,10 @@ def test_a_corpus_without_store_prefixes_has_no_store_chunking() -> None:
             _S1_ARMS + _S1_STORES.replace("chunk_overlap = 25", "chunk_overlap = 256"),
             "smaller than chunk_size",
         ),
-        (_S1_ARMS + _S1_STORES.replace("chunk_size = 256", "chunk_size = 0"), "chunk_size"),
+        (
+            _S1_ARMS + _S1_STORES.replace("chunk_size = 256", "chunk_size = 0"),
+            "chunk_size",
+        ),
         (
             '[arms]\narms = ["hybrid", "merged/hybrid+rerank+metadata"]\n' + _S1_STORES,
             "mixes",
