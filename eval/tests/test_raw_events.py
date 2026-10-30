@@ -413,3 +413,56 @@ def test_concurrent_writes_produce_distinct_non_interleaved_files(
     for line in lines2:
         assert "frame_B" in line
         assert "frame_A" not in line
+
+
+@pytest.mark.parametrize(
+    ("label", "arm_dir"),
+    [
+        ("small/hybrid+rerank+metadata", "small_hybrid_rerank_metadata"),
+        ("merged/hybrid+graph+rerank+metadata", "merged_hybrid_graph_rerank_metadata"),
+    ],
+)
+def test_store_prefixed_arm_writes_under_its_slug(
+    tmp_path: Path, label: str, arm_dir: str
+) -> None:
+    """Proves a store-prefixed arm writes raw events to its flat slug dir (#29)."""
+    from lancet_eval.arms import arm_slug
+
+    sink = RawEventSink(tmp_path)
+    path = sink.write_events(
+        corpus="multihop_rag",
+        question_id="q1",
+        graph_arm=label,
+        events=[{"event": "x", "data": "{}"}],
+    )
+
+    raw = tmp_path / "raw_events"
+    assert arm_slug(label) == arm_dir
+    assert path == raw / arm_dir / "q1.jsonl"
+    assert path.is_file()
+    assert not (raw / label.partition("/")[0]).exists()
+
+
+@pytest.mark.parametrize(
+    ("label", "arm_dir"),
+    [
+        ("hybrid+rerank+metadata", "hybrid_rerank_metadata"),
+        ("graph-on", "graph-on"),
+        ("llamaindex", "llamaindex"),
+        ("no-such-arm", "no-such-arm"),
+    ],
+)
+def test_registry_legacy_and_refused_labels_keep_their_directories(
+    tmp_path: Path, label: str, arm_dir: str
+) -> None:
+    """Proves registry, legacy and unslugged labels keep their directories."""
+    sink = RawEventSink(tmp_path)
+    path = sink.write_events(
+        corpus="multihop_rag",
+        question_id="q1",
+        graph_arm=label,
+        events=[{"event": "x", "data": "{}"}],
+    )
+
+    assert path == tmp_path / "raw_events" / arm_dir / "q1.jsonl"
+    assert path.is_file()

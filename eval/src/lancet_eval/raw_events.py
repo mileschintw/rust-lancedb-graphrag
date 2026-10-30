@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from lancet_eval.arms import ARM_REGISTRY, arm_slug
+from lancet_eval.arms import arm_slug, is_legacy_label
 
 if TYPE_CHECKING:
     from lancet_eval.corpus import GoldQuestion
@@ -26,6 +26,21 @@ def baseline_sample_ids(questions: list[GoldQuestion]) -> set[str]:
     """
     sorted_ids = sorted(q.id for q in questions)
     return set(sorted_ids[:BASELINE_SAMPLE_SIZE])
+
+
+def _arm_dir(graph_arm: str) -> str:
+    """The raw-event directory name for an arm label.
+
+    A label ``arm_slug`` accepts, store-prefixed ones included (D-251), gets its flat
+    slug, the name every other reader uses. A legacy alias, and any label ``arm_slug``
+    refuses, keeps the verbatim directory name earlier drives wrote.
+    """
+    if is_legacy_label(graph_arm):
+        return graph_arm
+    try:
+        return arm_slug(graph_arm)
+    except ValueError:
+        return graph_arm
 
 
 class RawEventSink:
@@ -64,10 +79,7 @@ class RawEventSink:
         )
 
         try:
-            # Canonical labels get a filesystem-safe slug; legacy labels (and any
-            # other stored label) keep the directory names earlier drives wrote.
-            arm_dir = arm_slug(graph_arm) if graph_arm in ARM_REGISTRY else graph_arm
-            target_dir = self.raw_dir / arm_dir
+            target_dir = self.raw_dir / _arm_dir(graph_arm)
             target_dir.mkdir(parents=True, exist_ok=True)
             target_file = target_dir / f"{question_id}.jsonl"
 
