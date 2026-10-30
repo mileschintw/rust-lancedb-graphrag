@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import subprocess
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from pydantic import ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -49,6 +50,132 @@ def pg_schema_of(dsn: str) -> str:
         return "public"
     except Exception:
         return "public"
+
+
+def with_search_path(dsn: str, schema: str) -> str:
+    """Return `dsn` with its `search_path` query parameter set to `schema`."""
+    parsed = urlparse(dsn)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["search_path"] = [schema]
+    return parsed._replace(query=urlencode(params, doseq=True, safe="/")).geturl()
+
+
+@dataclass(frozen=True)
+class EvalStore:
+    """One isolated eval store (D-251): its LanceDB path and PostgreSQL schema.
+
+    `name` is both the engine's `LANCET_ENV` overlay (`config/config.<name>.toml`) and
+    the Atlas env (`gateway/atlas.hcl`) that applies the store's schema.
+    """
+
+    name: str
+    lancedb_path: str
+    pg_schema: str
+
+    @property
+    def overlay_path(self) -> Path:
+        """The engine overlay that sets this store's LanceDB path."""
+        return repo_root() / "config" / f"config.{self.name}.toml"
+
+
+#: The v1.0 eval store, the default everywhere.
+V1_STORE = EvalStore("eval", "./data/lancedb-eval", "lancet_eval")
+#: The v1.1 S1 merged-chunk store (D-251). It never touches the v1.0 store.
+S1_STORE = EvalStore("eval-s1", "./data/lancedb-eval-s1", "lancet_eval_s1")
+EVAL_STORES: dict[str, EvalStore] = {s.name: s for s in (V1_STORE, S1_STORE)}
+
+
+def get_eval_store(name: str) -> EvalStore:
+    """Resolve a store name (`--store`) to its `EvalStore`."""
+    try:
+        return EVAL_STORES[name]
+    except KeyError:
+        raise EvalConfigError(
+            f"Unknown eval store {name!r}; known stores: {', '.join(EVAL_STORES)}"
+        ) from None
+
+
+def store_for_settings(settings: EvalSettings) -> EvalStore:
+    """The known store whose LanceDB path `settings` use; the v1.0 store otherwise.
+
+    Lets a reader that holds only settings pick the store's document map (#18), so
+    the map always follows the LanceDB store actually in use.
+    """
+    for store in EVAL_STORES.values():
+        if store != V1_STORE and _same_path(settings.lancedb_path, store.lancedb_path):
+            return store
+    return V1_STORE
+
+
+def overlay_lancedb_path(store: EvalStore) -> str | None:
+    """Read `[engine].lancedb_path` from the store's overlay; None if absent."""
+    if not store.overlay_path.is_file():
+        return None
+    with open(store.overlay_path, "rb") as f:
+        value = tomllib.load(f).get("engine", {}).get("lancedb_path")
+    return value if isinstance(value, str) else None
+
+
+def _same_path(a: str, b: str) -> bool:
+    """Whether two LanceDB paths name one directory, from the cwd or the repo root."""
+    a_path, b_path = Path(a), Path(b)
+    if a_path.resolve() == b_path.resolve():
+        return True
+    root = repo_root()
+    return (root / a_path).resolve() == (root / b_path).resolve()
+
+
+def store_target_failures(settings: EvalSettings, store: EvalStore) -> list[str]:
+    """Why `settings` must not act on `store`; empty when they target it.
+
+    Settings whose LanceDB path is another known store's are refused for every store,
+    so one run never mixes two stores' maps (#18). Beyond that the v1.0 store keeps
+    its v1.0 checks only. Any other store refuses the v1.0 path and schema outright
+    (D-251), then requires the settings and the store's overlay to name exactly the
+    store's path and schema.
+    """
+    in_use = store_for_settings(settings)
+    if store == V1_STORE:
+        if in_use != V1_STORE:
+            return [
+                f"settings use store {in_use.name!r}'s LanceDB path "
+                f"{settings.lancedb_path!r}; select --store {in_use.name}"
+            ]
+        return []
+    failures: list[str] = []
+    schema = pg_schema_of(settings.database_url)
+    if _same_path(settings.lancedb_path, V1_STORE.lancedb_path):
+        failures.append(
+            f"store {store.name!r} refuses the v1.0 LanceDB path "
+            f"{V1_STORE.lancedb_path!r} (settings name {settings.lancedb_path!r})"
+        )
+    elif not _same_path(settings.lancedb_path, store.lancedb_path):
+        failures.append(
+            f"store {store.name!r} expects LanceDB path {store.lancedb_path!r}, "
+            f"settings name {settings.lancedb_path!r}"
+        )
+    if schema == V1_STORE.pg_schema:
+        failures.append(
+            f"store {store.name!r} refuses the v1.0 PostgreSQL schema "
+            f"{V1_STORE.pg_schema!r}"
+        )
+    elif schema != store.pg_schema:
+        failures.append(
+            f"store {store.name!r} expects PostgreSQL schema {store.pg_schema!r}, "
+            f"settings name {schema!r}"
+        )
+    overlay_path = overlay_lancedb_path(store)
+    if overlay_path is None:
+        failures.append(
+            f"overlay {store.overlay_path} sets no [engine].lancedb_path for "
+            f"store {store.name!r}"
+        )
+    elif not _same_path(overlay_path, settings.lancedb_path):
+        failures.append(
+            f"overlay {store.overlay_path.name} sets LanceDB path {overlay_path!r}, "
+            f"the harness uses {settings.lancedb_path!r}"
+        )
+    return failures
 
 
 class EvalSettings(BaseSettings):
@@ -135,11 +262,24 @@ class EvalSettings(BaseSettings):
         return self
 
 
-def load_settings(config_path: Path | None = None) -> EvalSettings:
-    """Load settings from optional TOML file and environment variables."""
+def load_settings(
+    config_path: Path | None = None, store: EvalStore = V1_STORE
+) -> EvalSettings:
+    """Load settings from optional TOML file and environment variables.
+
+    For a store other than the v1.0 default, the store's LanceDB path and schema
+    replace whatever the file or environment names (D-251).
+    """
     target_path = config_path or (repo_root() / "eval" / "config.toml")
     file_values: dict[str, object] = {}
     if target_path.is_file():
         with open(target_path, "rb") as f:
             file_values = tomllib.load(f)
-    return EvalSettings(**file_values)
+    settings = EvalSettings(**file_values)
+    if store == V1_STORE:
+        return settings
+    return EvalSettings(**{
+        **file_values,
+        "lancedb_path": store.lancedb_path,
+        "database_url": with_search_path(settings.database_url, store.pg_schema),
+    })
