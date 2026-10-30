@@ -44,7 +44,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #15 | 3 | #8, #9, #12 | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
 
-Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytest fails one `scripts/` test on Windows because of CRLF in `*.sh` (→ #16); repo-wide `ruff check` on `eval` has ~740 errors, so lanes hold their own files to zero new ruff errors and PR bodies must say so; parallel cold `cargo` builds have hit rustc `STATUS_STACK_BUFFER_OVERRUN`, so rerun before calling a Rust check failed.
+Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytest fails one `scripts/` test on Windows because of CRLF in `*.sh` (→ #16); repo-wide `ruff check` on `eval` has ~740 errors, so lanes hold their own files to zero new ruff errors and PR bodies must say so; parallel cold `cargo` builds have hit rustc `STATUS_STACK_BUFFER_OVERRUN`, so rerun before calling a Rust check failed. Lane 9 (19:20) adds: `cl.exe` 0xc000012d (out of commit memory) and rustc "only metadata stub found"; ruling to lanes: `CARGO_BUILD_JOBS=2` for every cargo command and rerun once before reporting a failure.
 
 ## Waiting for the user to be present
 
@@ -52,7 +52,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-none
+- S1 document map (found by lane 9, 2026-10-29 19:20 -0700): `reseed` deletes `eval/corpora/<map_corpus>/document_map.json`, and identity/score/run read only that one map. An S1 reseed of a corpus sharing the v1.0 map would delete the committed v1.0 map. Neither #9 nor #15 specifies a per-store map. Options: (a) new issue for a per-store document map, blocking #15 (recommended); (b) fold it into #15's scope; (c) fold it into #9 now. Since 2026-10-29.
 
 ## Deadlines
 
