@@ -846,7 +846,8 @@ def _built_lever_arms() -> tuple[str, ...]:
     return tuple(
         label
         for label, spec in ARM_REGISTRY.items()
-        if spec.levers and label != "hybrid+all"
+        # The v1.1 S0 row (D-247) combines two 06.3.6 levers; it is not a lever arm.
+        if spec.levers and label not in ("hybrid+all", "hybrid+rerank+metadata")
     )
 
 
@@ -1006,3 +1007,87 @@ def test_the_freeze_entry_names_the_o11_reply_and_every_source() -> None:
     assert isinstance(frozen, dict)
     for name, row in frozen.items():
         assert row.get("source"), f"{name} names no dev read or owner decision (D-129)"
+
+
+# ---- v1.1: constants that list external arms (D-247, D-253) --------------------------
+
+
+def _pipeline(**changes: object):  # type: ignore[no-untyped-def]
+    from lancet_eval.arms import ExternalPipeline
+
+    values: dict[str, object] = {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": 256,
+        "chunk_overlap": 25,
+        "dense_top_k": 20,
+        "rerank_model": "voyageai/rerank-2.5-lite",
+        "keep": 8,
+    }
+    values.update(changes)
+    return ExternalPipeline(**values)  # type: ignore[arg-type]
+
+
+@dataclasses.dataclass(frozen=True)
+class _ExternalStage:
+    """The minimal shape of a v1.1 stage constant naming an external arm."""
+
+    reference_arm: str
+    families: tuple[thresholds.FamilySpec, ...]
+    descriptive_arms: tuple[str, ...]
+    external_pipelines: tuple[tuple[str, object], ...]
+
+
+def _external_stage(
+    pipelines: tuple[tuple[str, object], ...] | None = None,
+) -> _ExternalStage:
+    return _ExternalStage(
+        reference_arm="hybrid+rerank+metadata",
+        families=(
+            thresholds.FamilySpec("answer_usable", "decisional", ("llamaindex",), 0.05),
+        ),
+        descriptive_arms=(),
+        external_pipelines=(("llamaindex", _pipeline()),)
+        if pipelines is None
+        else pipelines,
+    )
+
+
+def test_a_test_constant_with_an_external_arm_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval import preregistration
+
+    monkeypatch.setattr(
+        thresholds, "PREREGISTRATION_TEST_S0", _external_stage(), raising=False
+    )
+    pre = preregistration.resolve("PREREGISTRATION_TEST_S0")
+    assert preregistration.arms_of(pre) == ("hybrid+rerank+metadata", "llamaindex")
+    assert preregistration.external_pipelines_of(pre) == {"llamaindex": _pipeline()}
+
+
+def test_the_v1_0_constants_declare_no_external_pipeline() -> None:
+    from lancet_eval import preregistration
+
+    for token in ("PREREGISTRATION_06_3_5", FREEZE_TOKEN):
+        pre = preregistration.resolve(token)
+        assert preregistration.external_pipelines_of(pre) == {}
+        assert not hasattr(pre, "external_pipelines")
+
+
+@pytest.mark.parametrize(
+    ("pipelines", "message"),
+    [
+        ((), "llamaindex.*no pre-registered pipeline"),
+        ((("llamaindex", _pipeline()),) * 2, "twice"),
+        ((("hybrid", _pipeline()),), "not an external arm"),
+        ((("llamaindex", {"chunk_size": 256}),), "not an ExternalPipeline"),
+    ],
+)
+def test_an_external_pipeline_declaration_that_does_not_match_fails_closed(
+    pipelines: tuple[tuple[str, object], ...], message: str
+) -> None:
+    from lancet_eval import preregistration
+
+    with pytest.raises(preregistration.PreregistrationError, match=message):
+        preregistration.external_pipelines_of(_external_stage(pipelines))

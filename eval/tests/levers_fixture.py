@@ -6,17 +6,20 @@ C (not registered: 6 arms). Every record it builds is provenance-clean unless a
 `Spec` says otherwise: the levers echo is the arm's, rerank arms carry telemetry, the
 graph-off arms carry GRAPH_ABLATION and the graph-on arms do not.
 
-Shared by `test_lever_comparison.py` and `test_score_levers.py`.
+Shared by `test_lever_comparison.py` and `test_score_levers.py`. The v1.1 external arm
+(D-247) gets its records from `make_external_record` and its context export from
+`write_external_export`.
 """
 
 from __future__ import annotations
 
 import json
+import tomllib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from lancet_eval.arms import ARM_REGISTRY, arm_slug
+from lancet_eval.arms import ARM_REGISTRY, ExternalPipeline, arm_slug
 from lancet_eval.client import (
     Notice,
     RankedCandidate,
@@ -24,7 +27,14 @@ from lancet_eval.client import (
     RetrievalSnapshot,
     StructuredCitation,
 )
-from lancet_eval.journal import Journal, NodeTiming, RunRecord, WorkflowWireMeta
+from lancet_eval.context_export import CONTEXT_EXPORT_FILE
+from lancet_eval.journal import (
+    ExternalProvenance,
+    Journal,
+    NodeTiming,
+    RunRecord,
+    WorkflowWireMeta,
+)
 from lancet_eval.thresholds import FamilySpec, LeverPreRegistration
 
 CORPUS = "levers_split"
@@ -37,9 +47,11 @@ RERANK_DEGRADED = Notice(code="RERANK_DEGRADED", message="", typed_code=23)
 TOKEN = "PREREGISTRATION_06_3_6"
 
 # Registered arms of a 06.3.6 corpus, in registry order (the two 06.3.5 non-hybrid
-# retrieval arms are not part of it).
+# retrieval arms and the v1.1 S0 row, D-247, are not part of it).
 ARMS: tuple[str, ...] = tuple(
-    a for a in ARM_REGISTRY if a not in ("dense-only", "bm25-only")
+    a
+    for a in ARM_REGISTRY
+    if a not in ("dense-only", "bm25-only", "hybrid+rerank+metadata")
 )
 DECISIONAL: tuple[str, ...] = tuple(
     a
@@ -405,3 +417,140 @@ def write_journal(
 def default_spec(arm: str, qid: str) -> Spec:
     """Every arm answers correctly with the gold chunk at rank 1 and 2."""
     return Spec()
+
+
+# ---- v1.1 external arm (D-247) ------------------------------------------------------
+
+EXTERNAL = "llamaindex"
+EXTERNAL_FINGERPRINT = "llamaindex-index-1"
+
+
+def external_pipeline(**changes: object) -> ExternalPipeline:
+    """The S0 LlamaIndex pipeline (D-248), with `changes` applied."""
+    values: dict[str, object] = {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": 256,
+        "chunk_overlap": 25,
+        "dense_top_k": 20,
+        "rerank_model": "voyageai/rerank-2.5-lite",
+        "keep": 8,
+    }
+    values.update(changes)
+    return ExternalPipeline(**values)  # type: ignore[arg-type]
+
+
+def _engine_generation() -> tuple[str, list[str]]:
+    """The generation model and provider order in the committed config.toml."""
+    from lancet_eval.config import repo_root
+
+    with open(repo_root() / "config" / "config.toml", "rb") as f:
+        openrouter = tomllib.load(f)["openrouter"]
+    return openrouter["generation_model"], list(openrouter["generation_provider_order"])
+
+
+def make_external_record(
+    qid: str,
+    spec: Spec,
+    qs: Questions,
+    *,
+    arm: str = EXTERNAL,
+    corpus: str = CORPUS,
+    pipeline: ExternalPipeline | None = None,
+    index_fingerprint: str = EXTERNAL_FINGERPRINT,
+    generation_model: str | None = None,
+    generation_provider_order: list[str] | None = None,
+) -> RunRecord:
+    """One external record for `qid`: no engine snapshot, provenance-clean by default.
+
+    The generation model and provider order default to the committed engine config's,
+    which is what the Lancet arms are compared with.
+    """
+    if spec.errored:
+        return RunRecord(
+            corpus=corpus,
+            question_id=qid,
+            graph_arm=arm,
+            outcome="error",
+            error_type="timeout",
+            error="boom",
+        )
+    model, order = _engine_generation()
+    kind = spec.kind
+    if qid in qs.nulls and kind == "ok":
+        kind = "abstain"
+    gold = "" if qid in qs.nulls else qs.gold[qid][1]
+    return RunRecord(
+        corpus=corpus,
+        question_id=qid,
+        graph_arm=arm,
+        outcome="success",
+        answer=_answer(kind, gold),
+        duration_ms=1000.0,
+        workflow_meta=WorkflowWireMeta(
+            prompt_tokens=spec.prompt_tokens, completion_tokens=50
+        ),
+        external=ExternalProvenance(
+            pipeline=pipeline or external_pipeline(),
+            index_fingerprint=index_fingerprint,
+            generation_model=model if generation_model is None else generation_model,
+            generation_provider_order=order
+            if generation_provider_order is None
+            else generation_provider_order,
+        ),
+    )
+
+
+def write_external_export(
+    run_dir: Path,
+    records: Iterable[RunRecord],
+    *,
+    evidence_count: Callable[[RunRecord], int] = lambda _rec: 8,
+    document_id: Callable[[RunRecord, int], str] | None = None,
+) -> Path:
+    """Writes `context_export.jsonl` with one row per success record; returns its path.
+
+    An engine record's row carries an `assembled_prompt` and the record's
+    `correlation_id`; an external record's row carries neither. Each row holds
+    `evidence_count(record)` entries whose document is `document_id(record, rank)`
+    (the document map's first entry by default).
+    """
+    doc = doc_id()
+    lines: list[str] = []
+    for rec in records:
+        if rec.outcome != "success":
+            continue
+        evidence = [
+            {
+                "rank": rank,
+                "chunk_id": f"{rec.question_id}:{arm_slug(rec.graph_arm)}:e{rank}",
+                "document_id": doc if document_id is None else document_id(rec, rank),
+                "text": fact(rec.question_id, "a") if rank == 1 else "filler text",
+                "title": "t",
+                "section_path": None,
+                "content_type": "text",
+                "score": 1.0 / rank,
+                "suspicious": False,
+                "document_metadata": {
+                    "source": "s",
+                    "doc_title": "t",
+                    "published_date": "2023-01-01",
+                },
+            }
+            for rank in range(1, evidence_count(rec) + 1)
+        ]
+        row: dict[str, object] = {
+            "corpus": rec.corpus,
+            "question_id": rec.question_id,
+            "arm": rec.graph_arm,
+            "question": f"Question {rec.question_id}?",
+            "evidence": evidence,
+            "graph_facts": [],
+        }
+        if rec.external is None:
+            row["assembled_prompt"] = f"prompt for {rec.question_id}"
+            row["correlation_id"] = rec.correlation_id
+        lines.append(json.dumps(row) + NL)
+    path = run_dir / CONTEXT_EXPORT_FILE
+    path.write_text("".join(lines), encoding="utf-8")
+    return path

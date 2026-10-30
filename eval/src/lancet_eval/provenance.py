@@ -48,14 +48,42 @@ degraded rerank record is never silently dropped and never enters the rerank arm
 decisional population. (g) is corroboration only.
 
 An unknown arm label raises ``ValueError`` from the arm registry (fail closed).
+
+External records (v1.1 D-247) have a clause set of their own, and no engine clause
+(a to j) runs on them: their retrieval ran outside Lancet, so they carry no snapshot,
+notices or telemetry to check, and none is faked. Every external clause is zero
+tolerance: ``score`` refuses the run and names the clause.
+
+* **external_record** (per record, ``provenance_failures``): an external success
+  record lacks its ``external`` provenance block, or an external record carries an
+  engine snapshot; or an engine record carries an ``external`` block;
+* **export_k8**: an external success record has no context-export row, or its row
+  does not hold exactly ``EXTERNAL_K`` ranked evidence entries;
+* **document_map**: an external row's evidence names a ``document_id`` the document
+  map does not hold;
+* **pipeline_echo**: the record's pipeline echo differs from the pipeline the
+  pre-registration fixed for its arm;
+* **index_fingerprint**: one external arm's records carry more than one index
+  fingerprint;
+* **generation_model**: the record's generation model or provider order differs from
+  the one the Lancet arms were generated with.
+
+The last five need the run directory, so ``external_run_failures`` checks them over
+all records at once, from inputs its caller loads.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Container, Mapping, Sequence
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-from lancet_eval.arms import echo_failures, lever_echo_failures, resolve_arm
+from lancet_eval.arms import (
+    echo_failures,
+    is_external_arm,
+    lever_echo_failures,
+    resolve_arm,
+)
 from lancet_eval.usability import (
     carries_graph_ablation,
     carries_rerank_degraded,
@@ -65,9 +93,27 @@ from lancet_eval.usability import (
 )
 
 if TYPE_CHECKING:
+    from lancet_eval.arms import ExternalPipeline
     from lancet_eval.client import RankedCandidate, StructuredCitation
+    from lancet_eval.context_export import ContextExportRow
     from lancet_eval.journal import RunRecord
 
+#: The external clause set (D-247), in the order a refusal lists it.
+EXTERNAL_CODES: tuple[str, ...] = (
+    "external_record",
+    "export_k8",
+    "document_map",
+    "pipeline_echo",
+    "index_fingerprint",
+    "generation_model",
+)
+#: Ranked evidence entries an external success record's export row must hold
+#: (fairness rule 3: k = 8 on every arm).
+EXTERNAL_K = 8
+
+# The engine clause sets stay literal: the frozen runs of record are pinned to them
+# (test_drive_environment). Every external clause is zero tolerance and breaks ok;
+# `is_zero_tolerance` and `is_ok` read both sets.
 ZERO_TOLERANCE_CODES = frozenset("abcdfhj")
 _OK_CODES = frozenset("abcdefhij")
 
@@ -85,6 +131,22 @@ class ProvenanceFailure:
     code: str
     label: str
     detail: str
+
+
+def _external_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
+    """The per-record external clause of an external arm's record."""
+    problems: list[str] = []
+    if record.snapshot is not None:
+        problems.append("an external record carries an engine snapshot")
+    if record.outcome == "success" and record.external is None:
+        problems.append("an external success record lacks its external block")
+    if not problems:
+        return []
+    return [
+        ProvenanceFailure(
+            code="external_record", label=record.graph_arm, detail="; ".join(problems)
+        )
+    ]
 
 
 @dataclass(frozen=True)
@@ -174,6 +236,9 @@ def provenance_failures(
 ) -> list[ProvenanceFailure]:
     """Checks a record against its arm's provenance clauses (a) to (j).
 
+    An external arm's record is checked by the per-record external clause only
+    (D-247); the run-level external clauses are ``external_run_failures``.
+
     Args:
         record: A journal record, under a canonical or legacy arm label.
         expected: The snapshot config clause (f) compares against.
@@ -186,11 +251,16 @@ def provenance_failures(
     """
     label = record.graph_arm
     spec = resolve_arm(label)
+    if is_external_arm(spec.label):
+        return _external_record_failures(record)
     legacy = label != spec.label
     details: dict[str, list[str]] = {}
 
     def fail(code: str, detail: str) -> None:
         details.setdefault(code, []).append(detail)
+
+    if record.external is not None:
+        fail("external_record", "an engine record carries an external block")
 
     # (e) composed from has_arm_provenance: notices exist even without a snapshot.
     if spec.disable_graph_context and not has_arm_provenance(record):
@@ -289,12 +359,125 @@ def provenance_failures(
     ]
 
 
+def external_run_failures(
+    records: Sequence[RunRecord],
+    *,
+    export_rows: Mapping[tuple[str, str], ContextExportRow],
+    document_ids: Container[str],
+    pipelines: Mapping[str, ExternalPipeline],
+    generation_model: str,
+    generation_provider_order: Sequence[str],
+) -> list[ProvenanceFailure]:
+    """Checks the run-level external clauses over every external record (D-247).
+
+    Engine records and error records are skipped. A success record without an
+    ``external`` block fails the per-record clause, so only ``export_k8`` and
+    ``document_map`` are checked for it here.
+
+    Args:
+        records: The journal's records, one per question and arm.
+        export_rows: The context-export rows by ``(question_id, arm)``.
+        document_ids: Every ID and alias of the document map.
+        pipelines: The pre-registered pipeline of each external arm.
+        generation_model: The model the Lancet arms were generated with.
+        generation_provider_order: The provider order they were generated with.
+
+    Returns:
+        One failure per broken clause and record, in ``EXTERNAL_CODES`` order, then
+        by question; ``index_fingerprint`` is reported once per arm. Each detail
+        starts with the question ID (``*`` for a whole arm).
+    """
+    found: list[tuple[int, str, ProvenanceFailure]] = []
+
+    def fail(code: str, label: str, qid: str, detail: str) -> None:
+        failure = ProvenanceFailure(code=code, label=label, detail=f"{qid}: {detail}")
+        found.append((EXTERNAL_CODES.index(code), qid, failure))
+
+    fingerprints: dict[str, set[str]] = {}
+    for rec in records:
+        label = rec.graph_arm
+        if not is_external_arm(label) or rec.outcome != "success":
+            continue
+        qid = rec.question_id
+        row = export_rows.get((qid, label))
+        if row is None:
+            fail("export_k8", label, qid, "no context-export row")
+        else:
+            if len(row.evidence) != EXTERNAL_K:
+                fail(
+                    "export_k8",
+                    label,
+                    qid,
+                    f"{len(row.evidence)} ranked evidence entries, expected "
+                    f"{EXTERNAL_K}",
+                )
+            unmapped = sorted({
+                e.document_id for e in row.evidence if e.document_id not in document_ids
+            })
+            if unmapped:
+                fail(
+                    "document_map",
+                    label,
+                    qid,
+                    f"document_id(s) not in the document map: {unmapped}",
+                )
+        echo = rec.external
+        if echo is None:
+            continue
+        fingerprints.setdefault(label, set()).add(echo.index_fingerprint)
+        expected = pipelines.get(label)
+        if expected is None:
+            fail("pipeline_echo", label, qid, "no pre-registered pipeline for the arm")
+        elif echo.pipeline != expected:
+            observed, wanted = asdict(echo.pipeline), asdict(expected)
+            diffs = [
+                f"{key} {observed[key]!r} != {wanted[key]!r}"
+                for key in wanted
+                if observed[key] != wanted[key]
+            ]
+            fail("pipeline_echo", label, qid, "; ".join(diffs))
+        if echo.generation_model != generation_model:
+            fail(
+                "generation_model",
+                label,
+                qid,
+                f"generation model {echo.generation_model!r} != the Lancet arms' "
+                f"{generation_model!r}",
+            )
+        if list(echo.generation_provider_order) != list(generation_provider_order):
+            fail(
+                "generation_model",
+                label,
+                qid,
+                f"provider order {echo.generation_provider_order!r} != the Lancet "
+                f"arms' {list(generation_provider_order)!r}",
+            )
+    for label, values in sorted(fingerprints.items()):
+        if len(values) > 1:
+            fail(
+                "index_fingerprint",
+                label,
+                "*",
+                f"{len(values)} index fingerprints in one arm: {sorted(values)}",
+            )
+    found.sort(key=lambda item: (item[0], item[1], item[2].label))
+    return [failure for _, _, failure in found]
+
+
+def is_zero_tolerance(code: str) -> bool:
+    """Whether a failure code makes ``score`` refuse: (a, b, c, d, f, h, j) or any
+    external clause (D-247)."""
+    return code in ZERO_TOLERANCE_CODES or code in EXTERNAL_CODES
+
+
 def is_ok(record: RunRecord) -> bool:
     """ok(r) of AI-SPEC 5 Populations.
 
-    The record is D-34 usable and has no failure in clauses (a) to (f). Clause (g) is
-    corroboration only and never changes the result.
+    The record is D-34 usable and has no failure in clauses (a) to (f), (h), (i), (j)
+    or the per-record external clause. Clause (g) is corroboration only and never
+    changes the result.
     """
     return is_usable(record) and not any(
-        f.code in _OK_CODES for f in provenance_failures(record)
+        f.code in _OK_CODES or f.code in EXTERNAL_CODES
+        for f in provenance_failures(record)
     )

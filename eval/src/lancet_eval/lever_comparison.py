@@ -39,7 +39,7 @@ from typing import Any
 
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
-from lancet_eval.arms import canonical_arm, resolve_arm
+from lancet_eval.arms import canonical_arm, is_external_arm, resolve_arm
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.metrics import (
@@ -55,7 +55,13 @@ from lancet_eval.metrics import (
 )
 from lancet_eval.pairing import deduplicate_by_arm
 from lancet_eval.report import CorpusReport
-from lancet_eval.score import _default_gold_chunks_path, _record_spend_usd
+from lancet_eval.score import (
+    ScoreError,
+    _default_gold_chunks_path,
+    _record_spend_usd,
+    require_external_provenance,
+)
+from lancet_eval.seed import load_document_map
 from lancet_eval.split import HeldOutSplit, load_split
 from lancet_eval.stats import exact_signflip_p, holm_stepdown, percentile
 from lancet_eval.strata import STRATUM_TYPES
@@ -587,6 +593,12 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
     return [c.chunk_id for c in rec.snapshot.pre_truncation_ranking]
 
 
+def _chunk_id_scorable(rec: RunRecord) -> bool:
+    """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
+    not Lancet chunks, so its records have no value and leave every such pairing."""
+    return not is_external_arm(rec.graph_arm)
+
+
 def _values(
     ctx: _Ctx,
     pop: p4_mod.P4Population,
@@ -625,10 +637,14 @@ def _usable_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
 
 
 def _hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
-    return lambda r: float(
-        paper_question_scores(
-            _ranking_ids(r), ctx.gold_sets[r.question_id], id_matcher
-        )["hit4"]
+    return lambda r: (
+        float(
+            paper_question_scores(
+                _ranking_ids(r), ctx.gold_sets[r.question_id], id_matcher
+            )["hit4"]
+        )
+        if _chunk_id_scorable(r)
+        else None
     )
 
 
@@ -1018,7 +1034,7 @@ def _p_dec_line(ctx: _Ctx) -> dict[str, Any]:
     }
 
 
-_ITT_OK_CODES = frozenset("abcdefhj")
+_ITT_OK_CODES = frozenset({*"abcdefhj", *provenance.EXTERNAL_CODES})
 
 
 def _itt_ok(rec: RunRecord) -> bool:
@@ -1079,6 +1095,8 @@ def _rerank_itt_line(
 def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
     def paper(key: str) -> Callable[[RunRecord], float | None]:
         def fn(r: RunRecord) -> float | None:
+            if not _chunk_id_scorable(r):
+                return None
             return float(
                 paper_question_scores(
                     _ranking_ids(r), ctx.gold_sets[r.question_id], id_matcher
@@ -1111,8 +1129,10 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
         "paper_mrr_at_10": paper("rr"),
         "paper_map_at_10": paper("ap"),
         "coverage_at_4": recall4,
-        "all_gold_at_4": lambda r: float(
-            all_gold_at_4(_ranking_ids(r), ctx.gold_sets[r.question_id])
+        "all_gold_at_4": lambda r: (
+            float(all_gold_at_4(_ranking_ids(r), ctx.gold_sets[r.question_id]))
+            if _chunk_id_scorable(r)
+            else None
         ),
         "final_answer_em": lambda r: float(
             final_answer_em(gold(r), r.answer or "").score or 0.0
@@ -1354,6 +1374,16 @@ def build_lever_comparison(
         )
     report = _load_report(run)
     records, split, gold_map, gold_sets = _load_inputs(run, config, gold_chunks_path)
+    # D-247: the external clauses are re-checked here, so a stale report.json never
+    # lets an external arm that breaks one into a comparison.
+    try:
+        if any(is_external_arm(r.graph_arm) for r in records):
+            doc_map = load_document_map(config.name)
+            require_external_provenance(
+                records, journal, config, {*doc_map.entries, *doc_map.aliases}
+            )
+    except ScoreError as exc:
+        raise LeverComparisonError(str(exc)) from exc
     if gates is None:
         gates = load_gates(run)
     ctx = _Ctx(
