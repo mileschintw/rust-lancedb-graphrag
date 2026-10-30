@@ -1,13 +1,14 @@
 # Plan
 
-Last updated: 2026-10-29 18:48 -0700
+Last updated: 2026-10-29 21:44 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
 ## Handover
 
 - **Coordinator:** title unknown, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, id local_e5497074-397c-4170-ba22-60a6e066d35b, mode normal.
-- **Standing instructions:** none.
+- **Standing instructions:** (1) each PR open/merge needs the user's yes per lane, asked as the PR-and-merge question; no CI exists, so "merge once CI passes" means merge with `--match-head-commit` at the sha `ready` prints. (2) After each merge, delete that lane's `engine/target` (user's "清 lane 7、8、9 的 target (Recommended)", 2026-10-29 21:20 -0700); never the main checkout's. (3) After each merge, fast-forward the main checkout's `main` to origin (new worktrees cut from it). (4) Sessions start only in a turn the user typed; an answer to AskUserQuestion inside an event turn is refused by the app.
+- **Alarm:** a background `sleep 1200` is re-armed after each wake; on wake run `ready` and read `status/`.
 - **Unattended log:** none.
 
 ## Rulings
@@ -23,11 +24,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 10 | #10 | local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e (worktree `lane-10-ea13ed`, branch `claude/lane-10-ea13ed`) | started | — |
-| 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | started | — |
-| 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | started | — |
-| 16 | #16 | local_8cc16651-c299-4094-964f-a2cfabe355a2 (worktree `lane-16-dcd7b8`, branch `claude/lane-16-dcd7b8`) | started | — |
-| 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | started | — |
+| 10 | #10 | local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e (worktree `lane-10-ea13ed`, branch `claude/lane-10-ea13ed`) | review; must catch up with #24 (score.py, lever_comparison.py, levers_fixture.py) | — |
+| 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
+| 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | review; builds Rust on C: via CARGO_TARGET_DIR | — |
+| 16 | #16 | local_8cc16651-c299-4094-964f-a2cfabe355a2 (worktree `lane-16-dcd7b8`, branch `claude/lane-16-dcd7b8`) | done (5c2b072d), PR question pending | — |
+| 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | review; rerunning Rust/Go | — |
 | 15 | #15 | local_3028b84a-992d-4853-9f02-e64406d045c5 (worktree `lane-15-d4af27`, branch `claude/lane-15-d4af27`) | started | — |
 | 23 | #23 | local_152dde96-4043-4687-bcae-ec7c450545a5 (worktree `lane-23-737211`, branch `claude/lane-23-737211`) | started | — |
 
@@ -69,7 +70,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-none
+- Lane 16 (#16) done at 5c2b072d, `ready` lists it Ready for PR: ask the PR-and-merge question (only `.gitattributes`; 4 pipefail tests pass on a fresh autocrlf clone; engine check passed on a third run, flakes = #23). Since 2026-10-29 21:38 -0700.
 
 ## Deadlines
 
