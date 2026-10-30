@@ -4255,6 +4255,9 @@ func TestRAGQueryEOFWithoutTerminalSSE(t *testing.T) {
 }
 
 func TestRAGQueryClientDisconnectCancelsRustWorkflow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow tier (#44): runs the engine bins TestRAGQueryCrossRuntime builds; run go test without -short")
+	}
 	repoRoot, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatalf("resolve repository root: %v", err)

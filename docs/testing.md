@@ -23,7 +23,8 @@ uv run --project baselines/llamaindex pytest baselines/llamaindex
 
 - `-count=1` turns off Go's test cache, which could otherwise replay a cached pass for a test that reads the config
   files.
-- `-short` skips `TestRAGQueryCrossRuntime`, which builds and runs the Rust engine (slow tier).
+- `-short` skips `TestRAGQueryCrossRuntime`, which builds the Rust engine, and
+  `TestRAGQueryClientDisconnectCancelsRustWorkflow`, which runs the bins it builds (slow tier).
 - `-n auto --dist loadfile` runs the pytest suite on one worker per core, keeping each test file on one worker
   (pytest-xdist, in the eval dev group). Plain `uv run --project eval pytest` still works; it runs the same tests
   serially.
@@ -58,7 +59,7 @@ Opt-in. Run it before a merge that touches the code these tests cover, or in the
 ```bash
 LANCET_SLOW_TESTS=1 uv run --project eval pytest -n auto --dist loadfile
 uv run --project eval python -O -m pytest scripts/test_phase02_live_evidence.py
-(cd gateway && go test -count=1 -run 'TestRAGQueryCrossRuntime$' .)
+(cd gateway && go test -count=1 ./...)
 LANCET_EVAL_INTEGRATION=1 uv run --project eval pytest eval/tests/test_run_external.py eval/tests/test_prompt_parity.py
 ```
 
@@ -68,13 +69,12 @@ What each command adds:
   - `test_score_levers.py::test_the_v1_0_lever_run_re_scores_and_re_compares_unchanged`, the v1.0 lever run of record
     re-scored and re-compared (about eight minutes; it was opted in by `LANCET_EVAL_RESCORE_LEVER_RUN=1` before #44);
   - `test_decay.py::test_restart_discriminator_spans_zero_inconclusive` (12 s);
-  - `test_decay_materiality.py::test_contiguous_window_noise_flat_320_records_has_121_windows_and_no_fires` (7 s);
-  - `test_score_judged_ordered.py::test_a_slice_the_judge_disagrees_with_is_published_and_labelled_uncalibrated` and
-    `::test_five_judge_errors_on_slice_items_read_slice_attrition_and_list_the_ids` (11 s each).
+  - `test_decay_materiality.py::test_contiguous_window_noise_flat_320_records_has_121_windows_and_no_fires` (7 s).
 - `python -O` runs `test_wrong_model_is_rejected_in_optimized_isolated_subprocess`, which checks the Phase 2
   evidence helper's refusal with assertions stripped. It needs pytest itself under `-O`, so a default run skips it.
-- `TestRAGQueryCrossRuntime` builds the engine and checks one query across the Go and Rust runtimes against a loopback
-  mock provider.
+- `go test` without `-short` adds `TestRAGQueryCrossRuntime`, which builds the engine and checks one query across the
+  Go and Rust runtimes against a loopback mock provider, and `TestRAGQueryClientDisconnectCancelsRustWorkflow`, which
+  runs the bins it built.
 - `LANCET_EVAL_INTEGRATION=1` builds the `generate_from_context` bin in release mode and runs it against the loopback
   `provider_stub` (seam S-C). The first run includes a cold release build.
 
@@ -101,14 +101,14 @@ branch without a pull request runs nothing. A `changes` job decides which module
 
 | Job | Runs | Triggered by |
 |---|---|---|
-| `engine` | `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scripts/engine-test-targets.sh` | `engine/**`, `config/**`, `scripts/engine-test-targets.sh` |
+| `engine` | `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scripts/engine-test-targets.sh` | `engine/**`, `config/**`, `deploy/**`, `scripts/engine-test-targets.sh` |
 | `gateway` | `go test -count=1 -short ./...`, `scripts/gateway-test-targets.sh` | `gateway/**`, `config/**`, `scripts/gateway-test-targets.sh` |
-| `eval` | ruff on the changed `eval/**/*.py` files, `pytest -n auto --dist loadfile` | `eval/**`, `scripts/**`, `config/**`, `proto/**`, `gateway/atlas.hcl`, `gateway/db/schema*.hcl`, `engine/src/ingest.rs`, `engine/src/generation/mod.rs`, `engine/src/workflow/mod.rs`, `docs/api-contract.md`, `docs/assets/eval-forest.*`, `.env.example`, `verify-ingestion.sh`, `verify-live-evidence.sh` |
+| `eval` | ruff on the changed `eval/**/*.py` files, `pytest -n auto --dist loadfile` | `eval/**`, `scripts/**`, `config/**`, `proto/**`, `gateway/atlas.hcl`, `gateway/db/schema*.hcl`, `engine/src/{config,ingest,prompt}.rs`, `engine/src/generation/mod.rs`, `engine/src/workflow/mod.rs`, `docs/api-contract.md`, `docs/observability.md`, `docs/assets/**`, `.planning/**`, `.env.example`, `verify-ingestion.sh`, `verify-live-evidence.sh` |
 | `llamaindex` | `pytest baselines/llamaindex` | `baselines/llamaindex/**`, `eval/src/**`, `eval/corpora/**`, `eval/pyproject.toml`, `eval/uv.lock`, `config/**` |
 | `ci` | passes when every triggered job passed | always |
 
-A change to the workflow file triggers every job. Any other path, docs included, triggers none, so a docs-only pull
-request runs only `changes` and `ci`.
+A change to the workflow file triggers every job. Any other path triggers none, so a pull request that changes only
+docs no test reads runs only `changes` and `ci`.
 
 - The shared paths are the files each module's tests read outside its own directory. When a test starts reading a
   new file outside its module, add that path to the module's filter in `ci.yml` and to this table.

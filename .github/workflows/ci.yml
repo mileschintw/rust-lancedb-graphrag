@@ -1,7 +1,7 @@
 # Fast-tier CI (#44). Each module's job runs only when a path it reads changed; the
 # `changes` job decides, and `ci` is the one check to require in branch protection.
-# A job skipped by its `if:` reports success, so a docs-only PR passes `ci` after the
-# `changes` job alone. The paths, budgets and tier commands are in docs/testing.md.
+# A job skipped by its `if:` reports success, so a PR that touches no module's paths (most
+# docs) passes `ci` after the `changes` job alone. The paths, budgets and tier commands are in docs/testing.md.
 #
 # No job makes a paid call, needs a secret, or uses the live stack, PostgreSQL or
 # data/lancedb-eval. Pull requests run under `pull_request`, never `pull_request_target`.
@@ -44,6 +44,7 @@ jobs:
             engine:
               - 'engine/**'
               - 'config/**'
+              - 'deploy/**'
               - 'scripts/engine-test-targets.sh'
               - '.github/workflows/ci.yml'
             gateway:
@@ -58,11 +59,15 @@ jobs:
               - 'proto/**'
               - 'gateway/atlas.hcl'
               - 'gateway/db/schema*.hcl'
-              - 'engine/src/ingest.rs'
+              - 'engine/src/config.rs'
               - 'engine/src/generation/mod.rs'
+              - 'engine/src/ingest.rs'
+              - 'engine/src/prompt.rs'
               - 'engine/src/workflow/mod.rs'
               - 'docs/api-contract.md'
-              - 'docs/assets/eval-forest.*'
+              - 'docs/observability.md'
+              - 'docs/assets/**'
+              - '.planning/**'
               - '.env.example'
               - 'verify-ingestion.sh'
               - 'verify-live-evidence.sh'
