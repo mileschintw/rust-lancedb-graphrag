@@ -1,50 +1,21 @@
 #!/bin/sh
-# Per-package Go test target enumeration and invariant gate for the gateway module.
+# Per-package Go test enumeration and floor gate for the gateway module (#44).
 #
 # Counts are taken from `go test -list`, not from grepping source. That matters: `-list`
 # compiles every test binary, so a package that stops being compiled into the test run
 # fails here (threat T-06-04-05) instead of silently vanishing from an aggregate. It does
 # NOT run any test, so no PostgreSQL instance is required.
 #
-# Invariant history:
-#   67 — the plan 06-04 relocation baseline (gateway 60 + gateway/db 7). The D-82 package
-#        split moved production code only; no test was lost or gained by relocation.
-#   75 — 67 plus the 8 package-local tests added to gateway/internal/sse, which owns the
-#        /rag/query JSON wire contract that plan 06-07 extends.
-#   80 — 75 plus TestBadInputMatrixHTTP (plan 06-12), the D-15 bad-input matrix's HTTP half.
-#   110 — 109 plus TestOTelErrorHandlerBoundsRepeatedExportErrors (plan 06.2-12), bounding export errors (D-38).
-#   112 — baseline before Phase 06.3.1.
-#   114 — Phase 06.3.1 (gateway 79, internal/sse 12): plan 01 added TestRetrievalFailedNoticeRendersAsString, plan 04 added TestWorkflowCompletedCarriesPartialSnapshotAndGraphInfluence.
-#   118 — Phase 06.3.4.1 plan 16 (f74f6b24) added 4 gateway/internal/sse tests without bumping this
-#         script; reset in Phase 06.3.5 plan 01 Task 1 (gateway 79, internal/sse 16).
-#   119 — Phase 06.3.5 plan 03 Task 2 (gateway 80, internal/sse 16): added TestQueryRAGRetrievalModeAndRankingRoundTrip,
-#         the D-99/D-100 request-key to snapshot-DTO round trip.
-#   120 — Phase 06.3.5 plan 04 Task 2 (gateway 80, internal/sse 17): added TestRetrievalSnapshotDTOKeySets,
-#         the default 10-key and explicit 12-key snapshot DTO pins and the ranking-row key rule. The
-#         unknown retrieval_mode and non-boolean flag 400 cases are subtests of an existing test and
-#         do not move the count.
-#   121 — Phase 06.3.6 plan 05 Task 2 (gateway 81, internal/sse 17): added TestQueryRAGLeversRoundTrip,
-#         the D-136 request-name to engine-enum to snapshot-echo-name round trip.
-#   122 — Phase 06.3.6 plan 05 Task 3 (gateway 82, internal/sse 17): added TestQueryRAGLeversRequestTable,
-#         the D-136 fail-closed request shapes (and the D-146 question_type refusal) as subtests of
-#         ONE top-level test. The snapshot levers key and the rerank / query_embedding_retries
-#         metadata keys are subtests or assertions inside existing sse tests and do not move the count.
-#   124 — Phase 06.3.6 plan 08 Task 2 (gateway 83, internal/engineclient 1, internal/sse 17): added
-#         TestCreateDocumentEvidenceMetadata (the D-144 doc_title / source / published_date edge
-#         validation, as subtests of ONE top-level test) and the new gateway/internal/engineclient
-#         package's TestIngestMetadataMap (the first-frame metadata map builder).
-#   124 — unchanged by Phase 06.4 plan 01 (D-198, D-207, A-WR-06): every new case is a subtest of an
-#         existing top-level test (TestQueryRAG_EdgeFlagsAndDisallowUnknownFields d198_* and d207_*,
-#         TestCreateDocumentEvidenceMetadata awr06_*, TestRAGQueryCrossRuntime d198_* and d207_*), so
-#         no top-level Test function was added and the count does not move.
+# Each floor is a minimum count of top-level Test functions, not an exact count: a lane that
+# adds tests changes nothing here. Raise a floor when you want the gate to hold new tests in
+# place. Lower one only in the commit that deletes or merges those tests, and say in that
+# commit which tests now cover them. A package that reports tests but has no floor fails
+# until it is added below on purpose. The exact counts this script used to pin (67 up to
+# 124) are in its git history.
 set -e
 
-EXPECTED_TOTAL=124
-RELOCATION_BASELINE=67
-
-# Expected per-package counts: "<import-path-suffix> <count>". A package listed here with a
-# different count fails by name; a package absent here that reports tests also fails by name.
-EXPECTED_PACKAGES="gateway 83
+# "<import-path-suffix> <floor>", one per line.
+FLOORS="gateway 83
 gateway/db 7
 gateway/internal/config 4
 gateway/internal/engineclient 1
@@ -79,55 +50,36 @@ awk '
 /^Test/     { pending++; next }
 ' "$TMP_LIST" | sort > "$TMP_COUNTS"
 
+STATUS=0
 TOTAL=0
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  pkg=$(echo "$line" | awk '{print $1}')
-  count=$(echo "$line" | awk '{print $2}')
+while read -r pkg count; do
+  [ -z "$pkg" ] && continue
   echo "$pkg $count"
   TOTAL=$(( TOTAL + count ))
-done < "$TMP_COUNTS"
-
-echo "TOTAL: $TOTAL"
-
-STATUS=0
-
-# Assert every expected package reports exactly its expected count, naming the package.
-echo "$EXPECTED_PACKAGES" | while IFS= read -r expected; do
-  [ -z "$expected" ] && continue
-  exp_pkg=$(echo "$expected" | awk '{print $1}')
-  exp_count=$(echo "$expected" | awk '{print $2}')
-  got_count=$(awk -v p="$exp_pkg" '$1 == p { print $2; found = 1 } END { if (!found) print "MISSING" }' "$TMP_COUNTS")
-  if [ "$got_count" = "MISSING" ]; then
-    echo "FAIL: package $exp_pkg is absent from the test run (expected $exp_count tests) — it no longer compiles into \`go test ./...\`" >&2
-    exit 1
-  fi
-  if [ "$got_count" -ne "$exp_count" ]; then
-    echo "FAIL: package $exp_pkg test count moved: expected $exp_count, got $got_count" >&2
-    exit 1
-  fi
-done || STATUS=1
-
-# Assert any package NOT in the expected list reports zero tests, naming the package.
-while IFS= read -r line; do
-  [ -z "$line" ] && continue
-  pkg=$(echo "$line" | awk '{print $1}')
-  count=$(echo "$line" | awk '{print $2}')
-  [ "$count" -eq 0 ] && continue
-  if ! echo "$EXPECTED_PACKAGES" | awk -v p="$pkg" '$1 == p { found = 1 } END { exit !found }'; then
-    echo "FAIL: package $pkg reports $count tests but is not in the expected distribution — add it to EXPECTED_PACKAGES deliberately" >&2
+  if [ "$count" -gt 0 ] && ! echo "$FLOORS" | awk -v p="$pkg" '$1 == p { found = 1 } END { exit !found }'; then
+    echo "FAIL: package $pkg reports $count tests but has no floor; add it to FLOORS deliberately" >&2
     STATUS=1
   fi
 done < "$TMP_COUNTS"
+echo "TOTAL: $TOTAL"
 
-if [ "$TOTAL" -ne "$EXPECTED_TOTAL" ]; then
-  echo "FAIL: gateway test count mismatch: expected $EXPECTED_TOTAL, got $TOTAL (relocation baseline was $RELOCATION_BASELINE)" >&2
-  STATUS=1
-fi
+while read -r pkg floor; do
+  [ -z "$pkg" ] && continue
+  got=$(awk -v p="$pkg" '$1 == p { print $2; found = 1 } END { if (!found) print "MISSING" }' "$TMP_COUNTS")
+  if [ "$got" = "MISSING" ]; then
+    echo "FAIL: package $pkg is absent from the test run (floor $floor); it no longer compiles into \`go test ./...\`" >&2
+    STATUS=1
+  elif [ "$got" -lt "$floor" ]; then
+    echo "FAIL: package $pkg has $got tests, below its floor of $floor" >&2
+    STATUS=1
+  fi
+done <<EOF
+$FLOORS
+EOF
 
 if [ "$STATUS" -ne 0 ]; then
   exit 1
 fi
 
-echo "Go test target invariants verified successfully."
+echo "Every gateway test package is at or above its floor."
 exit 0
