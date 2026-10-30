@@ -18,7 +18,9 @@ What it computes (06.3.6 AI-SPEC section 5):
   the answer-mix disclosure (reported only);
 * the D-140 descriptive rows and the P_dec and rerank intention-to-treat sensitivity
   lines, which decide nothing;
-* one `default_decision` row per lever (D-150, O16).
+* one `default_decision` row per lever (D-150, O16);
+* with a context export beside the journal (D-249), evidence Hits@4 and o200k context
+  tokens per arm, and `evidence_hits_at_4` as a primary a family may name (D-250).
 
 No judge runs here and no judged result exists in this phase (D-153): this module never
 opens one. Bootstrap CIs and Wilson intervals are estimation only and are labelled so.
@@ -40,10 +42,18 @@ from typing import Any
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval.arms import canonical_arm, resolve_arm
+from lancet_eval.context_export import (
+    CONTEXT_EXPORT_FILE,
+    ContextExportError,
+    ContextExportRow,
+    read_export,
+)
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.metrics import (
     answer_usable,
+    context_tokens,
+    evidence_hit_at_4,
     extract_final_answer,
     final_answer_em,
     gold_contained,
@@ -521,6 +531,7 @@ class _Ctx:
     seed: int
     chunk_size: int
     pops: dict[tuple[str, bool], p4_mod.P4Population]
+    export: dict[tuple[str, str], ContextExportRow] | None = None
 
     @property
     def g_ids(self) -> list[str]:
@@ -632,11 +643,48 @@ def _hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
     )
 
 
+def _evidence_texts(ctx: _Ctx, rec: RunRecord) -> list[str]:
+    """The exported evidence texts of a record, in rank order (D-249, D-250)."""
+    if ctx.export is None:
+        raise LeverComparisonError(
+            f"the run has no {CONTEXT_EXPORT_FILE}; evidence metrics need one. "
+            "Rebuild it with `lancet-eval export-context --run <dir>`"
+        )
+    row = ctx.export.get((rec.question_id, rec.graph_arm))
+    if row is None:
+        raise LeverComparisonError(
+            f"{CONTEXT_EXPORT_FILE} has no row for {rec.question_id}/{rec.graph_arm}"
+        )
+    return [entry.text for entry in row.evidence]
+
+
+def _evidence_hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
+    return lambda r: float(
+        evidence_hit_at_4(
+            _evidence_texts(ctx, r), ctx.gold_map[r.question_id].gold_facts
+        )
+    )
+
+
+def _context_tokens_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
+    return lambda r: float(context_tokens(_evidence_texts(ctx, r)))
+
+
+def _prompt_tokens_value(r: RunRecord) -> float | None:
+    return float(r.workflow_meta.prompt_tokens if r.workflow_meta else 0)
+
+
+#: How `evidence_hits_at_4` matches gold; `paper_hits_at_4`'s rule is pre-registered.
+_EVIDENCE_MATCHING_RULE = "export_text_ranks_1_4"
+
+
 def _primary_fn(ctx: _Ctx, primary: str) -> Callable[[RunRecord], float | None]:
     if primary == "answer_usable":
         return _usable_value(ctx)
     if primary == "paper_hits_at_4":
         return _hit4_value(ctx)
+    if primary == "evidence_hits_at_4":
+        return _evidence_hit4_value(ctx)
     raise LeverComparisonError(f"unknown primary {primary!r} in the pre-registration")
 
 
@@ -775,6 +823,8 @@ def _family_block(ctx: _Ctx, family: Any) -> dict[str, Any]:
         "m": len(family.arms),
         "matching_rule": ctx.prereg.matching_rule
         if family.primary == "paper_hits_at_4"
+        else _EVIDENCE_MATCHING_RULE
+        if family.primary == "evidence_hits_at_4"
         else None,
         "comparisons": _comparison_rows(ctx, family, floor=floor),
     }
@@ -1124,12 +1174,18 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
             1.0 if extract_final_answer(r.answer) is None else 0.0
         ),
         "abstention_rate_g": lambda r: 1.0 if is_abstention(r) else 0.0,
-        "prompt_tokens_mean": lambda r: float(
-            r.workflow_meta.prompt_tokens if r.workflow_meta else 0
-        ),
+        "prompt_tokens_mean": _prompt_tokens_value,
         "latency_total_ms_mean": lambda r: float(r.duration_ms),
         "retrieve_node_ms_mean": retrieve_ms,
         "spend_usd_mean": _record_spend_usd,
+        **(
+            {
+                "evidence_hits_at_4": _evidence_hit4_value(ctx),
+                "context_tokens_mean": _context_tokens_value(ctx),
+            }
+            if ctx.export is not None
+            else {}
+        ),
     }
 
 
@@ -1160,6 +1216,51 @@ def _secondaries(ctx: _Ctx, arms: Sequence[str]) -> list[dict[str, Any]]:
                 )
             rows.append(row)
     return rows
+
+
+def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
+    """D-250 per-arm evidence Hits@4 and context tokens over the arm's ok G records.
+
+    Every arm is read on its own, the reference included, so an arm outside every
+    family still has its figures. Provider `prompt_tokens` is reported beside them but
+    not compared across arms: context tokens are the cross-arm count.
+    """
+    hit4 = _evidence_hit4_value(ctx)
+    tokens = _context_tokens_value(ctx)
+    rows: list[dict[str, Any]] = []
+    for arm in preregistration.arms_of(ctx.prereg):
+        label = canonical_arm(arm)
+        recs = [
+            rec
+            for qid in ctx.g_ids
+            if (rec := ctx.by_key.get((qid, label))) is not None
+            and _record_state(rec) == "ok"
+        ]
+        rows.append({
+            "arm": arm,
+            "n": len(recs),
+            "evidence_hits_at_4": _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
+            "context_tokens_mean": _mean(
+                {r.question_id: tokens(r) or 0.0 for r in recs}
+            ),
+            "prompt_tokens_mean": _mean(
+                {r.question_id: _prompt_tokens_value(r) or 0.0 for r in recs}
+            ),
+            "label": LABEL_DESCRIPTIVE,
+        })
+    return rows
+
+
+def _load_export(run: Path) -> dict[tuple[str, str], ContextExportRow] | None:
+    """The context-export rows by question and stored arm label; None without one."""
+    path = run / CONTEXT_EXPORT_FILE
+    if not path.is_file():
+        return None
+    try:
+        rows = read_export(path)
+    except ContextExportError as exc:
+        raise LeverComparisonError(str(exc)) from exc
+    return {(row.question_id, row.arm): row for row in rows}
 
 
 def _degrade_class(rec: RunRecord) -> str | None:
@@ -1369,6 +1470,7 @@ def build_lever_comparison(
         seed=int(prereg.bootstrap_seed),
         chunk_size=int(config.chunk_size),
         pops={},
+        export=_load_export(run),
     )
 
     families = [_family_block(ctx, f) for f in prereg.families]
@@ -1469,6 +1571,8 @@ def build_lever_comparison(
         },
         "default_decisions": decisions,
     }
+    if ctx.export is not None:
+        payload["context"] = _context_rows(ctx)
     return payload
 
 
@@ -1782,6 +1886,27 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
             for s in payload["secondaries"]
         ],
     )
+    if payload.get("context") is not None:
+        out += ["## Context per arm (D-250; descriptive, decides nothing)", ""]
+        out += _table(
+            [
+                "arm",
+                "n",
+                "evidence_hits_at_4",
+                "context_tokens_mean",
+                "prompt_tokens_mean (not compared)",
+            ],
+            [
+                (
+                    c["arm"],
+                    c["n"],
+                    _fmt(c["evidence_hits_at_4"]),
+                    _fmt(c["context_tokens_mean"], 1),
+                    _fmt(c["prompt_tokens_mean"], 1),
+                )
+                for c in payload["context"]
+            ],
+        )
     out += ["## Rerank operation", ""]
     out += _table(
         [
