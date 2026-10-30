@@ -633,10 +633,12 @@ fn clamp_hop_cap_with_ceiling_rejects_zero_and_over_effective_max() {
 fn byte_ceiling_constants_are_sensibly_bounded() {
     // Constants mirror extraction JSON-Schema maxLength values; verify they are
     // plausible (non-zero, not absurdly large) so a schema change is caught here.
-    assert!(MAX_SEED_ENTITY_NAME_BYTES > 0);
-    assert!(MAX_SEED_ENTITY_NAME_BYTES <= 4096);
-    assert!(MAX_RELATION_TYPE_FILTER_BYTES > 0);
-    assert!(MAX_RELATION_TYPE_FILTER_BYTES <= 1024);
+    const {
+        assert!(MAX_SEED_ENTITY_NAME_BYTES > 0);
+        assert!(MAX_SEED_ENTITY_NAME_BYTES <= 4096);
+        assert!(MAX_RELATION_TYPE_FILTER_BYTES > 0);
+        assert!(MAX_RELATION_TYPE_FILTER_BYTES <= 1024);
+    }
 }
 
 struct ExtractionValidationDebugCaptureLayer {
@@ -1488,10 +1490,12 @@ pub(crate) mod seed_paths {
     fn the_confirmed_path_fact_cap_is_the_budget_formula_at_the_measured_p95() {
         // 8192 evidence tokens, 2048 answer tokens, p95 of 69 tokens per path fact (SEED-PROBE s8).
         assert_eq!(derive_max_path_facts(8192, 2048, 69), Some(MAX_PATH_FACTS));
-        assert!(
-            MAX_PATH_FACTS < MAX_PATH_FACTS_CEILING,
-            "the ceiling must not be what sets the cap at the measured fact size"
-        );
+        const {
+            assert!(
+                MAX_PATH_FACTS < MAX_PATH_FACTS_CEILING,
+                "the ceiling must not be what sets the cap at the measured fact size"
+            );
+        }
     }
 
     // ---- graph chunk precision (D-139) ------------------------------------------------------

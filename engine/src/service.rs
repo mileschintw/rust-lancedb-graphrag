@@ -78,7 +78,7 @@ async fn emit_request_process_state(nodes: &Table, correlation_id: &str) {
     let alive_tasks = metrics.num_alive_tasks();
     let global_queue_depth = metrics.global_queue_depth();
 
-    if ordinal % 50 == 0 {
+    if ordinal.is_multiple_of(50) {
         let (session_size_bytes, session_approx_num_items) =
             crate::db::lance_session_stats(nodes).await;
         tracing::info!(

@@ -1495,7 +1495,8 @@ pub(super) fn fresh_no_lever_request() -> QueryRagRequest {
 #[tokio::test]
 async fn an_unavailable_default_lever_is_dropped_with_one_notice_for_a_request_that_names_none() {
     // (defaults, reranker wired, metadata held, the echo that ran, the dropped lever's wire name)
-    let cases: [(&str, &[&str], bool, bool, Vec<i32>, &str); 3] = [
+    type Case<'a> = (&'a str, &'a [&'a str], bool, bool, Vec<i32>, &'a str);
+    let cases: [Case; 3] = [
         (
             "levers-defaults-no-reranker",
             &["rerank", "evidence_metadata"],
@@ -2177,7 +2178,8 @@ async fn d204_in03_per_request_notice_names_no_server_config_key() {
     }
 
     // (defaults, reranker wired, metadata held, graph_v2 is the no-op `all`, lever, the phrase)
-    let cases: [(&str, &[&str], bool, bool, bool, &str, &str); 3] = [
+    type Case<'a> = (&'a str, &'a [&'a str], bool, bool, bool, &'a str, &'a str);
+    let cases: [Case; 3] = [
         (
             "in03-rerank",
             &["rerank"],

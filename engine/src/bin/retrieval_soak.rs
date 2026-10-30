@@ -357,7 +357,9 @@ async fn select_seeded_chunk_rows(
         .await
         .map_err(|error| format!("failed to collect seeded chunk rows: {error}"))?;
 
-    let mut by_id: HashMap<String, (Vec<f32>, Option<String>, Option<String>)> = HashMap::new();
+    // (embedding, title, content)
+    type ChunkRow = (Vec<f32>, Option<String>, Option<String>);
+    let mut by_id: HashMap<String, ChunkRow> = HashMap::new();
     for batch in &batches {
         let embeddings = batch
             .column_by_name("embedding")

@@ -6,10 +6,11 @@
 //! unfiltered one-hop neighbourhood of a seed is never returned.
 //!
 //! One scan reads every edge that touches a seed. Everything after that is in-memory set work, so
-//! the cost is the number of edges at the seeds plus at most `MAX_PATH_SEEDS * (MAX_PATH_SEEDS -
-//! 1) / 2` seed pairs, and no Cypher query is built or run. A seed is never expanded beyond that
-//! scan. A two-hop intermediate whose degree is above [`DEGREE_CAP`] is excluded, because an
-//! intermediate with hundreds of edges connects almost anything and carries no information.
+//! the cost is the number of edges at the seeds plus at most
+//! `MAX_PATH_SEEDS * (MAX_PATH_SEEDS - 1) / 2` seed pairs, and no Cypher query is built or run. A
+//! seed is never expanded beyond that scan. A two-hop intermediate whose degree is above
+//! [`DEGREE_CAP`] is excluded, because an intermediate with hundreds of edges connects almost
+//! anything and carries no information.
 //!
 //! The only values that reach a LanceDB predicate are seed entity IDs, and they are parsed as
 //! UUIDs and SQL-literal escaped first. Mention text never gets here.

@@ -279,10 +279,7 @@ fn clean_token(raw: &str) -> Token {
         matches!(c, '"' | '\u{201c}' | '\u{2018}' | '\'' | '(' | '[' | '{')
     });
     let mut ends_span = false;
-    loop {
-        let Some(last) = text.chars().last() else {
-            break;
-        };
+    while let Some(last) = text.chars().last() {
         match last {
             ',' | ';' | ':' | '?' | '!' | ')' | ']' | '}' | '"' | '\u{201d}' | '\''
             | '\u{2019}' => {

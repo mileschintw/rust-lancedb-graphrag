@@ -7011,7 +7011,7 @@ fn degraded_mode_ignores_the_grounded_abstention_normalisation_notice() {
 
     assert!(
         !engine::workflow::derive_degraded_mode(
-            &[normalised.clone()],
+            std::slice::from_ref(&normalised),
             engine::pb::lancet::v1::AnswerBasis::Retrieval
         ),
         "the normalisation notice alone must not mark the record degraded"
