@@ -547,6 +547,13 @@ fi
 #         target, and the pinned structure-aware output) and one ingest test of strategy
 #         validation and dispatch. 963->973. lib rises 846->856; the other targets are unchanged
 #         (0/58/18/14/27).
+#   982 -- v1.1 #11 (D-247, 2026-10-29): the generate_from_context bin, a new unittests target
+#         counted here as generate_from_context. Nine bin tests: argument parsing, the chunk
+#         index rule, evidence and graph facts rebuilt equal to the engine-built ones, a graph
+#         fact that does not round-trip refused, a row outside the contract refused, the pack
+#         body equal to the live request body, a refused row reported, generate's rendered
+#         answer and usage, and a reader failure as an error line. 973->982. lib stays 856; the
+#         other targets are unchanged (0/58/18/14/27).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
@@ -565,6 +572,7 @@ BIN_INSPECT_COUNT=$(awk '/Running unittests src\/bin\/inspect_lancedb\.rs/ {foun
 BIN_SEED_COUNT=$(awk '/Running unittests src\/bin\/seed_rag_fixture\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_RECONCILE_COUNT=$(awk '/Running unittests src\/bin\/reconcile_eval_store\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 BIN_BACKFILL_COUNT=$(awk '/Running unittests src\/bin\/backfill_evidence_metadata\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
+BIN_GENERATE_COUNT=$(awk '/Running unittests src\/bin\/generate_from_context\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 INTEG_CONFIG_COUNT=$(awk '/Running tests\/config_startup\.rs/ {found=1; next} found && /tests?, 0 benchmarks/ {print $1; exit}' "$TMP_FILE")
 
 LIB_COUNT=${LIB_COUNT:-0}
@@ -573,6 +581,7 @@ BIN_INSPECT_COUNT=${BIN_INSPECT_COUNT:-0}
 BIN_SEED_COUNT=${BIN_SEED_COUNT:-0}
 BIN_RECONCILE_COUNT=${BIN_RECONCILE_COUNT:-0}
 BIN_BACKFILL_COUNT=${BIN_BACKFILL_COUNT:-0}
+BIN_GENERATE_COUNT=${BIN_GENERATE_COUNT:-0}
 INTEG_CONFIG_COUNT=${INTEG_CONFIG_COUNT:-0}
 
 echo "engine (lib): $LIB_COUNT"
@@ -581,16 +590,17 @@ echo "inspect_lancedb (bin): $BIN_INSPECT_COUNT"
 echo "seed_rag_fixture (bin): $BIN_SEED_COUNT"
 echo "reconcile_eval_store (bin): $BIN_RECONCILE_COUNT"
 echo "backfill_evidence_metadata (bin): $BIN_BACKFILL_COUNT"
+echo "generate_from_context (bin): $BIN_GENERATE_COUNT"
 echo "config_startup (test): $INTEG_CONFIG_COUNT"
 
 LIB_BIN_SUM=$(( LIB_COUNT + BIN_MAIN_COUNT ))
-TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT + BIN_BACKFILL_COUNT + INTEG_CONFIG_COUNT ))
+TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT + BIN_BACKFILL_COUNT + BIN_GENERATE_COUNT + INTEG_CONFIG_COUNT ))
 
-echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
+echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, generate_from_context: $BIN_GENERATE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
-# Assert invariants (9 named assertions)
-if [ "$TOTAL" -ne 973 ]; then
-  echo "FAIL: TOTAL test count mismatch: expected 973, got $TOTAL" >&2
+# Assert invariants (10 named assertions)
+if [ "$TOTAL" -ne 982 ]; then
+  echo "FAIL: TOTAL test count mismatch: expected 982, got $TOTAL" >&2
   exit 1
 fi
 
@@ -629,10 +639,15 @@ if [ "$BIN_BACKFILL_COUNT" -ne 14 ]; then
   exit 1
 fi
 
+if [ "$BIN_GENERATE_COUNT" -ne 9 ]; then
+  echo "FAIL: generate_from_context test count mismatch: expected 9, got $BIN_GENERATE_COUNT" >&2
+  exit 1
+fi
+
 if [ "$INTEG_CONFIG_COUNT" -ne 27 ]; then
   echo "FAIL: config_startup test count mismatch: expected 27, got $INTEG_CONFIG_COUNT" >&2
   exit 1
 fi
 
-echo "All 9 Rust test target invariants verified successfully."
+echo "All 10 Rust test target invariants verified successfully."
 exit 0

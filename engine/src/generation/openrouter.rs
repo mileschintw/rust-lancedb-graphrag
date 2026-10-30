@@ -317,6 +317,131 @@ pub(crate) async fn pack_openrouter_messages(
     Ok((system_msg, user_msg, packed_evidence.evidence))
 }
 
+/// The exact chat-completions request body the adapter sends for `request` (D-247).
+///
+/// Packs the messages with [`pack_openrouter_messages`], adds the strict `model_output` schema
+/// (D-95) and the sampling and routing settings of `config`, and serializes the payload.
+/// [`OpenRouterGenerator`] posts these bytes unchanged and the `generate_from_context` bin's
+/// `pack` mode emits them, so the two cannot differ. It makes no network call.
+///
+/// # Errors
+///
+/// `Cancelled` when `request.cancel` fires during packing, `InvalidRequest` when the evidence
+/// cannot be packed or the payload cannot be serialized.
+pub async fn chat_request_body(
+    config: &OpenRouterGenerationConfig,
+    request: &GenerationRequest,
+) -> Result<Vec<u8>, GenerationError> {
+    let cancel = request.cancel.clone().unwrap_or_default();
+
+    let (system_msg, user_msg, _validation_evidence) = pack_openrouter_messages(
+        &request.question,
+        &request.evidence,
+        &request.graph_facts,
+        request.graph_weight,
+        config.evidence_token_budget(),
+        config.max_completion_tokens(),
+        request.allow_model_only,
+        request.prompt_options,
+        &cancel,
+    )
+    .await?;
+
+    if cancel.is_cancelled() {
+        return Err(GenerationError::new(
+            GenerationErrorKind::Cancelled,
+            "OpenRouter request cancelled after prompt assembly",
+        ));
+    }
+
+    let schema_json = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "answer": {
+                "type": "string",
+                "maxLength": crate::generation::MAX_ANSWER_CHARS
+            },
+            "cited_evidence_ids": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "maxLength": crate::generation::MAX_EVIDENCE_ID_CHARS
+                },
+                "maxItems": crate::generation::MAX_CITED_EVIDENCE_IDS
+            },
+            "answer_basis": {
+                "type": "string",
+                "enum": ["retrieval", "mixed", "model_only"]
+            },
+            "notices": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
+                },
+                "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
+            },
+            "warnings": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
+                },
+                "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
+            },
+            "final_answer": {
+                "type": "string",
+                "maxLength": crate::generation::final_answer::MAX_FINAL_ANSWER_CHARS
+            }
+        },
+        "required": [
+            "answer",
+            "cited_evidence_ids",
+            "answer_basis",
+            "notices",
+            "warnings",
+            "final_answer"
+        ],
+        "additionalProperties": false
+    });
+
+    let payload = OpenRouterChatPayload {
+        model: config.model.clone(),
+        messages: vec![
+            ChatMessage {
+                role: "system".into(),
+                content: system_msg,
+            },
+            ChatMessage {
+                role: "user".into(),
+                content: user_msg,
+            },
+        ],
+        temperature: config.temperature,
+        top_p: config.top_p,
+        max_completion_tokens: config.max_completion_tokens(),
+        reasoning: Some(ReasoningConfig {
+            effort: "none".into(),
+        }),
+        response_format: ResponseFormat {
+            format_type: "json_schema".into(),
+            json_schema: JsonSchemaWrapper {
+                name: "model_output".into(),
+                strict: true,
+                schema: schema_json,
+            },
+        },
+        provider: ProviderPreferences::for_order(config.provider_order()),
+    };
+
+    serde_json::to_vec(&payload).map_err(|err| {
+        GenerationError::new(
+            GenerationErrorKind::InvalidRequest,
+            format!("failed to serialize the chat request body: {err}"),
+        )
+    })
+}
+
 impl OpenRouterGenerator {
     pub fn new_with_config(
         api_key: impl Into<String>,
@@ -549,111 +674,14 @@ impl OpenRouterGenerator {
             ));
         }
 
-        let (system_msg, user_msg, _validation_evidence) = pack_openrouter_messages(
-            &request.question,
-            &request.evidence,
-            &request.graph_facts,
-            request.graph_weight,
-            self.config.evidence_token_budget(),
-            self.config.max_completion_tokens(),
-            request.allow_model_only,
-            request.prompt_options,
-            &cancel,
-        )
-        .await?;
-
-        if cancel.is_cancelled() {
-            return Err(GenerationError::new(
-                GenerationErrorKind::Cancelled,
-                "OpenRouter request cancelled after prompt assembly",
-            ));
-        }
-
-        let schema_json = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "answer": {
-                    "type": "string",
-                    "maxLength": crate::generation::MAX_ANSWER_CHARS
-                },
-                "cited_evidence_ids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "maxLength": crate::generation::MAX_EVIDENCE_ID_CHARS
-                    },
-                    "maxItems": crate::generation::MAX_CITED_EVIDENCE_IDS
-                },
-                "answer_basis": {
-                    "type": "string",
-                    "enum": ["retrieval", "mixed", "model_only"]
-                },
-                "notices": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
-                    },
-                    "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
-                },
-                "warnings": {
-                    "type": "array",
-                    "items": {
-                        "type": "string",
-                        "maxLength": crate::generation::MAX_NOTICE_WARNING_CHARS
-                    },
-                    "maxItems": crate::generation::MAX_NOTICES_WARNINGS_ITEMS
-                },
-                "final_answer": {
-                    "type": "string",
-                    "maxLength": crate::generation::final_answer::MAX_FINAL_ANSWER_CHARS
-                }
-            },
-            "required": [
-                "answer",
-                "cited_evidence_ids",
-                "answer_basis",
-                "notices",
-                "warnings",
-                "final_answer"
-            ],
-            "additionalProperties": false
-        });
-
-        let payload = OpenRouterChatPayload {
-            model: self.config.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".into(),
-                    content: system_msg,
-                },
-                ChatMessage {
-                    role: "user".into(),
-                    content: user_msg,
-                },
-            ],
-            temperature: self.config.temperature,
-            top_p: self.config.top_p,
-            max_completion_tokens: self.config.max_completion_tokens(),
-            reasoning: Some(ReasoningConfig {
-                effort: "none".into(),
-            }),
-            response_format: ResponseFormat {
-                format_type: "json_schema".into(),
-                json_schema: JsonSchemaWrapper {
-                    name: "model_output".into(),
-                    strict: true,
-                    schema: schema_json,
-                },
-            },
-            provider: ProviderPreferences::for_order(self.config.provider_order()),
-        };
+        let body = chat_request_body(&self.config, &request).await?;
 
         let send_fut = self
             .http
             .post(&self.config.chat_endpoint)
             .bearer_auth(&self.api_key)
-            .json(&payload)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
             .send();
 
         let response = tokio::select! {
@@ -753,7 +781,10 @@ impl OpenRouterGenerator {
             content: &choice.message.content,
             finish_reason: choice.finish_reason.as_deref(),
             prompt_tokens: chat_resp.usage.as_ref().map(|usage| usage.prompt_tokens),
-            completion_tokens: chat_resp.usage.as_ref().map(|usage| usage.completion_tokens),
+            completion_tokens: chat_resp
+                .usage
+                .as_ref()
+                .map(|usage| usage.completion_tokens),
             correlation_id: request.correlation_id.as_deref(),
         };
 
