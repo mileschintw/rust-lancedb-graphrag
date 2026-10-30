@@ -284,3 +284,22 @@ def preregistered_clean_tree(monkeypatch: pytest.MonkeyPatch) -> str:
         gitcheck, "commit_time", lambda sha, *, repo=None: int(time.time()) - 3600
     )
     return introducing
+
+
+@pytest.fixture(autouse=True)
+def _drive_exports_from_no_checkpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point drive()'s default end-of-drive context export at an empty in-memory source.
+
+    drive() reads `terminal_success` checkpoints from Postgres when no
+    `checkpoint_source` is given (D-249). No test may need Postgres, so every drive
+    without its own source exports against no checkpoints: the export fails closed,
+    is logged, and the drive returns as before.
+    """
+    import lancet_eval.run as run_mod
+    from lancet_eval.context_export import InMemoryCheckpointSource
+
+    monkeypatch.setattr(
+        run_mod,
+        "PostgresCheckpointSource",
+        lambda settings: InMemoryCheckpointSource([]),
+    )

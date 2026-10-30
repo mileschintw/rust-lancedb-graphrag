@@ -126,12 +126,13 @@ The evaluation harness evaluates answer groundedness and faithfulness using an L
 
 ## Run-Record Directory Layout & Publication
 
-A committed run record lives in `eval/runs/<YYYY-MM-DD>-<corpus>/` and contains 5 required artifacts (a dated corpus run directory is tracked by git, while every other path under `eval/runs/` is scratch and stays ignored):
+A committed run record lives in `eval/runs/<YYYY-MM-DD>-<corpus>/` and contains 5 required artifacts, and a v1.1 run record a sixth (a dated corpus run directory is tracked by git, while every other path under `eval/runs/` is scratch and stays ignored):
 1. `journal.jsonl`: The durable append-only record of all executed question queries and responses across both arms.
 2. `judge_cache.json`: The plain-text auditable verdicts and cached responses from the LLM judge.
 3. `report.md`: Human-readable GitHub-Flavored Markdown report with full pins, dimension results, and methodological caveats.
 4. `report.json`: Machine-readable evaluation report conforming to `eval/report.schema.json`.
 5. `metadata.json`: Execution metadata carrying all required pins (commit SHA, models, seed, sample sizes, index generation, lock hash).
+6. `context_export.jsonl` (v1.1 runs, D-249): What the reader saw, one row per success record's question and arm: the question, the ranked evidence with full text and document metadata, the graph facts and, for Lancet arms, `assembled_prompt` and `correlation_id`. `lancet-eval run` writes it at the end of a drive from the engine's `terminal_success` checkpoints; `lancet-eval export-context --run <dir>` rebuilds it. `score` refuses a v1.1 run (its journal header carries `"context_export": true`) whose export lacks a row for a success record.
 
 ### Pre-Commit Run-Record Reviewer Checklist
 Before committing an evaluation run record, verify:

@@ -373,6 +373,7 @@ class Journal:
         max_retries: int | None = None,
         order_seed: int | None = None,
         split_sha256: str | None = None,
+        context_export: bool = False,
     ) -> None:
         """Write journal metadata header if file is empty or new.
 
@@ -384,6 +385,10 @@ class Journal:
 
         A ``[split]`` drive also passes ``order_seed`` and ``split_sha256`` (D-107),
         written as additive keys only when given, so a legacy header is unchanged.
+
+        ``context_export=True`` adds ``"context_export": true``: the run is a v1.1 run,
+        and `score` refuses it unless `context_export.jsonl` holds a row for every
+        success record (D-249).
         """
         if gate_stage is not None and max_retries is None:
             raise ValueError("gate_stage requires max_retries (D-67)")
@@ -401,6 +406,8 @@ class Journal:
                 header["order_seed"] = order_seed
             if split_sha256 is not None:
                 header["split_sha256"] = split_sha256
+            if context_export:
+                header["context_export"] = True
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(header, ensure_ascii=False) + "\n")
                 f.flush()

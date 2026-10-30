@@ -30,6 +30,7 @@ from lancet_eval.agreement import (
     spearman_rank_correlation,
 )
 from lancet_eval.config import get_commit_sha
+from lancet_eval.context_export import ContextExportError, require_export_rows
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
     load_corpus_config,
@@ -1783,6 +1784,12 @@ def score_run(
 
     # WR-02: Deduplicate records journal-wide per (question_id, graph_arm)
     records, collapsed_records_n = deduplicate_by_arm(records)
+
+    # D-249: a v1.1 run is refused unless its export covers every success record.
+    try:
+        require_export_rows(journal_path)
+    except ContextExportError as exc:
+        raise ScoreError(f"D-249: refusing to score: {exc}") from exc
 
     corpus_name = header_corpus or records[0].corpus
 
