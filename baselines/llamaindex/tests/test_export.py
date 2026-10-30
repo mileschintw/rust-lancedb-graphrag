@@ -115,8 +115,9 @@ def test_chunk_ids_are_stable_across_builds(corpus_dir, tmp_path, embedding, rer
     first = _pipeline(corpus_dir, embedding, reranker)
     second = _pipeline(corpus_dir, embedding, reranker)
 
-    assert first.config_echo()["index_fingerprint"] == (
-        second.config_echo()["index_fingerprint"]
+    assert (
+        first.config_echo()["index_fingerprint"]
+        == (second.config_echo()["index_fingerprint"])
     )
     assert first.chunk_ids() == second.chunk_ids()
 

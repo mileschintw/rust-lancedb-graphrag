@@ -172,8 +172,7 @@ class OpenRouterReranker:
             raise ProviderError(f"rerank reply from model {model!r}, not {self.model}")
         try:
             ranked = [
-                (int(r["index"]), float(r["relevance_score"]))
-                for r in reply["results"]
+                (int(r["index"]), float(r["relevance_score"])) for r in reply["results"]
             ]
         except (KeyError, TypeError, ValueError) as exc:
             raise ProviderError("rerank reply has no usable results") from exc

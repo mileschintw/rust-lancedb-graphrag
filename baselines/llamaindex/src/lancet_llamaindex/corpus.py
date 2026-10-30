@@ -67,9 +67,7 @@ def load_documents(documents_path: Path, document_map_path: Path) -> list[Docume
                     "body"
                 )
             seen.add(document_id)
-            metadata = {
-                key: row[key] for key in EMBEDDED_METADATA_KEYS if row.get(key)
-            }
+            metadata = {key: row[key] for key in EMBEDDED_METADATA_KEYS if row.get(key)}
             documents.append(
                 Document(
                     id_=document_id,
