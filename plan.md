@@ -22,11 +22,10 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 7 | #7 | local_62fc0cbb-8a7d-4976-a2c6-5d117782e414 (worktree `lane-7-91faeb`, branch `claude/lane-7-91faeb`) | review (final checks running, 19:33) | — |
 | 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | working | — |
-| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | review (19:33, head 293536bd) | — |
+| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | done (20:01, head ae3beac8), PR question to user | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lane 7 merged → `plan-history.md`.
 
 ## Roadmap
 
@@ -37,17 +36,19 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #6 | — | — | — | spec only | limited: parent spec |
-| #7 | 1 | — | none set | new `eval/src/lancet_eval/context_export.py`, `test_context_export.py` | free |
 | #8 | 1 | — | none set | `engine/src/chunker/`, `engine/src/ingest.rs`, `gateway/main.go` | free |
 | #9 | 1 | — | none set | `config.py`, `seed.py`, `test_seed.py`, `test_stack_preflight.py` | free |
-| #10 | 2 | #7 | none set | `metrics.py`, `report.py`, `test_metrics.py` | free |
-| #11 | 2 | #7 | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
-| #12 | 2 | #7 | none set | `provenance.py`, `usability.py`, `p4.py`, `journal.py` (record kind) | free |
-| #13 | 2 | #7 | none set | new `baselines/llamaindex/` | free |
+| #10 | 1 | #7 (closed) | none set | `metrics.py`, `report.py`, `test_metrics.py` | free |
+| #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
+| #12 | 1 | #7 (closed) | none set | `provenance.py`, `usability.py`, `p4.py`, `journal.py` (record kind) | free |
+| #13 | 1 | #7 (closed) | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #18 | 1 (lane 9) | — | none set | in lane 9: `seed.py` › `load_document_map`, map lookup in `identity.py`, `diagnostic.py`, `preflight.py`, `cli.py` | free |
 | #15 | 3 | #8, #9, #12, #18 | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
+| #20 | 1 | — | none set | `cli.py` › `run` command (shared with #14, #15) | free |
+
+Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 
 For #15's brief: lane 9 (293536bd) left `score.py` reading the v1.0 map, since one journal can hold both stores' arms; #15's store-prefixed arm labels must pick the map per arm. #18's "every reader incl. score" criterion is thus partly carried by #15; say so in lane 9's PR body.
 
