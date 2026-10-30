@@ -25,7 +25,8 @@ Lancet's graph was extracted and read by the same cheap model, and the graph nev
 `deepseek/deepseek-v4-flash-0731` with `reasoning: {effort: none}` (inferred from table write times against the repin
 plan and commit times, not from a recorded field), 768 max output tokens, one call per chunk.
 Extraction reuses `generation_model` (`engine/src/main.rs:138`). Quick task 260831-az7 made the switch. Graph-v2
-(D-138) merged aliases and did no re-extraction.
+(D-139) narrowed the graph's chunk list to edge-evidence chunks and did no re-extraction; the alias-merge branch
+(D-138) was never built.
 
 **Extraction quality is not obviously the bottleneck.**
 

@@ -34,10 +34,9 @@ before its paid run.
   Lancet-only secondary.
 - Primary metric: `answer_usable` on the G population. Supporting: substring Hits@4, context tokens, latency.
 - Expect the baseline may win today (256-token chunks vs Lancet's 55). That is the point of measuring first.
-- Open item: how the arm enters the harness. Its records need the same journal shape, pairing and fail-closed rules.
-  "Lancet's prompt" also includes the engine's strict `final_answer` schema (D-95), so copying the prompt text alone
-  will not reproduce the `Answer:` line. A shared step that exports each arm's retrieved context, plus one generation
-  step over it, would serve both S0 and S2's replay.
+- How the arm enters the harness is settled by D-247 to D-250: LlamaIndex retrieves and writes a context export, a
+  generate-only engine bin answers over it with the engine's own packer, strict `final_answer` schema (D-95) and
+  `Answer:` rendering, and the harness journals the result as an external arm with its own fail-closed clauses.
 
 ### S1 details
 
@@ -48,14 +47,15 @@ before its paid run.
 - One target, 256 tokens (o200k), chosen to match the MultiHop-RAG paper (D-241). It replaces D-09's 500-character
   default for the S1 store only; no size sweep.
 - Rebuild a second store (new embeddings, new deepseek extraction); keep the v1.0 store untouched.
-- Re-map gold evidence to the new chunks; compare arms on `answer_usable` and substring Hits@4 only.
+- Compare arms on `answer_usable` and evidence Hits@4 only. Evidence Hits@4 matches gold evidence text, not chunk
+  IDs, so the gold evidence is not re-mapped to the new chunks and chunk-ID Hits@4 is not reported for S1.
 - Change chunking and nothing else. Model changes wait for S2 and S3.
 
 ### S2 details
 
 - Replay the exact packed prompts from S1's journal so both readers see identical context and rerank jitter cannot
-  differ between arms. Open item: confirm the journal can rebuild the exact prompt; if not, add a prompt-dump switch to
-  the engine first.
+  differ between arms. The journal cannot rebuild the exact prompt (it keeps 512-character excerpts and no prompt), so
+  the prompts come from each run's context export (D-249), not from a new engine prompt-dump switch.
 - Runs offline through OpenRouter's Batch API from a Python script (see Model access); no Rust Anthropic adapter
   needed for this stage.
 - Readers: deepseek (the v1.0 reader), Haiku 5.5 and Sonnet 5.5. Three points show whether answer quality keeps
@@ -105,7 +105,9 @@ before its paid run.
 - Code changes (harness arm, substring Hits@4, chunker, prompt dump) go on their own branches with a code review
   before merge. The GSD harness has been removed from main; no GSD commands are part of this plan.
 - This plan merges to main through a PR before S0 starts, so experiment branches can reference it.
-- New decisions get IDs continuing from v1.0 (next free D-ID) and are logged in the stage file.
+- New decisions get IDs continuing from v1.0 (next free D-ID). A stage's own decisions are logged in its stage file;
+  decisions that span stages are logged under Decisions below. A decision that meets the ADR bar (hard to reverse,
+  surprising without context, a real trade-off) also gets an ADR in `docs/adr/`, linked from its D-ID.
 - `.planning/` stays read-only as the v1.0 record.
 
 ## Decisions
@@ -143,6 +145,74 @@ IDs continue from v1.0's last (D-233). All were accepted by the owner on 2026-10
 - **D-246 Spend caps** (hard stops, not estimates): S0 $5 and S1 $15 of OpenRouter credit; S2 $30, S3 $110 and
   Confirm $10 of Claude credit. Claude total cap $150, leaving $50 of the $200 in reserve. A stage that hits its cap
   stops and is re-planned.
+
+### Code preparation decisions
+
+Accepted by the owner on 2026-10-29. Terms follow [GLOSSARY.md](../../GLOSSARY.md).
+
+- **D-247 External arm path.** An external arm retrieves outside Lancet and writes a context export. A generate-only
+  engine bin reads it and runs the engine's own packer, strict `model_output` schema and `render_final_answer_line`:
+  mode `pack` (no network; emits the request body, used for prompt parity and S2 request building) and mode
+  `generate` (calls the configured reader). Rendering batch results is left to S2's own branch. Lancet arms keep their
+  live gateway answer; each Lancet record gets a free check that re-packing its context export reproduces the
+  checkpoint's `assembled_prompt` byte for byte. External records go into the same `journal.jsonl` with the same
+  `RunRecord` shape and resume key, under an explicit external record kind with its own fail-closed clauses: a
+  context export row with exactly k = 8 ranked evidence entries for every success record, every `document_id` in
+  `document_map`, a pipeline-config echo equal to the pre-registration, one index fingerprint per arm, and the same
+  generation model and provider as the Lancet arms. `index_generation` is checked per arm, not per journal. No engine
+  snapshot fields are faked. The S0 Lancet arm is a new registry row, `hybrid+rerank+metadata`.
+- **D-248 LlamaIndex arm.** A separate uv project, `baselines/llamaindex/`, pinned to current `llama-index-core`
+  (0.14.25, not the paper's 0.9.40). Embeddings `voyageai/voyage-4-large` through OpenRouter (check that `input_type`
+  passes through); rerank `voyageai/rerank-2.5-lite` through the same endpoint Lancet's rerank client uses, via a
+  custom postprocessor; the same 346 documents Lancet seeds. Title, source and published_at go into the embedded text
+  as in the paper; in the prompt they reach the reader as DocMeta tags, the same format as Lancet's metadata lever,
+  with no duplicate in the node text. Its only output is the context export.
+- **D-249 Context export from checkpoints.** The journal cannot rebuild the prompt. After each drive the harness
+  exports the `terminal_success` checkpoint of every record from Postgres, joined on `correlation_id` (the engine's
+  `trace_id`), into `context_export.jsonl` in the run directory: one row per question and arm with the question,
+  ranked evidence (rank, chunk ID, document ID, full text, title, section, document metadata), graph facts and, for
+  Lancet arms, `assembled_prompt`. It is a sixth required run artifact for v1.1 runs. `lancet-eval export-context
+  --run <dir>` re-exports. `score` fails closed when a success record has no export row; a record that ended with no
+  evidence exports an empty list. No engine prompt-dump switch is added. The S2 replay states which provider fields it
+  rewrites, since the engine's `provider.require_parameters` and `order` cannot be sent for Claude.
+- **D-250 Evidence Hits@4 and context tokens.** Evidence Hits@4 reuses `paper_question_scores` with `text_matcher`
+  (spaces and newlines removed, case-sensitive substring) over the final evidence ranks 1-4 handed to the reader,
+  with text from the context export, on the G population only, under the metric name `evidence_hits_at_4`. Hits@10,
+  MRR and MAP are not reported (only 8 ranks exist). Chunk-ID Hits@4 stays a Lancet-only secondary. Context tokens are
+  o200k counts of the exported evidence text; provider `prompt_tokens` is recorded but not compared across arms.
+  Latency is reported per arm; the external arm's latency is marked not comparable end to end.
+- **D-251 Merge chunker and S1 store.** A new chunk strategy (`structure-merge`) counts `chunk_size` and
+  `chunk_overlap` in o200k tokens; `structure-aware` and D-09 are unchanged. A heading line opens the first chunk of
+  its section and counts toward the target; no chunk holds the end of one section and the start of the next.
+  Paragraphs merge greedily up to 256 tokens. A paragraph over 256 tokens closes the open chunk and splits into
+  256-token windows with a 25-token overlap, never merged with neighbours. Merged chunks under 40 characters are
+  kept; the extraction skip threshold is unchanged. The S1 store uses overlay `config.eval-s1.toml`,
+  `data/lancedb-eval-s1` and Postgres schema `lancet_eval_s1`; `seed`, `reseed` and `preflight` take store and schema
+  as parameters and refuse the v1.0 `data/lancedb-eval` and `lancet_eval`. Both stores' arms go into one journal with
+  the store in the arm label (for example `small/hybrid+rerank+metadata`); `run --arms` drives one store's subset, and
+  preflight refuses a stack whose store differs from the arm's declared store. S1 graph-on arms use the basic graph
+  context (`disable_graph_context: false`, no `graph_v2` lever) on both stores.
+- **D-252 Stage rules.**
+  - S0: a decisional held-out reading, Holm family m = 1 (Lancet default vs LlamaIndex, `answer_usable`, exact paired
+    sign-flip), null guard on both arms. Published as the external claim; it does not gate S1.
+  - S1 (direction-finding, dev): adopt merged if `answer_usable` (merged-off minus small-off) has a point estimate
+    above 0 and the null guard passes; the graph joins the final configuration only if merged-on minus merged-off is
+    at least +5 points. p-values are reported, not used. Evidence Hits@4 is supporting.
+  - S2 (direction-finding, dev): the reader with the highest `answer_usable` point estimate wins, unless a cheaper
+    reader is within 2 points; every candidate passes the null guard. Opus 5.5 joins only if Sonnet minus Haiku is at
+    least +5 points. D-245 is decided on this reading as a paired Haiku vs deepseek comparison that also requires a
+    point estimate of at least -3 points.
+  - S3: a decisional reading on the 2Wiki held-out part, read once, Holm family m = 3: graph-deepseek vs hybrid,
+    graph-Haiku vs graph-deepseek, graph-Sonnet vs graph-deepseek. Closed-book, LlamaIndex and HippoRAG 2 are
+    descriptive. The 2Wiki dev part serves the pilot and preflight only.
+  - Confirm: a decisional held-out reading (second and last), Holm family m = 2: final configuration vs v1.0 default,
+    final configuration vs LlamaIndex, on `answer_usable` with the null guard.
+  - The harness computes paired differences, p-values and null guards; the choice on a direction-finding reading is
+    applied by hand in its stage file. No automatic choice code.
+- **D-253 Pre-registration form.** Each stage's pre-registration is a constant in `eval/src/lancet_eval/thresholds.py`
+  (as `PREREGISTRATION_06_3_6`), cited by its `EXPERIMENT-S{n}.md` and committed with it before the paid run, so the
+  D-73 git check still applies. Code preparation only makes the harness accept such constants (new arm labels,
+  external arms, primary metric `evidence_hits_at_4`); each stage writes its own constant on its own branch.
 
 ## Model access
 
