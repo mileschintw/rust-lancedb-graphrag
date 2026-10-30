@@ -2399,52 +2399,58 @@ async fn startup_recovery_exceeds_queue_capacity_without_deadlock() {
         stage_document(&database, &doc_id, b"# Test\n\nContent").await;
     }
 
-    let result = tokio::time::timeout(std::time::Duration::from_secs(60), async {
-        let statuses = Arc::new(DashMap::new());
-        let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
-        let (_shutdown_tx, shutdown_rx) = watch::channel(false);
+    let statuses = Arc::new(DashMap::new());
+    let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
 
-        let worker = spawn_worker(
-            receiver,
-            statuses.clone(),
-            database.clone(),
-            Arc::new(FakeEmbedder),
-            test_extraction_generator(),
-            shutdown_rx,
-            inert_rebuild_tx(),
-            RebuildTriggerLinks::default(),
-        );
+    let worker = spawn_worker(
+        receiver,
+        statuses.clone(),
+        database.clone(),
+        Arc::new(FakeEmbedder),
+        test_extraction_generator(),
+        shutdown_rx,
+        inert_rebuild_tx(),
+        RebuildTriggerLinks::default(),
+    );
 
-        let staged_jobs = read_staged_jobs(&database).await.unwrap();
-        assert_eq!(staged_jobs.len(), job_count);
+    let staged_jobs = read_staged_jobs(&database).await.unwrap();
+    assert_eq!(staged_jobs.len(), job_count);
 
+    // A deadlock shows here: with more jobs than queue slots, the enqueue loop only finishes
+    // if the worker drains the queue while it runs. It needs the worker to take one job, not to
+    // finish one, so a loaded machine cannot push it past the bound. Processing all the
+    // documents is the slow part and gets its own, much wider bound below.
+    let enqueue = tokio::time::timeout(std::time::Duration::from_secs(60), async {
         for job in staged_jobs {
             statuses.insert(job.document_id.clone(), IngestionStatus::queued());
             sender.send(job).await.unwrap();
         }
-
-        drop(sender);
-        worker.await.unwrap();
-
-        for id in &staged_ids {
-            let state = statuses.get(id).unwrap();
-            assert_eq!(state.status, "completed");
-        }
-        let remaining_staged = database
-            .staged_documents_table()
-            .await
-            .unwrap()
-            .count_rows(None)
-            .await
-            .unwrap();
-        assert_eq!(remaining_staged, 0);
     })
     .await;
-
     assert!(
-        result.is_ok(),
-        "startup recovery timed out (deadlock detected)"
+        enqueue.is_ok(),
+        "startup recovery enqueue timed out (deadlock detected)"
     );
+
+    drop(sender);
+    tokio::time::timeout(std::time::Duration::from_secs(600), worker)
+        .await
+        .expect("worker did not finish the recovered jobs")
+        .unwrap();
+
+    for id in &staged_ids {
+        let state = statuses.get(id).unwrap();
+        assert_eq!(state.status, "completed");
+    }
+    let remaining_staged = database
+        .staged_documents_table()
+        .await
+        .unwrap()
+        .count_rows(None)
+        .await
+        .unwrap();
+    assert_eq!(remaining_staged, 0);
     let _ = std::fs::remove_dir_all(path);
 }
 

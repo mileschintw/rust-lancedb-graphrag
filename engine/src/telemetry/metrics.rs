@@ -68,8 +68,36 @@ pub const REBUILD_COMPLETED: &str = "completed";
 /// Outcome constant for failed index rebuild.
 pub const REBUILD_FAILED: &str = "failed";
 
+#[cfg(test)]
+thread_local! {
+    static TEST_METER_PROVIDER: std::cell::RefCell<Option<opentelemetry_sdk::metrics::SdkMeterProvider>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Routes this thread's metric recordings to `provider` instead of the process-global one.
+///
+/// Test seam: the global provider is shared by every test in the binary, so a metrics test that
+/// installed it globally also caught recordings from concurrently running ingest and rebuild tests.
+#[cfg(test)]
+pub(crate) fn set_thread_test_meter_provider(
+    provider: opentelemetry_sdk::metrics::SdkMeterProvider,
+) {
+    TEST_METER_PROVIDER.with(|cell| *cell.borrow_mut() = Some(provider));
+}
+
 /// Returns a [`Meter`] bound to the engine's instrumentation scope.
 pub fn meter() -> opentelemetry::metrics::Meter {
+    #[cfg(test)]
+    {
+        use opentelemetry::metrics::MeterProvider as _;
+        if let Some(meter) = TEST_METER_PROVIDER.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .map(|provider| provider.meter("lancet-engine"))
+        }) {
+            return meter;
+        }
+    }
     opentelemetry::global::meter("lancet-engine")
 }
 
