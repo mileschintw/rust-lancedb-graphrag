@@ -98,7 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             embed_model=OpenRouterEmbedding(api_key=key),
             reranker=OpenRouterReranker(api_key=key),
         )
-    except (CorpusLoadError, ExportError, ProviderError) as exc:
+    except (CorpusLoadError, ExportError, ProviderError, OSError) as exc:
         print(f"lancet-llamaindex: {exc}", file=sys.stderr)
         return 1
     for path in paths:
