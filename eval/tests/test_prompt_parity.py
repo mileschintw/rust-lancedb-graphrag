@@ -243,7 +243,7 @@ def stub_reader(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     monkeypatch.setenv("OPENROUTER_API_KEY", "stub-key")
     monkeypatch.setenv("LANCET_OPENROUTER__GENERATION_MODEL", model)
     monkeypatch.setenv("LANCET_OPENROUTER__CHAT_ENDPOINT", f"{base}/chat/completions")
-    monkeypatch.setenv("LANCET_OPENROUTER__MODELS_ENDPOINT", f"{base}/models")
+    monkeypatch.setenv("LANCET_OPENROUTER__MODEL_METADATA_ENDPOINT", f"{base}/models")
     yield base
     server.shutdown()
     server.server_close()
