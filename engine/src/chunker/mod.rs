@@ -104,14 +104,16 @@ pub fn chunk_markdown(text: &str, target_size: usize, overlap: usize) -> Vec<Chu
 ///
 /// Each section (the text under one heading, or the text before the first heading) is chunked on
 /// its own, so no chunk holds the end of one section and the start of the next. A section's heading
-/// line opens its first chunk. Consecutive paragraphs merge greedily while the chunk stays within
-/// `target_tokens`. A paragraph over `target_tokens` closes the open chunk and splits into windows of
-/// `target_tokens` that overlap by `overlap_tokens`; the windows never merge with other paragraphs.
-/// Short chunks are kept.
+/// line opens its first chunk and counts toward the target. Consecutive paragraphs merge greedily
+/// while the chunk stays within `target_tokens`. A paragraph over `target_tokens` closes the open
+/// chunk and splits into windows of `target_tokens` that overlap by `overlap_tokens`; the windows
+/// never merge with other paragraphs. Short chunks are kept.
 ///
-/// Every chunk holds at most `target_tokens`, except a section's first chunk: the heading attaches
-/// to the first paragraph or window even when they do not fit together, so that chunk holds at most
-/// `target_tokens` plus the tokens of the heading and the blank line after it.
+/// Every chunk holds at most `target_tokens`, with two exceptions. When a section opens with a
+/// paragraph over `target_tokens`, the heading attaches to its first window, so that chunk holds at
+/// most `target_tokens` plus the tokens of the heading and the blank line after it. And a window
+/// is never empty, so a single char that costs more than `target_tokens` (only possible with a
+/// very small target) becomes a window of its own.
 pub fn chunk_structure_merge(
     text: &str,
     target_tokens: usize,
@@ -195,10 +197,7 @@ fn merge_section(
         }
 
         open = match open.take() {
-            Some(span)
-                if heading_only
-                    || token_count(&text[span.start..paragraph.end]) <= target_tokens =>
-            {
+            Some(span) if token_count(&text[span.start..paragraph.end]) <= target_tokens => {
                 Some(span.start..paragraph.end)
             }
             Some(span) => {
@@ -278,7 +277,7 @@ fn token_windows(
         if end == slice.len() {
             return windows;
         }
-        first = (last - overlap).max(first + 1);
+        first = last.saturating_sub(overlap).max(first + 1);
     }
 }
 

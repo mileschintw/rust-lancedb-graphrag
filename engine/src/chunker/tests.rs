@@ -88,7 +88,7 @@ fn structure_merge_merges_paragraphs_greedily_up_to_the_target() {
     let pair = format!("{paragraph}\n\n{paragraph}");
     assert!(tokens(&pair) <= 256);
     assert!(tokens(&format!("{pair}\n\n{paragraph}")) > 256);
-    let input = vec![paragraph.as_str(); 5].join("\n\n");
+    let input = [paragraph.as_str(); 5].join("\n\n");
     let chunks = chunk_structure_merge(&input, 256, 25);
 
     let contents: Vec<_> = chunks.iter().map(|chunk| chunk.content.as_str()).collect();
@@ -158,32 +158,30 @@ fn structure_merge_keeps_short_chunks() {
         .all(|chunk| chunk.content.chars().count() < 40));
 }
 
-/// A section's first chunk holds its heading on top of the first paragraph or window, so it may
-/// exceed the target by at most the tokens of the heading and the blank line after it. Every other
-/// chunk stays within the target.
+/// The heading counts toward the target: when it does not fit with the section's first paragraph,
+/// it closes alone. Only a heading over an oversized paragraph's first window may exceed the
+/// target, by at most the tokens of the heading and the blank line after it. Every other chunk
+/// stays within the target.
 #[test]
-fn structure_merge_first_chunk_may_exceed_the_target_by_the_heading() {
+fn structure_merge_only_heading_plus_first_window_may_exceed_the_target() {
     let heading = "# A heading of several words";
     let fits_alone = lorem(250);
     let oversized = lorem(600);
     let input = format!("{heading}\n\n{fits_alone}\n\n{heading}\n\n{oversized}\n\n{fits_alone}");
     let chunks = chunk_structure_merge(&input, 256, 25);
 
-    let firsts: Vec<_> = chunks
+    assert_eq!(chunks[0].content, heading);
+    assert_eq!(chunks[1].content, fits_alone);
+    let over: Vec<_> = chunks
         .iter()
-        .filter(|chunk| chunk.content.starts_with(heading))
+        .filter(|chunk| tokens(&chunk.content) > 256)
         .collect();
-    assert_eq!(firsts.len(), 2);
-    assert_eq!(firsts[0].content, format!("{heading}\n\n{fits_alone}"));
-    for first in &firsts {
-        let count = tokens(&first.content);
-        assert!(count > 256, "{count}");
-        assert!(count <= 256 + tokens(&format!("{heading}\n\n")), "{count}");
-    }
-    assert!(chunks
-        .iter()
-        .filter(|chunk| !chunk.content.starts_with(heading))
-        .all(|chunk| tokens(&chunk.content) <= 256));
+    assert_eq!(over.len(), 1);
+    assert!(over[0]
+        .content
+        .starts_with(&format!("{heading}\n\n{}", lorem(10))));
+    let count = tokens(&over[0].content);
+    assert!(count <= 256 + tokens(&format!("{heading}\n\n")), "{count}");
     assert_eq!(chunks.last().unwrap().content, fits_alone);
 }
 
