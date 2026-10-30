@@ -75,3 +75,33 @@ def test_the_pipeline_never_calls_a_reader(corpus_dir, embedding, reranker):
         Settings._llm = previous
 
     assert len(rows) == 3
+
+
+def test_flat_keys_for_the_harness_agree_with_the_nested_ones(
+    corpus_dir, embedding, reranker
+):
+    echo = _pipeline(corpus_dir, embedding, reranker).config_echo()
+
+    # The flat keys are the ones lane 12's external clause compares (#12, #14).
+    assert {
+        key: echo[key]
+        for key in (
+            "framework",
+            "framework_version",
+            "chunk_size",
+            "chunk_overlap",
+            "dense_top_k",
+            "rerank_model",
+            "keep",
+        )
+    } == {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": echo["splitter"]["chunk_size"],
+        "chunk_overlap": echo["splitter"]["chunk_overlap"],
+        "dense_top_k": 20,
+        "rerank_model": echo["rerank"]["model"],
+        "keep": 8,
+    }
+    assert (echo["chunk_size"], echo["chunk_overlap"]) == (256, 25)
+    assert echo["rerank_model"] == "voyageai/rerank-2.5-lite"

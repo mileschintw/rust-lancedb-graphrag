@@ -214,6 +214,11 @@ class Pipeline:
         return {
             "framework": "llama-index-core",
             "framework_version": version("llama-index-core"),
+            # Flat copies of the nested values: the keys the harness's external
+            # clause compares with the pre-registration (#12, #14).
+            "chunk_size": CHUNK_SIZE,
+            "chunk_overlap": CHUNK_OVERLAP,
+            "rerank_model": RERANK_MODEL,
             "splitter": {
                 "type": "SentenceSplitter",
                 "chunk_size": CHUNK_SIZE,
