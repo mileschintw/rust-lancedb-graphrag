@@ -612,14 +612,17 @@ def run_benchmark(
             from lancet_eval.context_export import _REBUILD_HINT
 
             hint = _REBUILD_HINT.replace("<dir>", str(out.parent))
+            # A coverage refusal already ends with the hint; fill in the run dir.
+            error = context_export_error.replace(_REBUILD_HINT, hint)
             console.print(
-                "[bold red]Context export failed:[/bold red] "
-                f"{escape(context_export_error)}"
-            )
-            console.print(
-                f"The drive records stay journalled. {escape(hint)}.",
+                f"[bold red]Context export failed:[/bold red] {escape(error)}",
                 soft_wrap=True,
             )
+            if hint not in error:
+                console.print(
+                    f"The drive records stay journalled. {escape(hint)}.",
+                    soft_wrap=True,
+                )
         raise typer.Exit(code=1)
 
 

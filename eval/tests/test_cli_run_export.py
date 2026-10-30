@@ -78,3 +78,21 @@ def test_run_escapes_markup_in_the_export_error(
 
     assert res.exit_code == 1, res.output
     assert "[q1/graph-on]" in _flat(res.output)
+
+
+def test_run_fills_the_run_dir_into_a_hint_the_error_already_carries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval.context_export import _REBUILD_HINT
+
+    error = (
+        f"export.jsonl does not cover 1 success record(s): q1/graph-on. {_REBUILD_HINT}"
+    )
+
+    res = _invoke_run(tmp_path, monkeypatch, DriveResult(1, context_export_error=error))
+
+    assert res.exit_code == 1, res.output
+    output = _flat(res.output)
+    assert "<dir>" not in output
+    assert output.count("lancet-eval export-context --run") == 1
+    assert "run-2026" in output
