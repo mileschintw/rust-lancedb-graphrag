@@ -71,7 +71,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-- Whether to start a lane for #25 (clippy `-D warnings` on main), and when (overlaps #11 and #23). #11's "cargo clippy passes" criterion can't hold until #25; lane 11's own files are clippy-clean. Not asked yet. Since 2026-10-29 21:47 -0700.
+- Whether to start a lane for #25 (clippy `-D warnings` on main), and when (overlaps #11 and #23). #11's "cargo clippy passes" criterion can't hold until #25; lane 11's own files are clippy-clean. Asked 2026-10-29 21:58 -0700 (recommended: start after #11 and #23 merge). Since 2026-10-29 21:47 -0700.
 
 ## Deadlines
 
