@@ -541,11 +541,12 @@ fi
 #         D-212 IN-06 (inspect_lancedb hashes with the sha2 crate) keeps its 58 tests, which
 #         include the published SHA-256 vectors. 960->963. lib rises 843->846; the other targets
 #         are unchanged (0/58/18/14/27).
-#   973 -- v1.1 #8 (D-251): the structure-merge chunk strategy. Nine chunker tests (seam S-D:
-#         heading attachment, greedy merge, section boundary, 256/25 token windows, short chunks
-#         kept, the heading-plus-first-window size rule, multi-byte text, zero target, and the
-#         pinned structure-aware output) and one ingest test of strategy validation and dispatch.
-#         963->973. lib rises 846->856; the other targets are unchanged (0/58/18/14/27).
+#   973 -- v1.1 #8 (D-251, 2026-10-29): the structure-merge chunk strategy. Nine chunker tests
+#         (seam S-D: heading attachment, greedy merge, section boundary, 256/25 token windows,
+#         short chunks kept, the heading-plus-first-window size rule, multi-byte text, zero
+#         target, and the pinned structure-aware output) and one ingest test of strategy
+#         validation and dispatch. 963->973. lib rises 846->856; the other targets are unchanged
+#         (0/58/18/14/27).
 # The expected values in this script are measured values from the test topology.
 # When a later plan adds tests, it updates them to the newly measured values in the same commit
 # as the tests that moved them. Lowering a value to make the gate pass or deleting
