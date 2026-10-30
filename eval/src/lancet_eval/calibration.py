@@ -44,7 +44,13 @@ from lancet_eval.agreement import (
     quadratic_weighted_kappa,
     spearman_rank_correlation,
 )
-from lancet_eval.arms import ARM_REGISTRY, LEGACY_ARM_LABELS, ArmLabel, canonical_arm
+from lancet_eval.arms import (
+    LEGACY_ARM_LABELS,
+    ArmLabel,
+    canonical_arm,
+    in_registry_order,
+    is_external_arm,
+)
 from lancet_eval.config import repo_root
 from lancet_eval.gate import AGREEMENT_TARGET
 from lancet_eval.judge import (
@@ -326,7 +332,7 @@ def draw_slice(
             rule leaves an arm with nothing to draw.
     """
     wanted = {canonical_arm(a) for a in arms}
-    ordered = [a for a in ARM_REGISTRY if a in wanted]
+    ordered = [a for a in in_registry_order(wanted) if not is_external_arm(a)]
     if not ordered:
         raise CalibrationError("no arms to draw from")
     p4 = build_p4(records, split, ordered, reference_arm=ordered[0])
