@@ -42,12 +42,15 @@ from lancet_eval.journal import (
     load_records,
     read_journal_header,
 )
+from lancet_eval.measure import compute_spend
 from lancet_eval.run import write_context_export
 from lancet_eval.score import score_run
 from lancet_eval.thresholds import FamilySpec, LeverPreRegistration
 
 REFERENCE = "hybrid+rerank+metadata"
 EXTERNAL = fx.EXTERNAL
+#: A stage cap no test drive reaches.
+OPEN_CAP = 100.0
 
 integration = pytest.mark.skipif(
     os.environ.get("LANCET_EVAL_INTEGRATION") != "1",
@@ -237,6 +240,7 @@ def _run(s0: S0, fake: FakeBin, **kwargs: Any) -> external_run.ExternalRunResult
         "export_path": s0.export,
         "journal_path": s0.journal,
         "runner": fake,
+        "stage_spend_cap": OPEN_CAP,
     }
     return run_external(**{**options, **kwargs})
 
@@ -497,6 +501,7 @@ def test_an_arm_outside_the_corpus_arm_list_is_refused(s0: S0) -> None:
             export_path=s0.export,
             journal_path=s0.run / "other" / "journal.jsonl",
             runner=fake,
+            stage_spend_cap=OPEN_CAP,
         )
     assert fake.calls == []
 
@@ -552,6 +557,7 @@ def test_a_new_journal_gets_a_v1_1_header(s0: S0) -> None:
         export_path=s0.export,
         journal_path=journal,
         runner=FakeBin(),
+        stage_spend_cap=OPEN_CAP,
     )
 
     header = read_journal_header(journal)
@@ -580,6 +586,8 @@ def test_cli_run_external_appends_and_reports(
             str(s0.export),
             "--out",
             str(s0.journal),
+            "--stage-cap",
+            str(OPEN_CAP),
         ],
     )
 
@@ -599,10 +607,135 @@ def test_cli_run_external_appends_and_reports(
             str(s0.export),
             "--out",
             str(s0.journal),
+            "--stage-cap",
+            str(OPEN_CAP),
         ],
     )
     assert bad.exit_code == 1
     assert "not an external arm" in bad.output
+
+
+# --- The stage spend cap (#46, D-86) -------------------------------------------------
+
+
+def _spend(s0: S0) -> float:
+    return compute_spend(load_records(s0.journal))[0]
+
+
+def test_the_drive_stops_at_the_cap_and_keeps_the_finished_batches(
+    s0: S0, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(external_run, "GENERATE_BATCH_ROWS", 1)
+    # The Lancet arm's records already count; one more batch reaches the cap.
+    cap = _spend(s0) + 1e-9
+    fake = FakeBin()
+
+    result = _run(s0, fake, stage_spend_cap=cap)
+
+    assert result.stopped_by_cap
+    assert result.appended == 1
+    assert fake.generated == [s0.qs.g_ids[0]]
+    assert [r.question_id for r in _external_records(s0)] == [s0.qs.g_ids[0]]
+    assert result.observed_spend == pytest.approx(_spend(s0))
+    assert result.observed_spend >= cap
+    rows = read_export(s0.run / CONTEXT_EXPORT_FILE)
+    assert sum(r.arm == EXTERNAL for r in rows) == 3
+
+
+def test_a_spend_already_at_the_cap_sends_nothing(s0: S0) -> None:
+    fake = FakeBin()
+
+    result = _run(s0, fake, stage_spend_cap=_spend(s0))
+
+    assert result.stopped_by_cap
+    assert result.appended == 0
+    assert fake.calls == []
+    assert _external_records(s0) == []
+
+
+def test_a_resume_under_a_raised_cap_continues(
+    s0: S0, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(external_run, "GENERATE_BATCH_ROWS", 1)
+    assert _run(s0, FakeBin(), stage_spend_cap=_spend(s0) + 1e-9).stopped_by_cap
+    again = FakeBin()
+
+    result = _run(s0, again, stage_spend_cap=OPEN_CAP)
+
+    assert not result.stopped_by_cap
+    assert result.appended == 2
+    assert again.generated == s0.qs.g_ids[1:]
+    assert [r.question_id for r in _external_records(s0)] == s0.qs.g_ids
+
+
+def test_a_complete_drive_is_not_labelled_capped(s0: S0) -> None:
+    result = _run(s0, FakeBin())
+    assert not result.stopped_by_cap
+    assert result.observed_spend == pytest.approx(_spend(s0))
+
+    # Nothing is left to send, so a cap below the spend stops nothing.
+    again = _run(s0, FakeBin(), stage_spend_cap=_spend(s0) / 2)
+    assert not again.stopped_by_cap
+    assert again.appended == 0
+
+
+@pytest.mark.parametrize("cap", [0.0, -1.0, float("nan"), float("inf")])
+def test_a_cap_that_cannot_fire_is_refused_before_any_call(s0: S0, cap: float) -> None:
+    before = s0.journal.read_bytes()
+    fake = FakeBin()
+
+    with pytest.raises(ExternalRunError, match="stage spend cap"):
+        _run(s0, fake, stage_spend_cap=cap)
+
+    assert fake.calls == []
+    assert s0.journal.read_bytes() == before
+    rows = read_export(s0.run / CONTEXT_EXPORT_FILE)
+    assert not any(r.arm == EXTERNAL for r in rows)
+
+
+def _cli(s0: S0, *cap: str) -> Any:
+    return CliRunner().invoke(
+        app,
+        [
+            "run-external",
+            "--corpus",
+            fx.CORPUS,
+            "--arm",
+            EXTERNAL,
+            "--export",
+            str(s0.export),
+            "--out",
+            str(s0.journal),
+            *cap,
+        ],
+    )
+
+
+@pytest.mark.parametrize("cap", [[], ["--stage-cap", "0"], ["--stage-cap", "nan"]])
+def test_cli_run_external_refuses_a_missing_or_invalid_cap(
+    s0: S0, monkeypatch: pytest.MonkeyPatch, cap: list[str]
+) -> None:
+    fake = FakeBin()
+    monkeypatch.setattr(external_run, "bin_runner", fake)
+
+    result = _cli(s0, *cap)
+
+    assert result.exit_code == 2, result.output
+    assert fake.calls == []
+    assert _external_records(s0) == []
+
+
+def test_cli_run_external_says_it_stopped_at_the_cap(
+    s0: S0, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = FakeBin()
+    monkeypatch.setattr(external_run, "bin_runner", fake)
+
+    result = _cli(s0, "--stage-cap", repr(_spend(s0)))
+
+    assert result.exit_code == 0, result.output
+    assert "stage spend cap" in result.output
+    assert fake.calls == []
 
 
 # --- Integration (seam S-C): the real bin, the loopback provider stub ---------------
@@ -646,6 +779,7 @@ def test_s_c_the_real_bin_over_three_rows_writes_records_score_accepts(
         arm=EXTERNAL,
         export_path=s0.export,
         journal_path=s0.journal,
+        stage_spend_cap=OPEN_CAP,
     )
 
     assert result.appended == 3
@@ -659,5 +793,6 @@ def test_s_c_the_real_bin_over_three_rows_writes_records_score_accepts(
         arm=EXTERNAL,
         export_path=s0.export,
         journal_path=s0.journal,
+        stage_spend_cap=OPEN_CAP,
     )
     assert again.appended == 0
