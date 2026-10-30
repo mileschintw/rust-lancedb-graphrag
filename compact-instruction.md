@@ -10,14 +10,10 @@ After the compact, reread, and trust files over this summary:
 
 Run `ready` with: py -3 -I C:/Users/user3/.claude/plugins/cache/relay/relay/0.1.0/tools/relay.py ready D:/Repos/lancet-coord --repo mileschintw/rust-lancedb-graphrag --checkout D:/Repos/lancet
 
-In flight now (2026-10-29 21:48 -0700):
-- Lanes running: 10, 11, 13, 20 (review), 15, 23 (working). Lane 16 merged (PR #26); root pytest now has 1 known scripts/ failure, not 5.
-- A background `sleep 1200` alarm may be running; re-arm it after each wake.
-- Lane 10 was told to merge origin/main (PR #24 touched score.py, lever_comparison.py, levers_fixture.py) before done; no reply yet.
-- Lane 13 was asked to add flat chunk_size/chunk_overlap/rerank_model keys to pipeline_config.json; no confirmation yet.
+State at pause (2026-10-29 23:58 -0700): paused on the user's request; no lane running, no alarm. Merged: lanes 7-13, 15, 16, 20, 23, 29, 30 (PRs #19-#38). Open: #6 (parent), #14, #25, #34, #36.
 
-Next:
-1. #25 lane: ruling 5 ("After #11 and #23"). Once both merge, write briefs/25.md and start it in the next turn the user types.
-2. As lanes write done: check report claims with git/gh, ask the PR question, merge one at a time rerunning `ready` before each, then delete that lane's engine/target, fast-forward the main checkout's main, move the lane to plan-history.md, recompute the frontier.
-3. When #11 merges, #14 is the last lane: write briefs/14.md copying the lane 12/13 external echo contract (briefs 12, 13) and the plan's #14 notes, then ask the user to start it in a typed turn.
-4. When #7 to #15 are all merged, remind the user (plan › Waiting for the user to be present) to run the S2 code-prep grill → spec → tickets before the S1 paid run.
+On resume:
+1. Run `ready`; report the frontier #14, #25, #34, #36 (all free) and ask which to start; starts need a turn the user typed.
+2. #14: write briefs/14.md first, copying briefs 12/13's external echo contract, ruling 4's note (#14 fills generation_model/generation_provider_order from what generate_from_context sent) and lane 7's `_with_context_export` note.
+3. #25: ruling 5 is met; the user's "After #11 and #23" is the go-ahead, but the start still needs a typed turn.
+4. When #14 merges (#7-#15 all merged), give the S2 grill reminder (plan › Waiting for the user to be present).
