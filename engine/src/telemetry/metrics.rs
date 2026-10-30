@@ -79,7 +79,9 @@ thread_local! {
 /// Test seam: the global provider is shared by every test in the binary, so a metrics test that
 /// installed it globally also caught recordings from concurrently running ingest and rebuild tests.
 #[cfg(test)]
-pub(crate) fn set_thread_test_meter_provider(provider: opentelemetry_sdk::metrics::SdkMeterProvider) {
+pub(crate) fn set_thread_test_meter_provider(
+    provider: opentelemetry_sdk::metrics::SdkMeterProvider,
+) {
     TEST_METER_PROVIDER.with(|cell| *cell.borrow_mut() = Some(provider));
 }
 
@@ -88,9 +90,11 @@ pub fn meter() -> opentelemetry::metrics::Meter {
     #[cfg(test)]
     {
         use opentelemetry::metrics::MeterProvider as _;
-        if let Some(meter) = TEST_METER_PROVIDER
-            .with(|cell| cell.borrow().as_ref().map(|provider| provider.meter("lancet-engine")))
-        {
+        if let Some(meter) = TEST_METER_PROVIDER.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .map(|provider| provider.meter("lancet-engine"))
+        }) {
             return meter;
         }
     }

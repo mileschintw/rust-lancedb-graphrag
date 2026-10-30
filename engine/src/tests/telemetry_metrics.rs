@@ -106,7 +106,9 @@ async fn telemetry_metrics_corpus_generation_gauge_is_numeric() {
     record_corpus_generation(42);
     // A concurrent test (an index rebuild elsewhere in the suite) records the same gauge from its
     // own thread; it must not reach this test's provider.
-    std::thread::spawn(|| record_corpus_generation(1)).join().unwrap();
+    std::thread::spawn(|| record_corpus_generation(1))
+        .join()
+        .unwrap();
 
     let _ = meter_provider.force_flush();
     let finished = exporter.get_finished_metrics().unwrap();
