@@ -485,7 +485,7 @@ def _patch_run_preflight(
 
     monkeypatch.setattr(
         "lancet_eval.preflight.load_document_map",
-        lambda corpus_name: DocumentMap(corpus=corpus_name, entries={}),
+        lambda corpus_name, store=None: DocumentMap(corpus=corpus_name, entries={}),
     )
     monkeypatch.setattr(
         "lancet_eval.preflight.check_index_identity",
@@ -720,7 +720,7 @@ def _patch_document_map_generation(
 
     monkeypatch.setattr(
         "lancet_eval.preflight.load_document_map",
-        lambda corpus_name: DocumentMap(
+        lambda corpus_name, store=None: DocumentMap(
             corpus=corpus_name, entries={}, index_generation=index_generation
         ),
     )
