@@ -12,9 +12,10 @@ Shared by `test_lever_comparison.py` and `test_score_levers.py`.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from lancet_eval.arms import ARM_REGISTRY, arm_slug
 from lancet_eval.client import (
@@ -24,6 +25,7 @@ from lancet_eval.client import (
     RetrievalSnapshot,
     StructuredCitation,
 )
+from lancet_eval.context_export import CONTEXT_EXPORT_FILE, validate_row
 from lancet_eval.journal import Journal, NodeTiming, RunRecord, WorkflowWireMeta
 from lancet_eval.thresholds import FamilySpec, LeverPreRegistration
 
@@ -405,3 +407,81 @@ def write_journal(
 def default_spec(arm: str, qid: str) -> Spec:
     """Every arm answers correctly with the gold chunk at rank 1 and 2."""
     return Spec()
+
+
+def make_evidence_export_row(
+    arm: str,
+    qid: str,
+    qs: Questions,
+    *,
+    ranks: tuple[int | None, int | None] = (1, 2),
+    texts: Sequence[str] | None = None,
+    corpus: str = CORPUS,
+) -> dict[str, Any]:
+    """One context-export row of `arm` for `qid` that passes #7's validator.
+
+    The eight evidence texts are filler except gold fact a and b at `ranks` (a null
+    question gets filler only); `texts` replaces the whole list.
+    """
+    if texts is None:
+        texts = [f"Filler passage {pos} for {qid}." for pos in range(1, 9)]
+        if qid not in qs.nulls:
+            for which, rank in zip(("a", "b"), ranks, strict=True):
+                if rank is not None and rank <= len(texts):
+                    texts[rank - 1] = f"Lead sentence. {fact(qid, which)}"
+    row = {
+        "corpus": corpus,
+        "question_id": qid,
+        "arm": arm,
+        "question": f"Question {qid}?",
+        "evidence": [
+            {
+                "rank": rank,
+                "chunk_id": f"{qid}:{arm_slug(arm)}:e{rank}",
+                "document_id": doc_id(),
+                "text": text,
+                "title": "t",
+                "section_path": None,
+                "content_type": "text",
+                "score": 1.0 / rank,
+                "suspicious": False,
+                "document_metadata": {
+                    "source": None,
+                    "doc_title": None,
+                    "published_date": None,
+                },
+            }
+            for rank, text in enumerate(texts, start=1)
+        ],
+        "graph_facts": [],
+    }
+    validate_row(row)
+    return row
+
+
+def write_evidence_export(
+    run_dir: Path,
+    qs: Questions,
+    spec_fn: SpecFn,
+    arms: Iterable[str] = ARMS,
+    *,
+    texts_fn: Callable[[str, str], Sequence[str] | None] | None = None,
+) -> Path:
+    """Writes `context_export.jsonl` for every non-errored record `write_journal` wrote.
+
+    Each row places the gold facts at the record's `Spec.ranks`; `texts_fn(arm, qid)`,
+    when it returns a list, replaces that row's evidence texts.
+    """
+    rows = []
+    for qid in [*qs.g_ids, *qs.nulls]:
+        for arm in arms:
+            spec = spec_fn(arm, qid)
+            if spec.errored:
+                continue
+            texts = texts_fn(arm, qid) if texts_fn is not None else None
+            rows.append(
+                make_evidence_export_row(arm, qid, qs, ranks=spec.ranks, texts=texts)
+            )
+    path = run_dir / CONTEXT_EXPORT_FILE
+    path.write_text("".join(json.dumps(r) + NL for r in rows), encoding="utf-8")
+    return path

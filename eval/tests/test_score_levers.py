@@ -20,9 +20,11 @@ from levers_fixture import (
     TOKEN,
     Spec,
     default_spec,
+    fact,
     make_prereg,
     make_questions,
     write_corpus,
+    write_evidence_export,
     write_journal,
 )
 
@@ -200,3 +202,62 @@ def test_a_legacy_four_arm_corpus_keeps_its_report_unlabelled(
 def test_the_corpus_fixture_names_the_06_3_6_token() -> None:
     assert CORPUS == "levers_split"
     assert json.dumps(list(ARMS))
+
+
+# ---- D-250 evidence Hits@4 and context tokens (#10) ----------------------------------
+
+
+def _split_fact_on_hybrid(arm: str, qid: str) -> list[str] | None:
+    """lv-g000 on hybrid: fact a split across ranks 1-2, fact b only at rank 5."""
+    if (arm, qid) != ("hybrid", "lv-g000"):
+        return None
+    head, _, tail = fact(qid, "a").partition(" is ")
+    texts = [f"{head}.", f"It is {tail}", "x", "x", fact(qid, "b"), "x", "x", "x"]
+    return texts
+
+
+def test_score_reports_evidence_hits_at_4_and_context_tokens_per_arm_from_the_export(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    qs = make_questions(10, 5)
+    write_evidence_export(
+        run, qs, default_spec, ARMS, texts_fn=_split_fact_on_hybrid
+    )
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    for arm in ARMS:
+        hits = _dim(report, f"evidence_hits_at_4__{arm_slug(arm)}")
+        tokens = _dim(report, f"context_tokens_mean__{arm_slug(arm)}")
+        # the G population only: the five null questions are not in n
+        assert hits.n == 10
+        assert tokens.n == 10
+        assert tokens.score is not None and tokens.score > 0
+        expected = 0.9 if arm == "hybrid" else 1.0
+        assert hits.score == pytest.approx(expected)
+    assert "evidence_hits_at_10__hybrid" not in {d.name for d in report.dimensions}
+    on_disk = CorpusReport.model_validate_json(
+        (run / "report.json").read_text(encoding="utf-8")
+    )
+    assert any(d.name.startswith("evidence_hits_at_4__") for d in on_disk.dimensions)
+
+
+def test_context_tokens_count_the_exported_evidence_text(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    qs = make_questions(10, 5)
+    write_evidence_export(
+        run, qs, default_spec, ARMS, texts_fn=lambda a, q: ["hello world", "hello"]
+    )
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    assert _dim(report, "context_tokens_mean__hybrid").score == pytest.approx(3.0)
+
+
+def test_a_run_with_no_export_reports_no_evidence_dimensions(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    names = {d.name for d in report.dimensions}
+    new = ("evidence_hits_at_4", "context_tokens")
+    assert not any(n.startswith(new) for n in names)
