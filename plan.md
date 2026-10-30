@@ -28,10 +28,10 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 14 | #14 (closes #6) | local_148e4c13-9ad9-4dfa-8467-7fc587f47794 (`claude/lane-14-f3ca8e`) | started | — |
-| 25 | #25 | local_335ebf28-cea5-4abd-bdf9-dc8a3d7ceb27 (`claude/lane-25-edb296`) | started | — |
-| 34 | #34 | local_f2485cb2-2a83-46cb-a547-1370f331e4e1 (`claude/lane-34-56a8ff`) | started | — |
-| 36 | #36 | local_af37bee0-c864-4551-88c1-ee2a7097144b (`claude/lane-36-d5a37e`) | started | — |
+| 14 | #14 (closes #6) | local_148e4c13-9ad9-4dfa-8467-7fc587f47794 (`claude/lane-14-f3ca8e`) | working | — |
+| 25 | #25 | local_335ebf28-cea5-4abd-bdf9-dc8a3d7ceb27 (`claude/lane-25-edb296`) | review | — |
+| 34 | #34 | local_f2485cb2-2a83-46cb-a547-1370f331e4e1 (`claude/lane-34-56a8ff`) | review | — |
+| 36 | #36 | local_af37bee0-c864-4551-88c1-ee2a7097144b (`claude/lane-36-d5a37e`) | review | — |
 
 Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
 
