@@ -416,10 +416,15 @@ def test_concurrent_writes_produce_distinct_non_interleaved_files(
 
 
 @pytest.mark.parametrize(
-    "label",
-    ["small/hybrid+rerank+metadata", "merged/hybrid+graph+rerank+metadata"],
+    ("label", "arm_dir"),
+    [
+        ("small/hybrid+rerank+metadata", "small_hybrid_rerank_metadata"),
+        ("merged/hybrid+graph+rerank+metadata", "merged_hybrid_graph_rerank_metadata"),
+    ],
 )
-def test_store_prefixed_arm_writes_under_its_slug(tmp_path: Path, label: str) -> None:
+def test_store_prefixed_arm_writes_under_its_slug(
+    tmp_path: Path, label: str, arm_dir: str
+) -> None:
     """Proves a store-prefixed arm writes raw events to its flat slug dir (#29)."""
     from lancet_eval.arms import arm_slug
 
@@ -432,7 +437,8 @@ def test_store_prefixed_arm_writes_under_its_slug(tmp_path: Path, label: str) ->
     )
 
     raw = tmp_path / "raw_events"
-    assert path == raw / arm_slug(label) / "q1.jsonl"
+    assert arm_slug(label) == arm_dir
+    assert path == raw / arm_dir / "q1.jsonl"
     assert path.is_file()
     assert not (raw / label.partition("/")[0]).exists()
 
@@ -442,10 +448,11 @@ def test_store_prefixed_arm_writes_under_its_slug(tmp_path: Path, label: str) ->
     [
         ("hybrid+rerank+metadata", "hybrid_rerank_metadata"),
         ("graph-on", "graph-on"),
+        ("llamaindex", "llamaindex"),
         ("no-such-arm", "no-such-arm"),
     ],
 )
-def test_unprefixed_legacy_and_unknown_arms_keep_their_directories(
+def test_registry_legacy_and_refused_labels_keep_their_directories(
     tmp_path: Path, label: str, arm_dir: str
 ) -> None:
     """Proves registry, legacy and unslugged labels keep their directories."""
