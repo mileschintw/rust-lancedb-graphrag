@@ -356,6 +356,74 @@ def test_arms_sharing_a_cache_key_yield_at_most_one_row_and_both_are_listed() ->
             assert item.shared_arms == (item.arm,)
 
 
+def _prefixed(records: list[Any], prefix_of: dict[str, str]) -> list[Any]:
+    """The records relabelled with a store prefix per arm (D-251)."""
+    return [
+        r.model_copy(update={"graph_arm": f"{prefix_of[r.graph_arm]}/{r.graph_arm}"})
+        for r in records
+    ]
+
+
+def test_the_draw_accepts_store_prefixed_arms_and_draws_what_the_bare_arms_draw() -> (
+    None
+):
+    # a store prefix changes neither the pool nor the order within one store (#30)
+    records = standard_records(g_ids(12, 12, 6))
+    prefix_of = dict.fromkeys(ARMS, "small")
+    prefixed = _prefixed(records, prefix_of)
+    drawn = draw_slice(
+        prefixed,
+        real_split(),
+        [f"small/{a}" for a in reversed(ARMS)],
+        _gold(HELDOUT),
+        seed=42,
+        prompt_version="v1",
+        judge_model=MODEL,
+    )
+    relabel = {f"small/{a}": a for a in ARMS}
+    assert [
+        i.model_copy(
+            update={
+                "arm": relabel[i.arm],
+                "shared_arms": tuple(relabel[a] for a in i.shared_arms),
+            }
+        )
+        for i in drawn
+    ] == draw(records)
+
+
+def test_the_draw_takes_store_prefixed_arms_in_registry_order() -> None:
+    prefix_of = {
+        "dense-only": "merged",
+        "bm25-only": "small",
+        "hybrid": "merged",
+        "hybrid+graph": "small",
+    }
+    shared: dict[str, Any] = {}
+    for q in g_ids(12, 12, 6):
+        text = f"Shared answer for {q}. Answer: Yes"
+        shared[f"hybrid|{q}"] = make_record("hybrid", q, answer=text)
+        shared[f"bm25-only|{q}"] = make_record("bm25-only", q, answer=text)
+    records = _prefixed(
+        standard_records(g_ids(12, 12, 6), **shared), prefix_of
+    )
+    arms = [f"{prefix_of[a]}/{a}" for a in ARMS]
+    drawn = draw_slice(
+        records,
+        real_split(),
+        arms,
+        _gold(HELDOUT),
+        seed=42,
+        prompt_version="v1",
+        judge_model=MODEL,
+    )
+    assert {i.arm for i in drawn} == set(arms)
+    # small-store arms come first, so the shared key is listed small then merged
+    for item in drawn:
+        if item.arm in ("small/bm25-only", "merged/hybrid"):
+            assert item.shared_arms == ("small/bm25-only", "merged/hybrid")
+
+
 def test_the_key_file_names_every_arm_that_shares_the_key(
     tmp_path: Path, emit_env: None
 ) -> None:
@@ -411,6 +479,20 @@ def test_a_key_row_needs_a_registry_arm_and_a_hex_key() -> None:
         CalibrationKeyRow.model_validate({**good, "arm": "graph-sideways"})
     with pytest.raises(ValidationError):
         CalibrationKeyRow.model_validate({**good, "cache_key": "xyz"})
+
+
+def test_a_key_row_takes_a_store_prefixed_arm_and_refuses_a_bad_prefix() -> None:
+    good = {
+        "slice_id": "S01",
+        "arm": "merged/hybrid+rerank+metadata",
+        "question_id": "q",
+        "question_type": "comparison_query",
+        "cache_key": "0" * 64,
+    }
+    assert CalibrationKeyRow.model_validate(good).arm == good["arm"]
+    for arm in ("large/hybrid", "merged/graph-sideways", "merged/llamaindex"):
+        with pytest.raises(ValidationError):
+            CalibrationKeyRow.model_validate({**good, "arm": arm})
 
 
 def test_the_header_rejects_an_unknown_field() -> None:

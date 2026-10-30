@@ -82,13 +82,13 @@ from lancet_eval.measure import (
     estimate_judge_cost_per_question,
 )
 from lancet_eval.arms import (
-    ARM_REGISTRY,
     LEGACY_ARM_LABELS,
     arm_slug,
     arm_store,
     canonical_arm,
     in_registry_order,
     is_external_arm,
+    judged_arms,
     resolve_arm,
 )
 from lancet_eval.metrics import (
@@ -1589,10 +1589,12 @@ def _judged_dimensions(
 
     try:
         summary = calibration.agreement_summary(verified, cache)
-        pop = p4_mod.build_p4(records, inputs.split, config.arms)
+        pop = p4_mod.build_p4(
+            records, inputs.split, config.arms, reference_arm=_p4_reference(config)
+        )
     except (calibration.CalibrationError, ValueError) as exc:
         raise ScoreError(f"Cannot compute the judged pass: {exc}") from exc
-    arms = [a for a in ARM_REGISTRY if a in pop.arms]
+    arms = judged_arms(pop.arms)
     reference = pop.reference_arm
     index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
     qtype_of = {q: str(gold_map[q].question_type) for q in inputs.split.heldout_g_ids}

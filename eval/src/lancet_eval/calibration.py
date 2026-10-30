@@ -36,7 +36,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lancet_eval import agreement, gitcheck, thresholds
 from lancet_eval.agreement import (
@@ -44,7 +44,12 @@ from lancet_eval.agreement import (
     quadratic_weighted_kappa,
     spearman_rank_correlation,
 )
-from lancet_eval.arms import ARM_REGISTRY, LEGACY_ARM_LABELS, ArmLabel, canonical_arm
+from lancet_eval.arms import (
+    LEGACY_ARM_LABELS,
+    canonical_arm,
+    judged_arms,
+    judged_report_arms,
+)
 from lancet_eval.config import repo_root
 from lancet_eval.gate import AGREEMENT_TARGET
 from lancet_eval.judge import (
@@ -130,7 +135,8 @@ class CalibrationKeyRow(BaseModel):
 
     Attributes:
         slice_id: The worksheet's opaque ID.
-        arm: The arm the item was drawn from.
+        arm: The arm the item was drawn from: a canonical label, store-prefixed or
+            not (D-251, #30).
         question_id: The gold question ID.
         question_type: The gold question type.
         cache_key: The judge cache key of the item.
@@ -141,12 +147,19 @@ class CalibrationKeyRow(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     slice_id: str = Field(pattern=r"^S\d{2}$")
-    arm: ArmLabel
+    arm: str
     question_id: str
     question_type: str
     cache_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     notes: str = ""
     shared_arms: list[str] = Field(default_factory=list)
+
+    @field_validator("arm")
+    @classmethod
+    def _arm_is_canonical(cls, arm: str) -> str:
+        if canonical_arm(arm) != arm:
+            raise ValueError(f"arm {arm!r} is a legacy alias, not a canonical label")
+        return arm
 
 
 class CalibrationHeader(BaseModel):
@@ -326,7 +339,7 @@ def draw_slice(
             rule leaves an arm with nothing to draw.
     """
     wanted = {canonical_arm(a) for a in arms}
-    ordered = [a for a in ARM_REGISTRY if a in wanted]
+    ordered = judged_arms(wanted)
     if not ordered:
         raise CalibrationError("no arms to draw from")
     p4 = build_p4(records, split, ordered, reference_arm=ordered[0])
@@ -807,7 +820,10 @@ def _human(pair: SlicePair, dimension: str) -> int:
 
 
 def _dimension_summary(
-    dimension: str, scored: Sequence[tuple[SlicePair, int]], floor: float
+    dimension: str,
+    scored: Sequence[tuple[SlicePair, int]],
+    floor: float,
+    arms: Sequence[str],
 ) -> dict[str, Any]:
     """Agreement of one dimension over the scored pairs `(pair, judge score)`."""
     human = [_human(p, dimension) for p, _ in scored]
@@ -840,7 +856,7 @@ def _dimension_summary(
     label = d114_label(qwk_res, n, floor)
     legacy = legacy_calibration_line(dimension, qwk_res.value, rho_res.value, label)
     per_arm: dict[str, dict[str, int]] = {}
-    for arm in LEGACY_ARM_LABELS:
+    for arm in arms:
         in_arm = [
             (h, j) for (p, j), h in zip(scored, human, strict=True) if p.arm == arm
         ]
@@ -921,7 +937,12 @@ def agreement_summary(verified: VerifiedSlice, cache: JudgeCache) -> dict[str, A
                 else verdict.faithfulness
             )
             scored.append((pair, judge))
-        dimensions[dimension] = _dimension_summary(dimension, scored, verified.floor)
+        dimensions[dimension] = _dimension_summary(
+            dimension,
+            scored,
+            verified.floor,
+            judged_report_arms(p.arm for p in verified.pairs),
+        )
     return {
         "n_slice": len(verified.pairs),
         "dropped_slice_ids": dropped,

@@ -676,3 +676,22 @@ def test_registry_order_puts_each_store_after_the_unprefixed_arms() -> None:
     ]
     unprefixed = [a for a in (*ARM_REGISTRY, "llamaindex") if a != "hybrid+all"]
     assert in_registry_order(reversed(unprefixed)) == unprefixed
+
+
+def test_judged_arms_are_in_registry_order_without_external_arms() -> None:
+    from lancet_eval.arms import judged_arms
+
+    assert judged_arms(
+        ["merged/hybrid", "llamaindex", "small/hybrid+graph", "hybrid"]
+    ) == ["hybrid", "small/hybrid+graph", "merged/hybrid"]
+    assert judged_arms(["hybrid+graph", "dense-only"]) == ["dense-only", "hybrid+graph"]
+
+
+def test_judged_report_arms_keep_the_four_06_3_5_rows_for_a_legacy_corpus() -> None:
+    from lancet_eval.arms import LEGACY_ARM_LABELS, judged_report_arms
+
+    assert judged_report_arms(["hybrid"]) == list(LEGACY_ARM_LABELS)
+    assert judged_report_arms(["merged/hybrid", "llamaindex", "small/hybrid"]) == [
+        "small/hybrid",
+        "merged/hybrid",
+    ]
