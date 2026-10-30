@@ -126,11 +126,7 @@ def _evidence(rank: int, scored: NodeWithScore) -> dict[str, Any]:
         "content_type": CONTENT_TYPE,
         "score": scored.score,
         "suspicious": False,
-        "document_metadata": {
-            "source": meta["source"],
-            "doc_title": meta["doc_title"],
-            "published_date": meta["published_date"],
-        },
+        "document_metadata": meta,
     }
 
 
@@ -146,6 +142,7 @@ class Pipeline:
     ) -> None:
         self._nodes = nodes
         self._embed_model = embed_model
+        self._reranker = reranker
         self._retriever = index.as_retriever(similarity_top_k=DENSE_TOP_K)
         self._postprocessor = VoyageRerankPostprocessor(reranker=reranker, top_n=KEEP)
 
@@ -182,9 +179,12 @@ class Pipeline:
         """One question's context-export row; raises `ExportError` naming it."""
         unit = f"{question.question_id}/{arm}"
         retrieved = self._retriever.retrieve(question.question)
-        kept = self._postprocessor.postprocess_nodes(
-            retrieved, query_str=question.question
-        )
+        try:
+            kept = self._postprocessor.postprocess_nodes(
+                retrieved, query_str=question.question
+            )
+        except ValueError as exc:
+            raise ExportError(f"{unit}: {exc}") from exc
         if len(kept) != KEEP:
             raise ExportError(
                 f"{unit}: {len(kept)} reranked entries from {len(retrieved)} "
@@ -238,7 +238,7 @@ class Pipeline:
                 "model": RERANK_MODEL,
                 "endpoint": RERANK_ENDPOINT,
                 "document_text": "metadata header plus chunk text (MetadataMode.EMBED)",
-                "class": type(self._postprocessor.reranker).__name__,
+                "class": type(self._reranker).__name__,
             },
             "keep": KEEP,
             "documents": len({node.ref_doc_id for node in self._nodes}),

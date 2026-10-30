@@ -4,22 +4,13 @@ from __future__ import annotations
 
 import json
 from importlib.metadata import version
-from pathlib import Path
 
 from llama_index.core import Settings
 from llama_index.core.llms import CustomLLM, LLMMetadata
 
-from lancet_llamaindex.corpus import load_documents
-from lancet_llamaindex.pipeline import PIPELINE_CONFIG_FILE, Pipeline, write_outputs
+from lancet_llamaindex.pipeline import PIPELINE_CONFIG_FILE, write_outputs
 
-from .test_export import _questions
-
-
-def _pipeline(corpus_dir: Path, embedding, reranker) -> Pipeline:
-    documents = load_documents(
-        corpus_dir / "documents.jsonl", corpus_dir / "document_map.json"
-    )
-    return Pipeline.build(documents, embed_model=embedding, reranker=reranker)
+from .test_export import _pipeline, _questions
 
 
 def test_echo_names_every_value_and_the_installed_version(
@@ -93,6 +84,7 @@ def test_flat_keys_for_the_harness_agree_with_the_nested_ones(
             "dense_top_k",
             "rerank_model",
             "keep",
+            "index_fingerprint",
         )
     } == {
         "framework": "llama-index-core",
@@ -102,6 +94,7 @@ def test_flat_keys_for_the_harness_agree_with_the_nested_ones(
         "dense_top_k": 20,
         "rerank_model": echo["rerank"]["model"],
         "keep": 8,
+        "index_fingerprint": echo["index_fingerprint"],
     }
     assert (echo["chunk_size"], echo["chunk_overlap"]) == (256, 25)
     assert echo["rerank_model"] == "voyageai/rerank-2.5-lite"

@@ -33,6 +33,7 @@ RERANK_MODEL = "voyageai/rerank-2.5-lite"
 
 _MAX_RETRIES = 6
 _INITIAL_BACKOFF_S = 2.0
+_MAX_BACKOFF_S = 30.0
 _TIMEOUT_S = 30.0
 
 
@@ -74,7 +75,7 @@ def _post(
                 except ValueError as exc:
                     raise ProviderError(f"{url}: reply is not JSON") from exc
         time.sleep(delay)
-        delay = min(delay * 2, 30.0)
+        delay = min(delay * 2, _MAX_BACKOFF_S)
     raise AssertionError("retry loop always returns or raises")
 
 

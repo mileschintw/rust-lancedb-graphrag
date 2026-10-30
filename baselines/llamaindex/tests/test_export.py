@@ -150,3 +150,31 @@ def test_outputs_are_written_only_when_every_row_validates(tmp_path):
 
     assert not (tmp_path / "out" / CONTEXT_EXPORT_FILE).exists()
     assert not (tmp_path / "out" / PIPELINE_CONFIG_FILE).exists()
+
+
+def test_a_reranker_with_bad_indices_fails_closed_naming_the_question(
+    corpus_dir, embedding
+):
+    class RepeatingReranker:
+        def rerank(self, query, documents):
+            return [(0, 1.0)] * len(documents)
+
+    pipeline = _pipeline(corpus_dir, embedding, RepeatingReranker())
+
+    with pytest.raises(ExportError, match="q-1/llamaindex.*indices"):
+        pipeline.export_rows("fixture", "llamaindex", _questions(corpus_dir))
+
+
+def test_a_malformed_document_row_names_its_line(corpus_dir):
+    with open(corpus_dir / "documents.jsonl", "a", encoding="utf-8") as f:
+        f.write("{not json\n")
+
+    with pytest.raises(CorpusLoadError, match="line 4"):
+        load_documents(corpus_dir / "documents.jsonl", corpus_dir / "document_map.json")
+
+
+def test_an_unreadable_document_map_is_a_load_error(corpus_dir):
+    (corpus_dir / "document_map.json").write_text("[]", "utf-8")
+
+    with pytest.raises(CorpusLoadError, match="document_map.json"):
+        load_documents(corpus_dir / "documents.jsonl", corpus_dir / "document_map.json")

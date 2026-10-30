@@ -36,10 +36,14 @@ def _corpus_id(row: dict) -> str:
 def load_documents(documents_path: Path, document_map_path: Path) -> list[Document]:
     """Reads every article as a `Document` whose ID is its Lancet document ID.
 
-    Raises `CorpusLoadError` for a row with no corpus ID, no map entry or no body.
+    Raises `CorpusLoadError` for an unreadable map or row, and for a row with no map
+    entry, a repeated document or no body.
     """
-    with open(document_map_path, encoding="utf-8") as f:
-        doc_map = DocumentMap.model_validate(json.load(f))
+    try:
+        with open(document_map_path, encoding="utf-8") as f:
+            doc_map = DocumentMap.model_validate(json.load(f))
+    except (OSError, ValueError) as exc:
+        raise CorpusLoadError(f"{document_map_path}: {exc}") from exc
     by_corpus_id = {e.corpus_id: e.document_id for e in doc_map.entries.values()}
     documents: list[Document] = []
     seen: set[str] = set()
@@ -47,7 +51,14 @@ def load_documents(documents_path: Path, document_map_path: Path) -> list[Docume
         for line_num, line in enumerate(f, 1):
             if not line.strip():
                 continue
-            row = json.loads(line)
+            try:
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise ValueError("a row must be a JSON object")
+            except ValueError as exc:
+                raise CorpusLoadError(
+                    f"{documents_path} line {line_num}: {exc}"
+                ) from exc
             corpus_id = _corpus_id(row)
             document_id = by_corpus_id.get(corpus_id)
             if document_id is None:

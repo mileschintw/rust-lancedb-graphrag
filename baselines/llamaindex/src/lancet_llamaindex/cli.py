@@ -50,8 +50,18 @@ def _parser() -> argparse.ArgumentParser:
 
 def _read_questions(path: Path) -> list[GoldQuestion]:
     adapt = LABEL_ADAPTERS["multihop_rag"]
-    with open(path, encoding="utf-8") as f:
-        return [adapt(json.loads(line)) for line in f if line.strip()]
+    questions: list[GoldQuestion] = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                if line.strip():
+                    try:
+                        questions.append(adapt(json.loads(line)))
+                    except ValueError as exc:
+                        raise CorpusLoadError(f"{path} line {line_num}: {exc}") from exc
+    except OSError as exc:
+        raise CorpusLoadError(f"{path}: {exc}") from exc
+    return questions
 
 
 def run_export(
