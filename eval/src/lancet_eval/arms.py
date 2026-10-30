@@ -9,14 +9,22 @@ and 2 stored; they resolve to ``hybrid`` and ``hybrid+graph`` at lookup only.
 ``RunRecord.graph_arm`` is never rewritten, because ``legacy_records_digest`` hashes
 the stored value and a rewritten label would also break every historical journal.
 An unknown label fails closed.
+
+v1.1 (D-247) adds a second kind of arm. An external arm retrieves outside Lancet and
+hands the reader a context export; its retrieval mode, ``external``, is none of the
+three engine modes. External rows live in ``EXTERNAL_ARMS``, not in ``ARM_REGISTRY``,
+so every caller that iterates the registry to build gateway requests (the drive, the
+preflight canaries) never sees one. ``resolve_arm`` and ``canonical_arm`` know both
+tables, and ``request_fields`` refuses an external label.
 """
 
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from lancet_eval.client import LEVER_ORDER, LeverName
 
@@ -28,6 +36,7 @@ if TYPE_CHECKING:
     from lancet_eval.journal import RunRecord
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
+ArmKind = Literal["engine", "external"]
 ArmLabel = Literal[
     "dense-only",
     "bm25-only",
@@ -38,6 +47,8 @@ ArmLabel = Literal[
     "hybrid+answer-format",
     "hybrid+graph-v2",
     "hybrid+all",
+    "hybrid+rerank+metadata",
+    "llamaindex",
 ]
 
 #: The four 06.3.5 labels, in registry order. Judged-stage and calibration code that
@@ -56,23 +67,38 @@ class ArmSpec(BaseModel):
 
     Attributes:
         label: Canonical arm label.
-        retrieval_mode: Value of the request's ``retrieval_mode`` field.
+        retrieval_mode: Value of the request's ``retrieval_mode`` field, or
+            ``external`` for an arm whose retrieval runs outside Lancet.
         disable_graph_context: Whether the request switches graph context off.
         legacy_aliases: Read-only lookup aliases (drives 1, 1b and 2 labels).
         levers: The 06.3.6 quality levers the arm names on its request, in the
             canonical ``LEVER_ORDER`` (D-136). Empty for the 06.3.5 arms.
+        kind: ``engine`` (driven through the gateway) or ``external`` (D-247: answered
+            by the generate-only bin over the arm's own context export).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     label: ArmLabel
-    retrieval_mode: RetrievalMode
+    retrieval_mode: RetrievalMode | Literal["external"]
     disable_graph_context: bool
     legacy_aliases: tuple[str, ...] = ()
     levers: tuple[LeverName, ...] = ()
+    kind: ArmKind = "engine"
 
     @model_validator(mode="after")
     def _levers_are_canonical(self) -> Self:
+        if (self.kind == "external") != (self.retrieval_mode == "external"):
+            raise ValueError(
+                f"arm {self.label!r}: kind {self.kind!r} with retrieval_mode "
+                f"{self.retrieval_mode!r}; an external arm and only an external arm "
+                "has retrieval_mode 'external' (D-247)"
+            )
+        if self.kind == "external" and (self.levers or self.legacy_aliases):
+            raise ValueError(
+                f"arm {self.label!r}: an external arm names no engine lever and no "
+                "legacy alias (D-247)"
+            )
         names = list(self.levers)
         if len(set(names)) != len(names):
             raise ValueError(f"arm {self.label!r}: duplicate levers {names}")
@@ -96,7 +122,8 @@ def _registry_rows() -> tuple[ArmSpec, ...]:
     ``hybrid+graph-v2`` exists only when ``graph_v2`` is a declared lever, which the
     committed graph diagnosis selection decides (D-141; a test pins the two together).
     ``hybrid+all`` carries every declared lever, with the graph on iff ``graph_v2``
-    is among them (D-149).
+    is among them (D-149). The v1.1 S0 default, ``hybrid+rerank+metadata`` (D-247),
+    comes last, so every 06.3.5 and 06.3.6 index keeps its position.
     """
     rows = [
         ArmSpec(
@@ -157,14 +184,65 @@ def _registry_rows() -> tuple[ArmSpec, ...]:
             levers=LEVER_ORDER,
         )
     )
+    rows.append(
+        ArmSpec(
+            label="hybrid+rerank+metadata",
+            retrieval_mode="hybrid",
+            disable_graph_context=True,
+            levers=("rerank", "evidence_metadata"),
+        )
+    )
     return tuple(rows)
 
 
 ARM_REGISTRY: dict[str, ArmSpec] = {a.label: a for a in _registry_rows()}
 
+#: D-247 external arms. ``llamaindex`` is the MultiHop-RAG paper's LlamaIndex pipeline
+#: (D-248). It has no graph, so it counts as graph-off for the graph predicates.
+EXTERNAL_ARMS: dict[str, ArmSpec] = {
+    a.label: a
+    for a in (
+        ArmSpec(
+            label="llamaindex",
+            retrieval_mode="external",
+            disable_graph_context=True,
+            kind="external",
+        ),
+    )
+}
+
 _ALIAS: dict[str, str] = {
     al: a.label for a in ARM_REGISTRY.values() for al in a.legacy_aliases
 }
+
+
+@pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
+class ExternalPipeline:
+    """An external arm's retrieval pipeline, as pre-registered and as echoed (D-247).
+
+    A stage's pre-registration fixes one per external arm (``preregistration.
+    external_pipelines_of``), and every external record echoes the one it ran
+    (``journal.ExternalProvenance``); the two must be equal. It is a stdlib dataclass
+    validated by pydantic, so ``dataclasses.asdict`` of a pre-registration serialises
+    it and a journal line parses it with unknown keys refused.
+
+    Attributes:
+        framework: The retrieval framework's package name (``llama-index-core``).
+        framework_version: Its installed version.
+        chunk_size: The splitter's chunk size, in the framework's own units.
+        chunk_overlap: The splitter's overlap, in the same units.
+        dense_top_k: Candidates the dense retriever returns.
+        rerank_model: The rerank model the candidates are reordered by.
+        keep: Evidence entries kept after the rerank (fairness rule 3: k = 8).
+    """
+
+    framework: Annotated[str, Field(min_length=1)]
+    framework_version: Annotated[str, Field(min_length=1)]
+    chunk_size: int
+    chunk_overlap: int
+    dense_top_k: int
+    rerank_model: Annotated[str, Field(min_length=1)]
+    keep: int
 
 
 def canonical_arm(stored_label: str) -> str:
@@ -181,7 +259,7 @@ def canonical_arm(stored_label: str) -> str:
     Raises:
         ValueError: If the label is neither canonical nor an alias.
     """
-    if stored_label in ARM_REGISTRY:
+    if stored_label in ARM_REGISTRY or stored_label in EXTERNAL_ARMS:
         return stored_label
     if stored_label in _ALIAS:
         return _ALIAS[stored_label]
@@ -202,10 +280,17 @@ def resolve_arm(label: str) -> ArmSpec:
     """
     if label in ARM_REGISTRY:
         return ARM_REGISTRY[label]
+    if label in EXTERNAL_ARMS:
+        return EXTERNAL_ARMS[label]
     if label in _ALIAS:
         return ARM_REGISTRY[_ALIAS[label]]
-    valid = [*ARM_REGISTRY, *_ALIAS]
+    valid = [*ARM_REGISTRY, *EXTERNAL_ARMS, *_ALIAS]
     raise ValueError(f"Unknown arm {label!r}. Expected one of: {valid}")
+
+
+def is_external_arm(label: str) -> bool:
+    """Whether a label names an external arm (D-247); an unknown label is not one."""
+    return label in EXTERNAL_ARMS
 
 
 def is_legacy_label(label: str) -> bool:
@@ -244,9 +329,14 @@ def request_fields(label: str) -> dict[str, object]:
         Keyword fields for ``client.run_query``.
 
     Raises:
-        ValueError: If the label is unknown.
+        ValueError: If the label is unknown, or names an external arm, which sends no
+            gateway request (D-247).
     """
     spec = resolve_arm(label)
+    if spec.kind == "external":
+        raise ValueError(
+            f"arm {label!r} is an external arm: it sends no gateway request (D-247)"
+        )
     if is_legacy_label(label):
         return {"disable_graph_context": True} if spec.disable_graph_context else {}
     fields: dict[str, object] = {

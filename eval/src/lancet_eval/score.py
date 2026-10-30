@@ -7,7 +7,7 @@ import logging
 import math
 import os
 import tomllib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -83,9 +83,11 @@ from lancet_eval.measure import (
 )
 from lancet_eval.arms import (
     ARM_REGISTRY,
+    EXTERNAL_ARMS,
     LEGACY_ARM_LABELS,
     arm_slug,
     canonical_arm,
+    is_external_arm,
     resolve_arm,
 )
 from lancet_eval.metrics import (
@@ -109,7 +111,7 @@ from lancet_eval.metrics import (
     squad_f1,
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
-from lancet_eval import gitcheck, provenance
+from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
 from lancet_eval.split import HeldOutSplit, load_split, split_sha256
@@ -166,6 +168,118 @@ def _get_engine_generation_model() -> str:
             type(e).__name__,
         )
         return ""
+
+
+def _get_engine_provider_order() -> list[str] | None:
+    """Read generation_provider_order from config/config.toml; None when unreadable."""
+    cfg_path = _repo_root() / "config" / "config.toml"
+    try:
+        with open(cfg_path, "rb") as f:
+            data = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        logger.warning(
+            "Failed to read engine provider order from %s (%s)",
+            cfg_path,
+            type(e).__name__,
+        )
+        return None
+    order = data.get("openrouter", {}).get("generation_provider_order")
+    if not isinstance(order, list) or not all(isinstance(p, str) for p in order):
+        return None
+    return list(order)
+
+
+_EXTERNAL_REFUSAL_LISTED = 20
+
+
+def require_external_provenance(
+    records: Sequence[RunRecord],
+    journal_path: Path,
+    config: Any,
+    document_ids: Container[str],
+) -> None:
+    """Refuses a run whose external records break an external clause (D-247).
+
+    A run with no external record passes untouched. Otherwise the corpus's
+    pre-registration must fix each external arm's pipeline, and every external record
+    is checked against the run's context export, the document map, that pipeline and
+    the engine's configured generation model and provider order (the ones the Lancet
+    arms were generated with).
+
+    Args:
+        records: The deduplicated journal records.
+        journal_path: The journal; the context export is read beside it.
+        config: The corpus config (its ``preregistration_token`` is read).
+        document_ids: Every ID and alias of the document map.
+
+    Raises:
+        ScoreError: Naming the clause, the question and the arm of each failure.
+    """
+    if not any(is_external_arm(r.graph_arm) for r in records):
+        return
+    token = getattr(config, "preregistration_token", None)
+    if not token:
+        raise ScoreError(
+            "D-247: pipeline_echo: the corpus names no pre-registration, so an "
+            "external arm's pipeline has nothing to be compared with"
+        )
+    try:
+        pipelines = preregistration.external_pipelines_of(
+            preregistration.resolve(token)
+        )
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(f"D-247: pipeline_echo: {exc}") from exc
+    generation_model = _get_engine_generation_model()
+    if not generation_model:
+        raise ScoreError(
+            "D-247: generation_model: cannot read [openrouter] generation_model "
+            "from config/config.toml"
+        )
+    provider_order = _get_engine_provider_order()
+    if provider_order is None:
+        raise ScoreError(
+            "D-247: generation_model: cannot read [openrouter] "
+            "generation_provider_order from config/config.toml"
+        )
+    export_path = journal_path.parent / CONTEXT_EXPORT_FILE
+    try:
+        rows = read_export(export_path) if export_path.is_file() else []
+    except ContextExportError as exc:
+        raise ScoreError(f"D-247: export_k8: {exc}") from exc
+    failures = provenance.external_run_failures(
+        records,
+        export_rows={(row.question_id, row.arm): row for row in rows},
+        document_ids=document_ids,
+        pipelines=pipelines,
+        generation_model=generation_model,
+        generation_provider_order=provider_order,
+    )
+    if failures:
+        listed = "; ".join(
+            f"{f.code} {f.label} {f.detail}"
+            for f in failures[:_EXTERNAL_REFUSAL_LISTED]
+        )
+        more = len(failures) - _EXTERNAL_REFUSAL_LISTED
+        tail = f" (and {more} more)" if more > 0 else ""
+        raise ScoreError(
+            f"D-247: external arm provenance failed {len(failures)} time(s) (zero "
+            f"tolerance): {listed}{tail}"
+        )
+
+
+def _p4_reference(config: Any) -> str:
+    """The arm P4's pairwise join sizes are measured against.
+
+    The reference arm of the corpus's pre-registration (the v1.0 constants name
+    ``hybrid``; a v1.1 stage may name another arm, D-247: ``hybrid+rerank+metadata``
+    in S0). A token that does not resolve is refused, never defaulted, because a
+    default is a value nobody pre-registered.
+    """
+    token = config.preregistration_token
+    try:
+        return str(preregistration.resolve(token).reference_arm)
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(f"Cannot build P4: {exc}") from exc
 
 
 def _check_provenance(record: RunRecord) -> bool:
@@ -635,8 +749,10 @@ def _provenance_scan(
     for rec in records:
         codes = sorted({f.code for f in provenance.provenance_failures(rec)})
         for code in codes:
-            counts[code] += 1
-        fatal = [c for c in codes if c in provenance.ZERO_TOLERANCE_CODES]
+            # An external clause is zero tolerance, so its count never reaches a
+            # report: the run is refused below.
+            counts[code] = counts.get(code, 0) + 1
+        fatal = [c for c in codes if provenance.is_zero_tolerance(c)]
         if fatal:
             failing.append((rec.question_id, rec.graph_arm, ",".join(fatal)))
     failing.sort()
@@ -750,10 +866,12 @@ def _four_arm_dimensions(
     g_ids = list(split.heldout_g_ids)
     n_g = len(g_ids)
     try:
-        pop = p4_mod.build_p4(records, split, config.arms)
+        pop = p4_mod.build_p4(
+            records, split, config.arms, reference_arm=_p4_reference(config)
+        )
     except ValueError as exc:
         raise ScoreError(f"Cannot build P4: {exc}") from exc
-    arms = [a for a in ARM_REGISTRY if a in pop.arms]
+    arms = [a for a in (*ARM_REGISTRY, *EXTERNAL_ARMS) if a in pop.arms]
     label_of = {canonical_arm(label): label for label in config.arms}
     qtype_of = {q: str(gold_map[q].question_type) for q in g_ids}
     index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
@@ -1855,17 +1973,24 @@ def score_run(
 
     corpus_name = header_corpus or records[0].corpus
 
-    # 1. Structural Guard: Refuse mixed index_generation
-    distinct_gens: set[str] = set()
+    # 1. Structural Guard: refuse mixed index_generation within one arm (D-247: an
+    # external arm and a Lancet arm may share a journal, each with its own index).
+    gens_by_arm: dict[str, set[str]] = {}
     for rec in records:
         if rec.index_generation:
-            distinct_gens.add(rec.index_generation)
-    if len(distinct_gens) > 1:
-        gens_list = sorted(distinct_gens)
-        raise ScoreError(
-            f"Mixed index generations detected in journal: "
-            f"{gens_list[0]} vs {gens_list[1]}"
-        )
+            try:
+                arm_key = canonical_arm(rec.graph_arm)
+            except ValueError:
+                arm_key = rec.graph_arm
+            gens_by_arm.setdefault(arm_key, set()).add(rec.index_generation)
+    for arm_key, gens in sorted(gens_by_arm.items()):
+        if len(gens) > 1:
+            gens_list = sorted(gens)
+            raise ScoreError(
+                f"Mixed index generations detected in arm {arm_key!r}: "
+                f"{gens_list[0]} vs {gens_list[1]}"
+            )
+    distinct_gens = {g for gens in gens_by_arm.values() for g in gens}
 
     # 2. Structural Guard: Validate all document_ids against document_map.json
     try:
@@ -1889,6 +2014,9 @@ def score_run(
 
     # Load gold questions and config
     config = load_corpus_config(corpus_name)
+    require_external_provenance(
+        records, journal_path, config, {*doc_map.entries, *doc_map.aliases}
+    )
     _ordered_protocol_guard(
         config,
         judged=judged,
@@ -1965,9 +2093,12 @@ def score_run(
     arm_metrics: dict[str, dict[str, Any]] = {}
 
     for arm, arm_records in records_by_arm.items():
-        # D-101: the GRAPH_ABLATION provenance check holds every arm that switches
-        # graph context off, not only the literal `graph-off`.
-        needs_ablation_provenance = resolve_arm(arm).disable_graph_context
+        # D-101: the GRAPH_ABLATION provenance check holds every engine arm that
+        # switches graph context off, not only the literal `graph-off`. An external
+        # arm (D-247) has no engine notices; its own clauses ran before this point.
+        arm_spec = resolve_arm(arm)
+        external = arm_spec.kind == "external"
+        needs_ablation_provenance = not external and arm_spec.disable_graph_context
         total_records = len(arm_records)
         unusable_records = [r for r in arm_records if not is_usable(r)]
         usable_records = [r for r in arm_records if is_usable(r)]
@@ -1999,8 +2130,15 @@ def score_run(
                 provenance_error_count += 1
                 continue
 
-            # Scorable payload guard: must carry retrieval snapshot and non-blank answer
-            if not has_scorable_payload(rec):
+            # Scorable payload guard: must carry a retrieval snapshot and an answer.
+            # An external record has no snapshot by design (D-247): its answer is
+            # scored, and the chunk-ID retrieval dimensions are not computed for it.
+            scorable = (
+                bool(rec.answer and rec.answer.strip())
+                if external
+                else has_scorable_payload(rec)
+            )
+            if not scorable:
                 if gold.is_null:
                     payload_excluded_unanswerable_count += 1
                 else:
@@ -2008,8 +2146,8 @@ def score_run(
                 continue
 
             # Retrieval dimensions strictly read snapshot.retrieved_chunks
-            chunks = rec.snapshot.retrieved_chunks
-            if not gold.is_null:
+            if rec.snapshot is not None and not gold.is_null:
+                chunks = rec.snapshot.retrieved_chunks
                 # Recall@4
                 r_out = recall_at_k(gold, chunks, k=4, chunk_size=config.chunk_size)
                 if r_out.status == "ok" and r_out.score is not None:
@@ -3283,7 +3421,12 @@ def score_run(
 
     res_hash = compute_result_hash(dimensions)
     lock_hash = get_lock_hash()
-    index_gen = sorted(distinct_gens)[0] if distinct_gens else "unknown-gen"
+    if len(distinct_gens) > 1:
+        index_gen = "; ".join(
+            f"{arm}={next(iter(gens))}" for arm, gens in sorted(gens_by_arm.items())
+        )
+    else:
+        index_gen = next(iter(distinct_gens), "unknown-gen")
     gen_model_name = _get_engine_generation_model() or "unknown-generation-model"
 
     # Find embedding model from first available snapshot or fallback
