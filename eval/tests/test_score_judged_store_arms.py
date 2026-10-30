@@ -59,6 +59,8 @@ V1_REFERENCE_KEYS = (
     "judge_errors_hybrid",
     "abstention_rate_hybrid",
 )
+# the v1.0 names of every paired delta's reference-arm mean and count (#39)
+V1_DELTA_REFERENCE_KEYS = ("mean_hybrid", "count_hybrid")
 
 
 def _store_prereg() -> Any:
@@ -211,3 +213,25 @@ def test_a_judged_delta_names_its_reference_arm_neutrally(prefixed: Scenario) ->
         assert "dropped_only_reference_abstained" in d.detail
         assert "judge_errors_reference" in d.detail
         assert "abstention_rate_reference" in d.detail
+
+
+def test_every_paired_delta_names_its_reference_mean_and_count_neutrally(
+    prefixed: Scenario,
+) -> None:
+    # #39: `_delta_dimension`'s own reference keys follow the same rule as #36's
+    report = CorpusReport.model_validate_json(
+        (prefixed.run / "report.json").read_text(encoding="utf-8")
+    )
+    deltas = [d for d in report.dimensions if "_delta__" in d.name and d.status == "ok"]
+    assert any(d.name.startswith("answer_") for d in deltas)
+    assert any(not d.name.startswith("answer_") for d in deltas)
+    counted = [d for d in deltas if "count_x" in d.detail]
+    assert counted
+    for d in deltas:
+        for v1_name in V1_DELTA_REFERENCE_KEYS:
+            assert v1_name not in d.detail, d.name
+        assert "mean_reference" in d.detail, d.name
+    for d in counted:
+        assert d.detail["count_delta"] == (
+            d.detail["count_x"] - d.detail["count_reference"]
+        )
