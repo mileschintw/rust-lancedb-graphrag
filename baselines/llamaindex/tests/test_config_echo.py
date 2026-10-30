@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, fields
 from importlib.metadata import version
 
+from lancet_eval.arms import ExternalPipeline
 from llama_index.core import Settings
 from llama_index.core.llms import CustomLLM, LLMMetadata
 
@@ -98,3 +100,23 @@ def test_flat_keys_for_the_harness_agree_with_the_nested_ones(
     }
     assert (echo["chunk_size"], echo["chunk_overlap"]) == (256, 25)
     assert echo["rerank_model"] == "voyageai/rerank-2.5-lite"
+
+
+def test_the_flat_keys_parse_as_the_harness_external_pipeline(
+    corpus_dir, embedding, reranker
+):
+    echo = _pipeline(corpus_dir, embedding, reranker).config_echo()
+
+    pipeline = ExternalPipeline(**{
+        f.name: echo[f.name] for f in fields(ExternalPipeline)
+    })
+
+    assert asdict(pipeline) == {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": 256,
+        "chunk_overlap": 25,
+        "dense_top_k": 20,
+        "rerank_model": "voyageai/rerank-2.5-lite",
+        "keep": 8,
+    }
