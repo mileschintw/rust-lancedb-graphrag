@@ -14,6 +14,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 
 1. Lane workers (7, 8, 9) may push their own lane branch to origin; PR open and merge still need the user's yes. User's words (2026-10-29 18:55 -0700), answering lane 8's push question: "都開worktree再merge", then on clarifying (local merge without push vs push then PR): "不對，可以 push 再開 PR". Sent to all three lanes.
 2. S1 per-store document map is its own issue, #18, which blocks #15 and is blocked by #9 (sub-issue of #6). User's words (2026-10-29, answering the lane 9 finding): "New issue, blocks #15".
+3. #18 moves whole into lane 9 (writer already on its branch at 25940d63, plus all readers); lane 9's PR closes #9 and #18; the #18 → #9 blocking link was removed since both land in one PR. User's words (2026-10-29 19:24 -0700): "整個搬到 lane 9".
 
 Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo uses no triage labels"), opened 2026-10-29 19:21 -0700 outside relay; left to the user.
 
@@ -23,7 +24,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | 7 | #7 | local_62fc0cbb-8a7d-4976-a2c6-5d117782e414 (worktree `lane-7-91faeb`, branch `claude/lane-7-91faeb`) | started | — |
 | 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | started | — |
-| 9 | #9 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | started | — |
+| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | started | — |
 
 Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`.
 
@@ -44,7 +45,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #12 | 2 | #7 | none set | `provenance.py`, `usability.py`, `p4.py`, `journal.py` (record kind) | free |
 | #13 | 2 | #7 | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
-| #18 | 2 | #9 | none set | `seed.py` › `load_document_map` and reseed delete path; map lookup in `identity.py`, `diagnostic.py` | free |
+| #18 | 1 (lane 9) | — | none set | in lane 9: `seed.py` › `load_document_map`, map lookup in `identity.py`, `diagnostic.py`, `preflight.py`, `cli.py` | free |
 | #15 | 3 | #8, #9, #12, #18 | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
 
