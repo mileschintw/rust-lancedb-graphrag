@@ -2178,6 +2178,39 @@ fn chunk_metadata_contract_valid_custom_settings() {
 }
 
 #[test]
+fn chunk_metadata_contract_accepts_structure_merge_and_dispatches_to_it() {
+    let metadata = HashMap::from([
+        ("chunk_strategy".into(), "structure-merge".into()),
+        ("chunk_size".into(), "256".into()),
+        ("chunk_overlap".into(), "25".into()),
+    ]);
+    let settings = parse_chunk_settings(&metadata).unwrap();
+    assert_eq!(settings.strategy, "structure-merge");
+
+    let markdown = "# Setup\n\nInstall it.\n\nThen run it.";
+    let job = IngestionJob::new(
+        "doc-merge".into(),
+        "guide.md".into(),
+        markdown.as_bytes().to_vec(),
+        metadata.clone(),
+    );
+    let (strategy, chunks) = chunk_ingestion_job(&job);
+    assert_eq!(strategy, "structure-merge");
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(chunks[0].content, markdown);
+    assert_eq!(chunks[0].section_path.as_deref(), Some("/Setup"));
+    assert!(chunks[0].estimated_tokens > 0);
+
+    let json = IngestionJob::new(
+        "doc-merge-json".into(),
+        "data.json".into(),
+        br##"{"heading":"# not markdown"}"##.to_vec(),
+        metadata,
+    );
+    assert_eq!(chunk_ingestion_job(&json).0, "fixed-size");
+}
+
+#[test]
 fn chunk_metadata_contract_invalid_metadata_rejected() {
     let missing_key = HashMap::from([("chunk_strategy".into(), "fixed-size".into())]);
     assert!(parse_chunk_settings(&missing_key).is_err());
