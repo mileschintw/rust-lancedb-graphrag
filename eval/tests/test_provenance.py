@@ -595,9 +595,7 @@ def _with_meta(record: RunRecord, **changes: object) -> RunRecord:
 
 
 def test_the_code_sets_carry_the_new_clauses() -> None:
-    from lancet_eval.provenance import _OK_CODES
-
-    from lancet_eval.provenance import is_zero_tolerance
+    from lancet_eval.provenance import _OK_CODES, is_zero_tolerance
 
     # The engine clauses keep their 06.3.6 sets; every external clause (D-247) is
     # zero tolerance on its own.
