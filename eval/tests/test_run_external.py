@@ -335,6 +335,27 @@ def test_the_end_of_drive_export_of_a_shared_journal_keeps_the_external_rows(
     score_run(run_dir=s0.run, no_judge=True, gold_chunks_path=s0.gold)
 
 
+def test_cli_export_context_rebuilds_a_shared_journal_export(
+    s0: S0, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import lancet_eval.context_export as context_export_mod
+
+    _run(s0, FakeBin())
+    source = _checkpoints(s0)
+    export = s0.run / CONTEXT_EXPORT_FILE
+    expected = sorted((r.question_id, r.arm) for r in read_export(export))
+    # Only the external rows survive; the Lancet rows come back from the checkpoints.
+    parity.write_rows(read_export(s0.export), export)
+    monkeypatch.setattr(
+        context_export_mod, "PostgresCheckpointSource", lambda settings: source
+    )
+
+    result = CliRunner().invoke(app, ["export-context", "--run", str(s0.run)])
+
+    assert result.exit_code == 0, result.output
+    assert sorted((r.question_id, r.arm) for r in read_export(export)) == expected
+
+
 def test_the_end_of_drive_export_fails_closed_on_an_external_record_without_a_row(
     s0: S0,
 ) -> None:

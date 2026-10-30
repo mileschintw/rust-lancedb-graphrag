@@ -881,9 +881,10 @@ def export_context_command(
     """Rebuild context_export.jsonl from terminal_success checkpoints (D-249)."""
     try:
         from lancet_eval import context_export
+        from lancet_eval.run import write_context_export
 
         source = context_export.PostgresCheckpointSource(load_settings())
-        written = context_export.export_context(run / "journal.jsonl", source)
+        written = write_context_export(run / "journal.jsonl", source)
         rows = len(context_export.read_export(written))
         console.print(f"[green]Wrote {rows} context-export row(s) to {written}[/green]")
     except Exception as exc:
