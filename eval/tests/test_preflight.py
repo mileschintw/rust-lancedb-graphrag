@@ -545,11 +545,11 @@ _DOC_S1 = "doc-s1"
 @pytest.fixture
 def two_maps(s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A v1.0 map holding doc-v1 and an S1 map holding doc-s1, in one temp repo."""
-    from lancet_eval.config import S1_STORE
+    from lancet_eval.config import S1_STORE, V1_STORE
 
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
     for store, doc_id, generation in (
-        (None, _DOC_V1, "lance-v1"),
+        (V1_STORE, _DOC_V1, "lance-v1"),
         (S1_STORE, _DOC_S1, "lance-s1"),
     ):
         doc_map = DocumentMap(
@@ -561,10 +561,7 @@ def two_maps(s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 )
             },
         )
-        if store is None:
-            save_document_map_atomic(doc_map)
-        else:
-            save_document_map_atomic(doc_map, store)
+        save_document_map_atomic(doc_map, store)
     return s1_overlay_root
 
 
@@ -692,3 +689,14 @@ def test_diagnostic_readers_take_the_selected_store(
         with pytest.raises(RuntimeError, match="stop after"):
             diagnostic.build_rows("multihop_rag", None, "gold.jsonl", **kwargs)
     assert seen == [V1_STORE, S1_STORE]
+
+
+def test_default_store_refuses_settings_on_the_s1_path(s1_overlay_root: Path) -> None:
+    """#18: the v1.0 store with settings on the S1 LanceDB path fails closed, so one
+    preflight never checks the S1 map for identity and the v1.0 map for generation."""
+    res = check_store_isolation(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1")
+    )
+
+    assert not res.passed
+    assert "--store eval-s1" in res.message

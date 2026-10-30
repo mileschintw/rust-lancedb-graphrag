@@ -850,3 +850,15 @@ def test_reseed_refuses_a_lancet_env_that_names_the_other_store(
         )
     assert v1_canary.exists()
     assert s1_canary.exists()
+
+
+def test_default_store_seed_refuses_settings_on_the_s1_path(
+    s1_repo: tuple[Path, Path],
+) -> None:
+    """#18: seeding the v1.0 store with settings on the S1 path is refused, so the
+    v1.0 map never receives S1 document IDs."""
+    with pytest.raises(SeedError, match="--store eval-s1"):
+        seed_corpus(
+            "multihop_rag",
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        )

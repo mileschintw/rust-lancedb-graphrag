@@ -128,11 +128,19 @@ def _same_path(a: str, b: str) -> bool:
 def store_target_failures(settings: EvalSettings, store: EvalStore) -> list[str]:
     """Why `settings` must not act on `store`; empty when they target it.
 
-    The v1.0 store keeps its v1.0 checks only, so it always returns no failure. Any
-    other store refuses the v1.0 path and schema outright (D-251), then requires the
-    settings and the store's overlay to name exactly the store's path and schema.
+    Settings whose LanceDB path is another known store's are refused for every store,
+    so one run never mixes two stores' maps (#18). Beyond that the v1.0 store keeps
+    its v1.0 checks only. Any other store refuses the v1.0 path and schema outright
+    (D-251), then requires the settings and the store's overlay to name exactly the
+    store's path and schema.
     """
+    in_use = store_for_settings(settings)
     if store == V1_STORE:
+        if in_use != V1_STORE:
+            return [
+                f"settings use store {in_use.name!r}'s LanceDB path "
+                f"{settings.lancedb_path!r}; select --store {in_use.name}"
+            ]
         return []
     failures: list[str] = []
     schema = pg_schema_of(settings.database_url)

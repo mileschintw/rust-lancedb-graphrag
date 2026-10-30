@@ -22,7 +22,7 @@ from lancet_eval.config import (
     store_for_settings,
     store_target_failures,
 )
-from lancet_eval.seed import DocumentMap, get_document_map_path, load_document_map
+from lancet_eval.seed import get_document_map_path, load_document_map
 
 if TYPE_CHECKING:
     import httpx
@@ -410,19 +410,12 @@ def check_drive_environment(environ: Mapping[str, str]) -> PreflightCheckResult:
     )
 
 
-def _load_store_map(corpus_name: str, store: EvalStore) -> DocumentMap:
-    """`store`'s document map (#18). The v1.0 store keeps its one-argument call."""
-    if store == V1_STORE:
-        return load_document_map(corpus_name)
-    return load_document_map(corpus_name, store)
-
-
 def check_corpus_generation(
     client: httpx.Client, corpus_name: str, store: EvalStore = V1_STORE
 ) -> PreflightCheckResult:
     """Probe /rag/query; check generation and truncation budget on `store`'s map."""
     try:
-        doc_map = _load_store_map(corpus_name, store)
+        doc_map = load_document_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
@@ -534,7 +527,7 @@ def corpus_generation_from_canaries(
     snapshot.
     """
     try:
-        doc_map = _load_store_map(corpus_name, store)
+        doc_map = load_document_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
