@@ -5,7 +5,9 @@ context export, e.g. `baselines/llamaindex`'s `context_export.jsonl` with its
 `pipeline_config.json` beside it. `run_external` answers that export with the engine's
 own packer, schema and `Answer:` rendering through `generate_from_context` and journals
 one `RunRecord` per row into the run's `journal.jsonl`, the same file and resume key
-as the Lancet arms. It then copies the arm's rows into the run's context export.
+as the Lancet arms. The arm's rows are copied into the run's context export before any
+reader call, so every journalled record has its row. The rows are answered in batches
+(``GENERATE_BATCH_ROWS``), each journalled as it lands.
 
 Everything is refused before any reader call: an external label that is not an arm of
 the corpus, an export that fails the context-export validator or holds another arm's,
@@ -393,7 +395,8 @@ def run_external(
 
     Raises:
         ExternalRunError: If the arm, the export, the pipeline echo or the run
-            directory is refused; nothing is journalled and no reader is called.
+            directory is refused (nothing is journalled and no reader is called),
+            or when a bin call fails (the batches before it stay journalled).
         JournalReuseError: If ``resume`` is False and the journal holds a record.
     """
     export = Path(export_path)
