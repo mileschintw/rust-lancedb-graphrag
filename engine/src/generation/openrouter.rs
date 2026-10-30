@@ -323,6 +323,11 @@ pub(crate) async fn pack_openrouter_messages(
 /// (D-95) and the sampling and routing settings of `config`, and serializes the payload.
 /// [`OpenRouterGenerator`] posts these bytes unchanged and the `generate_from_context` bin's
 /// `pack` mode emits them, so the two cannot differ. It makes no network call.
+///
+/// # Errors
+///
+/// `Cancelled` when `request.cancel` fires during packing, `InvalidRequest` when the evidence
+/// cannot be packed or the payload cannot be serialized.
 pub async fn chat_request_body(
     config: &OpenRouterGenerationConfig,
     request: &GenerationRequest,

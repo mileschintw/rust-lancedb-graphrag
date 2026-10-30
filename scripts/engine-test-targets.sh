@@ -598,7 +598,7 @@ TOTAL=$(( LIB_BIN_SUM + BIN_INSPECT_COUNT + BIN_SEED_COUNT + BIN_RECONCILE_COUNT
 
 echo "TOTAL: $TOTAL (lib+bin: $LIB_BIN_SUM, inspect_lancedb: $BIN_INSPECT_COUNT, seed_rag_fixture: $BIN_SEED_COUNT, reconcile_eval_store: $BIN_RECONCILE_COUNT, backfill_evidence_metadata: $BIN_BACKFILL_COUNT, generate_from_context: $BIN_GENERATE_COUNT, config_startup: $INTEG_CONFIG_COUNT)"
 
-# Assert invariants (9 named assertions)
+# Assert invariants (10 named assertions)
 if [ "$TOTAL" -ne 982 ]; then
   echo "FAIL: TOTAL test count mismatch: expected 982, got $TOTAL" >&2
   exit 1

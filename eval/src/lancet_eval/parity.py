@@ -11,6 +11,10 @@ Each row is packed under the levers its journal record echoes (`snapshot.levers`
 since the levers select prompt sentences. The check fails closed: a row with no
 success record, a record with no lever echo, a row the bin cannot pack, or a single
 differing byte names its question and arm, and the whole check fails.
+
+The bin packs under today's engine configuration (`config/config.toml` and `LANCET_*`
+overrides). A budget, `graph_weight` or lever-sentence change since the run therefore
+fails parity too, reported as a differing prompt.
 """
 
 from __future__ import annotations
@@ -161,7 +165,9 @@ def _row_failure(row: ContextExportRow, line: dict[str, Any]) -> str | None:
         at = first_difference(packed, expected)
         return (
             f"{unit}: the packed user message differs from assembled_prompt at "
-            f"character {at} (packed {len(packed)} chars, checkpointed {len(expected)})"
+            f"character {at} (packed {len(packed)} chars, "
+            f"checkpointed {len(expected)}; an engine config change since the run "
+            "also shows here)"
         )
     return None
 
