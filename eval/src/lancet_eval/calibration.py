@@ -819,8 +819,23 @@ def _human(pair: SlicePair, dimension: str) -> int:
     )
 
 
+def _slice_arms(pairs: Sequence[SlicePair]) -> list[str]:
+    """The arms the per-arm agreement lists, in report order.
+
+    A slice of the four 06.3.5 labels lists all four, as before; any other slice
+    (store-prefixed arms, #30) lists its own arms in ``in_registry_order``.
+    """
+    arms = {p.arm for p in pairs}
+    if arms <= set(LEGACY_ARM_LABELS):
+        return list(LEGACY_ARM_LABELS)
+    return in_registry_order(arms)
+
+
 def _dimension_summary(
-    dimension: str, scored: Sequence[tuple[SlicePair, int]], floor: float
+    dimension: str,
+    scored: Sequence[tuple[SlicePair, int]],
+    floor: float,
+    arms: Sequence[str],
 ) -> dict[str, Any]:
     """Agreement of one dimension over the scored pairs `(pair, judge score)`."""
     human = [_human(p, dimension) for p, _ in scored]
@@ -853,7 +868,7 @@ def _dimension_summary(
     label = d114_label(qwk_res, n, floor)
     legacy = legacy_calibration_line(dimension, qwk_res.value, rho_res.value, label)
     per_arm: dict[str, dict[str, int]] = {}
-    for arm in LEGACY_ARM_LABELS:
+    for arm in arms:
         in_arm = [
             (h, j) for (p, j), h in zip(scored, human, strict=True) if p.arm == arm
         ]
@@ -934,7 +949,9 @@ def agreement_summary(verified: VerifiedSlice, cache: JudgeCache) -> dict[str, A
                 else verdict.faithfulness
             )
             scored.append((pair, judge))
-        dimensions[dimension] = _dimension_summary(dimension, scored, verified.floor)
+        dimensions[dimension] = _dimension_summary(
+            dimension, scored, verified.floor, _slice_arms(verified.pairs)
+        )
     return {
         "n_slice": len(verified.pairs),
         "dropped_slice_ids": dropped,

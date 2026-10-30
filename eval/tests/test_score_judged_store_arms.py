@@ -168,3 +168,13 @@ def test_every_prefixed_arm_carries_its_judged_dimensions(prefixed: Scenario) ->
     for arm in ORDER:
         for dimension in JUDGED:
             assert f"answer_{dimension}__{arm_slug(arm)}" in names
+
+
+def test_the_per_arm_agreement_counts_every_prefixed_arm(prefixed: Scenario) -> None:
+    sidecar = JudgedResult.model_validate_json(
+        (prefixed.run / "judged-result.json").read_text(encoding="utf-8")
+    )
+    for dimension in JUDGED:
+        per_arm = sidecar.agreement["dimensions"][dimension]["per_arm_exact_agreement"]
+        assert list(per_arm) == ORDER
+        assert sum(c["n"] for c in per_arm.values()) == 20
