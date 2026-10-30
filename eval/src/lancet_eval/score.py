@@ -1957,9 +1957,12 @@ def score_run(
     for rec in records:
         if rec.snapshot and rec.snapshot.retrieved_chunks:
             try:
-                rec_map = doc_map_of(arm_store(rec.graph_arm))
-            except ValueError:
-                rec_map = doc_map
+                store_name = arm_store(rec.graph_arm)
+            except ValueError as e:
+                raise ScoreError(
+                    f"record for question '{rec.question_id}': {e}"
+                ) from e
+            rec_map = doc_map_of(store_name)
             for chunk in rec.snapshot.retrieved_chunks:
                 if (
                     chunk.document_id not in rec_map.entries

@@ -304,15 +304,14 @@ class ExternalPipeline:
 def canonical_arm(stored_label: str) -> str:
     """Resolves a stored label or alias to its canonical registry label.
 
-    Lookup only: never write the result back to ``RunRecord.graph_arm``.
+    Lookup only: never write the result back to ``RunRecord.graph_arm``. A
+    store-prefixed label keeps its prefix (D-251).
 
     Args:
         stored_label: A canonical label or a legacy alias.
 
     Returns:
         The canonical label.
-
-    A store-prefixed label keeps its prefix (D-251).
 
     Raises:
         ValueError: If the label is neither canonical nor an alias.
@@ -329,13 +328,13 @@ def canonical_arm(stored_label: str) -> str:
 def resolve_arm(label: str) -> ArmSpec:
     """Returns the registry row for a canonical label or an alias.
 
+    A store-prefixed label returns its base row (D-251).
+
     Args:
         label: A canonical label or a legacy alias.
 
     Returns:
         The matching ``ArmSpec``.
-
-    A store-prefixed label returns its base row (D-251).
 
     Raises:
         ValueError: With the ``Unknown arm '...'. Expected one of:`` prefix.

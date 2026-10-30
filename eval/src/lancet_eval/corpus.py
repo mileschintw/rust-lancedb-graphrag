@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.arms import STORE_PREFIXES, canonical_arm, is_external_arm
+from lancet_eval.arms import STORE_PREFIXES, arm_store, canonical_arm, is_external_arm
 
 
 def _repo_root() -> Path:
@@ -140,8 +140,12 @@ def _store_chunking(
     A corpus without store-prefixed arms has no `[stores]` table.
     """
     stores = data.get("stores", {})
-    prefixes = {a.partition("/")[0] for a in arms if "/" in a}
-    unprefixed = [a for a in arms if "/" not in a and not is_external_arm(a)]
+    prefix_of = {name: prefix for prefix, name in STORE_PREFIXES.items()}
+    stores_of = {a: arm_store(a) for a in arms}
+    prefixes = {prefix_of[s] for s in stores_of.values() if s is not None}
+    unprefixed = [
+        a for a, s in stores_of.items() if s is None and not is_external_arm(a)
+    ]
     if not prefixes:
         if stores:
             raise CorpusError(
@@ -158,7 +162,7 @@ def _store_chunking(
     if unknown:
         raise CorpusError(
             f"[stores] in {toml_path} names unknown store prefix(es) {unknown}; known: "
-            f"{sorted(STORE_PREFIXES)}"
+            f"{sorted(STORE_PREFIXES)} (D-251)"
         )
     chunking: dict[str, StoreChunking] = {}
     for prefix in sorted(prefixes):
@@ -178,11 +182,13 @@ def _store_chunking(
                 f"{list(CHUNK_STRATEGIES)}"
             )
         if entry.chunk_size <= 0:
-            raise CorpusError(f"{section}: chunk_size must be positive")
+            raise CorpusError(
+                f"{section}: chunk_size must be positive, got {entry.chunk_size}"
+            )
         if not 0 <= entry.chunk_overlap < entry.chunk_size:
             raise CorpusError(
                 f"{section}: chunk_overlap must be non-negative and smaller than "
-                "chunk_size"
+                f"chunk_size, got {entry.chunk_overlap} with {entry.chunk_size}"
             )
         chunking[prefix] = entry
     return chunking

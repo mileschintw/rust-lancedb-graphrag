@@ -1685,7 +1685,7 @@ def run_preflight_checks(
     from lancet_eval.arms import arm_store
 
     store_arms = [a for a in corpus_config.arms if arm_store(a) == store.name]
-    store_prefixed = bool(corpus_config.store_chunking)
+    store_prefixed = any(arm_store(a) is not None for a in corpus_config.arms)
 
     # 1. Store isolation
     results.append(check_store_isolation(settings, store))

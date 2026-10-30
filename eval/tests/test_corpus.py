@@ -9,6 +9,7 @@ import pytest
 
 from lancet_eval.config import repo_root
 from lancet_eval.corpus import (
+    CHUNK_STRATEGIES,
     CorpusConfig,
     CorpusError,
     GoldQuestion,
@@ -474,3 +475,13 @@ def test_a_bad_store_section_fails_the_load(
 ) -> None:
     with pytest.raises(CorpusError, match=message):
         _write_tmp_corpus(tmp_path, monkeypatch, "bad_stores", extra)
+
+
+def test_the_chunk_strategies_match_the_engines() -> None:
+    import re
+
+    source = (repo_root() / "engine" / "src" / "ingest.rs").read_text(encoding="utf-8")
+    match = re.search(r"CHUNK_STRATEGIES: \[&str; \d+\] = \[([^\]]*)\]", source)
+    assert match is not None
+    engine = tuple(re.findall(r'"([^"]+)"', match.group(1)))
+    assert sorted(engine) == sorted(CHUNK_STRATEGIES)

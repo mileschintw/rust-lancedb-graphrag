@@ -1,9 +1,10 @@
 """Seam S-A for S1 (D-251): four store-prefixed arms pair in one journal.
 
 The small and merged stores' arms live in one `[split]` journal under labels such as
-`small/hybrid+rerank+metadata`. `score --no-judge` scores them, reading each arm's
-document map from the store its prefix declares, and the lever comparison pairs them
-against a pre-registration whose labels carry the same prefixes.
+`small/hybrid+rerank+metadata`, with a context export row per success record.
+`score --no-judge` scores them, reading each arm's document map from the store its
+prefix declares, and the lever comparison pairs them against a pre-registration whose
+labels carry the same prefixes.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from levers_fixture import (
     make_questions,
     make_record,
     write_corpus,
+    write_external_export,
 )
 
 from lancet_eval import thresholds
@@ -124,14 +126,20 @@ def _build(
     monkeypatch.setattr("lancet_eval.score.load_document_map", _maps(seen))
     run = tmp_path / "run"
     journal = Journal(run / "journal.jsonl")
-    journal.write_header(corpus="levers_split", partial=False)
+    journal.write_header(corpus="levers_split", partial=False, context_export=True)
+    records: list[RunRecord] = []
     doc_of = doc_of or (
         lambda a: SMALL_DOC if a.startswith("small/") else MERGED_DOC
     )
     for qid in [*qs.g_ids, *qs.nulls]:
         for arm in S1_ARMS:
-            doc = doc_of(arm)
-            journal.append(_record(arm, qid, spec_fn(arm, qid), qs, doc=doc))
+            rec = _record(arm, qid, spec_fn(arm, qid), qs, doc=doc_of(arm))
+            journal.append(rec)
+            records.append(rec)
+    # D-249: a v1.1 journal is scored only with an export row per success record.
+    write_external_export(
+        run, records, document_id=lambda rec, _rank: doc_of(rec.graph_arm)
+    )
     return run, gold, seen
 
 
@@ -173,3 +181,27 @@ def test_the_four_store_prefixed_arms_pair_in_the_lever_comparison(
     assert rows[MERGED_OFF]["n_pos"] == 8
     assert rows[MERGED_OFF]["n_neg"] == 0
     assert rows[MERGED_OFF]["delta"] == pytest.approx(0.8)
+
+
+def test_a_record_with_a_bad_store_prefix_is_refused_not_read_as_v1(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, _ = _build(tmp_path, monkeypatch)
+    journal = run / "journal.jsonl"
+    text = journal.read_text(encoding="utf-8")
+    journal.write_text(
+        text.replace(f'"graph_arm":"{SMALL_OFF}"', '"graph_arm":"large/hybrid"', 1),
+        encoding="utf-8",
+    )
+    assert "large/hybrid" in journal.read_text(encoding="utf-8")
+    with pytest.raises(ScoreError, match="large/hybrid"):
+        score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+
+
+def test_a_store_prefixed_journal_without_its_context_export_is_refused(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, _ = _build(tmp_path, monkeypatch)
+    (run / "context_export.jsonl").unlink()
+    with pytest.raises(ScoreError, match="D-249"):
+        score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
