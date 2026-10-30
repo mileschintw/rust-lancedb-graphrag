@@ -194,15 +194,16 @@ The evaluation harness runs against an isolated store under `LANCET_ENV=eval`; i
 
 ## Running the test gates
 
-There is no CI (06-CONTEXT D-85). Every change passes the local gates instead, run from the repository root:
+v1.0 had no CI (06-CONTEXT D-85). Since v1.1 (#44), every change passes the fast tier, run from the repository root, and pull requests run it in GitHub Actions, one job per module:
 
 ```bash
 cargo test --manifest-path engine/Cargo.toml --locked && sh scripts/engine-test-targets.sh
-(cd gateway && go test -count=1 ./...) && sh scripts/gateway-test-targets.sh
-uv run --project eval pytest eval/tests
+(cd gateway && go test -count=1 -short ./...) && sh scripts/gateway-test-targets.sh
+uv run --project eval pytest -n auto --dist loadfile
 ```
 
-- The two `scripts/*-test-targets.sh` scripts pin the number of test functions in every target, so a test that stops compiling fails the gate instead of quietly vanishing from a total.
+- The two `scripts/*-test-targets.sh` scripts check a floor of test functions in every target, so a test target that stops compiling fails the gate instead of quietly vanishing from a total.
 - `-count=1` turns off Go's test cache, which could otherwise replay a cached pass for a test that reads the config files.
+- The opt-in slow tier, the live tier, the time budgets and the CI jobs are in [`testing.md`](testing.md).
 - Beyond the tests, every phase after Phase 1 has a code review on record (its `*-REVIEW.md`), and Phase 6.4's code-first slice was reviewed before the quickstart was verified (D-205).
 - The quickstart above was followed verbatim from a fresh clone on both platforms, and the runs are committed as transcripts: [`06.4-QS-TRANSCRIPT-WINDOWS.md`](../.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-QS-TRANSCRIPT-WINDOWS.md) and [`06.4-QS-TRANSCRIPT-WSL.md`](../.planning/phases/06.4-docs-suite-verified-quickstart-debt-backlog-promotion-and-v1/06.4-QS-TRANSCRIPT-WSL.md).

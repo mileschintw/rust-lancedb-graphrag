@@ -120,6 +120,7 @@ verbatim from a fresh clone on Windows 11 and on WSL Ubuntu.
 | [Design narrative](docs/design-narrative.md) | the alternatives considered for each major choice, and why they lost |
 | [Observability](docs/observability.md) | one question followed through two real traces |
 | [API contract](docs/api-contract.md) | request fields and every notice code, pinned to the proto by a test |
+| [Testing](docs/testing.md) | the fast, slow and live test tiers, their time budgets, and the per-module CI jobs |
 | [Limitations](docs/limitations.md) | what v1 doesn't do or measure, the local-only constraint, and the backlog |
 | [Build history](docs/build-history.md) | every phase, with its plan count and date |
 
