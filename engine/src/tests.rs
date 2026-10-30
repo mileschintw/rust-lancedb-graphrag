@@ -542,18 +542,22 @@ fn config_workflow_nested_env_overrides_match_contract() {
 
 #[test]
 fn graph_node_timeout_below_component_sum_is_rejected() {
-    let mut s = WorkflowSettings::default();
-    s.query_embedding_timeout_ms = 10_000;
-    s.graph_operation_timeout_ms = 4_000;
-    s.graph_node_timeout_ms = 13_999;
+    let s = WorkflowSettings {
+        query_embedding_timeout_ms: 10_000,
+        graph_operation_timeout_ms: 4_000,
+        graph_node_timeout_ms: 13_999,
+        ..WorkflowSettings::default()
+    };
     let err = s.validate().expect_err("must reject inverted graph timer");
     assert!(err.contains("graph_node_timeout_ms"));
 }
 
 #[test]
 fn generation_node_timeout_below_retry_budget_is_rejected() {
-    let mut s = WorkflowSettings::default();
-    s.generation_node_timeout_ms = 59_999;
+    let s = WorkflowSettings {
+        generation_node_timeout_ms: 59_999,
+        ..WorkflowSettings::default()
+    };
     let err = s
         .validate_against_provider(30)
         .expect_err("must reject generation node timeout below 2x provider budget");
@@ -7659,7 +7663,7 @@ async fn fetch_neighborhood_returns_both_edges_when_two_documents_share_identica
     let entities_table = database.entities_table().await.unwrap();
     let alice_batches: Vec<arrow_array::RecordBatch> = entities_table
         .query()
-        .only_if("name = 'Alice'".to_string())
+        .only_if("name = 'Alice'")
         .execute()
         .await
         .unwrap()
@@ -8889,8 +8893,8 @@ async fn generation_agreement_dense_bm25() {
     let (_runner, deps) = service.build_production_workflow(snapshot.clone());
 
     // Both dense_port and bm25_port were constructed from the exact same snapshot
-    assert_eq!(deps.dense_port.is_some(), true);
-    assert_eq!(deps.bm25_port.is_some(), true);
+    assert!(deps.dense_port.is_some());
+    assert!(deps.bm25_port.is_some());
     assert_eq!(
         snapshot.generation,
         format!("lance-{}", snapshot.nodes_version)

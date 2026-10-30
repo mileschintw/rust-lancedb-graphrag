@@ -506,7 +506,7 @@ impl Node for GenerateAnswerNode {
                                     )
                                 })?;
                         }
-                        ctx.update_from_model_output(&output);
+                        ctx.update_from_model_output(output);
                         let resolved_citations = match self.citation_excerpt_max_chars {
                             Some(max_chars) => resolve_citations_with_max_chars(
                                 &ctx.citations,

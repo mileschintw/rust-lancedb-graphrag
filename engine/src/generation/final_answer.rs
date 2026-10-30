@@ -164,7 +164,7 @@ impl<'a> ModelAnswerSegment<'a> {
     /// The text after the label, without surrounding whitespace or leading emphasis.
     fn value(&self) -> &'a str {
         self.last_line[self.label_at + self.label_len..]
-            .trim_start_matches(|c: char| matches!(c, '*' | '_'))
+            .trim_start_matches(['*', '_'])
             .trim()
     }
 }
@@ -233,7 +233,7 @@ fn locate_trailing_model_answer(
             while let Some(label_at) = lowered[..search_end].rfind(ANSWER_LABEL_WORD) {
                 search_end = label_at;
                 let after_word = &last_line[label_at + ANSWER_LABEL_WORD.len()..];
-                let at_colon = after_word.trim_start_matches(|c: char| matches!(c, '*' | '_' | ' '));
+                let at_colon = after_word.trim_start_matches(['*', '_', ' ']);
                 if at_colon.starts_with(':') {
                     let skipped = after_word.len() - at_colon.len();
                     let label_len = ANSWER_LABEL_WORD.len() + skipped + 1;

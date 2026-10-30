@@ -597,7 +597,7 @@ async fn run_vector_top_k(
         }
 
         let mut new_entries = Vec::with_capacity(batch.len());
-        for (&index, embedding) in batch.iter().zip(embeddings.into_iter()) {
+        for (&index, embedding) in batch.iter().zip(embeddings) {
             if embedding.len() != EXPECTED_EMBEDDING_DIM || embedding.iter().any(|value| !value.is_finite()) {
                 return Err(format!(
                     "embedding provider returned an invalid payload for question {}",

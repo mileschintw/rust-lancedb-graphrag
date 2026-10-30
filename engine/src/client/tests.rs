@@ -313,7 +313,7 @@ async fn bounded_provider_body_accepts_exact_limit() {
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
             let body = vec![b'a'; 262144];
-            let header = format!("HTTP/1.1 200 OK\r\nContent-Length: 262144\r\n\r\n");
+            let header = "HTTP/1.1 200 OK\r\nContent-Length: 262144\r\n\r\n".to_string();
             let _ = stream.write_all(header.as_bytes());
             let _ = stream.write_all(&body);
         }

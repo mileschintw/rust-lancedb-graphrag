@@ -536,9 +536,13 @@ impl DenseRetrievalPort for FakeDenseRetrievalPort {
     }
 }
 
+/// Per-query canned results for [`FakeBm25RetrievalPort`], matched by exact query text.
+#[cfg(test)]
+pub type QueryCandidates = Vec<(String, Result<Vec<Candidate>, NodeError>)>;
+
 #[cfg(test)]
 pub struct FakeBm25RetrievalPort {
-    candidates_per_query: std::sync::Mutex<Vec<(String, Result<Vec<Candidate>, NodeError>)>>,
+    candidates_per_query: std::sync::Mutex<QueryCandidates>,
     default_candidates: Result<Vec<Candidate>, NodeError>,
     stall: bool,
     call_count: std::sync::atomic::AtomicUsize,
@@ -555,7 +559,7 @@ impl FakeBm25RetrievalPort {
         }
     }
 
-    pub fn with_map(map: Vec<(String, Result<Vec<Candidate>, NodeError>)>) -> Self {
+    pub fn with_map(map: QueryCandidates) -> Self {
         Self {
             candidates_per_query: std::sync::Mutex::new(map),
             default_candidates: Ok(vec![]),
