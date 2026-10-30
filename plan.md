@@ -79,7 +79,7 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
 
 ## Waiting for the user's decision
 
-- PR #55 (`docs(plan): S2 code-prep decisions D-254 to D-259`, head 8f91c894, PLAN.md +52 lines only, merges clean): merge needs the user's yes. Opened by the S2 decision session, not a lane.
+none (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
 
 ## Deadlines
 
