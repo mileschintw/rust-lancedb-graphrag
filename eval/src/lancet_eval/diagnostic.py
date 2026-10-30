@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval.config import V1_STORE, EvalStore, store_for_settings
 from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records
 from lancet_eval.metrics import answer_usable as _answer_usable
@@ -349,8 +350,11 @@ def build_rows(
     gold_chunks_path: str | Path,
     vector_top4_path: str | Path | None = None,
     seed_probe_path: str | Path | None = None,
+    store: EvalStore = V1_STORE,
 ) -> list[DiagnosticRow]:
     """Builds one DiagnosticRow per question in `corpus_name`'s sample.
+
+    Titles come from `store`'s document map (#18; the v1.0 map by default).
 
     Columns (d)/seed_count/path_found are filled from `seed_probe_path` (the
     `diag_probe --graph-seeds` output, D-79) when it is given, and only for
@@ -373,7 +377,7 @@ def build_rows(
     text.
     """
     questions = load_sample_questions(corpus_name)
-    document_map = load_document_map(corpus_name)
+    document_map = load_document_map(corpus_name, store)
     mapped_titles = {entry.title for entry in document_map.entries.values()}
     gold_chunks_by_question = _load_gold_chunks_by_question(gold_chunks_path)
     vector_top4_by_question = (
@@ -611,7 +615,8 @@ def build_gold_coverage_rows(
         list_lancedb_document_ids(settings.lancedb_path).get("documents", [])
     )
     gold_chunks_by_question = _load_gold_chunks_by_question(gold_chunks_path)
-    _ = load_document_map(corpus_name)  # validates the corpus has a committed map
+    # validates the corpus has a committed map for the store in use (#18)
+    _ = load_document_map(corpus_name, store_for_settings(settings))
 
     rows: list[dict] = []
     for question_id, items in gold_chunks_by_question.items():
@@ -750,8 +755,11 @@ def summarize_seed_probe(
     seed_probe_path: str | Path,
     gold_chunks_path: str | Path,
     vector_top4_path: str | Path,
+    store: EvalStore = V1_STORE,
 ) -> dict:
     """Summarises a `diag_probe --graph-seeds` run for `06.3.4.1-SEED-PROBE.md`.
+
+    Titles come from `store`'s document map (#18; the v1.0 map by default).
 
     Every number in the probe write-up is computed here, not by hand: the
     seed-count distribution, match-kind shares, column (d) on G and on all
@@ -772,6 +780,7 @@ def summarize_seed_probe(
         gold_chunks_path,
         vector_top4_path,
         seed_probe_path,
+        store=store,
     )
     probe_by_question, probe_summary = _load_seed_probe(seed_probe_path)
     top4_by_question = _load_vector_top4_by_question(vector_top4_path)
@@ -789,7 +798,7 @@ def summarize_seed_probe(
                 publisher_names.add(_normalize_name(source))
     publisher_names.discard("")
 
-    document_map = load_document_map(corpus_name)
+    document_map = load_document_map(corpus_name, store)
     title_to_document_id = {
         entry.title: document_id for document_id, entry in document_map.entries.items()
     }

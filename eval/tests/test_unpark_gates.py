@@ -1151,7 +1151,7 @@ def test_main_writes_markdown_and_json_and_exits_zero(
     monkeypatch.setattr(
         diagnostic_module,
         "load_document_map",
-        lambda corpus_name: DocumentMap(corpus=corpus_name),
+        lambda corpus_name, store=None: DocumentMap(corpus=corpus_name),
     )
 
     corpus = "graphrag_bench"
@@ -1917,7 +1917,7 @@ def _main_fixture(
     monkeypatch.setattr(
         diagnostic_module,
         "load_document_map",
-        lambda corpus_name: DocumentMap(corpus=corpus_name),
+        lambda corpus_name, store=None: DocumentMap(corpus=corpus_name),
     )
     corpus = "graphrag_bench"
     config = load_corpus_config(corpus)

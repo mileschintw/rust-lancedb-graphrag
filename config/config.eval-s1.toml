@@ -1,0 +1,7 @@
+# S1 evaluation overlay (LANCET_ENV=eval-s1, D-251)
+# The v1.1 S1 merged-chunk store. It never shares state with the v1.0 eval store
+# (config.eval.toml: ./data/lancedb-eval, PostgreSQL schema lancet_eval). Its
+# PostgreSQL schema is lancet_eval_s1, applied with Atlas env eval-s1.
+
+[engine]
+lancedb_path = "./data/lancedb-eval-s1"
