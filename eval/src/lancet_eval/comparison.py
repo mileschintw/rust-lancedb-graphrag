@@ -200,7 +200,6 @@ TABLE_METRICS = (
     *LATENCY_COST_METRICS,
 )
 CONSTANT_YES_METRICS = ("answer_usable_p4", "answer_usable_sc3_definition")
-_ARM_SLUGS = {arm_slug(arm): arm for arm in ARM_REGISTRY}
 
 
 class ComparisonError(Exception):
@@ -1412,6 +1411,28 @@ def _require_preregistered(run: Path, git_repo: Path | None) -> None:
         )
 
 
+def _require_06_3_5_corpus(corpus: str) -> None:
+    """#34: `compare` is the 06.3.5 comparison; it refuses a corpus pre-registered else.
+
+    Its arms, Holm families, P4 rebuild and strata are fixed by `PREREGISTRATION_06_3_5`,
+    so a corpus naming another `[preregistration] token` (06.3.6, or a v1.1 stage with
+    store-prefixed arms) is refused here, before any judged dimension is looked up.
+
+    Raises:
+        ComparisonError: If the corpus cannot be loaded or names another token.
+    """
+    try:
+        token = load_corpus_config(corpus).preregistration_token
+    except Exception as exc:
+        raise ComparisonError(f"cannot load corpus {corpus!r}: {exc}") from exc
+    if token != gitcheck.PREREGISTRATION_TOKEN:
+        raise ComparisonError(
+            f"corpus {corpus!r} is pre-registered under {token}, but `compare` is "
+            f"the {gitcheck.PREREGISTRATION_TOKEN} four-arm comparison; compare this "
+            "run with `lancet-eval compare-levers`"
+        )
+
+
 def build_comparison(
     run_dir: Path | str,
     *,
@@ -1439,13 +1460,15 @@ def build_comparison(
         The validated comparison.
 
     Raises:
-        ComparisonError: If the D-73 ordering does not hold, or an input is missing,
-            stale or inconsistent with another.
+        ComparisonError: If the D-73 ordering does not hold, the run's corpus is
+            pre-registered under another token (#34), or an input is missing, stale or
+            inconsistent with another.
     """
     run = Path(run_dir)
     _require_preregistered(run, git_repo)
     report = _load_report(run)
     corpus = report.metadata.corpus
+    _require_06_3_5_corpus(corpus)
     judged = _load_judged(run, corpus)
     dims = {d.name: d for d in report.dimensions}
     pre = PREREGISTRATION_06_3_5
