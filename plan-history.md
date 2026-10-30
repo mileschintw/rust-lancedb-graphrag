@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 46 merged (moved 2026-10-30 15:02 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 46, #46 stage cap for run-external: session local_7db515c9-3df3-4e94-b36a-0f6f18740672, branch `claude/lane-46-dce2c9` @ 4d7bb524 (eval only). Required `--stage-cap`, checked before each 16-row batch against `compute_spend` over the whole journal; may overshoot by one batch, like `run`. PR #48 merged 2026-10-30 as 087d72dc on the user's "開 PR 並 merge (Recommended)" (no CI). #46 closed. No engine/target was built.
+
 ## Lane 14 merged; v1.1 code prep (#6) closed (moved 2026-10-30 14:42 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 14, #14 run-external: session local_148e4c13-9ad9-4dfa-8467-7fc587f47794, branch `claude/lane-14-f3ca8e` @ ce6faac8 (eval only; widened to `cli.py` › `export-context`'s one call to `run.write_context_export`; `context_export.py` unchanged). Batches of 16 per bin call, each appended to the journal; generation model/provider order taken from the `pack` body; reader lever `evidence_metadata` only (D-248). PR #45 merged 2026-10-30 as 00d73ff5 on the user's "開 PR 並 merge (Recommended)" (no CI). #14 and #6 closed. `engine/target` deleted. Follow-ups opened on the user's answers: #46 (stage cap), #47 (chunk_index in external provenance). Notes kept by the lane: run-external header has no `max_retries` marker; atomic export write duplicated 3x; generate's citations/answer_basis/final_answer not kept on RunRecord; `duration_ms` 0.0 for external.

@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-30 14:42 -0700
+Last updated: 2026-10-30 15:02 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -28,13 +28,13 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 46 | #46 | local_7db515c9-3df3-4e94-b36a-0f6f18740672 (`claude/lane-46-dce2c9`) | started | — |
+| — | — | none running | — | — |
 
 Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
 
 Lane 39 started 2026-10-30 13:35 -0700 on the user's typed "Start 39". Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 14, 25, 29, 30, 34, 36 and 39 merged (#6 closed with #14, PR #45) → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 14, 25, 29, 30, 34, 36, 39 and 46 merged (#6 closed with #14, PR #45) → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -46,7 +46,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
-| #46 | 1, lane 46 running | — (Refs #14) | none set | `external_run.py`, `cli.py` › `run-external`: `--stage-cap` checked between batches (opened by coordinator 2026-10-30 on the user's "run-external 加 --stage-cap (Recommended)"; needed before the S0 paid run, D-246) | free |
 | #47 | 1 | — (Refs #14, #11, #13) | none set | `engine/src/bin/generate_from_context.rs` chunk-ID parsing or `baselines/llamaindex` chunk IDs; decision first (fairness rules, RESEARCH.md) (opened by coordinator 2026-10-30 on the user's "chunk_index 公平性 (Recommended)") | limited: the fix needs the user's choice among the three options in the issue |
 | #44 | 2 (code prep closed 2026-10-30) | — | none set | pytest markers, the slow opt-in tier, `scripts/engine-test-targets.sh` (removes hardcoded counts) (opened 2026-10-30 from a forked side session on the user's request) | limited: scope it in the S2 grill round or after the S1 paid run; no lane now |
 
