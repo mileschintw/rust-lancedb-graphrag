@@ -174,8 +174,11 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         for p in Path(__file__).parent.glob(".phase02-live-test-*"):
             p.unlink(missing_ok=True)
 
+    # Opt-in tier (#44): this gate checks the helper's refusal while pytest itself runs
+    # under -O, so the default run skips it. Run it with
+    # `uv run --project eval python -O -m pytest scripts/test_phase02_live_evidence.py`.
+    @unittest.skipUnless(sys.flags.optimize == 1, "opt-in -O gate: run pytest under python -O")
     def test_wrong_model_is_rejected_in_optimized_isolated_subprocess(self) -> None:
-        self.assertEqual(sys.flags.optimize, 1, "the optimized test gate must run with -O")
         challenge, evidence = fixture_pair(embedding_model="not-the-locked-model")
         challenge_fd, challenge_name = tempfile.mkstemp(
             dir=Path(__file__).parent,

@@ -10,7 +10,6 @@ exercised in every branch (plan 06.3.6-10 Task 3, D-149, D-153, D-161).
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from pathlib import Path
 
@@ -265,10 +264,7 @@ def test_a_run_with_no_export_reports_no_evidence_dimensions(
     assert not any(n.startswith(new) for n in names)
 
 
-V1_0_RUN = "eval/runs/2026-10-06-drive2-multihop_rag_diag"
 V1_0_LEVER_RUN = "eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout"
-#: Set to 1 to re-score the v1.0 lever run of record (about eight minutes).
-RESCORE_LEVER_RUN_ENV = "LANCET_EVAL_RESCORE_LEVER_RUN"
 
 
 def _copy_run(source: Path, tmp_path: Path, *names: str) -> Path:
@@ -284,20 +280,7 @@ def _recorded(path: Path) -> dict:  # type: ignore[type-arg]
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_a_v1_0_run_of_record_re_scores_to_its_recorded_dimensions(
-    tmp_path: Path,
-) -> None:
-    source = repo_root() / V1_0_RUN
-    run = _copy_run(source, tmp_path, "journal.jsonl")
-    score_run(run_dir=run, no_judge=True)
-    recorded = _recorded(source / "report.json")
-    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
-
-
-@pytest.mark.skipif(
-    os.environ.get(RESCORE_LEVER_RUN_ENV) != "1",
-    reason=f"re-scores the v1.0 lever run of record; set {RESCORE_LEVER_RUN_ENV}=1",
-)
+@pytest.mark.slow  # about eight minutes
 def test_the_v1_0_lever_run_re_scores_and_re_compares_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

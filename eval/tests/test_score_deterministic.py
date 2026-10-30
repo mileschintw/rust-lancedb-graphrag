@@ -575,20 +575,22 @@ def _four_arm_config(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_rescore_of_the_recorded_drive2_reproduces_its_report(
     tmp_path: Path,
 ) -> None:
-    """D-101 re-score proof: every dimension of the committed drive-2 report is
-    reproduced from a tmp copy, and the recorded files are byte-identical."""
+    """D-101 re-score proof, the golden check for the v1.0 drive-2 run of record:
+    re-scoring its journal alone from a tmp copy writes every recorded dimension
+    unchanged (name, status, score, n and detail), and the recorded files stay
+    byte-identical. #44 merged `test_score_levers`'s copy of this check into it."""
     journal = _DRIVE2 / "journal.jsonl"
     report = _DRIVE2 / "report.json"
     before = (_sha(journal), _sha(report))
 
     copy = tmp_path / "drive2"
-    shutil.copytree(_DRIVE2, copy)
-    scored = score_run(run_dir=copy, no_judge=True)
+    copy.mkdir()
+    shutil.copy2(journal, copy / "journal.jsonl")
+    score_run(run_dir=copy, no_judge=True)
 
     committed = json.loads(report.read_text(encoding="utf-8"))["dimensions"]
-    got = [(d.name, d.status, d.score, d.n) for d in scored.dimensions]
-    want = [(d["name"], d["status"], d["score"], d["n"]) for d in committed]
-    assert got == want
+    rescored = json.loads((copy / "report.json").read_text(encoding="utf-8"))
+    assert rescored["dimensions"] == committed
     assert (_sha(journal), _sha(report)) == before
 
 

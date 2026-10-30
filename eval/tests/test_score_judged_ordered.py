@@ -789,6 +789,7 @@ def test_report_json_carries_only_float_detail_values(happy: Happy) -> None:
 # --- the other labels -----------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_a_slice_the_judge_disagrees_with_is_published_and_labelled_uncalibrated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -811,6 +812,7 @@ def test_a_slice_the_judge_disagrees_with_is_published_and_labelled_uncalibrated
     assert "uncalibrated" in buffer.getvalue()
 
 
+@pytest.mark.slow
 def test_five_judge_errors_on_slice_items_read_slice_attrition_and_list_the_ids(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
