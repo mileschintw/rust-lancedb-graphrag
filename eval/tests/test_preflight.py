@@ -508,3 +508,29 @@ def test_cli_preflight_refuses_an_unknown_store(
 
     assert result.exit_code == 2
     assert "eval-s2" in result.output
+
+
+def test_run_preflight_checks_without_settings_loads_the_selected_stores(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no settings passed (the CLI path), preflight loads the S1 store's path and
+    schema, so --store eval-s1 checks the S1 store even over v1.0 env values."""
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    monkeypatch.setenv("LANCET_EVAL__LANCEDB_PATH", "./data/lancedb-eval")
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag", entries={}))
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    results = run_preflight_checks(corpus_name="multihop_rag", store=S1_STORE)
+
+    isolation = next(r for r in results if r.name == "store_isolation")
+    assert isolation.passed, isolation.message
+    assert isolation.detail["eval_lancedb"] == "./data/lancedb-eval-s1"
+    assert isolation.detail["eval_schema"] == "lancet_eval_s1"

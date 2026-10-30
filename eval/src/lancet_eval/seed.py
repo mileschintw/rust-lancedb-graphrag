@@ -256,28 +256,23 @@ class DocumentMap(BaseModel):
         return None
 
 
-def get_document_map_path(corpus_name: str, store: EvalStore = V1_STORE) -> Path:
-    """Return the absolute path to a corpus's document map for `store`.
+def get_document_map_path(corpus_name: str) -> Path:
+    """Return the absolute path to a corpus's document_map.json.
 
     Resolves through the corpus's `map_corpus` indirection (D-68) so a corpus
     without its own map (e.g. a diagnostic corpus) shares another corpus's map.
     Falls back to `corpus_name` itself when the corpus config cannot be loaded.
-    The v1.0 store's map is `document_map.json`; any other store's is
-    `document_map.<store>.json` beside it, so the two never share a file (D-251).
     """
     try:
         target_corpus = load_corpus_config(corpus_name).map_corpus
     except CorpusError:
         target_corpus = corpus_name
-    filename = (
-        "document_map.json" if store == V1_STORE else f"document_map.{store.name}.json"
-    )
-    return repo_root() / "eval" / "corpora" / target_corpus / filename
+    return repo_root() / "eval" / "corpora" / target_corpus / "document_map.json"
 
 
-def load_document_map(corpus_name: str, store: EvalStore = V1_STORE) -> DocumentMap:
-    """Load the committed document map for a corpus in `store`."""
-    path = get_document_map_path(corpus_name, store)
+def load_document_map(corpus_name: str) -> DocumentMap:
+    """Load the committed document map for a corpus."""
+    path = get_document_map_path(corpus_name)
     if not path.is_file():
         raise SeedError(f"Document map not found at {path}")
     with open(path, encoding="utf-8") as f:
@@ -294,9 +289,9 @@ def load_document_map(corpus_name: str, store: EvalStore = V1_STORE) -> Document
     )
 
 
-def save_document_map_atomic(doc_map: DocumentMap, store: EvalStore = V1_STORE) -> None:
-    """Atomically write the document map of `store` to disk."""
-    path = get_document_map_path(doc_map.corpus, store)
+def save_document_map_atomic(doc_map: DocumentMap) -> None:
+    """Atomically write the document map to disk."""
+    path = get_document_map_path(doc_map.corpus)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
 
@@ -320,7 +315,6 @@ def record_index_generation(
     settings: EvalSettings,
     corpus_name: str,
     client: httpx.Client | None = None,
-    store: EvalStore = V1_STORE,
 ) -> str:
     """Probe `/rag/query` for the live index_generation and record it in the map.
 
@@ -333,7 +327,7 @@ def record_index_generation(
     """
     import httpx as httpx_module
 
-    doc_map = load_document_map(corpus_name, store)
+    doc_map = load_document_map(corpus_name)
 
     probe_query = "What hospital program helps teenage patients in Nebraska?"
     if doc_map.entries:
@@ -389,7 +383,7 @@ def record_index_generation(
         )
 
     doc_map.index_generation = observed_generation
-    save_document_map_atomic(doc_map, store)
+    save_document_map_atomic(doc_map)
     return observed_generation
 
 
@@ -425,7 +419,7 @@ def seed_corpus(
 
     # Load existing map for resume capability
     try:
-        doc_map = load_document_map(corpus_name, store)
+        doc_map = load_document_map(corpus_name)
     except Exception:
         doc_map = DocumentMap(
             corpus=corpus_name,
@@ -541,7 +535,7 @@ def seed_corpus(
                         title=title,
                         url=url,
                     )
-                    save_document_map_atomic(doc_map, store)
+                    save_document_map_atomic(doc_map)
                     break
                 else:
                     if article_attempt == max_article_attempts - 1:
@@ -559,9 +553,9 @@ def seed_corpus(
         # writer of this field is record_index_generation). Persist first so a
         # fresh, zero-new-document seed still has a map on disk to read back, then
         # reload so the returned object reflects what record_index_generation wrote.
-        save_document_map_atomic(doc_map, store)
-        record_index_generation(settings, corpus_name, client=client, store=store)
-        doc_map = load_document_map(corpus_name, store)
+        save_document_map_atomic(doc_map)
+        record_index_generation(settings, corpus_name, client=client)
+        doc_map = load_document_map(corpus_name)
     finally:
         if should_close_client:
             client.close()
@@ -606,7 +600,7 @@ def reseed_corpus(
         shutil.rmtree(eval_lance, ignore_errors=True)
 
     # Delete existing document map
-    map_path = get_document_map_path(corpus_name, store)
+    map_path = get_document_map_path(corpus_name)
     if map_path.is_file():
         map_path.unlink()
 
