@@ -332,3 +332,26 @@ def test_judged_pairs_rejects_an_arm_outside_the_population() -> None:
     p4 = build_p4(records, split, ("hybrid", "dense-only"))
     with pytest.raises(ValueError, match="not in this P4"):
         judged_pairs(records, p4, "bm25-only", "hybrid", judged_ok=lambda r: True)
+
+
+# ---- v1.1: an external arm pairs like any other arm (D-247) -------------------------
+
+
+def test_p4_pairs_a_lancet_arm_with_an_external_arm_by_each_arms_own_clauses() -> None:
+    import levers_fixture as fx
+
+    qs = fx.make_questions(4, 0)
+    split = _split(0, 0).model_copy(update={"heldout_g_ids": qs.g_ids})
+    reference = "hybrid+rerank+metadata"
+    records = [fx.make_record(reference, q, fx.Spec(), qs) for q in qs.g_ids]
+    externals = [fx.make_external_record(q, fx.Spec(), qs) for q in qs.g_ids]
+    # One external record fakes an engine snapshot: its own clause fails, so that
+    # question leaves P4 as the external arm's provenance exclusion.
+    externals[1] = externals[1].model_copy(update={"snapshot": records[1].snapshot})
+    pop = build_p4(
+        [*records, *externals], split, (reference, fx.EXTERNAL), reference_arm=reference
+    )
+    assert pop.question_ids == (qs.g_ids[0], qs.g_ids[2], qs.g_ids[3])
+    assert pop.excluded[fx.EXTERNAL].provenance == 1
+    assert pop.excluded[reference].provenance == 0
+    assert pop.pairwise_join_sizes == {fx.EXTERNAL: 3}
