@@ -14,7 +14,15 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
+from lancet_eval.config import (
+    V1_STORE,
+    EvalSettings,
+    EvalStore,
+    load_settings,
+    pg_schema_of,
+    repo_root,
+    store_target_failures,
+)
 from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
 from lancet_eval.evidence_meta import normalise
 
@@ -63,6 +71,16 @@ def assert_schema_isolated(settings: EvalSettings) -> str:
         )
 
     return eval_schema
+
+
+def assert_store_target(settings: EvalSettings, store: EvalStore) -> None:
+    """Raise unless `settings` target `store` (D-251): an S1 call never touches v1.0."""
+    failures = store_target_failures(settings, store)
+    if failures:
+        raise SeedError(
+            f"Eval store {store.name!r} is not the store the settings target: "
+            + "; ".join(failures)
+        )
 
 
 def assert_admin_dsn_targets_eval_database(eval_dsn: str, admin_dsn: str) -> None:
@@ -155,8 +173,9 @@ def run_psql(settings: EvalSettings, sql: str, *, timeout_s: float = 30.0) -> st
     return res.stdout
 
 
-def reset_eval_schema(settings: EvalSettings) -> None:
-    """Reset the PostgreSQL eval schema via drop/create and Atlas apply."""
+def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> None:
+    """Reset the store's PostgreSQL schema via drop/create and its Atlas env."""
+    assert_store_target(settings, store)
     schema_name = assert_schema_isolated(settings)
     assert_admin_dsn_targets_eval_database(
         settings.database_url, settings.dev_database_url
@@ -173,7 +192,7 @@ def reset_eval_schema(settings: EvalSettings) -> None:
 
     gateway_dir = repo_root() / "gateway"
     res_atlas = subprocess.run(
-        ["atlas", "schema", "apply", "--env", "eval", "--auto-approve"],
+        ["atlas", "schema", "apply", "--env", store.name, "--auto-approve"],
         cwd=gateway_dir,
         capture_output=True,
         text=True,
@@ -368,11 +387,13 @@ def seed_corpus(
     corpus_name: str,
     client: httpx.Client | None = None,
     settings: EvalSettings | None = None,
+    store: EvalStore = V1_STORE,
 ) -> DocumentMap:
-    """Seed documents for a corpus into the isolated evaluation store."""
+    """Seed documents for a corpus into the isolated evaluation store `store`."""
     import httpx
 
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
+    assert_store_target(settings, store)
     _ = load_corpus(corpus_name)
     subset_path = (
         repo_root() / "eval" / "corpora" / corpus_name / "documents.subset.jsonl"
@@ -535,15 +556,21 @@ def reseed_corpus(
     confirmation: bool = False,
     client: httpx.Client | None = None,
     settings: EvalSettings | None = None,
+    store: EvalStore = V1_STORE,
 ) -> DocumentMap:
-    """Drop the eval store and re-seed from scratch."""
+    """Drop the eval store `store` and re-seed it from scratch.
+
+    With a store other than v1.0 selected, the v1.0 path and schema are refused before
+    anything is dropped or deleted (D-251).
+    """
     if not confirmation:
         raise SeedError(
             "Reseeding is destructive and clears the evaluation store. "
             "Pass confirmation=True (--confirm) to proceed."
         )
 
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
+    assert_store_target(settings, store)
 
     # Verify store isolation before destroying anything
     eval_lance = Path(settings.lancedb_path).resolve()
@@ -554,7 +581,7 @@ def reseed_corpus(
         )
 
     # Verify and reset PostgreSQL eval schema before touching LanceDB
-    reset_eval_schema(settings)
+    reset_eval_schema(settings, store)
 
     # Clean eval LanceDB directory
     if eval_lance.exists():
@@ -565,4 +592,4 @@ def reseed_corpus(
     if map_path.is_file():
         map_path.unlink()
 
-    return seed_corpus(corpus_name, client=client, settings=settings)
+    return seed_corpus(corpus_name, client=client, settings=settings, store=store)

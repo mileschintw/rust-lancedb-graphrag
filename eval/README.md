@@ -46,6 +46,27 @@ LANCET_ENV=eval LANCET_GATEWAY__DATABASE_URL='postgres://postgres:postgres@127.0
 
 To check a stack that is not the isolated eval store (for example the quickstart stack in the top-level `README.md`), run `uv run --project eval lancet-eval preflight --stack`. It needs no eval store and writes nothing under `eval/runs/`.
 
+### 3. The S1 Store (D-251)
+
+v1.1 S1 builds its merged-chunk store next to the v1.0 store and never touches it:
+
+| Store (`--store`) | Overlay (`LANCET_ENV`) | LanceDB path | PostgreSQL schema | Atlas env |
+|---|---|---|---|---|
+| `eval` (default, v1.0) | `eval`, `config/config.eval.toml` | `./data/lancedb-eval` | `lancet_eval` | `eval` |
+| `eval-s1` (S1) | `eval-s1`, `config/config.eval-s1.toml` | `./data/lancedb-eval-s1` | `lancet_eval_s1` | `eval-s1` |
+
+`seed`, `reseed` and `preflight` take `--store`. With `--store eval-s1` the harness uses the S1 path and schema whatever `eval/config.toml` or `LANCET_EVAL__*` name, refuses `./data/lancedb-eval` and `lancet_eval` before it drops or deletes anything, and fails when the overlay's `lancedb_path` differs from the harness's path. Preflight's `store_isolation` row names the store, path and schema it checked. Without `--store`, every command behaves as before. `--stack` takes no `--store`.
+
+```bash
+docker exec lancet-postgres psql -U postgres -d lancet -c "CREATE SCHEMA IF NOT EXISTS lancet_eval_s1;"
+(cd gateway && atlas schema apply --env eval-s1 --auto-approve)
+LANCET_ENV=eval-s1 ./engine/target/debug/engine
+(cd gateway && LANCET_ENV=eval-s1 LANCET_GATEWAY__DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval_s1' go run .)
+uv run --project eval lancet-eval preflight --store eval-s1 --corpus <S1 corpus>
+```
+
+`gateway/db/schema.eval-s1.hcl` is `schema.eval.hcl` with the schema renamed to `lancet_eval_s1` (a test checks they match), so both eval schemas get the same tables.
+
 ## Running Commands
 
 All evaluation commands are executed from the **repository root** using `uv run --project eval`:
@@ -140,7 +161,7 @@ Perform a manual end-to-end spot-check on roughly 10 scored records (question, r
 | `lancet-eval score` | **Implemented** | Plans 06.3-05 / 06.3-06 | Compute offline IR metrics or cached LLM-as-judge scores |
 | `lancet-eval report` | **Implemented** | Plan 06.3-07 | Emit final dated Markdown and JSON evaluation reports |
 
-> **Note on `reseed` implementation:** `lancet-eval reseed` executes a guarded drop-and-recreate of the isolated `lancet_eval` PostgreSQL schema (via direct SQL drop/recreate followed by `atlas schema apply --env eval`) and wipes the evaluation LanceDB directory (`./data/lancedb-eval`). Destructive resets fail closed if the target schema is blank, default (`public`), or collides with the dev database/schema.
+> **Note on `reseed` implementation:** `lancet-eval reseed` executes a guarded drop-and-recreate of the isolated `lancet_eval` PostgreSQL schema (via direct SQL drop/recreate followed by `atlas schema apply --env eval`) and wipes the evaluation LanceDB directory (`./data/lancedb-eval`). Destructive resets fail closed if the target schema is blank, default (`public`), or collides with the dev database/schema. `reseed --store eval-s1` resets `lancet_eval_s1` with `atlas schema apply --env eval-s1` and wipes only `./data/lancedb-eval-s1`. It refuses the v1.0 path and schema before any reset.
 
 ## Offline Testing
 

@@ -165,6 +165,17 @@ def preflight_command(
             help="With --stack: the quickstart arm canary manifest (qs- question IDs).",
         ),
     ] = Path("eval/corpora/quickstart/canary.arms.jsonl"),
+    store: Annotated[
+        str | None,
+        typer.Option(
+            "--store",
+            help=(
+                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
+                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
+                "v1.0 path and schema are refused."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Run preflight health, isolation, and model checks."""
     from rich.markup import escape
@@ -173,11 +184,11 @@ def preflight_command(
     from lancet_eval import preflight as preflight_module
 
     if stack:
-        if judged or accept_known_miss:
+        if judged or accept_known_miss or store is not None:
             console.print(
-                "[bold red]--stack cannot be combined with --judged or "
-                "--accept-known-miss: it runs no OpenRouter or known-miss check."
-                "[/bold red]"
+                "[bold red]--stack cannot be combined with --judged, "
+                "--accept-known-miss or --store: it runs no OpenRouter, known-miss "
+                "or eval-store check.[/bold red]"
             )
             raise typer.Exit(code=2)
         results = preflight_module.run_stack_preflight(load_settings(), canaries)
@@ -186,7 +197,16 @@ def preflight_command(
         accepted = _parse_accepted_known_misses(
             accept_known_miss or [], preflight_module
         )
-        if accepted:
+        if store is not None:
+            eval_store = _resolve_store(store)
+            results = preflight_module.run_preflight_checks(
+                corpus_name=corpus,
+                judged=judged,
+                settings=load_settings(store=eval_store),
+                accepted_known_misses=accepted,
+                store=eval_store,
+            )
+        elif accepted:
             results = preflight_module.run_preflight_checks(
                 corpus_name=corpus, judged=judged, accepted_known_misses=accepted
             )
@@ -259,6 +279,19 @@ def _parse_accepted_known_misses(values: list[str], preflight_module: Any) -> li
         raise typer.Exit(code=2) from exc
 
 
+def _resolve_store(name: str) -> Any:
+    """Resolve a --store value to its EvalStore; exit 2 on an unknown name."""
+    from rich.markup import escape
+
+    from lancet_eval.config import EvalConfigError, get_eval_store
+
+    try:
+        return get_eval_store(name)
+    except EvalConfigError as exc:
+        console.print(f"[bold red]Rejected --store:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=2) from exc
+
+
 def _known_miss_line(entry: dict[str, Any]) -> str:
     """One console line for a D-94 accepted-known-miss outcome."""
     from rich.markup import escape
@@ -287,12 +320,24 @@ def seed_command(
             help="Corpus to seed (e.g. multihop_rag)",
         ),
     ] = "multihop_rag",
+    store: Annotated[
+        str | None,
+        typer.Option(
+            "--store",
+            help=(
+                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
+                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
+                "v1.0 path and schema are refused."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Seed benchmark documents into evaluation store."""
+    eval_store = _resolve_store(store or "eval")
     try:
         from lancet_eval.seed import seed_corpus
 
-        doc_map = seed_corpus(corpus)
+        doc_map = seed_corpus(corpus, store=eval_store)
         console.print(
             f"[green]Corpus '{corpus}' seeded successfully "
             f"({len(doc_map.entries)} documents mapped).[/green]"
@@ -319,12 +364,24 @@ def reseed_command(
             help="Confirm destructive drop and recreation of evaluation store",
         ),
     ] = False,
+    store: Annotated[
+        str | None,
+        typer.Option(
+            "--store",
+            help=(
+                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
+                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
+                "v1.0 path and schema are refused."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Reseed evaluation store with clean schema."""
+    eval_store = _resolve_store(store or "eval")
     try:
         from lancet_eval.seed import reseed_corpus
 
-        doc_map = reseed_corpus(corpus, confirmation=confirm)
+        doc_map = reseed_corpus(corpus, confirmation=confirm, store=eval_store)
         console.print(
             f"[green]Corpus '{corpus}' reseeded successfully "
             f"({len(doc_map.entries)} documents mapped).[/green]"

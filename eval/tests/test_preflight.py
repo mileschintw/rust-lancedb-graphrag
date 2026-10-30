@@ -9,6 +9,7 @@ from pytest_httpx import HTTPXMock
 
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.preflight import (
+    PreflightCheckResult,
     check_corpus_generation,
     check_gateway_and_engine,
     check_index_identity,
@@ -331,3 +332,181 @@ def test_gateway_failure_message_names_service_and_remedy(
     assert "gateway is down" in eng_check.message.lower()
     assert "engine failed" not in eng_check.message.lower()
 
+
+# --- S1 store isolation (D-251) ------------------------------------------------------
+
+
+def _store_settings(lancedb_path: str, schema: str) -> EvalSettings:
+    return EvalSettings(
+        lancedb_path=lancedb_path,
+        dev_lancedb_path="./data/lancedb",
+        database_url=f"postgres://localhost/lancet?search_path={schema}",
+        dev_database_url="postgres://localhost/lancet?search_path=public",
+    )
+
+
+@pytest.fixture
+def s1_overlay_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A temp repo root and cwd whose S1 overlay names the S1 path."""
+    monkeypatch.setattr("lancet_eval.config.repo_root", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "config.eval-s1.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval-s1"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_store_isolation_reports_the_s1_store_and_schema_it_checked(
+    s1_overlay_root: Path,
+) -> None:
+    from lancet_eval.config import S1_STORE
+
+    res = check_store_isolation(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"), S1_STORE
+    )
+
+    assert res.passed, res.message
+    assert "eval-s1" in res.message
+    assert "./data/lancedb-eval-s1" in res.message
+    assert "lancet_eval_s1" in res.message
+    assert res.detail["store"] == "eval-s1"
+    assert res.detail["eval_schema"] == "lancet_eval_s1"
+    assert res.detail["overlay_lancedb"] == "./data/lancedb-eval-s1"
+
+
+@pytest.mark.parametrize(
+    ("lancedb_path", "schema", "refused"),
+    [
+        ("./data/lancedb-eval", "lancet_eval_s1", "data/lancedb-eval"),
+        ("./data/lancedb-eval-s1", "lancet_eval", "lancet_eval"),
+    ],
+)
+def test_store_isolation_with_s1_selected_refuses_the_v1_store(
+    s1_overlay_root: Path, lancedb_path: str, schema: str, refused: str
+) -> None:
+    from lancet_eval.config import S1_STORE
+
+    res = check_store_isolation(_store_settings(lancedb_path, schema), S1_STORE)
+
+    assert not res.passed
+    assert "v1.0" in res.message
+    assert refused in res.message.replace("\\", "/")
+
+
+def test_store_isolation_fails_when_overlay_and_harness_paths_differ(
+    s1_overlay_root: Path,
+) -> None:
+    """The engine reads its store from the overlay, the harness from its settings;
+    preflight fails when the two name different paths."""
+    from lancet_eval.config import S1_STORE
+
+    (s1_overlay_root / "config" / "config.eval-s1.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval-s1-old"\n', encoding="utf-8"
+    )
+    res = check_store_isolation(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"), S1_STORE
+    )
+
+    assert not res.passed
+    assert "overlay" in res.message
+    assert "./data/lancedb-eval-s1-old" in res.message
+
+
+def test_store_isolation_fails_when_the_s1_overlay_is_missing(
+    s1_overlay_root: Path,
+) -> None:
+    from lancet_eval.config import S1_STORE
+
+    (s1_overlay_root / "config" / "config.eval-s1.toml").unlink()
+    res = check_store_isolation(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"), S1_STORE
+    )
+
+    assert not res.passed
+    assert "overlay" in res.message
+
+
+def test_store_isolation_default_store_reports_eval_and_lancet_eval(
+    tmp_path: Path,
+) -> None:
+    """v1.0 behaviour is unchanged (any isolated path passes); the result now names the
+    store and schema it checked."""
+    res = check_store_isolation(
+        _store_settings(str(tmp_path / "lancedb-eval"), "lancet_eval")
+    )
+
+    assert res.passed, res.message
+    assert "'eval'" in res.message
+    assert "lancet_eval" in res.message
+    assert res.detail["store"] == "eval"
+
+
+def test_run_preflight_checks_passes_the_selected_store_to_store_isolation(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag", entries={}))
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    results = run_preflight_checks(
+        corpus_name="multihop_rag",
+        settings=_store_settings("./data/lancedb-eval", "lancet_eval"),
+        store=S1_STORE,
+    )
+
+    isolation = next(r for r in results if r.name == "store_isolation")
+    assert not isolation.passed
+    assert "v1.0" in isolation.message
+
+
+def test_cli_preflight_store_option_selects_the_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval import preflight as preflight_module
+    from lancet_eval.cli import app
+    from lancet_eval.config import S1_STORE
+
+    seen: dict[str, object] = {}
+
+    def fake_checks(**kwargs: object) -> list[PreflightCheckResult]:
+        seen.update(kwargs)
+        return [PreflightCheckResult(name="store_isolation", passed=True, message="ok")]
+
+    monkeypatch.setattr(preflight_module, "run_preflight_checks", fake_checks)
+    result = CliRunner().invoke(app, ["preflight", "--store", "eval-s1"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["store"] is S1_STORE
+    settings = seen["settings"]
+    assert isinstance(settings, EvalSettings)
+    assert settings.lancedb_path == S1_STORE.lancedb_path
+
+
+def test_cli_preflight_refuses_an_unknown_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval import preflight as preflight_module
+    from lancet_eval.cli import app
+
+    monkeypatch.setattr(
+        preflight_module,
+        "run_preflight_checks",
+        lambda **k: pytest.fail("an unknown store must not reach preflight"),
+    )
+    result = CliRunner().invoke(app, ["preflight", "--store", "eval-s2"])
+
+    assert result.exit_code == 2
+    assert "eval-s2" in result.output

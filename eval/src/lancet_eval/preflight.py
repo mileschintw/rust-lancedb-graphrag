@@ -11,7 +11,16 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
+from lancet_eval.config import (
+    V1_STORE,
+    EvalSettings,
+    EvalStore,
+    load_settings,
+    overlay_lancedb_path,
+    pg_schema_of,
+    repo_root,
+    store_target_failures,
+)
 from lancet_eval.seed import load_document_map
 
 if TYPE_CHECKING:
@@ -187,8 +196,14 @@ def validate_accepted_known_misses(
     return tuple(misses)
 
 
-def check_store_isolation(settings: EvalSettings) -> PreflightCheckResult:
-    """Verify evaluation store isolation from development store paths."""
+def check_store_isolation(
+    settings: EvalSettings, store: EvalStore = V1_STORE
+) -> PreflightCheckResult:
+    """Verify the eval store is isolated from dev and is the selected `store`.
+
+    For a store other than v1.0 it also refuses the v1.0 path and schema, and fails when
+    the store's overlay and the harness name different LanceDB paths (D-251).
+    """
     eval_lance = str(Path(settings.lancedb_path).resolve())
     dev_lance = str(Path(settings.dev_lancedb_path).resolve())
 
@@ -215,14 +230,29 @@ def check_store_isolation(settings: EvalSettings) -> PreflightCheckResult:
             ),
         )
 
+    detail = {
+        "store": store.name,
+        "eval_lancedb": settings.lancedb_path,
+        "eval_schema": eval_schema,
+        "overlay_lancedb": overlay_lancedb_path(store),
+    }
+    failures = store_target_failures(settings, store)
+    if failures:
+        return PreflightCheckResult(
+            name="store_isolation",
+            passed=False,
+            message=f"Eval store {store.name!r}: " + "; ".join(failures),
+            detail=detail,
+        )
+
     return PreflightCheckResult(
         name="store_isolation",
         passed=True,
-        message="Eval LanceDB and PostgreSQL schema are fully isolated from dev.",
-        detail={
-            "eval_lancedb": settings.lancedb_path,
-            "eval_schema": eval_schema,
-        },
+        message=(
+            f"Eval store {store.name!r} (LanceDB {settings.lancedb_path}, PostgreSQL "
+            f"schema {eval_schema}) is fully isolated from dev."
+        ),
+        detail=detail,
     )
 
 
@@ -1522,8 +1552,9 @@ def run_preflight_checks(
     client: httpx.Client | None = None,
     generation_model: str = "deepseek/deepseek-v4-flash-0731",
     accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
+    store: EvalStore = V1_STORE,
 ) -> list[PreflightCheckResult]:
-    """Execute the full preflight checklist and return all results.
+    """Execute the full preflight checklist against `store` and return all results.
 
     Raises ``PreflightError`` before any check or request when an accepted known miss
     (D-94) is not the registered one.
@@ -1531,7 +1562,7 @@ def run_preflight_checks(
     import httpx
 
     validate_accepted_known_misses(accepted_known_misses)
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
     results: list[PreflightCheckResult] = []
 
     # 0. Drive environment (06.4 D-199): the first check, before the corpus config load
@@ -1565,7 +1596,7 @@ def run_preflight_checks(
     )
 
     # 1. Store isolation
-    results.append(check_store_isolation(settings))
+    results.append(check_store_isolation(settings, store))
 
     # 2. Index identity (must agree across stores before any live check runs)
     results.append(check_index_identity(settings, corpus_name))

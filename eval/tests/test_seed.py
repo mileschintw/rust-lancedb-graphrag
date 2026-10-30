@@ -496,3 +496,275 @@ def test_seed_corpus_omits_absent_evidence_metadata_fields(
     assert 'name="doc_title"' in body
     assert 'name="source"' not in body
     assert 'name="published_date"' not in body
+
+
+# --- S1 store isolation (D-251) ------------------------------------------------------
+
+
+def _s1_layout(root: Path) -> tuple[Path, Path]:
+    """Lay out a repo-shaped temp dir holding both stores, each with a canary file."""
+    (root / "config").mkdir()
+    (root / "config" / "config.eval-s1.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval-s1"\n', encoding="utf-8"
+    )
+    canaries = []
+    for name in ("lancedb-eval", "lancedb-eval-s1"):
+        store_dir = root / "data" / name
+        store_dir.mkdir(parents=True)
+        canary = store_dir / "canary.txt"
+        canary.write_text("survives", encoding="utf-8")
+        canaries.append(canary)
+    return canaries[0], canaries[1]
+
+
+def _s1_settings(lancedb_path: str, schema: str) -> EvalSettings:
+    return EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=lancedb_path,
+        dev_lancedb_path="./data/lancedb",
+        database_url=(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable"
+            f"&search_path={schema}"
+        ),
+        dev_database_url="postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable",
+    )
+
+
+@pytest.fixture
+def s1_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """A temp repo root (cwd included) with both stores; subprocess must never run."""
+    import subprocess
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("lancet_eval.config.repo_root", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kw: pytest.fail(f"a refused reseed ran {cmd!r}"),
+    )
+    return _s1_layout(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("lancedb_path", "schema", "refused"),
+    [
+        ("./data/lancedb-eval", "lancet_eval_s1", "data/lancedb-eval"),
+        ("./data/lancedb-eval-s1", "lancet_eval", "lancet_eval"),
+        ("./data/lancedb-eval", "lancet_eval", "data/lancedb-eval"),
+    ],
+)
+def test_s1_reseed_refuses_the_v1_store_and_deletes_nothing(
+    s1_repo: tuple[Path, Path], lancedb_path: str, schema: str, refused: str
+) -> None:
+    """D-251: with the S1 store selected, reseed refuses the v1.0 path or schema before
+    any psql, Atlas or file deletion, so both stores' files survive."""
+    from lancet_eval.config import S1_STORE
+
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match="v1.0") as exc_info:
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings(lancedb_path, schema),
+            store=S1_STORE,
+        )
+
+    assert refused in str(exc_info.value).replace("\\", "/")
+    assert v1_canary.read_text(encoding="utf-8") == "survives"
+    assert s1_canary.read_text(encoding="utf-8") == "survives"
+
+
+def test_s1_seed_refuses_the_v1_store(s1_repo: tuple[Path, Path]) -> None:
+    """D-251: seed with the S1 store selected refuses the v1.0 path before uploading."""
+    from lancet_eval.config import S1_STORE
+
+    with pytest.raises(SeedError, match="v1.0"):
+        seed_corpus(
+            "multihop_rag",
+            settings=_s1_settings("./data/lancedb-eval", "lancet_eval_s1"),
+            store=S1_STORE,
+        )
+
+
+def test_s1_reseed_refuses_settings_that_name_another_store(
+    s1_repo: tuple[Path, Path],
+) -> None:
+    """A path or schema that is neither store's is refused too: the S1 store is named
+    explicitly, and the settings must target exactly it."""
+    from lancet_eval.config import S1_STORE
+
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match="lancet_eval_other"):
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_other"),
+            store=S1_STORE,
+        )
+    assert v1_canary.exists()
+    assert s1_canary.exists()
+
+
+def test_s1_reseed_refuses_an_overlay_that_points_elsewhere(
+    s1_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """The engine reads its store from the overlay; a harness that targets the S1 path
+    while the overlay names another path is refused before anything is reset."""
+    from lancet_eval.config import S1_STORE
+
+    (tmp_path / "config" / "config.eval-s1.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval"\n', encoding="utf-8"
+    )
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match="overlay"):
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+            store=S1_STORE,
+        )
+    assert v1_canary.exists()
+    assert s1_canary.exists()
+
+
+def test_s1_reseed_resets_only_the_s1_schema_and_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-251: an S1 reseed drops lancet_eval_s1, applies Atlas env eval-s1, and removes
+    only data/lancedb-eval-s1; the v1.0 store directory survives."""
+    import subprocess
+
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("lancet_eval.config.repo_root", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    v1_canary, s1_canary = _s1_layout(tmp_path)
+
+    calls: list[tuple[list[str], str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((cmd, str(kwargs.get("input") or "")))
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "lancet_eval.seed.seed_corpus",
+        lambda corpus, **kw: DocumentMap(corpus=corpus),
+    )
+
+    reseed_corpus(
+        "multihop_rag",
+        confirmation=True,
+        settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        store=S1_STORE,
+    )
+
+    psql_sql = calls[0][1]
+    assert 'DROP SCHEMA IF EXISTS "lancet_eval_s1" CASCADE;' in psql_sql
+    assert '"lancet_eval"' not in psql_sql
+    atlas_apply = ["atlas", "schema", "apply", "--env", "eval-s1", "--auto-approve"]
+    assert calls[1][0] == atlas_apply
+    assert not s1_canary.exists()
+    assert v1_canary.read_text(encoding="utf-8") == "survives"
+
+
+def test_v1_reseed_still_applies_atlas_env_eval(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default store is unchanged: reseed without a store applies Atlas env eval."""
+    import subprocess
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(cmd)
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        "lancet_eval.seed.seed_corpus",
+        lambda corpus, **kw: DocumentMap(corpus=corpus),
+    )
+    settings = EvalSettings(
+        gateway_url="http://testgateway:8080",
+        lancedb_path=str(tmp_path / "lancedb-eval"),
+        dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+    )
+
+    reseed_corpus("multihop_rag", confirmation=True, settings=settings)
+
+    assert calls[1] == ["atlas", "schema", "apply", "--env", "eval", "--auto-approve"]
+
+
+def test_load_settings_for_the_s1_store_selects_its_path_and_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selecting the S1 store sets its path and schema even over v1.0 env values, and
+    keeps the rest of the DSN; the default store reads settings as before."""
+    from lancet_eval.config import S1_STORE, load_settings, pg_schema_of
+
+    monkeypatch.setenv("LANCET_EVAL__LANCEDB_PATH", "./data/lancedb-eval")
+    monkeypatch.setenv(
+        "LANCET_EVAL__DATABASE_URL",
+        "postgres://u:p@db.local:6543/lancet?sslmode=disable&search_path=lancet_eval",
+    )
+    missing = tmp_path / "absent.toml"
+
+    s1 = load_settings(missing, store=S1_STORE)
+    assert s1.lancedb_path == "./data/lancedb-eval-s1"
+    assert pg_schema_of(s1.database_url) == "lancet_eval_s1"
+    assert s1.database_url.startswith("postgres://u:p@db.local:6543/lancet?")
+    assert "sslmode=disable" in s1.database_url
+
+    v1 = load_settings(missing)
+    assert v1.lancedb_path == "./data/lancedb-eval"
+    assert pg_schema_of(v1.database_url) == "lancet_eval"
+
+
+def test_get_eval_store_names_both_stores_and_refuses_others() -> None:
+    from lancet_eval.config import (
+        S1_STORE,
+        V1_STORE,
+        EvalConfigError,
+        get_eval_store,
+    )
+
+    assert get_eval_store("eval") is V1_STORE
+    assert get_eval_store("eval-s1") is S1_STORE
+    with pytest.raises(EvalConfigError, match="eval, eval-s1"):
+        get_eval_store("eval-s2")
+
+
+def test_committed_overlays_name_their_store_paths() -> None:
+    """Each store's committed LANCET_ENV overlay names that store's LanceDB path, and
+    the v1.0 overlay is unchanged."""
+    from lancet_eval.config import EVAL_STORES, overlay_lancedb_path
+
+    for store in EVAL_STORES.values():
+        assert overlay_lancedb_path(store) == store.lancedb_path, store.name
+
+
+def test_atlas_env_eval_s1_applies_the_eval_schema_renamed() -> None:
+    """D-251: Atlas env eval-s1 targets lancet_eval_s1 with the same tables as env
+    eval: its schema file is schema.eval.hcl with only the schema name changed."""
+    import re
+
+    from lancet_eval.config import repo_root
+
+    gateway = repo_root() / "gateway"
+    atlas = (gateway / "atlas.hcl").read_text(encoding="utf-8")
+    env_block = re.search(r'env "eval-s1" \{(.*?)\n\}', atlas, re.S)
+    assert env_block is not None
+    assert 'src = "file://db/schema.eval-s1.hcl"' in env_block.group(1)
+    assert "url = var.eval_s1_db_url" in env_block.group(1)
+    assert re.search(
+        r'variable "eval_s1_db_url" \{[^}]*search_path=lancet_eval_s1"', atlas
+    )
+
+    v1 = (gateway / "db" / "schema.eval.hcl").read_text(encoding="utf-8")
+    s1 = (gateway / "db" / "schema.eval-s1.hcl").read_text(encoding="utf-8")
+    renamed = re.sub(r"\blancet_eval\b", "lancet_eval_s1", v1)
+    assert s1.splitlines() == renamed.splitlines()
