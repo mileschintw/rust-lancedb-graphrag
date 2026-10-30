@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-29 22:38 -0700
+Last updated: 2026-10-29 22:52 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -19,7 +19,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 4. #15 adds the pre-registration type that carries external pipelines (e.g. `@dataclass(frozen=True) class StagePreRegistration(LeverPreRegistration): external_pipelines: tuple[tuple[str, ExternalPipeline], ...] = ()` in `thresholds.py`), type only, no stage constant. User's words (2026-10-29 21:35 -0700), answering lane 12's question: "放進 #15 (Recommended)". Copy into #15's brief; also: #14 fills `generation_model`/`generation_provider_order` in the `external` block from what the generate-only bin actually sent (lane 12 report).
 5. #25 (clippy `-D warnings` on main) gets a lane, started only after #11 and #23 have both merged. User's words (2026-10-29 21:58 -0700), answering "When should the #25 clippy lane start?": "After #11 and #23". When both merge: write `briefs/25.md`, then start it in the next turn the user types (the app refuses starts from event turns); this answer is the go-ahead. #11's "cargo clippy passes" criterion is carried by #25; say so in lane 11's PR body.
 
-6. The LlamaIndex baseline (#13) sends the rerank model only the chunk body, as Lancet does, not LlamaIndex's metadata header plus body (fairness rule 5, `experiments/v1.1/RESEARCH.md`). User's words (2026-10-29 22:38 -0700), answering lane 13's open question: "改成只送內文 (Recommended)". Sent to lane 13. PR and merge approved in the same answer set: "開 PR 並 merge (Recommended)", to merge once lane 13 pushes the change and `ready` lists it again.
+6. The LlamaIndex baseline (#13) sends the rerank model only the chunk body, as Lancet does, not LlamaIndex's metadata header plus body (fairness rule 5, `experiments/v1.1/RESEARCH.md`). User's words (2026-10-29 22:38 -0700), answering lane 13's open question: "改成只送內文 (Recommended)". Sent to lane 13. Done: lane 13 pushed f3b462e0; PR #31 merged on the user's "開 PR 並 merge (Recommended)" from the same answer set.
 
 Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo uses no triage labels"), opened 2026-10-29 19:21 -0700 outside relay; left to the user.
 
@@ -28,11 +28,10 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
-| 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | review; builds Rust on C: via CARGO_TARGET_DIR | — |
 | 15 | #15 | local_3028b84a-992d-4853-9f02-e64406d045c5 (worktree `lane-15-d4af27`, branch `claude/lane-15-d4af27`) | started | — |
 | 23 | #23 | local_152dde96-4043-4687-bcae-ec7c450545a5 (worktree `lane-23-737211`, branch `claude/lane-23-737211`) | started | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 16 and 20 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 13, 16 and 20 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -46,11 +45,12 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 |---|---|---|---|---|---|
 | #6 | — | — | — | spec only | limited: parent spec |
 | #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
-| #13 | 1 | #7 (closed) | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #15 | 1 | #8, #9, #12, #18 all closed | none set | `corpus.py`, `test_run_arms.py`; plus `StagePreRegistration` type in `thresholds.py` (ruling 4) | free |
 | #23 | 1 | — | none set | engine lib timing tests: `startup_recovery_exceeds_queue_capacity_without_deadlock`, `telemetry_metrics_corpus_generation_gauge_is_numeric`, `telemetry_ingest::index_rebuild_*` (flaky under load; opened by lane 16, lane 12 saw it too) | free |
 | #25 | 2 (ruling 5: after #11 and #23 merge) | — | none set | clippy `-D warnings` fixes across engine lib, lib tests and two bins (opened by lane 11, 2026-10-29 21:45); shares `engine/src/tests.rs` with #23 and `src/generation/` with #11: start after #11 and #23 merge, or name owners per section | free |
+| #29 | 2 (after #15 merges) | — (Refs #15) | none set | `raw_events.py` › raw-event dir naming for store-prefixed arms (opened by lane 15, 2026-10-29 22:06) | free |
+| #30 | 2 (after #15 merges) | — (Refs #15) | none set | `score.py` › judged-dimensions arm list, `calibration.py` draw: use `in_registry_order` (opened by lane 15; blocks nothing for S1, which has no judge) | free |
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 

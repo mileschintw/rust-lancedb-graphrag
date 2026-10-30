@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 13 merged (moved 2026-10-29 22:52 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 13, #13 LlamaIndex baseline project: session local_2cb496f3-680b-426e-b0e7-d4710ae7e26c, branch `claude/lane-13-08d1ed` @ f3b462e0 (rerank on chunk text only, ruling 6). PR #31 merged 2026-10-29 as 059c7513 on the user's "開 PR 並 merge (Recommended)" (no CI). #13 closed. `engine/target` and its C: scratchpad target deleted. Live `input_type` and 346-doc export checks deferred to S0 (plan › Waiting for the user to be present). Notes: `baselines/llamaindex/uv.lock` locks the harness deps, so any `eval/pyproject.toml` change needs `uv lock` there too; `write_outputs` replaces two files in sequence.
+
 ## Lanes 10 and 20 merged (moved 2026-10-29 22:08 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 10, #10 Evidence Hits@4 and context tokens: session local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e, branch `claude/lane-10-ea13ed` @ 3d1305fd. PR #27 merged 2026-10-29 as e7a3dfe5 on the user's "開 PR 並 merge (Recommended)" (no CI). #10 closed. Adds `tiktoken` to eval. Opt-in v1.0 lever re-score test: `LANCET_EVAL_RESCORE_LEVER_RUN=1` (~9.5 min). `engine/target` deleted.
