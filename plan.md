@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-29 23:03 -0700
+Last updated: 2026-10-29 23:20 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -49,6 +49,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #25 | 2 (ruling 5: after #11; #23 merged) | — | none set | clippy `-D warnings` fixes across engine lib, lib tests and two bins (opened by lane 11, 2026-10-29 21:45); shares `engine/src/tests.rs` with #23 and `src/generation/` with #11: start after #11 and #23 merge, or name owners per section | free |
 | #29 | 1 (lane 29 running) | — (Refs #15) | none set | `raw_events.py` › raw-event dir naming for store-prefixed arms (opened by lane 15, 2026-10-29 22:06) | free |
 | #30 | 1 (lane 30 running) | — (Refs #15) | none set | `score.py` › judged-dimensions arm list, `calibration.py` draw: use `in_registry_order` (opened by lane 15; blocks nothing for S1, which has no judge) | free |
+| #34 | 2 (after #30 merges; shares `comparison.py` reads with #30's judged slugs) | — (Refs #30) | none set | `comparison.py` › `build_comparison` arm list, `_ARM_SLUGS` (opened by lane 30, 2026-10-29; blocks nothing planned: S1 uses `compare-levers`) | free |
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 
