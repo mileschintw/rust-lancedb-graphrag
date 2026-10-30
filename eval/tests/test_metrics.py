@@ -22,7 +22,9 @@ from lancet_eval.metrics import (
     answer_usable,
     boundary_attributable,
     context_precision_at_k,
+    context_tokens,
     em_f1,
+    evidence_hit_at_4,
     extract_final_answer,
     fact_matches_excerpt,
     final_answer_em,
@@ -955,3 +957,39 @@ def test_abstention_leak_counts_only_non_abstaining_prose_matches() -> None:
     # a plain committed answer is not a leak
     assert abstention_leak(_rec("Answer: Yes")) is False
     assert abstention_leak(_rec("")) is False
+
+
+# --- D-250 evidence Hits@4 and context tokens (#10) ----------------------------------
+
+_FACT = "The bridge opened in 1932."
+_FILLER = "Unrelated filler text."
+
+
+def test_evidence_hit_at_4_is_true_when_a_fact_occurs_in_ranks_1_to_4() -> None:
+    texts = [_FILLER, _FILLER, _FILLER, f"Intro.\n{_FACT} More."]
+    assert evidence_hit_at_4(texts, [_FACT, "Another fact."]) is True
+
+
+def test_evidence_hit_at_4_ignores_spaces_and_newlines_but_not_case() -> None:
+    assert evidence_hit_at_4(["Thebridge opened\nin 1932."], [_FACT]) is True
+    assert evidence_hit_at_4(["the bridge opened in 1932."], [_FACT]) is False
+
+
+def test_evidence_hit_at_4_is_false_when_the_fact_occurs_only_at_rank_5() -> None:
+    texts = [_FILLER] * 4 + [_FACT]
+    assert evidence_hit_at_4(texts, [_FACT]) is False
+
+
+def test_evidence_hit_at_4_is_false_when_the_fact_is_split_across_two_chunks() -> None:
+    assert evidence_hit_at_4(["The bridge opened", "in 1932."], [_FACT]) is False
+
+
+def test_evidence_hit_at_4_refuses_a_null_question() -> None:
+    with pytest.raises(ValueError):
+        evidence_hit_at_4([_FACT], [])
+
+
+def test_context_tokens_counts_o200k_tokens_over_every_text() -> None:
+    # o200k_base: "hello world" is two tokens, "hello" one.
+    assert context_tokens(["hello world", "hello"]) == 3
+    assert context_tokens([]) == 0

@@ -369,7 +369,11 @@ def test_d200_cli_stack_exits_1_on_a_failed_check(
 
 @pytest.mark.parametrize(
     "extra",
-    [["--judged"], ["--accept-known-miss", "q:graph-on:require_graph_node:D-94"]],
+    [
+        ["--judged"],
+        ["--accept-known-miss", "q:graph-on:require_graph_node:D-94"],
+        ["--store", "eval-s1"],
+    ],
 )
 def test_d200_cli_stack_rejects_options_it_cannot_honour(
     extra: list[str], monkeypatch: pytest.MonkeyPatch
