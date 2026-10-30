@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 39 merged (moved 2026-10-30 13:51 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 39, #39 `_delta_dimension` reference keys: session local_acd47167-e78a-4cc6-a3b6-40b9a77ecfe0, branch `claude/lane-39-decbe9` @ e96f00a0 (eval only). `hybrid` reference keeps `mean_hybrid`/`count_hybrid`, others get `*_reference` (same rule as #36); v1.0 held-out `report.json` equal on all 187 dimensions, drive2 unchanged. PR #42 merged 2026-10-30 as 1a84d7eb on the user's "開 PR 並 merge (Recommended)" (no CI). #39 closed. No engine/target was built.
+
 ## Lanes 34 and 36 merged (moved 2026-10-30 13:33 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 34, #34 compare bound to the 06.3.5 arms: session local_f2485cb2-2a83-46cb-a547-1370f331e4e1, branch `claude/lane-34-56a8ff` @ 09f1f530 (eval only). Chose the up-front refusal (`_require_06_3_5_corpus`), pointing to `compare-levers`; `_ARM_SLUGS` removed; v1.0 comparison outputs byte-identical. PR #40 merged 2026-10-30 as 9dd01fe0 on the user's "開 PR 並 merge (Recommended)" (no CI). #34 closed. No engine/target was built.
