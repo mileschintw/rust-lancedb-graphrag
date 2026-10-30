@@ -178,3 +178,16 @@ def test_an_unreadable_document_map_is_a_load_error(corpus_dir):
 
     with pytest.raises(CorpusLoadError, match="document_map.json"):
         load_documents(corpus_dir / "documents.jsonl", corpus_dir / "document_map.json")
+
+
+def test_the_reranker_gets_the_chunk_text_with_no_metadata_header(
+    corpus_dir, tmp_path, embedding, reranker
+):
+    _export(corpus_dir, tmp_path, embedding, reranker)
+
+    for _, documents in reranker.calls:
+        for text in documents:
+            assert "title:" not in text
+            assert "source:" not in text
+            assert "published_at:" not in text
+            assert text.startswith("Report ")

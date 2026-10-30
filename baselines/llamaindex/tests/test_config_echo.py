@@ -38,6 +38,7 @@ def test_echo_names_every_value_and_the_installed_version(
     assert echo["embedding"]["input_type"] is None
     assert echo["rerank"]["model"] == "voyageai/rerank-2.5-lite"
     assert echo["rerank"]["endpoint"] == "https://openrouter.ai/api/v1/rerank"
+    assert echo["rerank"]["document_text"].startswith("chunk text only")
     assert echo["keep"] == 8
     assert echo["embedded_metadata_keys"] == ["title", "source", "published_at"]
     assert echo["documents"] == 3

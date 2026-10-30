@@ -29,8 +29,9 @@ and checks its rows with the harness's own `validate_row` and `read_export`; it 
   same DocMeta tags as Lancet's metadata lever.
 - **Rerank.** A custom `VoyageRerankPostprocessor` sends Lancet's rerank body (`model`, `query`, `documents`,
   `top_n` = candidate count, `provider.allow_fallbacks = false`) and refuses a reply the engine would refuse: another
-  model, or indices missing, repeated or out of range. It sends each node as LlamaIndex embeds it (metadata header
-  plus text), the content mode LlamaIndex's own rerank postprocessors use. Lancet sends its chunk text.
+  model, or indices missing, repeated or out of range. It sends each node's chunk text only, with no metadata
+  header, as Lancet sends its chunk text (fairness rule 5; owner's ruling 2026-10-29). LlamaIndex's own rerank
+  postprocessors would send the metadata header too.
 - **k = 8.** A question whose reranked list is not exactly 8 entries fails the run (fairness rule 3).
 - **Chunk IDs** are `<document ID>#<chunk index>`, so a rebuild gives the same IDs and the same `index_fingerprint`.
 

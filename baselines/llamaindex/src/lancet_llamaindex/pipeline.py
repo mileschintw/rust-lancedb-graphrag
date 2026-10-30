@@ -76,8 +76,9 @@ class Reranker(Protocol):
 class VoyageRerankPostprocessor(BaseNodePostprocessor):
     """Reranks the retrieved nodes with a `Reranker` and keeps the best `top_n`.
 
-    The reranker sees each node as LlamaIndex embeds it (metadata header plus text),
-    the content mode LlamaIndex's own rerank postprocessors send.
+    The reranker sees each node's chunk text only, with no metadata header, as
+    Lancet's rerank client sends `candidate.content` (fairness rule 5: the difference
+    stays in Lancet's hybrid retrieval and graph, not in what the reranker reads).
     """
 
     reranker: Any = Field(description="A Reranker; the OpenRouter client or a stub.")
@@ -96,7 +97,7 @@ class VoyageRerankPostprocessor(BaseNodePostprocessor):
             raise ValueError("reranking needs a query")
         if not nodes:
             return []
-        texts = [n.node.get_content(metadata_mode=MetadataMode.EMBED) for n in nodes]
+        texts = [n.node.get_content(metadata_mode=MetadataMode.NONE) for n in nodes]
         ranked = self.reranker.rerank(query_bundle.query_str, texts)
         indices = [index for index, _ in ranked]
         if len(set(indices)) != len(indices) or any(
@@ -237,7 +238,7 @@ class Pipeline:
             "rerank": {
                 "model": RERANK_MODEL,
                 "endpoint": RERANK_ENDPOINT,
-                "document_text": "metadata header plus chunk text (MetadataMode.EMBED)",
+                "document_text": "chunk text only (MetadataMode.NONE), as Lancet sends",
                 "class": type(self._reranker).__name__,
             },
             "keep": KEEP,
