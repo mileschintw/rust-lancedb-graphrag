@@ -62,7 +62,13 @@ def resolve(token: str) -> Any:
             f"(no reference arm; got {type(prereg).__name__}"
             f"{', a dataclass' if is_dataclass(prereg) else ''})"
         )
-    for label in arms_of(prereg):
+    labels = [
+        prereg.reference_arm,
+        *getattr(prereg, "comparison_arms", ()),
+        *(a for family in getattr(prereg, "families", ()) for a in family.arms),
+        *getattr(prereg, "descriptive_arms", ()),
+    ]
+    for label in labels:
         try:
             canonical_arm(label)
         except ValueError as exc:
