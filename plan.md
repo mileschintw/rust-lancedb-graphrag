@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-29 21:44 -0700
+Last updated: 2026-10-29 21:47 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -27,12 +27,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 10 | #10 | local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e (worktree `lane-10-ea13ed`, branch `claude/lane-10-ea13ed`) | review; must catch up with #24 (score.py, lever_comparison.py, levers_fixture.py) | — |
 | 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
 | 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | review; builds Rust on C: via CARGO_TARGET_DIR | — |
-| 16 | #16 | local_8cc16651-c299-4094-964f-a2cfabe355a2 (worktree `lane-16-dcd7b8`, branch `claude/lane-16-dcd7b8`) | done (5c2b072d), PR question pending | — |
 | 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | review; rerunning Rust/Go | — |
 | 15 | #15 | local_3028b84a-992d-4853-9f02-e64406d045c5 (worktree `lane-15-d4af27`, branch `claude/lane-15-d4af27`) | started | — |
 | 23 | #23 | local_152dde96-4043-4687-bcae-ec7c450545a5 (worktree `lane-23-737211`, branch `claude/lane-23-737211`) | started | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9 and 12 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 12 and 16 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -51,7 +50,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #15 | 1 | #8, #9, #12, #18 all closed | none set | `corpus.py`, `test_run_arms.py`; plus `StagePreRegistration` type in `thresholds.py` (ruling 4) | free |
 | #23 | 1 | — | none set | engine lib timing tests: `startup_recovery_exceeds_queue_capacity_without_deadlock`, `telemetry_metrics_corpus_generation_gauge_is_numeric`, `telemetry_ingest::index_rebuild_*` (flaky under load; opened by lane 16, lane 12 saw it too) | free |
-| #16 | 1 | — | none set | `.gitattributes` | free |
+| #25 | 1 | — | none set | clippy `-D warnings` fixes across engine lib, lib tests and two bins (opened by lane 11, 2026-10-29 21:45); shares `engine/src/tests.rs` with #23 and `src/generation/` with #11: start after #11 and #23 merge, or name owners per section | free |
 | #20 | 1 | — | none set | `cli.py` › `run` command (shared with #14, #15) | free |
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
@@ -70,7 +69,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-- Lane 16 (#16) done at 5c2b072d, `ready` lists it Ready for PR: ask the PR-and-merge question (only `.gitattributes`; 4 pipefail tests pass on a fresh autocrlf clone; engine check passed on a third run, flakes = #23). Since 2026-10-29 21:38 -0700.
+- Whether to start a lane for #25 (clippy `-D warnings` on main), and when (overlaps #11 and #23). #11's "cargo clippy passes" criterion can't hold until #25; lane 11's own files are clippy-clean. Not asked yet. Since 2026-10-29 21:47 -0700.
 
 ## Deadlines
 
