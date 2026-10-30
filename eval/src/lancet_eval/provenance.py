@@ -78,7 +78,12 @@ from collections.abc import Container, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
-from lancet_eval.arms import echo_failures, lever_echo_failures, resolve_arm
+from lancet_eval.arms import (
+    echo_failures,
+    is_external_arm,
+    lever_echo_failures,
+    resolve_arm,
+)
 from lancet_eval.usability import (
     carries_graph_ablation,
     carries_rerank_degraded,
@@ -106,8 +111,11 @@ EXTERNAL_CODES: tuple[str, ...] = (
 #: (fairness rule 3: k = 8 on every arm).
 EXTERNAL_K = 8
 
-ZERO_TOLERANCE_CODES = frozenset({*"abcdfhj", *EXTERNAL_CODES})
-_OK_CODES = frozenset({*"abcdefhij", *EXTERNAL_CODES})
+# The engine clause sets stay literal: the frozen runs of record are pinned to them
+# (test_drive_environment). Every external clause is zero tolerance and breaks ok;
+# `is_zero_tolerance` and `is_ok` read both sets.
+ZERO_TOLERANCE_CODES = frozenset("abcdfhj")
+_OK_CODES = frozenset("abcdefhij")
 
 
 @dataclass(frozen=True)
@@ -243,7 +251,7 @@ def provenance_failures(
     """
     label = record.graph_arm
     spec = resolve_arm(label)
-    if spec.kind == "external":
+    if is_external_arm(spec.label):
         return _external_record_failures(record)
     legacy = label != spec.label
     details: dict[str, list[str]] = {}
@@ -388,7 +396,7 @@ def external_run_failures(
     fingerprints: dict[str, set[str]] = {}
     for rec in records:
         label = rec.graph_arm
-        if resolve_arm(label).kind != "external" or rec.outcome != "success":
+        if not is_external_arm(label) or rec.outcome != "success":
             continue
         qid = rec.question_id
         row = export_rows.get((qid, label))
@@ -456,6 +464,12 @@ def external_run_failures(
     return [failure for _, _, failure in found]
 
 
+def is_zero_tolerance(code: str) -> bool:
+    """Whether a failure code makes ``score`` refuse: (a, b, c, d, f, h, j) or any
+    external clause (D-247)."""
+    return code in ZERO_TOLERANCE_CODES or code in EXTERNAL_CODES
+
+
 def is_ok(record: RunRecord) -> bool:
     """ok(r) of AI-SPEC 5 Populations.
 
@@ -464,5 +478,6 @@ def is_ok(record: RunRecord) -> bool:
     changes the result.
     """
     return is_usable(record) and not any(
-        f.code in _OK_CODES for f in provenance_failures(record)
+        f.code in _OK_CODES or f.code in EXTERNAL_CODES
+        for f in provenance_failures(record)
     )

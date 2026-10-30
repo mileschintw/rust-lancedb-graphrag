@@ -86,6 +86,7 @@ from lancet_eval.arms import (
     LEGACY_ARM_LABELS,
     arm_slug,
     canonical_arm,
+    is_external_arm,
     resolve_arm,
 )
 from lancet_eval.metrics import (
@@ -211,7 +212,7 @@ def require_external_provenance(
     Raises:
         ScoreError: Naming the clause, the question and the arm of each failure.
     """
-    if not any(resolve_arm(r.graph_arm).kind == "external" for r in records):
+    if not any(is_external_arm(r.graph_arm) for r in records):
         return
     token = getattr(config, "preregistration_token", None)
     if not token:
@@ -748,7 +749,7 @@ def _provenance_scan(
             # An external clause is zero tolerance, so its count never reaches a
             # report: the run is refused below.
             counts[code] = counts.get(code, 0) + 1
-        fatal = [c for c in codes if c in provenance.ZERO_TOLERANCE_CODES]
+        fatal = [c for c in codes if provenance.is_zero_tolerance(c)]
         if fatal:
             failing.append((rec.question_id, rec.graph_arm, ",".join(fatal)))
     failing.sort()

@@ -155,7 +155,7 @@ def test_snapshot_expectations_match_drive_two() -> None:
     assert SNAPSHOT_EXPECTATIONS.final_limit == 8
     assert SNAPSHOT_EXPECTATIONS.vector_weight == 1.0
     assert SNAPSHOT_EXPECTATIONS.bm25_weight == 1.0
-    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES - set(EXTERNAL_CODES)
+    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES
 
 
 def test_a_failure_carries_its_code_label_and_detail() -> None:
@@ -597,11 +597,14 @@ def _with_meta(record: RunRecord, **changes: object) -> RunRecord:
 def test_the_code_sets_carry_the_new_clauses() -> None:
     from lancet_eval.provenance import _OK_CODES
 
+    from lancet_eval.provenance import is_zero_tolerance
+
     # The engine clauses keep their 06.3.6 sets; every external clause (D-247) is
-    # zero tolerance and breaks ok.
-    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES - set(EXTERNAL_CODES)
-    assert frozenset("abcdefhij") == _OK_CODES - set(EXTERNAL_CODES)
-    assert set(EXTERNAL_CODES) <= ZERO_TOLERANCE_CODES & _OK_CODES
+    # zero tolerance on its own.
+    assert frozenset("abcdfhj") == ZERO_TOLERANCE_CODES
+    assert frozenset("abcdefhij") == _OK_CODES
+    assert not set(EXTERNAL_CODES) & (ZERO_TOLERANCE_CODES | _OK_CODES)
+    assert all(is_zero_tolerance(code) for code in EXTERNAL_CODES)
     assert "i" not in ZERO_TOLERANCE_CODES
 
 
@@ -802,7 +805,7 @@ def test_an_external_record_with_a_faked_snapshot_fails_the_record_clause() -> N
     )
     codes = [f.code for f in provenance_failures(faked)]
     assert codes == ["external_record"]
-    assert "external_record" in ZERO_TOLERANCE_CODES
+    assert "external_record" in EXTERNAL_CODES
     assert not is_ok(faked)
 
 

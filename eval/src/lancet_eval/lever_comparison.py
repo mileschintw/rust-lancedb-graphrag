@@ -39,7 +39,7 @@ from typing import Any
 
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
-from lancet_eval.arms import canonical_arm, resolve_arm
+from lancet_eval.arms import canonical_arm, is_external_arm, resolve_arm
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.metrics import (
@@ -596,7 +596,7 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
 def _chunk_id_scorable(rec: RunRecord) -> bool:
     """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
     not Lancet chunks, so its records have no value and leave every such pairing."""
-    return resolve_arm(rec.graph_arm).kind != "external"
+    return not is_external_arm(rec.graph_arm)
 
 
 def _values(
@@ -1377,7 +1377,7 @@ def build_lever_comparison(
     # D-247: the external clauses are re-checked here, so a stale report.json never
     # lets an external arm that breaks one into a comparison.
     try:
-        if any(resolve_arm(r.graph_arm).kind == "external" for r in records):
+        if any(is_external_arm(r.graph_arm) for r in records):
             doc_map = load_document_map(config.name)
             require_external_provenance(
                 records, journal, config, {*doc_map.entries, *doc_map.aliases}
