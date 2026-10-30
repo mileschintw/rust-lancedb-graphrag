@@ -225,6 +225,12 @@ def require_external_provenance(
         )
     except preregistration.PreregistrationError as exc:
         raise ScoreError(f"D-247: pipeline_echo: {exc}") from exc
+    generation_model = _get_engine_generation_model()
+    if not generation_model:
+        raise ScoreError(
+            "D-247: generation_model: cannot read [openrouter] generation_model "
+            "from config/config.toml"
+        )
     provider_order = _get_engine_provider_order()
     if provider_order is None:
         raise ScoreError(
@@ -241,7 +247,7 @@ def require_external_provenance(
         export_rows={(row.question_id, row.arm): row for row in rows},
         document_ids=document_ids,
         pipelines=pipelines,
-        generation_model=_get_engine_generation_model(),
+        generation_model=generation_model,
         generation_provider_order=provider_order,
     )
     if failures:
@@ -260,18 +266,16 @@ def require_external_provenance(
 def _p4_reference(config: Any) -> str:
     """The arm P4's pairwise join sizes are measured against.
 
-    The pre-registration's reference arm when the corpus names one that resolves (the
-    v1.0 constants name ``hybrid``), otherwise ``hybrid``. A v1.1 stage whose
-    reference is another arm (D-247: ``hybrid+rerank+metadata`` in S0) builds P4
-    against it.
+    The reference arm of the corpus's pre-registration (the v1.0 constants name
+    ``hybrid``; a v1.1 stage may name another arm, D-247: ``hybrid+rerank+metadata``
+    in S0). A token that does not resolve is refused, never defaulted, because a
+    default is a value nobody pre-registered.
     """
-    token = getattr(config, "preregistration_token", None)
-    if token:
-        try:
-            return str(preregistration.resolve(token).reference_arm)
-        except preregistration.PreregistrationError:
-            pass
-    return p4_mod.DEFAULT_REFERENCE_ARM
+    token = config.preregistration_token
+    try:
+        return str(preregistration.resolve(token).reference_arm)
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(f"Cannot build P4: {exc}") from exc
 
 
 def _check_provenance(record: RunRecord) -> bool:

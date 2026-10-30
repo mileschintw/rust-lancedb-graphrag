@@ -1116,3 +1116,34 @@ def test_s_a_chunk_id_secondaries_leave_the_external_arm_unscored(
         assert rows[metric]["n_pairs"] == 0, metric
         assert rows[metric]["n_unscorable"] == len(qs.g_ids), metric
     assert rows["final_answer_em"]["n_pairs"] == len(qs.g_ids)
+
+
+def test_s_a_an_unreadable_engine_generation_model_is_refused_as_generation_model(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from lancet_eval import score as score_mod
+
+    monkeypatch.setattr(score_mod, "_get_engine_generation_model", lambda: "")
+    message = _refusal(tmp_path, monkeypatch)
+    assert "generation_model: cannot read [openrouter] generation_model" in message
+
+
+def test_s_a_a_token_that_does_not_resolve_never_defaults_the_p4_reference(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from lancet_eval import score as score_mod
+
+    run, gold, _ = _s0_run(tmp_path, monkeypatch)
+    real_resolve = score_mod.preregistration.resolve
+    calls = {"n": 0}
+
+    def resolve_once(token: str):  # type: ignore[no-untyped-def]
+        # The external clauses resolve the token first; the P4 reference is next.
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise score_mod.preregistration.PreregistrationError("gone")
+        return real_resolve(token)
+
+    monkeypatch.setattr(score_mod.preregistration, "resolve", resolve_once)
+    with pytest.raises(score_mod.ScoreError, match="Cannot build P4: gone"):
+        _score(run, gold)
