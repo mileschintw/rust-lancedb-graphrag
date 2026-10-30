@@ -12,7 +12,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 
 ## Rulings
 
-none
+1. Lane workers (7, 8, 9) may push their own lane branch to origin; PR open and merge still need the user's yes. User's words (2026-10-29 18:55 -0700), answering lane 8's push question: "都開worktree再merge", then on clarifying (local merge without push vs push then PR): "不對，可以 push 再開 PR". Sent to all three lanes.
 
 ## Now
 
