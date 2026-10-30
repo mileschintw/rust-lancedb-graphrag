@@ -581,3 +581,98 @@ def test_a_row_mixing_engine_and_external_traits_is_refused(
 
     with pytest.raises(ValueError, match="external"):
         ArmSpec(label="llamaindex", disable_graph_context=True, **fields)  # type: ignore[arg-type]
+
+
+# ---- v1.1 S1: store-prefixed labels and the graph-on S1 row (D-251) ------------------
+
+S1_ARMS = (
+    "small/hybrid+rerank+metadata",
+    "small/hybrid+graph+rerank+metadata",
+    "merged/hybrid+rerank+metadata",
+    "merged/hybrid+graph+rerank+metadata",
+)
+
+
+def test_the_s1_graph_on_row_uses_the_basic_graph_context() -> None:
+    """D-251: graph on, no graph_v2 lever, the S0 default's two levers."""
+    spec = ARM_REGISTRY["hybrid+graph+rerank+metadata"]
+    assert spec.disable_graph_context is False
+    assert spec.levers == ("rerank", "evidence_metadata")
+    assert "graph_v2" not in spec.levers
+    assert list(ARM_REGISTRY)[-1] == "hybrid+graph+rerank+metadata"
+    fields = request_fields("hybrid+graph+rerank+metadata")
+    assert fields["disable_graph_context"] is False
+
+
+@pytest.mark.parametrize("label", S1_ARMS)
+def test_a_store_prefixed_label_resolves_to_its_base_row_and_keeps_its_store(
+    label: str,
+) -> None:
+    from lancet_eval.arms import arm_store
+
+    prefix, _, base = label.partition("/")
+    assert resolve_arm(label) is ARM_REGISTRY[base]
+    assert canonical_arm(label) == label
+    assert request_fields(label) == request_fields(base)
+    assert arm_store(label) == {"small": "eval", "merged": "eval-s1"}[prefix]
+    assert not is_legacy_label(label)
+
+
+def test_the_two_stores_of_one_arm_are_two_arms() -> None:
+    small, merged = "small/hybrid+rerank+metadata", "merged/hybrid+rerank+metadata"
+    assert canonical_arm(small) != canonical_arm(merged)
+    assert arm_slug(small) != arm_slug(merged)
+    for label in S1_ARMS:
+        slug = arm_slug(label)
+        assert "/" not in slug and "+" not in slug and "-" not in slug
+    assert len({arm_slug(a) for a in S1_ARMS}) == 4
+
+
+def test_an_unprefixed_label_declares_no_store() -> None:
+    from lancet_eval.arms import arm_store
+
+    for label in (*ARM_REGISTRY, "llamaindex", "graph-on", "graph-off"):
+        assert arm_store(label) is None
+    assert canonical_arm("graph-on") == "hybrid+graph"
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "large/hybrid",  # an unknown store
+        "small/graph-on",  # a legacy alias is never prefixed
+        "small/llamaindex",  # an external arm retrieves outside every store
+        "small/",
+        "small/merged/hybrid",
+        "small/unknown-arm",
+    ],
+)
+def test_a_bad_store_prefixed_label_fails_closed_naming_it(label: str) -> None:
+    from lancet_eval.arms import arm_store
+
+    for lookup in (canonical_arm, resolve_arm, arm_store, request_fields):
+        with pytest.raises(ValueError, match=repr(label).replace("+", r"\+")):
+            lookup(label)
+
+
+def test_registry_order_puts_each_store_after_the_unprefixed_arms() -> None:
+    from lancet_eval.arms import in_registry_order
+
+    shuffled = [
+        "merged/hybrid+graph+rerank+metadata",
+        "llamaindex",
+        "small/hybrid+graph+rerank+metadata",
+        "merged/hybrid+rerank+metadata",
+        "hybrid",
+        "small/hybrid+rerank+metadata",
+    ]
+    assert in_registry_order(shuffled) == [
+        "hybrid",
+        "llamaindex",
+        "small/hybrid+rerank+metadata",
+        "small/hybrid+graph+rerank+metadata",
+        "merged/hybrid+rerank+metadata",
+        "merged/hybrid+graph+rerank+metadata",
+    ]
+    unprefixed = [a for a in (*ARM_REGISTRY, "llamaindex") if a != "hybrid+all"]
+    assert in_registry_order(reversed(unprefixed)) == unprefixed

@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.arms import canonical_arm
+from lancet_eval.arms import STORE_PREFIXES, arm_store, canonical_arm, is_external_arm
 
 
 def _repo_root() -> Path:
@@ -111,6 +111,89 @@ NO_JUDGE_PREREGISTRATION_TOKENS = frozenset({"PREREGISTRATION_06_3_6"})
 _JUDGE_PROTOCOLS = frozenset({"legacy", "ordered"})
 
 
+# D-251: the engine's chunk strategies (`engine/src/ingest.rs` CHUNK_STRATEGIES).
+# `structure-merge` counts its sizes in o200k tokens, the others in characters.
+CHUNK_STRATEGIES = ("structure-aware", "fixed-size", "structure-merge")
+
+
+class StoreChunking(BaseModel):
+    """How one store of a store-prefixed corpus chunks its documents (D-251).
+
+    Written explicitly in the corpus file: the gateway's unset default (500/50) would be
+    read as tokens by `structure-merge`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    chunk_strategy: str
+    chunk_size: int
+    chunk_overlap: int
+
+
+def _store_chunking(
+    data: dict[str, Any], arms: list[str], toml_path: Path
+) -> dict[str, StoreChunking]:
+    """Reads `[stores.<prefix>]` and checks it against the arms' store prefixes.
+
+    A corpus with store-prefixed arms (D-251) names each prefix's chunk settings, and
+    lists no unprefixed engine arm beside them, since such an arm declares no store.
+    A corpus without store-prefixed arms has no `[stores]` table.
+    """
+    stores = data.get("stores", {})
+    prefix_of = {name: prefix for prefix, name in STORE_PREFIXES.items()}
+    stores_of = {a: arm_store(a) for a in arms}
+    prefixes = {prefix_of[s] for s in stores_of.values() if s is not None}
+    unprefixed = [
+        a for a, s in stores_of.items() if s is None and not is_external_arm(a)
+    ]
+    if not prefixes:
+        if stores:
+            raise CorpusError(
+                f"[stores] in {toml_path} names {sorted(stores)} but the corpus lists "
+                "no store-prefixed arm (D-251)"
+            )
+        return {}
+    if unprefixed:
+        raise CorpusError(
+            f"[arms] in {toml_path} mixes store-prefixed arms with {unprefixed}, "
+            "which declare no store (D-251)"
+        )
+    unknown = sorted(set(stores) - set(STORE_PREFIXES))
+    if unknown:
+        raise CorpusError(
+            f"[stores] in {toml_path} names unknown store prefix(es) {unknown}; known: "
+            f"{sorted(STORE_PREFIXES)} (D-251)"
+        )
+    chunking: dict[str, StoreChunking] = {}
+    for prefix in sorted(prefixes):
+        section = f"[stores.{prefix}] in {toml_path}"
+        if prefix not in stores:
+            raise CorpusError(
+                f"no [stores.{prefix}] in {toml_path}: arms on the {prefix!r} store "
+                "need explicit chunk_strategy, chunk_size and chunk_overlap (D-251)"
+            )
+        try:
+            entry = StoreChunking(**stores[prefix])
+        except Exception as exc:
+            raise CorpusError(f"{section} is invalid: {exc}") from exc
+        if entry.chunk_strategy not in CHUNK_STRATEGIES:
+            raise CorpusError(
+                f"{section}: chunk_strategy {entry.chunk_strategy!r} must be one of "
+                f"{list(CHUNK_STRATEGIES)}"
+            )
+        if entry.chunk_size <= 0:
+            raise CorpusError(
+                f"{section}: chunk_size must be positive, got {entry.chunk_size}"
+            )
+        if not 0 <= entry.chunk_overlap < entry.chunk_size:
+            raise CorpusError(
+                f"{section}: chunk_overlap must be non-negative and smaller than "
+                f"chunk_size, got {entry.chunk_overlap} with {entry.chunk_size}"
+            )
+        chunking[prefix] = entry
+    return chunking
+
+
 class CorpusConfig:
     """Loaded configuration and question loader for a benchmark corpus."""
 
@@ -160,6 +243,8 @@ class CorpusConfig:
                     f"{label!r}, which are the same arm ({canonical!r})"
                 )
             seen_arms[canonical] = label
+        # D-251: per-store chunk settings, keyed by store prefix; empty when unprefixed.
+        self.store_chunking = _store_chunking(data, self.arms, toml_path)
 
         # D-105/D-107: a corpus that declares [split] is drawn from the committed
         # held-out split and driven in the seeded rotation.

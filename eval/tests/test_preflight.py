@@ -700,3 +700,118 @@ def test_default_store_refuses_settings_on_the_s1_path(s1_overlay_root: Path) ->
 
     assert not res.passed
     assert "--store eval-s1" in res.message
+
+
+# --- S1 store-prefixed arms: the stack's store is the arms' store (D-251) ------------
+
+_SMALL = ("small/hybrid+rerank+metadata", "small/hybrid+graph+rerank+metadata")
+_MERGED = ("merged/hybrid+rerank+metadata", "merged/hybrid+graph+rerank+metadata")
+
+
+def _s1_settings() -> EvalSettings:
+    return _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1")
+
+
+def _v1_settings() -> EvalSettings:
+    return _store_settings("./data/lancedb-eval", "lancet_eval")
+
+
+@pytest.mark.parametrize(
+    ("arms", "settings"),
+    [(_MERGED, _s1_settings), (_SMALL, _v1_settings)],
+    ids=["merged-on-s1", "small-on-v1"],
+)
+def test_arm_store_passes_when_the_stack_serves_the_arms_store(
+    s1_overlay_root: Path, arms: tuple[str, ...], settings
+) -> None:  # type: ignore[no-untyped-def]
+    from lancet_eval.preflight import check_arm_store
+
+    res = check_arm_store(settings(), arms, {})
+    assert res.name == "arm_store"
+    assert res.passed, res.message
+
+
+@pytest.mark.parametrize(
+    ("arms", "settings", "environ", "named"),
+    [
+        (_MERGED, _v1_settings, {}, "eval-s1"),
+        (_SMALL, _s1_settings, {}, "eval-s1"),
+        (_MERGED, _s1_settings, {"LANCET_ENV": "eval"}, "LANCET_ENV=eval"),
+        (_SMALL, _v1_settings, {"LANCET_ENV": "eval-s1"}, "LANCET_ENV=eval-s1"),
+    ],
+    ids=["merged-on-v1", "small-on-s1", "merged-under-v1-env", "small-under-s1-env"],
+)
+def test_arm_store_fails_when_the_stack_serves_another_store(
+    s1_overlay_root: Path, arms, settings, environ, named: str
+) -> None:  # type: ignore[no-untyped-def]
+    from lancet_eval.preflight import check_arm_store
+
+    res = check_arm_store(settings(), arms, environ)
+    assert not res.passed
+    assert named in res.message
+
+
+def test_arm_store_refuses_arms_from_two_stores(s1_overlay_root: Path) -> None:
+    from lancet_eval.preflight import check_arm_store
+
+    res = check_arm_store(_s1_settings(), (*_SMALL, *_MERGED), {})
+    assert not res.passed
+    assert "two stores" in res.message
+
+
+def test_arm_store_passes_unprefixed_arms_unchanged(tmp_path: Path) -> None:
+    from lancet_eval.preflight import check_arm_store
+
+    res = check_arm_store(
+        _store_settings(str(tmp_path / "x"), "lancet_eval"),
+        ("hybrid", "hybrid+graph"),
+        {"LANCET_ENV": "eval-s1"},
+    )
+    assert res.passed, res.message
+
+
+def _s1_preflight(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: EvalSettings,
+):  # type: ignore[no-untyped-def]
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    monkeypatch.delenv("LANCET_ENV", raising=False)
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag"), S1_STORE)
+    httpx_mock.add_exception(httpx.ConnectError("refused"), is_reusable=True)
+    return run_preflight_checks(
+        corpus_name="multihop_rag_s1_dev", settings=settings, store=S1_STORE
+    )
+
+
+def test_preflight_of_an_s1_store_checks_that_stores_arms(
+    httpx_mock: HTTPXMock, s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results = _s1_preflight(httpx_mock, s1_overlay_root, monkeypatch, _s1_settings())
+    arm_store = next(r for r in results if r.name == "arm_store")
+    assert arm_store.passed, arm_store.message
+    assert arm_store.detail["arms"] == list(_MERGED)
+
+
+def test_preflight_fails_when_the_stack_is_not_the_arms_store(
+    httpx_mock: HTTPXMock, s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    results = _s1_preflight(httpx_mock, s1_overlay_root, monkeypatch, _v1_settings())
+    arm_store = next(r for r in results if r.name == "arm_store")
+    assert not arm_store.passed
+
+
+def test_preflight_of_an_unprefixed_corpus_has_no_arm_store_check(
+    httpx_mock: HTTPXMock, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag", entries={}))
+    httpx_mock.add_exception(httpx.ConnectError("refused"), is_reusable=True)
+    results = run_preflight_checks(
+        corpus_name="multihop_rag",
+        settings=_store_settings(str(tmp_path / "lancedb-eval"), "lancet_eval"),
+    )
+    assert "arm_store" not in [r.name for r in results]

@@ -29,7 +29,7 @@ from lancet_eval.agreement import (
     quadratic_weighted_kappa,
     spearman_rank_correlation,
 )
-from lancet_eval.config import get_commit_sha
+from lancet_eval.config import V1_STORE, get_commit_sha, get_eval_store
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
@@ -83,10 +83,11 @@ from lancet_eval.measure import (
 )
 from lancet_eval.arms import (
     ARM_REGISTRY,
-    EXTERNAL_ARMS,
     LEGACY_ARM_LABELS,
     arm_slug,
+    arm_store,
     canonical_arm,
+    in_registry_order,
     is_external_arm,
     resolve_arm,
 )
@@ -871,7 +872,7 @@ def _four_arm_dimensions(
         )
     except ValueError as exc:
         raise ScoreError(f"Cannot build P4: {exc}") from exc
-    arms = [a for a in (*ARM_REGISTRY, *EXTERNAL_ARMS) if a in pop.arms]
+    arms = in_registry_order(pop.arms)
     label_of = {canonical_arm(label): label for label in config.arms}
     qtype_of = {q: str(gold_map[q].question_type) for q in g_ids}
     index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
@@ -1992,20 +1993,37 @@ def score_run(
             )
     distinct_gens = {g for gens in gens_by_arm.values() for g in gens}
 
-    # 2. Structural Guard: Validate all document_ids against document_map.json
-    try:
-        doc_map = load_document_map(corpus_name)
-    except Exception as e:
-        raise ScoreError(
-            f"Could not load document map for corpus '{corpus_name}': {e}"
-        ) from e
+    # 2. Structural Guard: Validate all document_ids against document_map.json. A
+    # store-prefixed arm (D-251) reads the map of the store its prefix declares, every
+    # other arm the v1.0 map (#18): one journal may hold both stores' arms.
+    doc_maps: dict[str | None, Any] = {}
 
+    def doc_map_of(store_name: str | None) -> Any:
+        if store_name not in doc_maps:
+            try:
+                store = V1_STORE if store_name is None else get_eval_store(store_name)
+                doc_maps[store_name] = load_document_map(corpus_name, store)
+            except Exception as e:
+                raise ScoreError(
+                    f"Could not load document map for corpus '{corpus_name}'"
+                    f"{'' if store_name is None else f' in store {store_name!r}'}: {e}"
+                ) from e
+        return doc_maps[store_name]
+
+    doc_map = doc_map_of(None)
     for rec in records:
         if rec.snapshot and rec.snapshot.retrieved_chunks:
+            try:
+                store_name = arm_store(rec.graph_arm)
+            except ValueError as e:
+                raise ScoreError(
+                    f"record for question '{rec.question_id}': {e}"
+                ) from e
+            rec_map = doc_map_of(store_name)
             for chunk in rec.snapshot.retrieved_chunks:
                 if (
-                    chunk.document_id not in doc_map.entries
-                    and chunk.document_id not in doc_map.aliases
+                    chunk.document_id not in rec_map.entries
+                    and chunk.document_id not in rec_map.aliases
                 ):
                     raise ScoreError(
                         f"Unmapped document_id '{chunk.document_id}' in record "

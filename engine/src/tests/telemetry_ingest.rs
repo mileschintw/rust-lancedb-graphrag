@@ -501,6 +501,27 @@ async fn ingest_spans_carry_no_document_content() {
 
 use crate::ingest::REBUILD_TEST_MUTEX;
 
+/// Upper bound for one wait on the span exporter; generous so a loaded machine only slows the test.
+const REBUILD_SPAN_WAIT: Duration = Duration::from_secs(120);
+
+/// Receives exported spans into `spans` until it holds `count` `index_rebuild` spans.
+///
+/// The rebuild tests wait on this event instead of sleeping for a fixed time: under load a fixed
+/// sleep could end before the debounce timer fired, and shutdown then cancelled the rebuild.
+async fn recv_rebuild_spans(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<opentelemetry_sdk::trace::SpanData>,
+    spans: &mut Vec<opentelemetry_sdk::trace::SpanData>,
+    count: usize,
+) {
+    tokio::time::timeout(REBUILD_SPAN_WAIT, async {
+        while spans.iter().filter(|s| s.name == "index_rebuild").count() < count {
+            spans.push(rx.recv().await.expect("span exporter closed"));
+        }
+    })
+    .await
+    .expect("index_rebuild span was not exported in time");
+}
+
 // ---------------------------------------------------------------------------
 // Task 2 Tests: Observable Index Rebuild with Trigger Links
 // ---------------------------------------------------------------------------
@@ -545,13 +566,13 @@ async fn index_rebuild_span_records_generation_transition() {
     );
 
     rebuild_tx.send_modify(|v| *v += 1);
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    let mut spans = Vec::new();
+    recv_rebuild_spans(&mut rx, &mut spans, 1).await;
     shutdown_tx.send(true).unwrap();
     let _ = debounce_task.await;
 
     let _ = tracer_provider.force_flush();
 
-    let mut spans = Vec::new();
     while let Ok(span) = rx.try_recv() {
         spans.push(span);
     }
@@ -611,13 +632,13 @@ async fn index_rebuild_span_records_degraded_outcome() {
 
     arm_rebuild_fail_next();
     rebuild_tx.send_modify(|v| *v += 1);
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    let mut spans = Vec::new();
+    recv_rebuild_spans(&mut rx, &mut spans, 1).await;
     shutdown_tx.send(true).unwrap();
     let _ = debounce_task.await;
 
     let _ = tracer_provider.force_flush();
 
-    let mut spans = Vec::new();
     while let Ok(span) = rx.try_recv() {
         spans.push(span);
     }
@@ -676,16 +697,6 @@ async fn index_rebuild_span_links_all_triggering_documents() {
         trigger_links.clone(),
     );
 
-    let debounce_task = spawn_rebuild_debounce_task(
-        rebuild_rx,
-        shutdown_rx,
-        service.database.clone(),
-        service.corpus_store.clone(),
-        service.effective_settings.retrieval.bm25.clone(),
-        Duration::from_millis(1200),
-        trigger_links,
-    );
-
     let mut doc_ids = Vec::new();
     for i in 0..5 {
         let doc_id = Uuid::new_v4().to_string();
@@ -701,15 +712,23 @@ async fn index_rebuild_span_links_all_triggering_documents() {
             .unwrap();
     }
 
-    for doc_id in &doc_ids {
-        while !statuses.contains_key(doc_id)
-            || statuses.get(doc_id).map(|s| s.status.clone()) != Some("completed".into())
-        {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
+    // The worker bumps the rebuild counter after buffering each document's link. Starting the
+    // debounce task only once all five are buffered keeps a slow document from splitting the
+    // batch across two rebuilds.
+    rebuild_rx.clone().wait_for(|v| *v >= 5).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let debounce_task = spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx,
+        service.database.clone(),
+        service.corpus_store.clone(),
+        service.effective_settings.retrieval.bm25.clone(),
+        Duration::from_millis(50),
+        trigger_links,
+    );
+
+    let mut spans = Vec::new();
+    recv_rebuild_spans(&mut rx, &mut spans, 1).await;
     let _ = shutdown_tx.send(true);
     let _ = debounce_task.await;
     drop(sender);
@@ -717,7 +736,6 @@ async fn index_rebuild_span_links_all_triggering_documents() {
 
     let _ = tracer_provider.force_flush();
 
-    let mut spans = Vec::new();
     while let Ok(span) = rx.try_recv() {
         spans.push(span);
     }
@@ -773,13 +791,13 @@ async fn index_rebuild_span_is_not_parented_to_a_document() {
     );
 
     rebuild_tx.send_modify(|v| *v += 1);
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    let mut spans = Vec::new();
+    recv_rebuild_spans(&mut rx, &mut spans, 1).await;
     shutdown_tx.send(true).unwrap();
     let _ = debounce_task.await;
 
     let _ = tracer_provider.force_flush();
 
-    let mut spans = Vec::new();
     while let Ok(span) = rx.try_recv() {
         spans.push(span);
     }
@@ -832,16 +850,6 @@ async fn index_rebuild_trigger_buffer_is_drained_per_rebuild() {
         trigger_links.clone(),
     );
 
-    let debounce_task = spawn_rebuild_debounce_task(
-        rebuild_rx,
-        shutdown_rx,
-        service.database.clone(),
-        service.corpus_store.clone(),
-        service.effective_settings.retrieval.bm25.clone(),
-        Duration::from_millis(500),
-        trigger_links,
-    );
-
     // Ingest 2 jobs for first rebuild
     let mut first_ids = Vec::new();
     for i in 0..2 {
@@ -858,15 +866,22 @@ async fn index_rebuild_trigger_buffer_is_drained_per_rebuild() {
             .unwrap();
     }
 
-    for doc_id in &first_ids {
-        while !statuses.contains_key(doc_id)
-            || statuses.get(doc_id).map(|s| s.status.clone()) != Some("completed".into())
-        {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
+    // Both links are buffered before the debounce task starts, so they land in one rebuild
+    // however far apart the two documents finish.
+    rebuild_rx.clone().wait_for(|v| *v >= 2).await.unwrap();
 
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    let debounce_task = spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx,
+        service.database.clone(),
+        service.corpus_store.clone(),
+        service.effective_settings.retrieval.bm25.clone(),
+        Duration::from_millis(50),
+        trigger_links,
+    );
+
+    let mut spans = Vec::new();
+    recv_rebuild_spans(&mut rx, &mut spans, 1).await;
 
     // Ingest 1 job for second rebuild
     let second_id = Uuid::new_v4().to_string();
@@ -880,13 +895,7 @@ async fn index_rebuild_trigger_buffer_is_drained_per_rebuild() {
         .await
         .unwrap();
 
-    while !statuses.contains_key(&second_id)
-        || statuses.get(&second_id).map(|s| s.status.clone()) != Some("completed".into())
-    {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    recv_rebuild_spans(&mut rx, &mut spans, 2).await;
     let _ = shutdown_tx.send(true);
     let _ = debounce_task.await;
     drop(sender);
@@ -894,7 +903,6 @@ async fn index_rebuild_trigger_buffer_is_drained_per_rebuild() {
 
     let _ = tracer_provider.force_flush();
 
-    let mut spans = Vec::new();
     while let Ok(span) = rx.try_recv() {
         spans.push(span);
     }

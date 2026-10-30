@@ -1,0 +1,56 @@
+# v1.1 S1 (D-251, D-252): direction-finding on dev. The small store is the v1.0 eval
+# store; the merged store is the S1 store (`--store eval-s1`). Both stores' arms pair in
+# one journal; `run --arms` drives one store's subset against its own stack.
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.diag.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 100
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[arms]
+# The S0 default (graph off) and the basic graph context (graph on, no graph_v2 lever)
+# on each store. Registry order within each store.
+arms = [
+  "small/hybrid+rerank+metadata",
+  "small/hybrid+graph+rerank+metadata",
+  "merged/hybrid+rerank+metadata",
+  "merged/hybrid+graph+rerank+metadata",
+]
+
+# The small store keeps the v1.0 settings (D-09: characters). The merged store's sizes
+# are o200k tokens (D-241, D-251); they are written out because the gateway's unset
+# default, 500/50, would be read as tokens.
+[stores.small]
+chunk_strategy = "structure-aware"
+chunk_size = 500
+chunk_overlap = 50
+
+[stores.merged]
+chunk_strategy = "structure-merge"
+chunk_size = 256
+chunk_overlap = 25
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "dev"
+
+# D-253: S1 writes this constant in thresholds.py on its own branch, before the paid
+# run; until then every gate that resolves it fails closed.
+[preregistration]
+token = "PREREGISTRATION_S1"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"
