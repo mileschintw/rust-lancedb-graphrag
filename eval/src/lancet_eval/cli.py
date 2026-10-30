@@ -735,6 +735,17 @@ def run_external_command(
             help="The run's journal.jsonl (the Lancet arms' run directory)",
         ),
     ] = None,
+    stage_cap: Annotated[
+        float,
+        typer.Option(
+            "--stage-cap",
+            help=(
+                "Stage spend cap in USD over the whole journal, checked before each "
+                "batch (fail-closed, required with no silent default)"
+            ),
+            callback=_validate_stage_cap,
+        ),
+    ] = ...,
     resume: Annotated[
         bool,
         typer.Option(
@@ -764,16 +775,27 @@ def run_external_command(
             arm=arm,
             export_path=export,
             journal_path=out,
+            stage_spend_cap=stage_cap,
             pipeline_config=pipeline_config,
             resume=resume,
         )
     except Exception as exc:
         console.print(f"[bold red]Run error:[/bold red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
+    if result.stopped_by_cap:
+        # Exit 0, as `run`'s cap stop: the finished batches stay journalled and a
+        # resume under a raised cap continues.
+        console.print(
+            f"[yellow]Drive stopped early: reached stage spend cap (${stage_cap:.2f}); "
+            f"recorded {result.appended} new work unit(s) ({result.errors} error "
+            f"record(s)) to {out} (observed spend: ${result.observed_spend:.4f})"
+            "[/yellow]"
+        )
+        return
     console.print(
         f"[green]Recorded {result.appended} new work unit(s) "
         f"({result.errors} error record(s)) to {out}; the arm's rows are in "
-        f"{result.export_path}[/green]"
+        f"{result.export_path} (observed spend: ${result.observed_spend:.4f})[/green]"
     )
 
 

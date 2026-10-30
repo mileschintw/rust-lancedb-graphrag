@@ -23,11 +23,17 @@ with the Lancet arms'. A row that cannot be packed, a reader failure and a row t
 wrote no line for each become an error record, never a missing one. The reader runs
 with the ``evidence_metadata`` lever only (D-248: the document metadata reaches the
 reader in the same DocMeta tags as Lancet's metadata lever).
+
+The stage spend cap holds as it does for `run` (D-86): before each batch, the spend of
+every record in the journal (``measure.compute_spend``) is compared with the cap, and
+the drive stops before that batch once the spend reaches it. A batch already sent is
+not interrupted, so the spend can pass the cap by at most one batch.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from collections.abc import Callable, Sequence
@@ -55,6 +61,7 @@ from lancet_eval.journal import (
     journal_key,
     read_journal_header,
 )
+from lancet_eval.measure import compute_spend
 from lancet_eval.provenance import EXTERNAL_K
 from lancet_eval.run import (
     _require_matching_split_marker,
@@ -95,11 +102,16 @@ class ExternalRunResult:
         appended: Records appended to the journal by this invocation.
         errors: How many of them are error records.
         export_path: The run's context export, holding the arm's rows.
+        stopped_by_cap: The spend reached the stage cap while a batch was still
+            waiting; a drive with nothing left to send is never capped.
+        observed_spend: The spend of every record in the journal, in USD.
     """
 
     appended: int
     errors: int
     export_path: Path
+    stopped_by_cap: bool
+    observed_spend: float
 
 
 def load_pipeline_echo(path: Path) -> tuple[ExternalPipeline, str]:
@@ -370,6 +382,7 @@ def run_external(
     arm: str,
     export_path: Path | str,
     journal_path: Path | str,
+    stage_spend_cap: float,
     pipeline_config: Path | str | None = None,
     resume: bool = True,
     runner: BinRunner | None = None,
@@ -383,6 +396,7 @@ def run_external(
         export_path: The arm's `context_export.jsonl`.
         journal_path: The run's `journal.jsonl`; the run's context export is the
             `context_export.jsonl` beside it.
+        stage_spend_cap: The stage spend cap in USD; finite and positive.
         pipeline_config: The arm's pipeline echo; `pipeline_config.json` beside
             `export_path` when None.
         resume: Skip questions the journal already holds a record of. Without it the
@@ -391,14 +405,21 @@ def run_external(
         git_repo: The repository the D-73 gate reads; the live one when None.
 
     Returns:
-        How many records were appended, and where the run's export is.
+        How many records were appended, where the run's export is, and whether the
+        cap stopped the drive.
 
     Raises:
-        ExternalRunError: If the arm, the export, the pipeline echo or the run
-            directory is refused (nothing is journalled and no reader is called),
+        ExternalRunError: If the cap, the arm, the export, the pipeline echo or the
+            run directory is refused (nothing is journalled and no reader is called),
             or when a bin call fails (the batches before it stay journalled).
         JournalReuseError: If ``resume`` is False and the journal holds a record.
     """
+    if not (math.isfinite(stage_spend_cap) and stage_spend_cap > 0):
+        raise ExternalRunError(
+            "the stage spend cap must be a finite positive USD amount "
+            f"(got {stage_spend_cap!r}); a cap that cannot fire would not stop the "
+            "drive (D-86)"
+        )
     export = Path(export_path)
     target = Path(journal_path)
     config = load_corpus_config(corpus)
@@ -426,7 +447,7 @@ def run_external(
     run_export = target.parent / CONTEXT_EXPORT_FILE
     existing = _carried_rows(run_export, rows)
     _require_matching_split_marker(target, split)
-    done, _ = resume_state(target, resume=resume)
+    done, journalled = resume_state(target, resume=resume)
     _require_external_journal(
         target,
         corpus=corpus,
@@ -437,11 +458,17 @@ def run_external(
     # The rows go in first, so every record journalled below already has its row.
     _write_run_export(run_export, existing, rows)
     records: list[RunRecord] = []
+    stopped_by_cap = False
     journal = Journal(target)
     try:
         # One bin call per batch: a timeout or crash loses one batch's answers, and
         # the batches journalled before it stay done for the resume.
         for start in range(0, len(remaining), GENERATE_BATCH_ROWS):
+            # The cap is checked only while a batch waits, so a complete drive is
+            # never labelled capped (WR-01).
+            if compute_spend([*journalled, *records])[0] >= stage_spend_cap:
+                stopped_by_cap = True
+                break
             batch = _read(
                 remaining[start : start + GENERATE_BATCH_ROWS],
                 runner or bin_runner,
@@ -457,4 +484,6 @@ def run_external(
         appended=len(records),
         errors=sum(r.outcome == "error" for r in records),
         export_path=run_export,
+        stopped_by_cap=stopped_by_cap,
+        observed_spend=compute_spend([*journalled, *records])[0],
     )
