@@ -151,6 +151,9 @@ jobs:
         env:
           FILES: ${{ needs.changes.outputs.eval_py_files }}
           BASE: ${{ github.event.pull_request.base.sha }}
+        # `shell: bash` runs with -eo pipefail; the default (`bash -e`) would let a ruff
+        # failure inside a pipe pass
+        shell: bash
         run: |
           # main carries legacy findings, so a changed file fails only on a rule it has
           # more findings of than at the base commit (a new file: any finding).
