@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-29 23:20 -0700
+Last updated: 2026-10-29 23:26 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -28,10 +28,9 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
-| 29 | #29 | local_9450bd63-4293-40ea-b77c-2049d7d385d8 (worktree `lane-29-192208`, branch `claude/lane-29-192208`) | started | — |
 | 30 | #30 | local_4757ad58-ec8e-41c5-a84a-a2da25bd7ce7 (worktree `lane-30-1bb6ad`, branch `claude/lane-30-1bb6ad`) | started | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 13, 15, 16, 20 and 23 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 13, 15, 16, 20, 23 and 29 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -47,7 +46,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #25 | 2 (ruling 5: after #11; #23 merged) | — | none set | clippy `-D warnings` fixes across engine lib, lib tests and two bins (opened by lane 11, 2026-10-29 21:45); shares `engine/src/tests.rs` with #23 and `src/generation/` with #11: start after #11 and #23 merge, or name owners per section | free |
-| #29 | 1 (lane 29 running) | — (Refs #15) | none set | `raw_events.py` › raw-event dir naming for store-prefixed arms (opened by lane 15, 2026-10-29 22:06) | free |
 | #30 | 1 (lane 30 running) | — (Refs #15) | none set | `score.py` › judged-dimensions arm list, `calibration.py` draw: use `in_registry_order` (opened by lane 15; blocks nothing for S1, which has no judge) | free |
 | #34 | 2 (after #30 merges; shares `comparison.py` reads with #30's judged slugs) | — (Refs #30) | none set | `comparison.py` › `build_comparison` arm list, `_ARM_SLUGS` (opened by lane 30, 2026-10-29; blocks nothing planned: S1 uses `compare-levers`) | free |
 

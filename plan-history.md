@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 29 merged (moved 2026-10-29 23:26 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 29, #29 raw-event dirs for store-prefixed arms: session local_9450bd63-4293-40ea-b77c-2049d7d385d8, branch `claude/lane-29-192208` @ b4240359 (eval only). PR #35 merged 2026-10-29 as 8763cd08 on the user's "開 PR 並 merge (Recommended)" (no CI). #29 closed. No engine/target was built.
+
 ## Lanes 15 and 23 merged (moved 2026-10-29 23:01 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 15, #15 Store-prefixed arms and the S1 corpus: session local_3028b84a-992d-4853-9f02-e64406d045c5, branch `claude/lane-15-d4af27` @ acae0905. PR #32 merged 2026-10-29 as b93d3487 on the user's "開 PR 並 merge (Recommended)" (no CI). #15 closed. Carried #18's score-side reader. Opened #29, #30. `engine/target` deleted. Note: `StoreChunking` is declared but not yet checked against a built store (S1 store build).
