@@ -2,6 +2,11 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lanes 15 and 23 merged (moved 2026-10-29 23:01 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 15, #15 Store-prefixed arms and the S1 corpus: session local_3028b84a-992d-4853-9f02-e64406d045c5, branch `claude/lane-15-d4af27` @ acae0905. PR #32 merged 2026-10-29 as b93d3487 on the user's "開 PR 並 merge (Recommended)" (no CI). #15 closed. Carried #18's score-side reader. Opened #29, #30. `engine/target` deleted. Note: `StoreChunking` is declared but not yet checked against a built store (S1 store build).
+- Lane 23, #23 flaky engine lib tests: session local_152dde96-4043-4687-bcae-ec7c450545a5, branch `claude/lane-23-737211` @ 9a1cc57a. PR #33 merged 2026-10-29 as 55d89e7a on the user's "開 PR 並 merge (Recommended)" (no CI). #23 closed. Test seam: `#[cfg(test)]` thread-local meter in `engine/src/telemetry/metrics.rs`; lib+bin count unchanged (856). `engine/target` deleted. From now on, engine lib flakes are not expected; a lane failure there is real.
+
 ## Lane 13 merged (moved 2026-10-29 22:52 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 13, #13 LlamaIndex baseline project: session local_2cb496f3-680b-426e-b0e7-d4710ae7e26c, branch `claude/lane-13-08d1ed` @ f3b462e0 (rerank on chunk text only, ruling 6). PR #31 merged 2026-10-29 as 059c7513 on the user's "開 PR 並 merge (Recommended)" (no CI). #13 closed. `engine/target` and its C: scratchpad target deleted. Live `input_type` and 346-doc export checks deferred to S0 (plan › Waiting for the user to be present). Notes: `baselines/llamaindex/uv.lock` locks the harness deps, so any `eval/pyproject.toml` change needs `uv lock` there too; `write_outputs` replaces two files in sequence.
