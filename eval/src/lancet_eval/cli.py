@@ -577,6 +577,7 @@ def run_benchmark(
                 param_hint="'--retries'",
             )
     field_gate_failures: tuple[str, ...] = ()
+    context_export_error: str | None = None
     try:
         from lancet_eval.run import drive, refuse_legacy_labels_for_live_drive
 
@@ -612,6 +613,9 @@ def run_benchmark(
         gate_failures = getattr(count, "field_gate_failures", ())
         if isinstance(gate_failures, tuple | list):
             field_gate_failures = tuple(str(f) for f in gate_failures)
+        export_error = getattr(count, "context_export_error", None)
+        if export_error is not None:
+            context_export_error = str(export_error)
         if field_gate_failures:
             console.print(
                 "[yellow]Drive stopped early: the explicit-field gate failed on a "
@@ -639,7 +643,7 @@ def run_benchmark(
     except Exception as exc:
         console.print(f"[bold red]Run error:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
-    if field_gate_failures:
+    if field_gate_failures or context_export_error is not None:
         # Raised after the try/except: the `except Exception` above would catch a
         # typer.Exit (a RuntimeError) raised inside it. Cap and tripwire stops keep
         # exit 0 (B-IN-03 stays in the backlog).
@@ -649,6 +653,23 @@ def run_benchmark(
             console.print(
                 f"[bold red]Explicit-field gate failed:[/bold red] {escape(failure)}"
             )
+        if context_export_error is not None:
+            # D-249: the records stay journalled; `score` refuses the run until the
+            # export is rebuilt.
+            from lancet_eval.context_export import _REBUILD_HINT
+
+            hint = _REBUILD_HINT.replace("<dir>", str(out.parent))
+            # A coverage refusal already ends with the hint; fill in the run dir.
+            error = context_export_error.replace(_REBUILD_HINT, hint)
+            console.print(
+                f"[bold red]Context export failed:[/bold red] {escape(error)}",
+                soft_wrap=True,
+            )
+            if hint not in error:
+                console.print(
+                    f"The drive records stay journalled. {escape(hint)}.",
+                    soft_wrap=True,
+                )
         raise typer.Exit(code=1)
 
 
