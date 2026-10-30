@@ -1691,6 +1691,9 @@ def _judged_dimensions(
             )
 
     ref_abs = abstention(reference)
+    # #36: the v1.0 key names call the reference `hybrid`; keep them byte-identical for
+    # a `hybrid` reference and name any other reference arm neutrally
+    ref_key = "hybrid" if reference == "hybrid" else "reference"
     for arm in arms:
         if arm == reference:
             continue
@@ -1708,18 +1711,20 @@ def _judged_dimensions(
         for dimension in JUDGED_DIMENSIONS:
             detail = {
                 "dropped_only_arm_abstained": float(counts.only_x_abstained),
-                "dropped_only_hybrid_abstained": float(counts.only_reference_abstained),
+                f"dropped_only_{ref_key}_abstained": float(
+                    counts.only_reference_abstained
+                ),
                 "dropped_both_abstained": float(counts.both_abstained),
                 "dropped_judge_unavailable": float(counts.judge_unavailable),
                 "judge_errors_x": float(errors[arm]),
-                "judge_errors_hybrid": float(errors[reference]),
+                f"judge_errors_{ref_key}": float(errors[reference]),
                 "abstention_n": float(len(pop.question_ids)),
                 "d114_label_code": codes[dimension],
             }
             if arm_abs is not None and arm_abs.score is not None:
                 detail["abstention_rate_x"] = float(arm_abs.score)
             if ref_abs is not None and ref_abs.score is not None:
-                detail["abstention_rate_hybrid"] = float(ref_abs.score)
+                detail[f"abstention_rate_{ref_key}"] = float(ref_abs.score)
             differs = False
             if delta_ok and abs_delta is not None and abs_delta.score is not None:
                 lo = abs_delta.detail.get("ci_lower")

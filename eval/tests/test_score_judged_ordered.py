@@ -518,6 +518,8 @@ def test_a_paired_judged_delta_excludes_the_questions_either_arm_abstained_on(
     bm25 = dim(happy.report, "answer_groundedness_delta__bm25_only")
     assert bm25.detail["judge_errors_x"] == 1.0
     assert bm25.detail["judge_errors_hybrid"] == 0.0
+    # #36: a `hybrid` reference keeps the v1.0 key names and gains no neutral ones
+    assert not [k for k in bm25.detail if "reference" in k]
 
 
 def test_the_abstention_companion_is_the_four_arm_dimension_not_a_second_delta(

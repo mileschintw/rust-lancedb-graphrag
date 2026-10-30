@@ -53,6 +53,12 @@ STORE_OF = {
 PREFIXED = {arm: f"{STORE_OF[arm]}/{arm}" for arm in ARMS}
 ORDER = ["small/bm25-only", "small/hybrid", "merged/dense-only", "merged/hybrid+graph"]
 TOKEN = "PREREGISTRATION_JUDGED_STORE_ARMS_TEST"
+# the v1.0 names of a judged delta's reference-arm keys, kept for a `hybrid` reference
+V1_REFERENCE_KEYS = (
+    "dropped_only_hybrid_abstained",
+    "judge_errors_hybrid",
+    "abstention_rate_hybrid",
+)
 
 
 def _store_prereg() -> Any:
@@ -189,3 +195,19 @@ def test_the_judge_stage_counts_every_prefixed_arm_in_registry_order(
     )
     assert list(record.arms) == ORDER
     assert all(c.judgeable > 0 for c in record.arms.values())
+
+
+def test_a_judged_delta_names_its_reference_arm_neutrally(prefixed: Scenario) -> None:
+    # #36: the reference is `small/hybrid`, so its detail keys may not call it `hybrid`
+    report = CorpusReport.model_validate_json(
+        (prefixed.run / "report.json").read_text(encoding="utf-8")
+    )
+    prefixes = tuple(f"answer_{dimension}_delta__" for dimension in JUDGED)
+    deltas = [d for d in report.dimensions if d.name.startswith(prefixes)]
+    assert len(deltas) == (len(ORDER) - 1) * len(JUDGED)
+    for d in deltas:
+        for v1_name in V1_REFERENCE_KEYS:
+            assert v1_name not in d.detail, d.name
+        assert "dropped_only_reference_abstained" in d.detail
+        assert "judge_errors_reference" in d.detail
+        assert "abstention_rate_reference" in d.detail
