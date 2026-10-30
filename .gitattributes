@@ -4,3 +4,6 @@
 
 # Python eval harness / test scripts: keep GitHub language bar showing Rust as the primary language
 eval/** linguist-detectable=false
+
+# Shell scripts run under bash, which rejects CRLF (`set: pipefail\r`): keep LF even with core.autocrlf=true
+*.sh text eol=lf
