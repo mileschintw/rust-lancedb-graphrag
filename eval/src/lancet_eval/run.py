@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import logging
 import os
 import re
+import tempfile
 import time
 from collections.abc import Sequence
 from fractions import Fraction
@@ -19,6 +21,7 @@ from lancet_eval.arms import (
     arm_store,
     canonical_arm,
     explicit_field_failures,
+    is_external_arm,
     is_legacy_label,
     lever_echo_failures,
     plan_work_units,
@@ -28,9 +31,12 @@ from lancet_eval.arms import (
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.context_export import (
+    CONTEXT_EXPORT_FILE,
     CheckpointSource,
+    ContextExportError,
     PostgresCheckpointSource,
     export_context,
+    read_export,
 )
 from lancet_eval.corpus import (
     CorpusConfig,
@@ -53,6 +59,7 @@ from lancet_eval.journal import (
     reconcile_header,
 )
 from lancet_eval.measure import compute_spend
+from lancet_eval.pairing import deduplicate_by_arm
 from lancet_eval.preflight import check_arm_store, check_drive_environment
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
 from lancet_eval.split import (
@@ -398,6 +405,93 @@ def _enforce_preregistered_arm_set(config: CorpusConfig) -> None:
         )
 
 
+def require_split_gates(
+    config: CorpusConfig,
+    questions: Sequence[GoldQuestion],
+    *,
+    git_repo: Path | None = None,
+) -> HeldOutSplit | None:
+    """Runs a `[split]` corpus's gates before any journal I/O; returns its split.
+
+    None for a corpus without a split, which has no gate. Otherwise, unless the corpus
+    is a `dev` corpus (D-170: dev reads precede the freeze commit that introduces the
+    06.3.6 token), the corpus's pre-registration must be committed on a clean tree and
+    the corpus's arms must be the ones it fixed (D-73). Then the split's input files
+    must still hash to what it recorded, and the corpus's question IDs must fit its
+    role (D-105, D-106, D-170). `drive()` and `external_run.run_external()` both call
+    it, so a paid read of a `[split]` corpus passes the same gates for either arm kind.
+
+    Args:
+        config: The corpus config.
+        questions: The corpus's questions.
+        git_repo: The repository the D-73 check reads; the live one when None.
+
+    Raises:
+        gitcheck.PreregistrationError: If a D-73 gate fails.
+        ValueError: If a split input changed or a question ID breaks the role.
+    """
+    if config.split_file is None:
+        return None
+    if config.split_role != "dev":
+        problems = gitcheck.preregistration_problems(
+            (config.preregistration_token,),
+            require_clean_tree=True,
+            unchanged_since_introduction=True,
+            repo=git_repo,
+        )
+        if problems:
+            raise gitcheck.PreregistrationError(
+                f"D-73: refusing to drive the [split] corpus {config.name!r}: "
+                + "; ".join(problems)
+                + f". {config.preregistration_token} must be committed in "
+                f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
+            )
+        # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
+        _enforce_preregistered_arm_set(config)
+    split = load_split(config.split_path)
+    # The split records the hash of each file it was derived from; a changed input (or
+    # a missing one) means the held-out set is no longer the pinned one.
+    input_problems = split_input_problems(split, repo_root())
+    if input_problems:
+        raise ValueError(
+            f"split {config.split_path} no longer matches the files it was "
+            "derived from: " + "; ".join(input_problems) + "; refusing to drive"
+        )
+    _enforce_split_role(config, split, list(questions))
+    return split
+
+
+def resume_state(
+    journal_path: Path, *, resume: bool
+) -> tuple[set[str], list[RunRecord]]:
+    """The done resume keys and the records of the journal a drive appends to.
+
+    With ``resume`` both come from the journal. Without it the journal must hold no
+    record (WR-03): spend is accumulated per invocation, so re-driving every unit into
+    a journal that already holds records restarts spend at zero and duplicates keys.
+
+    Raises:
+        JournalReuseError: If ``resume`` is False and the journal holds a record.
+    """
+    if not resume:
+        if load_records(journal_path):
+            raise JournalReuseError(
+                f"drive with resume=False refused: {journal_path} already holds "
+                "records, and the stage spend cap is per invocation. Use --resume to "
+                "continue it or a fresh run directory for a new drive."
+            )
+        return set(), []
+    return load_done(journal_path), load_records(journal_path)
+
+
+def reconcile_quietly(journal_path: Path, corpus: str) -> None:
+    """Reconciles the journal header after a drive; a failure is logged, not raised."""
+    try:
+        reconcile_header(journal_path, corpus)
+    except Exception as exc:
+        logger.warning("Failed to reconcile header for %s: %s", journal_path, exc)
+
+
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
     """The AttemptRecord a retry is about to supersede (06.3.4.1-33, CR-03)."""
     return AttemptRecord(
@@ -707,6 +801,71 @@ def select_arms(config: CorpusConfig, arms: Sequence[str] | None) -> list[str]:
     return selected
 
 
+def write_context_export(journal_path: Path, source: CheckpointSource) -> Path:
+    """Writes the run's `context_export.jsonl` at the end of a drive (D-249).
+
+    The Lancet arms' rows come from their `terminal_success` checkpoints
+    (`context_export.export_context`). An external arm's rows have no checkpoint:
+    `run-external` copied them into the run's export, so they are carried over from
+    it, and an external success record with no row there fails the export closed. A
+    journal with no external record is exported exactly as `export_context` does.
+
+    Returns:
+        The written path.
+
+    Raises:
+        ContextExportError: Naming each unit with no checkpoint or no carried row; no
+            file is written.
+    """
+    journal = Path(journal_path)
+    records = load_records(journal)
+    if not any(is_external_arm(r.graph_arm) for r in records):
+        return export_context(journal, source)
+    target = journal.parent / CONTEXT_EXPORT_FILE
+    carried = {
+        (row.question_id, row.arm): row
+        for row in (read_export(target) if target.is_file() else [])
+        if is_external_arm(row.arm)
+    }
+    latest, _ = deduplicate_by_arm(records)
+    missing = [
+        f"{r.question_id}/{r.graph_arm}"
+        for r in latest
+        if is_external_arm(r.graph_arm)
+        and r.outcome == "success"
+        and (r.question_id, r.graph_arm) not in carried
+    ]
+    if missing:
+        raise ContextExportError(
+            f"{target} holds no row for {len(missing)} external success record(s): "
+            f"{missing[:10]}. Rerun `lancet-eval run-external` with the arm's export "
+            "to copy its rows back"
+        )
+    with tempfile.TemporaryDirectory(prefix="lancet-export-") as tmp:
+        # export_context joins every success record of a journal on its checkpoint, so
+        # it is given the engine records alone.
+        engine_journal = Journal(Path(tmp) / "journal.jsonl")
+        engine_journal.write_header(
+            corpus=records[0].corpus, partial=True, context_export=True
+        )
+        for record in records:
+            if not is_external_arm(record.graph_arm):
+                engine_journal.append(record)
+        engine_rows = read_export(export_context(engine_journal.path, source))
+    rows = [*engine_rows, *carried.values()]
+    staged = journal.parent / f".{CONTEXT_EXPORT_FILE}.tmp.{time.time_ns()}"
+    try:
+        with open(staged, "w", encoding="utf-8", newline="\n") as f:
+            for row in rows:
+                f.write(
+                    json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n"
+                )
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
+    return target
+
+
 def drive(
     *,
     corpus: str,
@@ -781,39 +940,9 @@ def drive(
     questions = load_sample_questions(corpus)
 
     is_limited = limit is not None
-    split: HeldOutSplit | None = None
-    if config.split_file is not None:
-        # D-73: the pre-registration is committed before any paid held-out request, on
-        # the corpus's own configured token. D-170: a `dev` corpus is exempt, because
-        # dev reads precede the freeze commit that introduces the 06.3.6 token.
-        if config.split_role != "dev":
-            problems = gitcheck.preregistration_problems(
-                (config.preregistration_token,),
-                require_clean_tree=True,
-                unchanged_since_introduction=True,
-                repo=git_repo,
-            )
-            if problems:
-                raise gitcheck.PreregistrationError(
-                    f"D-73: refusing to drive the [split] corpus {corpus!r}: "
-                    + "; ".join(problems)
-                    + f". {config.preregistration_token} must be committed in "
-                    f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
-                )
-            # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
-            _enforce_preregistered_arm_set(config)
-        # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
-        # its IDs fit its role, then driven in the seeded balanced rotation.
-        split = load_split(config.split_path)
-        # The split records the hash of each file it was derived from; a changed
-        # input (or a missing one) means the held-out set is no longer the pinned one.
-        input_problems = split_input_problems(split, repo_root())
-        if input_problems:
-            raise ValueError(
-                f"split {config.split_path} no longer matches the files it was "
-                "derived from: " + "; ".join(input_problems) + "; refusing to drive"
-            )
-        _enforce_split_role(config, split, questions)
+    split = require_split_gates(config, questions, git_repo=git_repo)
+    if split is not None:
+        # D-107: a [split] corpus is driven in the seeded balanced rotation.
         work_units = plan_work_units(questions, drive_arms, split.order_seed)
         if limit is not None:
             # --limit takes the first N questions of the rotated order, whole.
@@ -833,16 +962,7 @@ def drive(
         target_path, gate_stage=gate_stage, max_retries=max_retries
     )
     _require_matching_split_marker(target_path, split)
-    if not resume and load_records(target_path):
-        # WR-03: spend is accumulated per invocation, so re-driving every unit into a
-        # journal that already holds records restarts spend at zero and duplicates keys.
-        raise JournalReuseError(
-            f"drive with resume=False refused: {target_path} already holds records, "
-            "and the stage spend cap is per invocation. Use --resume to continue it "
-            "or a fresh run directory for a new drive."
-        )
-    done_keys = load_done(target_path) if resume else set()
-    records: list[RunRecord] = load_records(target_path) if resume else []
+    done_keys, records = resume_state(target_path, resume=resume)
 
     remaining_units = [
         (q, arm)
@@ -861,16 +981,10 @@ def drive(
         context_export=True,
     )
 
-    def _safe_reconcile() -> None:
-        try:
-            reconcile_header(target_path, corpus)
-        except Exception as exc:
-            logger.warning("Failed to reconcile header for %s: %s", target_path, exc)
-
     def _with_context_export(result: DriveResult) -> DriveResult:
         source = checkpoint_source or PostgresCheckpointSource(eval_settings)
         try:
-            export_context(target_path, source)
+            write_context_export(target_path, source)
         except Exception as exc:
             # D-249: the records are paid for and journalled; `score` fails closed on
             # the missing export, so the drive reports the failure instead of raising.
@@ -1045,5 +1159,5 @@ def drive(
         )
         return _with_context_export(result)
     finally:
-        _safe_reconcile()
+        reconcile_quietly(target_path, corpus)
 
