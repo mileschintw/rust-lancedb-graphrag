@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-29 21:58 -0700
+Last updated: 2026-10-29 22:08 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -25,14 +25,12 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 10 | #10 | local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e (worktree `lane-10-ea13ed`, branch `claude/lane-10-ea13ed`) | review; must catch up with #24 (score.py, lever_comparison.py, levers_fixture.py) | — |
 | 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
 | 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | review; builds Rust on C: via CARGO_TARGET_DIR | — |
-| 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | review; rerunning Rust/Go | — |
 | 15 | #15 | local_3028b84a-992d-4853-9f02-e64406d045c5 (worktree `lane-15-d4af27`, branch `claude/lane-15-d4af27`) | started | — |
 | 23 | #23 | local_152dde96-4043-4687-bcae-ec7c450545a5 (worktree `lane-23-737211`, branch `claude/lane-23-737211`) | started | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 12 and 16 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 16 and 20 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -45,18 +43,16 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #6 | — | — | — | spec only | limited: parent spec |
-| #10 | 1 | #7 (closed) | none set | `metrics.py`, `report.py`, `test_metrics.py` | free |
 | #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
 | #13 | 1 | #7 (closed) | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #15 | 1 | #8, #9, #12, #18 all closed | none set | `corpus.py`, `test_run_arms.py`; plus `StagePreRegistration` type in `thresholds.py` (ruling 4) | free |
 | #23 | 1 | — | none set | engine lib timing tests: `startup_recovery_exceeds_queue_capacity_without_deadlock`, `telemetry_metrics_corpus_generation_gauge_is_numeric`, `telemetry_ingest::index_rebuild_*` (flaky under load; opened by lane 16, lane 12 saw it too) | free |
 | #25 | 2 (ruling 5: after #11 and #23 merge) | — | none set | clippy `-D warnings` fixes across engine lib, lib tests and two bins (opened by lane 11, 2026-10-29 21:45); shares `engine/src/tests.rs` with #23 and `src/generation/` with #11: start after #11 and #23 merge, or name owners per section | free |
-| #20 | 1 | — | none set | `cli.py` › `run` command (shared with #14, #15) | free |
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 
-Lane 15 (21:50) edits outside its sections, accepted: `score.py` `_four_arm_dimensions` uses new `arms.in_registry_order`; `hybrid+graph+rerank+metadata` added to ARMS exclusion in `tests/levers_fixture.py` and to `_built_lever_arms` in `tests/test_preregistration.py`. Lane 10 warned; whichever of 10/15 merges second keeps both sides.
+Lane 15 (21:50) edits outside its sections, accepted: `score.py` `_four_arm_dimensions` uses new `arms.in_registry_order`; `hybrid+graph+rerank+metadata` added to ARMS exclusion in `tests/levers_fixture.py` and to `_built_lever_arms` in `tests/test_preregistration.py`. Lane 10 merged first (PR #27); lane 15 told to merge origin/main and keep both sides.
 
 For #15's brief: lane 9 (293536bd) left `score.py` reading the v1.0 map, since one journal can hold both stores' arms; #15's store-prefixed arm labels must pick the map per arm. #18's "every reader incl. score" criterion is thus partly carried by #15; say so in lane 9's PR body.
 

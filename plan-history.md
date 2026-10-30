@@ -2,6 +2,11 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lanes 10 and 20 merged (moved 2026-10-29 22:08 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 10, #10 Evidence Hits@4 and context tokens: session local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e, branch `claude/lane-10-ea13ed` @ 3d1305fd. PR #27 merged 2026-10-29 as e7a3dfe5 on the user's "開 PR 並 merge (Recommended)" (no CI). #10 closed. Adds `tiktoken` to eval. Opt-in v1.0 lever re-score test: `LANCET_EVAL_RESCORE_LEVER_RUN=1` (~9.5 min). `engine/target` deleted.
+- Lane 20, #20 `run` exits non-zero on export failure: session local_d52ca4b3-d72c-4c36-b380-04a573500818, branch `claude/lane-20-474a4b` @ 10d0c923. PR #28 merged 2026-10-29 as 0371b730 on the user's "開 PR 並 merge (Recommended)" (no CI). #20 closed. `engine/target` deleted. Lanes 11 and 15 told to catch up (cli.py, score.py, levers_fixture.py).
+
 ## Lane 16 merged (moved 2026-10-29 21:47 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 16, #16 Shell scripts LF: session local_8cc16651-c299-4094-964f-a2cfabe355a2, branch `claude/lane-16-dcd7b8` @ 5c2b072d (`.gitattributes` only). PR #26 merged 2026-10-29 21:47 -0700 as 5f6030e0 on the user's "先開PR並merge，我再compact" (no CI). #16 closed as completed. Lane opened #23. `engine/target` deleted after merge. From now on root pytest has 1 known `scripts/` failure (the `python -O` test), not 5.
