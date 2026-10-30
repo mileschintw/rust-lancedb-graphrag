@@ -696,8 +696,9 @@ def _evidence_metrics(
 ) -> list[_Metric]:
     """D-250 evidence Hits@4 and context tokens, read from the context export.
 
-    A record with no export row has no value, so it is counted unscorable. Evidence
-    Hits@4 is a primary candidate like `paper_hits_at_4`, so it carries no delta here.
+    A record with no export row has no value, so it is counted unscorable (the report
+    is always written; `compare-levers` refuses such a record). Evidence Hits@4 is a
+    primary candidate like `paper_hits_at_4`, so it carries no delta here.
     """
 
     def texts(rec: RunRecord) -> list[str] | None:

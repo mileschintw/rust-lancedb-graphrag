@@ -644,7 +644,12 @@ def _hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
 
 
 def _evidence_texts(ctx: _Ctx, rec: RunRecord) -> list[str]:
-    """The exported evidence texts of a record, in rank order (D-249, D-250)."""
+    """The exported evidence texts of a record, in rank order (D-249, D-250).
+
+    Every record read here is ok on a pairwise population, so a missing row is a
+    broken export and is refused; `score` instead counts such a record unscorable,
+    because its report must always be written.
+    """
     if ctx.export is None:
         raise LeverComparisonError(
             f"the run has no {CONTEXT_EXPORT_FILE}; evidence metrics need one. "
@@ -676,6 +681,13 @@ def _prompt_tokens_value(r: RunRecord) -> float | None:
 
 #: How `evidence_hits_at_4` matches gold; `paper_hits_at_4`'s rule is pre-registered.
 _EVIDENCE_MATCHING_RULE = "export_text_ranks_1_4"
+
+
+def _matching_rule(ctx: _Ctx, primary: str) -> str | None:
+    return {
+        "paper_hits_at_4": ctx.prereg.matching_rule,
+        "evidence_hits_at_4": _EVIDENCE_MATCHING_RULE,
+    }.get(primary)
 
 
 def _primary_fn(ctx: _Ctx, primary: str) -> Callable[[RunRecord], float | None]:
@@ -821,11 +833,7 @@ def _family_block(ctx: _Ctx, family: Any) -> dict[str, Any]:
         "role": family.role,
         "alpha": family.alpha,
         "m": len(family.arms),
-        "matching_rule": ctx.prereg.matching_rule
-        if family.primary == "paper_hits_at_4"
-        else _EVIDENCE_MATCHING_RULE
-        if family.primary == "evidence_hits_at_4"
-        else None,
+        "matching_rule": _matching_rule(ctx, family.primary),
         "comparisons": _comparison_rows(ctx, family, floor=floor),
     }
 
@@ -1178,11 +1186,10 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
         "latency_total_ms_mean": lambda r: float(r.duration_ms),
         "retrieve_node_ms_mean": retrieve_ms,
         "spend_usd_mean": _record_spend_usd,
+        # Evidence Hits@4 is a primary candidate like paper_hits_at_4, so it is
+        # never a secondary; context tokens are.
         **(
-            {
-                "evidence_hits_at_4": _evidence_hit4_value(ctx),
-                "context_tokens_mean": _context_tokens_value(ctx),
-            }
+            {"context_tokens_mean": _context_tokens_value(ctx)}
             if ctx.export is not None
             else {}
         ),

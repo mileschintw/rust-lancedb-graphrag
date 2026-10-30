@@ -977,7 +977,9 @@ def test_the_report_carries_evidence_hits_and_context_tokens_for_every_arm(
     assert ref["prompt_tokens_mean"] == pytest.approx(500.0)
     assert context[RERANK]["evidence_hits_at_4"] == pytest.approx(1.0)
     metrics = {s["metric"] for s in payload["secondaries"]}
-    assert {"evidence_hits_at_4", "context_tokens_mean"} <= metrics
+    assert "context_tokens_mean" in metrics
+    # a primary candidate is never also an unadjusted secondary
+    assert "evidence_hits_at_4" not in metrics
     assert "context_tokens_mean" in lever_comparison.render_markdown(payload)
     json.dumps(payload)
 

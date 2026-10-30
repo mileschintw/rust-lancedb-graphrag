@@ -10,6 +10,7 @@ exercised in every branch (plan 06.3.6-10 Task 3, D-149, D-153, D-161).
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -29,7 +30,7 @@ from levers_fixture import (
     write_journal,
 )
 
-from lancet_eval import thresholds
+from lancet_eval import gitcheck, lever_comparison, thresholds
 from lancet_eval.arms import ARM_REGISTRY, arm_slug
 from lancet_eval.client import LEVER_ORDER
 from lancet_eval.config import repo_root
@@ -214,8 +215,7 @@ def _split_fact_on_hybrid(arm: str, qid: str) -> list[str] | None:
     if (arm, qid) != ("hybrid", "lv-g000"):
         return None
     head, _, tail = fact(qid, "a").partition(" is ")
-    texts = [f"{head}.", f"It is {tail}", "x", "x", fact(qid, "b"), "x", "x", "x"]
-    return texts
+    return [f"{head}.", f"It is {tail}", "x", "x", fact(qid, "b"), "x", "x", "x"]
 
 
 def test_score_reports_evidence_hits_at_4_and_context_tokens_per_arm_from_the_export(
@@ -266,17 +266,51 @@ def test_a_run_with_no_export_reports_no_evidence_dimensions(
 
 
 V1_0_RUN = "eval/runs/2026-10-06-drive2-multihop_rag_diag"
+V1_0_LEVER_RUN = "eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout"
+#: Set to 1 to re-score the v1.0 lever run of record (about eight minutes).
+RESCORE_LEVER_RUN_ENV = "LANCET_EVAL_RESCORE_LEVER_RUN"
+
+
+def _copy_run(source: Path, tmp_path: Path, *names: str) -> Path:
+    """Copies `names` of a run of record, which is read and never written."""
+    run = tmp_path / source.name
+    run.mkdir()
+    for name in names:
+        shutil.copy2(source / name, run / name)
+    return run
+
+
+def _recorded(path: Path) -> dict:  # type: ignore[type-arg]
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_a_v1_0_run_of_record_re_scores_to_its_recorded_dimensions(
     tmp_path: Path,
 ) -> None:
-    """The run of record is read, never written: it is scored from a copy."""
     source = repo_root() / V1_0_RUN
-    run = tmp_path / source.name
-    run.mkdir()
-    shutil.copy2(source / "journal.jsonl", run / "journal.jsonl")
+    run = _copy_run(source, tmp_path, "journal.jsonl")
     score_run(run_dir=run, no_judge=True)
-    recorded = json.loads((source / "report.json").read_text(encoding="utf-8"))
-    rescored = json.loads((run / "report.json").read_text(encoding="utf-8"))
-    assert rescored["dimensions"] == recorded["dimensions"]
+    recorded = _recorded(source / "report.json")
+    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
+
+
+@pytest.mark.skipif(
+    os.environ.get(RESCORE_LEVER_RUN_ENV) != "1",
+    reason=f"re-scores the v1.0 lever run of record; set {RESCORE_LEVER_RUN_ENV}=1",
+)
+def test_the_v1_0_lever_run_re_scores_and_re_compares_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The four-arm and lever paths #10 changed, on the lever run of record.
+
+    Only the clean-tree check is faked; the real D-73 ordering is checked.
+    """
+    monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, repo=None: True)
+    source = repo_root() / V1_0_LEVER_RUN
+    run = _copy_run(source, tmp_path, "journal.jsonl", "gates-heldout.json")
+    score_run(run_dir=run, no_judge=True)
+    recorded = _recorded(source / "report.json")
+    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
+    payload = lever_comparison.build_lever_comparison(run)
+    rebuilt = json.loads(lever_comparison._dump_json(payload))
+    assert rebuilt == _recorded(source / "lever-comparison.json")
