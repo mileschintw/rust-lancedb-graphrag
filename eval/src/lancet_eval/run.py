@@ -25,6 +25,12 @@ from lancet_eval.arms import (
 )
 from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
+from lancet_eval.context_export import (
+    CheckpointSource,
+    ContextExportError,
+    PostgresCheckpointSource,
+    export_context,
+)
 from lancet_eval.corpus import (
     CorpusConfig,
     GoldQuestion,
@@ -72,6 +78,9 @@ class DriveResult(int):
     echo. It is filled even when the failing record was the last unit.
     ``stopped_by_field_gate`` is True only when a unit was still waiting and was not
     dispatched, the same rule the cap and the tripwire follow (WR-01).
+
+    ``context_export_error`` says why the end-of-drive context export failed (D-249),
+    or is None when it was written. A failed export leaves the records journalled.
     """
 
     executed_count: int
@@ -81,6 +90,7 @@ class DriveResult(int):
     rerank_degraded_by_arm: dict[str, int]
     stopped_by_field_gate: bool
     field_gate_failures: tuple[str, ...]
+    context_export_error: str | None
 
     def __new__(
         cls,
@@ -91,6 +101,7 @@ class DriveResult(int):
         rerank_degraded_by_arm: dict[str, int] | None = None,
         stopped_by_field_gate: bool = False,
         field_gate_failures: tuple[str, ...] = (),
+        context_export_error: str | None = None,
     ) -> DriveResult:
         val = super().__new__(cls, executed_count)
         val.executed_count = executed_count
@@ -100,11 +111,13 @@ class DriveResult(int):
         val.rerank_degraded_by_arm = dict(rerank_degraded_by_arm or {})
         val.stopped_by_field_gate = stopped_by_field_gate
         val.field_gate_failures = tuple(field_gate_failures)
+        val.context_export_error = context_export_error
         return val
 
     @property
     def capped(self) -> bool:
         return self.stopped_by_cap
+
 
 class RerankTripwire:
     """The O10 rerank degrade tripwire of the paid drive (06.3.6 D-174, T-06.3.6-24).
@@ -655,6 +668,7 @@ def drive(
     max_retries: int = 0,
     gate_stage: str | None = None,
     git_repo: Path | None = None,
+    checkpoint_source: CheckpointSource | None = None,
 ) -> DriveResult:
     """Drive questions across the corpus's arms into a journal.
 
@@ -675,6 +689,12 @@ def drive(
     when ``RerankTripwire`` fires: the next unit is taken, the tripwire is checked
     beside the cap, and the result carries ``stopped_by_tripwire`` with the per-arm
     degrade counts.
+
+    When the drive ends, `context_export.jsonl` is written beside the journal from the
+    ``terminal_success`` checkpoints of every success record (D-249), read from
+    ``checkpoint_source`` or, when None, from the eval Postgres schema. A failed export
+    is logged and returned as ``context_export_error``; `lancet-eval export-context`
+    rebuilds it.
     """
     eval_settings = settings or EvalSettings()
     require_index_identity(eval_settings, corpus)
@@ -776,6 +796,7 @@ def drive(
         max_retries=max_retries,
         order_seed=split.order_seed if split is not None else None,
         split_sha256=split_sha256(split) if split is not None else None,
+        context_export=True,
     )
 
     def _safe_reconcile() -> None:
@@ -784,15 +805,33 @@ def drive(
         except Exception as exc:
             logger.warning("Failed to reconcile header for %s: %s", target_path, exc)
 
+    def _with_context_export(result: DriveResult) -> DriveResult:
+        source = checkpoint_source or PostgresCheckpointSource(eval_settings)
+        try:
+            export_context(target_path, source)
+        except ContextExportError as exc:
+            logger.error(
+                "context export failed (D-249); the records stay journalled. "
+                "Rebuild it with `lancet-eval export-context --run %s`: %s",
+                target_path.parent,
+                exc,
+            )
+            result.context_export_error = str(exc)
+        return result
+
     try:
         if not remaining_units:
             spend_so_far, _ = compute_spend(records)
-            return DriveResult(0, stopped_by_cap=False, observed_spend=spend_so_far)
+            return _with_context_export(
+                DriveResult(0, stopped_by_cap=False, observed_spend=spend_so_far)
+            )
 
         # Check if accumulator already reached cap before dispatching any unit
         initial_spend, _ = compute_spend(records)
         if initial_spend >= stage_spend_cap:
-            return DriveResult(0, stopped_by_cap=True, observed_spend=initial_spend)
+            return _with_context_export(
+                DriveResult(0, stopped_by_cap=True, observed_spend=initial_spend)
+            )
 
         baseline_ids = baseline_sample_ids(questions)
         raw_sink = RawEventSink(target_path.parent)
@@ -929,7 +968,7 @@ def drive(
             logger.error(
                 "explicit-field gate failed: %s", "; ".join(field_gate_failures)
             )
-        return DriveResult(
+        return _with_context_export(DriveResult(
             executed_count,
             stopped_by_cap=stopped_by_cap,
             observed_spend=total_spend,
@@ -939,7 +978,7 @@ def drive(
             ),
             stopped_by_field_gate=stopped_by_field_gate,
             field_gate_failures=tuple(field_gate_failures),
-        )
+        ))
     finally:
         _safe_reconcile()
 

@@ -695,6 +695,32 @@ def reconcile_run(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("export-context")
+def export_context_command(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Run directory whose journal.jsonl to export the context of",
+        ),
+    ],
+) -> None:
+    """Rebuild context_export.jsonl from terminal_success checkpoints (D-249)."""
+    try:
+        from lancet_eval import context_export
+
+        source = context_export.PostgresCheckpointSource(load_settings())
+        written = context_export.export_context(run / "journal.jsonl", source)
+        rows = len(context_export.read_export(written))
+        console.print(f"[green]Wrote {rows} context-export row(s) to {written}[/green]")
+    except Exception as exc:
+        from rich.markup import escape
+
+        console.print(f"[bold red]Context export error:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+
+
 
 @app.command("score")
 def score_benchmark(
