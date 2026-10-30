@@ -4,7 +4,8 @@
 # docs) passes `ci` after the `changes` job alone. The paths, budgets and tier commands are in docs/testing.md.
 #
 # No job makes a paid call, needs a secret, or uses the live stack, PostgreSQL or
-# data/lancedb-eval. Pull requests run under `pull_request`, never `pull_request_target`.
+# data/lancedb-eval. The eval job reads committed held-out files offline but makes no
+# D-237 held-out read (docs/testing.md). Pull requests run under `pull_request`, never `pull_request_target`.
 
 name: ci
 

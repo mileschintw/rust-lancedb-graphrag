@@ -119,6 +119,10 @@ docs no test reads runs only `changes` and `ci`.
   runner's 14 GB disk and the repository's 10 GB cache.
 - Job time limits: `engine` 45 minutes (a cold build after a cache eviction), every other job 10.
 - No job needs a secret, and no job runs under `pull_request_target`.
+- The `eval` job runs the same fast tier as the lanes, including the tests that read committed held-out files offline
+  (`eval/corpora/multihop_rag/questions.heldout.jsonl`, the `eval/runs/*heldout*` runs of record, and the v1.0
+  held-out re-read in `test_recorded_gate_verdicts.py`). They never send a held-out question to the system, so CI
+  makes no D-237 held-out read. The owner allowed this on 2026-10-30 (#44).
 
 ### Requiring CI before merge
 
