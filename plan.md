@@ -6,7 +6,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 
 ## Handover
 
-- **Coordinator:** title unknown, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, id unknown, mode normal.
+- **Coordinator:** title unknown, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, id local_e5497074-397c-4170-ba22-60a6e066d35b, mode normal.
 - **Standing instructions:** none.
 - **Unattended log:** none.
 
@@ -18,6 +18,11 @@ none
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
+| 7 | #7 | local_62fc0cbb-8a7d-4976-a2c6-5d117782e414 (worktree `lane-7-91faeb`, branch `claude/lane-7-91faeb`) | started | — |
+| 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | started | — |
+| 9 | #9 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | started | — |
+
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`.
 
 ## Roadmap
 
