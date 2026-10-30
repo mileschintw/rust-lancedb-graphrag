@@ -22,10 +22,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | working | — |
 | 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | catching up with main after #19, rerunning pytest; then PR + merge on the user's "先追 main 重跑，再開 PR 並 merge" (2026-10-29 20:0x) | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lane 7 merged → `plan-history.md`.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7 and 8 merged → `plan-history.md`.
+
+Approved, not yet started: lanes 10, 11, 12, 13, 16, 20 (briefs written, ab789a1f) on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700). The app refused `start_session` because that turn began from a session event, not a typed message; start all six in the next turn the user types.
 
 ## Roadmap
 
@@ -36,7 +37,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #6 | — | — | — | spec only | limited: parent spec |
-| #8 | 1 | — | none set | `engine/src/chunker/`, `engine/src/ingest.rs`, `gateway/main.go` | free |
 | #9 | 1 | — | none set | `config.py`, `seed.py`, `test_seed.py`, `test_stack_preflight.py` | free |
 | #10 | 1 | #7 (closed) | none set | `metrics.py`, `report.py`, `test_metrics.py` | free |
 | #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
