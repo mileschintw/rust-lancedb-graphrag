@@ -396,6 +396,30 @@ def test_a_resume_drives_only_the_questions_not_yet_done(s0: S0) -> None:
     assert again.generated == [s0.qs.g_ids[2]]
 
 
+def test_a_failed_bin_call_keeps_the_batches_journalled_before_it(
+    s0: S0, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(external_run, "GENERATE_BATCH_ROWS", 1)
+    inner = FakeBin()
+
+    def timing_out(
+        mode: str, rows: Sequence[ContextExportRow], levers: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        if mode == "generate" and rows[0].question_id == s0.qs.g_ids[1]:
+            raise parity.PromptParityError("generate_from_context generate failed")
+        return inner(mode, rows, levers)
+
+    with pytest.raises(ExternalRunError, match="generate failed"):
+        _run(s0, timing_out)  # type: ignore[arg-type]
+
+    assert [r.question_id for r in _external_records(s0)] == [s0.qs.g_ids[0]]
+    rows = read_export(s0.run / CONTEXT_EXPORT_FILE)
+    assert sum(r.arm == EXTERNAL for r in rows) == 3
+    again = FakeBin()
+    assert _run(s0, again).appended == 2
+    assert again.generated == s0.qs.g_ids[1:]
+
+
 def test_no_resume_refuses_a_journal_that_holds_records(s0: S0) -> None:
     fake = FakeBin()
     with pytest.raises(JournalReuseError):

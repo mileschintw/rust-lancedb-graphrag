@@ -68,6 +68,10 @@ PIPELINE_CONFIG_FILE = "pipeline_config.json"
 #: The levers an external arm is read with (D-248).
 EXTERNAL_READER_LEVERS: tuple[str, ...] = ("evidence_metadata",)
 
+#: Rows per bin call. Each call has one timeout (`parity.run_bin`), so a batch must
+#: finish well inside it at the reader's latency.
+GENERATE_BATCH_ROWS = 16
+
 #: Runs `generate_from_context <mode>` over rows under levers; one line per row.
 BinRunner = Callable[
     [str, Sequence[ContextExportRow], Sequence[str]], list[dict[str, Any]]
@@ -427,21 +431,23 @@ def run_external(
         order_seed=split.order_seed if split is not None else None,
     )
     remaining = [r for r in rows if journal_key(corpus, r.question_id, arm) not in done]
+    # The rows go in first, so every record journalled below already has its row.
+    _write_run_export(run_export, existing, rows)
+    records: list[RunRecord] = []
+    journal = Journal(target)
     try:
-        records = (
-            _read(
-                remaining,
+        # One bin call per batch: a timeout or crash loses one batch's answers, and
+        # the batches journalled before it stay done for the resume.
+        for start in range(0, len(remaining), GENERATE_BATCH_ROWS):
+            batch = _read(
+                remaining[start : start + GENERATE_BATCH_ROWS],
                 runner or bin_runner,
                 pipeline=pipeline,
                 fingerprint=fingerprint,
             )
-            if remaining
-            else []
-        )
-        journal = Journal(target)
-        for record in records:
-            journal.append(record)
-        _write_run_export(run_export, existing, rows)
+            for record in batch:
+                journal.append(record)
+            records.extend(batch)
     finally:
         reconcile_quietly(target, corpus)
     return ExternalRunResult(
