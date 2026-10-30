@@ -721,6 +721,34 @@ def export_context_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("check-prompt-parity")
+def check_prompt_parity_command(
+    run: Annotated[
+        Path,
+        typer.Option(
+            "--run",
+            "-r",
+            help="Run directory whose context_export.jsonl Lancet rows to re-pack",
+        ),
+    ],
+) -> None:
+    """Re-pack each Lancet export row with generate_from_context and compare it to
+    the checkpointed assembled_prompt byte for byte (D-247)."""
+    try:
+        from lancet_eval import parity
+
+        result = parity.check_prompt_parity(run, packer=parity.cargo_packer)
+        console.print(
+            f"[green]Prompt parity holds for {result.checked} Lancet row(s); "
+            f"{result.external} external row(s) not checked[/green]"
+        )
+    except Exception as exc:
+        from rich.markup import escape
+
+        console.print(f"[bold red]Prompt parity error:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("score")
 def score_benchmark(
     run: Annotated[
