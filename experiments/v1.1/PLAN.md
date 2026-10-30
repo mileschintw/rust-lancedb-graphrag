@@ -98,6 +98,10 @@ before its paid run.
 | Reruns and preflights | about $15 |
 | **Total Claude credit** | **about $45-75 of $200**, leaving room for an Opus writer point |
 
+Note (2026-10-30, D-255 facts): at current list prices (Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 per MTok, Batch
+half) an S2 dev arm costs about $0.5 with Sonnet and $0.03 with Haiku, so the S2 rows above are far too high. The
+other rows were not re-estimated. D-258 makes these figures a budget, not hard stops.
+
 ## Process
 
 - No full GSD phase loop. One `EXPERIMENT-S{n}.md` per stage holds the hypothesis, arms, metrics, decision rule and,
@@ -214,6 +218,51 @@ Accepted by the owner on 2026-10-29. Terms follow [GLOSSARY.md](../../GLOSSARY.m
   D-73 git check still applies. Code preparation only makes the harness accept such constants (new arm labels,
   external arms, primary metric `evidence_hits_at_4`); each stage writes its own constant on its own branch.
 
+### S2 code preparation decisions
+
+Accepted by the owner on 2026-10-30. Facts checked that day: the engine's system message is one sentence, and the
+static policy (about 400 o200k tokens) opens the user message; Sonnet 5.5 costs $2/$10 per MTok and Haiku 5.5
+$0.10/$0.50, Batch half of that; Sonnet 5.5 rejects `thinking: disabled` and takes only `between_tools`, Haiku 5.5
+takes `disabled` at effort high or below; OpenRouter maps `reasoning: {enabled: false}` to `thinking: disabled` and
+documents no `between_tools`; Anthropic rejects `temperature` and `top_p` since API version 2026-10-21.
+
+- **D-254 S2 replay path.** Harness subcommands, as `run-external`: `batch submit` packs each export row of the
+  replayed S1 arm with `generate_from_context pack`, rewrites it per reader (D-255), prints a cost estimate and submits
+  one batch per reader arm (`custom_id` = question ID, a manifest with the batch ID and a body hash per request written
+  first, a second submit refused while one is pending, `--limit N` for the pilot, `--retry-errors` for failed requests
+  only); `batch fetch` is re-runnable and journals each result once through a new `render` mode of the bin, which runs
+  `generate`'s validation and `Answer:` rendering over a given output. Errored and expired requests become error
+  records. The deepseek arm is not re-run: S1's records of the replayed arm are carried into the S2 run. `--arms`
+  picks the replayed arm; the S2 stage file names S1's winner.
+- **D-255 Claude request rewrite.** Only declared fields change: `model`; `provider` becomes
+  `{only: ["anthropic"], allow_fallbacks: false}` (no `require_parameters`, no `order`); `temperature` and `top_p` are
+  removed; `reasoning` follows a per-reader thinking table in the pre-registration (Haiku 5.5 `{enabled: false}`;
+  Sonnet 5.5 `between_tools`; Opus 5.5, if it joins under D-252, thinking on at effort low). Every other byte stays as
+  `pack` emits it. If the pilot shows OpenRouter cannot pass `between_tools`, the Sonnet arm goes through the native
+  Anthropic Message Batches API with a converted Messages body (same message text); the converter is built with S2.
+  A thinking-off reader with `reasoning_tokens > 0` fails closed.
+- **D-256 No prompt caching.** The cacheable prefix is about 400 tokens, below the 512-token minimum of Haiku 5.5 and
+  Sonnet 5.5, and a breakpoint would split the user message into parts that deepseek did not get. Even if it cached,
+  a 351-question Sonnet sync reading would save about $0.25. Not built for S2 or later sync readings; revisit only if
+  a shared prefix grows past the minimum (for example S3 few-shot extraction). Supersedes the reader row of the
+  Prompt caching table below.
+- **D-257 Reader arms.** Labels `<S1 arm>@<reader>` (for example `merged/hybrid+rerank+metadata@haiku-5.5`). A replay
+  record kind with its own fail-closed clauses: the export row equals the source arm's row (hash); the sent body equals
+  the `pack` body plus the declared rewrite; the model is the declared reader; `is_byok` is true and the provider is
+  Anthropic; `reasoning_tokens` per D-255; the batch ID recorded. The carried deepseek records keep their export rows,
+  source run and hash, so the S2 run directory scores alone. The report gives `answer_usable` on G, paired
+  differences and the null guard per reader, and cost per answered question at sync list price × tokens for every
+  reader (price table in the pre-registration; actual batch spend reported apart). No evidence Hits@4 for S2.
+- **D-258 Spend caps without truncation** (amends D-246). No stage stops halfway: a half-run arm is unusable and its
+  spend sunk. A cost estimate is printed before a submit or a drive and never refuses. `run-external --stage-cap`
+  stays built, but stage files set no cap or an unreachable one. D-246's figures remain the budget, not hard stops.
+- **D-259 Code-prep follow-ups.** The bin reads the chunk index from `<document_id>#<n>` as well, so external evidence
+  shows its real `chunk_index` (#47); the LlamaIndex export keeps `#`, since a `:` ID would look like a Lancet chunk
+  ID. The external reader runs with `evidence_metadata` only, which matches the shipped default's reader-side levers
+  (rerank is retrieval-side); S0's pre-registration states this and requires nothing more. The external record's
+  generation model and provider order are taken from the `pack` body. S1's pre-registration constant is named
+  `PREREGISTRATION_S1`, and S1 reads the levers-dev question set (the D-237 dev pool of 100).
+
 ## Model access
 
 Two paths, chosen by where the call happens:
@@ -250,6 +299,9 @@ With Claude, caching is opt-in per request. Prices relative to base input: 5-min
 | Reader (S2 replay, Claude reader arms) | Yes | One explicit `cache_control` breakpoint at the end of the static system prompt (about 700-800 tokens, a rough count from the source), before the per-question evidence. No top-level automatic caching: its breakpoint would land after the unique tail and only write. |
 | Extraction (S3) | No | The system prompt plus schema is about 300 tokens, under the 512 minimum. Revisit only if the pilot adds few-shot examples, which must then be identical for every writer. |
 | Engine path with deepseek (S0, S1) | No change | Not a Claude path. |
+
+Note (2026-10-30, D-256): the reader row is superseded. The engine's system message is one sentence; the static
+policy (about 400 tokens) opens the user message, below the 512-token minimum, so no reader breakpoint is sent.
 
 TTL by start-to-start gap between requests sharing the prefix:
 
