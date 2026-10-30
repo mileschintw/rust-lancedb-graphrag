@@ -846,8 +846,11 @@ def _built_lever_arms() -> tuple[str, ...]:
     return tuple(
         label
         for label, spec in ARM_REGISTRY.items()
-        # The v1.1 S0 row (D-247) combines two 06.3.6 levers; it is not a lever arm.
-        if spec.levers and label not in ("hybrid+all", "hybrid+rerank+metadata")
+        # The v1.1 S0 row (D-247) and S1 graph-on row (D-251) combine two 06.3.6
+        # levers; neither is a lever arm.
+        if spec.levers
+        and label
+        not in ("hybrid+all", "hybrid+rerank+metadata", "hybrid+graph+rerank+metadata")
     )
 
 
@@ -1091,3 +1094,83 @@ def test_an_external_pipeline_declaration_that_does_not_match_fails_closed(
 
     with pytest.raises(preregistration.PreregistrationError, match=message):
         preregistration.external_pipelines_of(_external_stage(pipelines))
+
+
+# ---- v1.1 S1: store-prefixed labels (D-251, D-253) -----------------------------------
+
+_S1_OFF = ("small/hybrid+rerank+metadata", "merged/hybrid+rerank+metadata")
+_S1_ON = ("small/hybrid+graph+rerank+metadata", "merged/hybrid+graph+rerank+metadata")
+
+
+def _s1_stage(**changes: object) -> thresholds.StagePreRegistration:
+    """A synthetic S1-shaped stage constant over store-prefixed labels."""
+    values: dict[str, object] = {
+        "reference_arm": _S1_OFF[0],
+        "families": (
+            thresholds.FamilySpec(
+                "answer_usable", "decisional", (_S1_OFF[1], _S1_ON[1]), 0.05
+            ),
+        ),
+        "descriptive_arms": (_S1_ON[0],),
+        "test": "paired_sign_flip_exact_two_sided",
+        "non_evaluable_rule": "p=1_m_unchanged",
+        "population": "pairwise_per_comparison",
+        "complete_case_floor": 0.80,
+        "matching_rule": "evidence_text",
+        "bootstrap_b": 200,
+        "bootstrap_seed": 42,
+        "null_guard_arms": (_S1_OFF[1],),
+        "null_guard_predicate": "metrics.is_abstention",
+        "null_guard_margin": 0.10,
+        "null_guard_min_pair_fraction": 0.80,
+        "answer_mix_strata": ("comparison_query", "binary_gold"),
+        "sc2_timeout_rate_floor": 0.025,
+        "rerank_degrade_tripwire_rate": 0.20,
+        "rerank_degrade_tripwire_min_calls": 50,
+        "rerank_consecutive_degrade_halt": 5,
+        "default_rule": "synthetic test rule",
+        "provenance": "synthetic S1 test pre-registration",
+    }
+    values.update(changes)
+    return thresholds.StagePreRegistration(**values)  # type: ignore[arg-type]
+
+
+def test_a_test_constant_with_store_prefixed_labels_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval import preregistration
+
+    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_S1", _s1_stage(), raising=False)
+    pre = preregistration.resolve("PREREGISTRATION_TEST_S1")
+    assert isinstance(pre, thresholds.LeverPreRegistration)
+    assert preregistration.arms_of(pre) == (_S1_OFF[0], _S1_OFF[1], _S1_ON[1], _S1_ON[0])
+    assert preregistration.external_pipelines_of(pre) == {}
+
+
+def test_a_stage_constant_carries_its_external_pipelines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval import preregistration
+
+    stage = _s1_stage(
+        descriptive_arms=(_S1_ON[0], "llamaindex"),
+        external_pipelines=(("llamaindex", _pipeline()),),
+    )
+    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_S1", stage, raising=False)
+    pre = preregistration.resolve("PREREGISTRATION_TEST_S1")
+    assert preregistration.external_pipelines_of(pre) == {"llamaindex": _pipeline()}
+    with pytest.raises(preregistration.PreregistrationError, match="llamaindex"):
+        preregistration.external_pipelines_of(
+            _s1_stage(descriptive_arms=("llamaindex",))
+        )
+
+
+def test_a_constant_naming_a_bad_store_prefix_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval import preregistration
+
+    stage = _s1_stage(descriptive_arms=("large/hybrid+graph+rerank+metadata",))
+    monkeypatch.setattr(thresholds, "PREREGISTRATION_TEST_S1", stage, raising=False)
+    with pytest.raises(preregistration.PreregistrationError, match="large/"):
+        preregistration.resolve("PREREGISTRATION_TEST_S1")

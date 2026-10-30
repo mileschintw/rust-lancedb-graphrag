@@ -16,6 +16,14 @@ three engine modes. External rows live in ``EXTERNAL_ARMS``, not in ``ARM_REGIST
 so every caller that iterates the registry to build gateway requests (the drive, the
 preflight canaries) never sees one. ``resolve_arm`` and ``canonical_arm`` know both
 tables, and ``request_fields`` refuses an external label.
+
+v1.1 S1 (D-251) pairs arms from two eval stores in one journal. A label may carry a
+store prefix, ``<prefix>/<registry label>`` (``small/hybrid+rerank+metadata``), that
+declares the store the arm runs on (``STORE_PREFIXES``). The prefix is part of the arm:
+``canonical_arm`` keeps it, so the same row on two stores is two arms, while
+``resolve_arm`` and ``request_fields`` read the base row. A legacy alias or an external
+arm is never prefixed, and an unknown prefix fails closed. An unprefixed label declares
+no store and behaves exactly as before.
 """
 
 from __future__ import annotations
@@ -29,7 +37,7 @@ from pydantic.dataclasses import dataclass as pydantic_dataclass
 from lancet_eval.client import LEVER_ORDER, LeverName
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from lancet_eval.client import Notice
     from lancet_eval.corpus import GoldQuestion
@@ -48,6 +56,7 @@ ArmLabel = Literal[
     "hybrid+graph-v2",
     "hybrid+all",
     "hybrid+rerank+metadata",
+    "hybrid+graph+rerank+metadata",
     "llamaindex",
 ]
 
@@ -123,7 +132,9 @@ def _registry_rows() -> tuple[ArmSpec, ...]:
     committed graph diagnosis selection decides (D-141; a test pins the two together).
     ``hybrid+all`` carries every declared lever, with the graph on iff ``graph_v2``
     is among them (D-149). The v1.1 S0 default, ``hybrid+rerank+metadata`` (D-247),
-    comes last, so every 06.3.5 and 06.3.6 index keeps its position.
+    follows, so every 06.3.5 and 06.3.6 index keeps its position, and S1's graph-on arm,
+    ``hybrid+graph+rerank+metadata``, comes last: the S0 default with the basic graph
+    context on, never ``graph_v2`` (D-251).
     """
     rows = [
         ArmSpec(
@@ -192,6 +203,14 @@ def _registry_rows() -> tuple[ArmSpec, ...]:
             levers=("rerank", "evidence_metadata"),
         )
     )
+    rows.append(
+        ArmSpec(
+            label="hybrid+graph+rerank+metadata",
+            retrieval_mode="hybrid",
+            disable_graph_context=False,
+            levers=("rerank", "evidence_metadata"),
+        )
+    )
     return tuple(rows)
 
 
@@ -214,6 +233,43 @@ EXTERNAL_ARMS: dict[str, ArmSpec] = {
 _ALIAS: dict[str, str] = {
     al: a.label for a in ARM_REGISTRY.values() for al in a.legacy_aliases
 }
+
+#: D-251 store prefixes: ``<prefix>/<label>`` runs on the eval store named here
+#: (``config.EVAL_STORES``). ``small`` is the v1.0 store, ``merged`` the S1 store.
+STORE_PREFIXES: dict[str, str] = {"small": "eval", "merged": "eval-s1"}
+
+
+def _split_store(label: str) -> tuple[str | None, str]:
+    """Splits a label into its store prefix (None when unprefixed) and its base label.
+
+    Raises:
+        ValueError: If the prefix is unknown or the base is not a registry row (a
+            legacy alias, an external arm or an unknown label), naming the label.
+    """
+    prefix, sep, base = label.partition("/")
+    if not sep:
+        return None, label
+    if prefix not in STORE_PREFIXES:
+        raise ValueError(
+            f"unknown store prefix in arm label {label!r}; known prefixes: "
+            f"{sorted(STORE_PREFIXES)} (D-251)"
+        )
+    if base not in ARM_REGISTRY:
+        raise ValueError(
+            f"arm label {label!r}: a store prefix takes a registry label, not a legacy "
+            "alias, an external arm or an unknown label (D-251)"
+        )
+    return prefix, base
+
+
+def arm_store(label: str) -> str | None:
+    """The eval store name a label's prefix declares; None for an unprefixed label.
+
+    Raises:
+        ValueError: If the label carries a bad store prefix (``_split_store``).
+    """
+    prefix, _ = _split_store(label)
+    return None if prefix is None else STORE_PREFIXES[prefix]
 
 
 @pydantic_dataclass(frozen=True, config=ConfigDict(extra="forbid"))
@@ -256,9 +312,13 @@ def canonical_arm(stored_label: str) -> str:
     Returns:
         The canonical label.
 
+    A store-prefixed label keeps its prefix (D-251).
+
     Raises:
         ValueError: If the label is neither canonical nor an alias.
     """
+    if _split_store(stored_label)[0] is not None:
+        return stored_label
     if stored_label in ARM_REGISTRY or stored_label in EXTERNAL_ARMS:
         return stored_label
     if stored_label in _ALIAS:
@@ -275,9 +335,14 @@ def resolve_arm(label: str) -> ArmSpec:
     Returns:
         The matching ``ArmSpec``.
 
+    A store-prefixed label returns its base row (D-251).
+
     Raises:
         ValueError: With the ``Unknown arm '...'. Expected one of:`` prefix.
     """
+    prefix, base = _split_store(label)
+    if prefix is not None:
+        return ARM_REGISTRY[base]
     if label in ARM_REGISTRY:
         return ARM_REGISTRY[label]
     if label in EXTERNAL_ARMS:
@@ -286,6 +351,26 @@ def resolve_arm(label: str) -> ArmSpec:
         return ARM_REGISTRY[_ALIAS[label]]
     valid = [*ARM_REGISTRY, *EXTERNAL_ARMS, *_ALIAS]
     raise ValueError(f"Unknown arm {label!r}. Expected one of: {valid}")
+
+
+def in_registry_order(labels: Iterable[str]) -> list[str]:
+    """Canonical labels in report order: registry rows, then external arms, unprefixed
+    first, then each store's prefixed arms in ``STORE_PREFIXES`` order (D-251).
+
+    Args:
+        labels: Canonical labels (``canonical_arm`` output).
+
+    Returns:
+        The labels, sorted.
+    """
+    position = {label: i for i, label in enumerate((*ARM_REGISTRY, *EXTERNAL_ARMS))}
+    stores = list(STORE_PREFIXES)
+
+    def key(label: str) -> tuple[int, int]:
+        prefix, base = _split_store(label)
+        return (0 if prefix is None else 1 + stores.index(prefix), position[base])
+
+    return sorted(labels, key=key)
 
 
 def is_external_arm(label: str) -> bool:
@@ -299,7 +384,7 @@ def is_legacy_label(label: str) -> bool:
 
 
 def arm_slug(label: str) -> str:
-    """Filesystem-safe slug: the canonical label with ``+`` and ``-`` as ``_``.
+    """Filesystem-safe slug: the canonical label with ``+``, ``-`` and ``/`` as ``_``.
 
     Args:
         label: A canonical label or an alias.
@@ -307,7 +392,7 @@ def arm_slug(label: str) -> str:
     Returns:
         The slug of the canonical label.
     """
-    return canonical_arm(label).replace("+", "_").replace("-", "_")
+    return canonical_arm(label).replace("+", "_").replace("-", "_").replace("/", "_")
 
 
 def request_fields(label: str) -> dict[str, object]:

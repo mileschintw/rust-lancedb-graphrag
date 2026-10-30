@@ -47,11 +47,18 @@ RERANK_DEGRADED = Notice(code="RERANK_DEGRADED", message="", typed_code=23)
 TOKEN = "PREREGISTRATION_06_3_6"
 
 # Registered arms of a 06.3.6 corpus, in registry order (the two 06.3.5 non-hybrid
-# retrieval arms and the v1.1 S0 row, D-247, are not part of it).
+# retrieval arms, the v1.1 S0 row, D-247, and the S1 graph-on row, D-251, are not part
+# of it).
 ARMS: tuple[str, ...] = tuple(
     a
     for a in ARM_REGISTRY
-    if a not in ("dense-only", "bm25-only", "hybrid+rerank+metadata")
+    if a
+    not in (
+        "dense-only",
+        "bm25-only",
+        "hybrid+rerank+metadata",
+        "hybrid+graph+rerank+metadata",
+    )
 )
 DECISIONAL: tuple[str, ...] = tuple(
     a
