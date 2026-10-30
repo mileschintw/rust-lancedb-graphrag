@@ -68,7 +68,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-- Whether to start lanes for #29 and #30 (follow-ups lane 15 opened; both free, both touch files #14 also extends: `score.py`, `raw_events.py`). Not asked yet. Since 2026-10-29 23:01 -0700.
+- Whether to start lanes for #29 and #30 (follow-ups lane 15 opened; both free; #29 owns `raw_events.py`, #30 owns `score.py` › judged arm list and `calibration.py`; no running lane touches them). Not asked yet. Since 2026-10-29 23:01 -0700.
 
 ## Deadlines
 
