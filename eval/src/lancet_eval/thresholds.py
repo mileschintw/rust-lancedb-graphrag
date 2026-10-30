@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from lancet_eval.arms import ExternalPipeline
 
 
 class ThresholdError(ValueError):
@@ -522,6 +525,20 @@ class LeverPreRegistration:
     default_rule: str
     provenance: str
 
+
+@dataclass(frozen=True)
+class StagePreRegistration(LeverPreRegistration):
+    """v1.1 (D-253): a stage's pre-registration, which may list external arms.
+
+    Its arm labels may be external (D-247) or store-prefixed (D-251). Each stage writes
+    its own constant of this type on its own branch; none is defined here.
+
+    Attributes:
+        external_pipelines: ``(arm label, arms.ExternalPipeline)`` pairs, one per
+            external arm; ``preregistration.external_pipelines_of`` reads them.
+    """
+
+    external_pipelines: tuple[tuple[str, ExternalPipeline], ...] = ()
 
 
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single

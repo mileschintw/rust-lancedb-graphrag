@@ -12,9 +12,11 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from lancet_eval.config import (
+    EVAL_STORES,
     V1_STORE,
     EvalSettings,
     EvalStore,
+    get_eval_store,
     load_settings,
     overlay_lancedb_path,
     pg_schema_of,
@@ -253,6 +255,77 @@ def check_store_isolation(
             f"Eval store {store.name!r} (LanceDB {settings.lancedb_path}, PostgreSQL "
             f"schema {eval_schema}) is fully isolated from dev."
         ),
+        detail=detail,
+    )
+
+
+def check_arm_store(
+    settings: EvalSettings,
+    arms: Sequence[str],
+    environ: Mapping[str, str],
+) -> PreflightCheckResult:
+    """Verify the stack serves the store the arms' prefixes declare (D-251).
+
+    The harness settings' LanceDB path and schema must be that store's
+    (`store_target_failures`), and a `LANCET_ENV` naming a known store, which picks the
+    engine's overlay, must name it too. Arms from two stores are refused: each store is
+    driven against its own stack. Unprefixed arms declare no store and pass unchanged.
+    The check reads names only and sends no request.
+
+    Args:
+        settings: The harness settings of the stack under check.
+        arms: The arm labels about to be driven or checked.
+        environ: The process environment (`os.environ`).
+
+    Returns:
+        The `arm_store` result; `detail` names the arms and the declared store.
+    """
+    from lancet_eval.arms import arm_store
+
+    name = "arm_store"
+    declared = {arm_store(a) for a in arms}
+    detail: dict[str, Any] = {"arms": list(arms)}
+    if declared == {None}:
+        return PreflightCheckResult(
+            name=name,
+            passed=True,
+            message="The arms declare no store; nothing to compare.",
+            detail=detail,
+        )
+    if len(declared) > 1:
+        stores = sorted("none" if s is None else s for s in declared)
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=(
+                f"The arms {list(arms)} come from two stores ({', '.join(stores)}); "
+                "drive each store's arms against its own stack."
+            ),
+            detail=detail,
+        )
+    store = get_eval_store(next(iter(declared)))  # type: ignore[arg-type]
+    detail["store"] = store.name
+    failures = store_target_failures(settings, store)
+    lancet_env = environ.get("LANCET_ENV", "")
+    if lancet_env in EVAL_STORES and lancet_env != store.name:
+        failures.append(
+            f"LANCET_ENV={lancet_env} selects the engine overlay of store "
+            f"{lancet_env!r}"
+        )
+    if failures:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=(
+                f"The arms declare store {store.name!r}, but the stack is not on it: "
+                + "; ".join(failures)
+            ),
+            detail=detail,
+        )
+    return PreflightCheckResult(
+        name=name,
+        passed=True,
+        message=f"The stack is on store {store.name!r}, the one the arms declare.",
         detail=detail,
     )
 
@@ -1607,9 +1680,30 @@ def run_preflight_checks(
     run_arm_canaries = (
         corpus_config.arm_canaries is not None and len(corpus_config.arms) > 2
     )
+    # D-251: a store-prefixed corpus is checked one store at a time, on the arms whose
+    # prefix declares the selected store; those are the only arms its canaries send.
+    from lancet_eval.arms import arm_store
+
+    store_arms = [a for a in corpus_config.arms if arm_store(a) == store.name]
+    store_prefixed = any(arm_store(a) is not None for a in corpus_config.arms)
 
     # 1. Store isolation
     results.append(check_store_isolation(settings, store))
+    if store_prefixed:
+        if store_arms:
+            results.append(check_arm_store(settings, store_arms, os.environ))
+        else:
+            results.append(
+                PreflightCheckResult(
+                    name="arm_store",
+                    passed=False,
+                    message=(
+                        f"No arm of corpus {corpus_name!r} declares store "
+                        f"{store.name!r}; its arms are {corpus_config.arms}."
+                    ),
+                    detail={"arms": []},
+                )
+            )
 
     # 2. Index identity (must agree across stores before any live check runs)
     results.append(check_index_identity(settings, corpus_name))
@@ -1662,7 +1756,7 @@ def run_preflight_checks(
                 else:
                     arm_check = check_arm_mode_canaries(
                         client,
-                        arms=corpus_config.arms,
+                        arms=store_arms if store_prefixed else corpus_config.arms,
                         canary_path=(
                             repo_root()
                             / "eval"

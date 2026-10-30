@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import time
+from collections.abc import Sequence
 from fractions import Fraction
 from pathlib import Path
 
@@ -15,6 +16,7 @@ import httpx
 from lancet_eval import gitcheck, preregistration
 from lancet_eval.arms import (
     ablation_failures,
+    arm_store,
     canonical_arm,
     explicit_field_failures,
     is_legacy_label,
@@ -51,7 +53,7 @@ from lancet_eval.journal import (
     reconcile_header,
 )
 from lancet_eval.measure import compute_spend
-from lancet_eval.preflight import check_drive_environment
+from lancet_eval.preflight import check_arm_store, check_drive_environment
 from lancet_eval.raw_events import RawEventSink, baseline_sample_ids
 from lancet_eval.split import (
     HeldOutSplit,
@@ -653,6 +655,58 @@ def refuse_legacy_labels_for_live_drive(corpus: str) -> None:
     )
 
 
+def select_arms(config: CorpusConfig, arms: Sequence[str] | None) -> list[str]:
+    """The arms a drive runs: the corpus's, or the `--arms` subset of them (D-251).
+
+    The subset is matched by canonical label and returned as the corpus lists it, in
+    corpus order. Every selected arm must declare one store: a corpus whose arms span
+    two stores (S1) is driven one store at a time, each against its own stack, so it
+    needs a subset. A corpus of unprefixed arms with no subset is driven as before.
+
+    Args:
+        config: The corpus config.
+        arms: The `--arms` labels, or None for every arm of the corpus.
+
+    Returns:
+        The selected labels.
+
+    Raises:
+        ValueError: If a label is unknown, repeated or not an arm of the corpus, the
+            subset is empty, or the arms come from two stores.
+    """
+    if arms is None:
+        selected = list(config.arms)
+    else:
+        if not arms:
+            raise ValueError("--arms names no arm")
+        of_corpus = {canonical_arm(label): label for label in config.arms}
+        wanted: set[str] = set()
+        for label in arms:
+            canonical = canonical_arm(label)
+            if canonical in wanted:
+                raise ValueError(f"--arms names {label!r} twice")
+            if canonical not in of_corpus:
+                raise ValueError(
+                    f"{label!r} is not an arm of corpus {config.name!r}; its arms are "
+                    f"{config.arms}"
+                )
+            wanted.add(canonical)
+        selected = [a for a in config.arms if canonical_arm(a) in wanted]
+    stores = {arm_store(a) for a in selected}
+    if len(stores) > 1:
+        named = sorted("none" if s is None else s for s in stores)
+        hint = (
+            "pass --arms with one store's arms"
+            if arms is None
+            else "drive each store's arms on their own"
+        )
+        raise ValueError(
+            f"the arms {selected} of corpus {config.name!r} come from two stores "
+            f"({', '.join(named)}); {hint} (D-251)"
+        )
+    return selected
+
+
 def drive(
     *,
     corpus: str,
@@ -667,8 +721,14 @@ def drive(
     gate_stage: str | None = None,
     git_repo: Path | None = None,
     checkpoint_source: CheckpointSource | None = None,
+    arms: Sequence[str] | None = None,
 ) -> DriveResult:
     """Drive questions across the corpus's arms into a journal.
+
+    ``arms`` drives a subset of the corpus's arms (``select_arms``, D-251). Before the
+    identity gate and any journal I/O, the drive refuses arms from two stores and arms
+    whose declared store the settings and ``LANCET_ENV`` do not target
+    (``preflight.check_arm_store``).
 
     Enforces fail-closed stage spend cap in-process with a bounded in-flight window.
     Returns DriveResult with executed count, stopped_by_cap status, and observed spend.
@@ -695,6 +755,11 @@ def drive(
     rebuilds it.
     """
     eval_settings = settings or EvalSettings()
+    config = load_corpus_config(corpus)
+    drive_arms = select_arms(config, arms)
+    arm_store_check = check_arm_store(eval_settings, drive_arms, os.environ)
+    if not arm_store_check.passed:
+        raise ValueError(f"refusing to drive: {arm_store_check.message}")
     require_index_identity(eval_settings, corpus)
 
     if gate_stage is not None:
@@ -713,7 +778,6 @@ def drive(
         if not environment_check.passed:
             raise ValueError(environment_check.message)
 
-    config = load_corpus_config(corpus)
     questions = load_sample_questions(corpus)
 
     is_limited = limit is not None
@@ -750,10 +814,10 @@ def drive(
                 "derived from: " + "; ".join(input_problems) + "; refusing to drive"
             )
         _enforce_split_role(config, split, questions)
-        work_units = plan_work_units(questions, config.arms, split.order_seed)
+        work_units = plan_work_units(questions, drive_arms, split.order_seed)
         if limit is not None:
             # --limit takes the first N questions of the rotated order, whole.
-            work_units = work_units[: limit * len(config.arms)]
+            work_units = work_units[: limit * len(drive_arms)]
         questions = list(dict.fromkeys(q.question_id for q, _ in work_units))
         by_id = {q.question_id: q for q, _ in work_units}
         questions = [by_id[qid] for qid in questions]
@@ -762,7 +826,7 @@ def drive(
             questions = questions[:limit]
 
         # Build work units: cross product of questions and confirmed arms
-        work_units = [(q, arm) for q in questions for arm in config.arms]
+        work_units = [(q, arm) for q in questions for arm in drive_arms]
 
     target_path = Path(journal_path)
     _require_matching_journal_marker(

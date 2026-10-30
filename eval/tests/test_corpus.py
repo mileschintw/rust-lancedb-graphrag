@@ -9,6 +9,7 @@ import pytest
 
 from lancet_eval.config import repo_root
 from lancet_eval.corpus import (
+    CHUNK_STRATEGIES,
     CorpusConfig,
     CorpusError,
     GoldQuestion,
@@ -372,3 +373,115 @@ def test_the_committed_06_3_5_corpora_declare_a_judge_section() -> None:
     assert load_corpus("multihop_rag_heldout").has_judge is True
     assert load_corpus("multihop_rag_rehearsal").has_judge is True
     assert load_corpus("multihop_rag").has_judge is False
+
+
+# --- v1.1 S1: store-prefixed arms and per-store chunking (D-251) ---------------------
+
+_S1_ARMS = (
+    '[arms]\narms = ["small/hybrid+rerank+metadata", '
+    '"merged/hybrid+rerank+metadata"]\n'
+)
+_S1_STORES = (
+    '[stores.small]\nchunk_strategy = "structure-aware"\n'
+    "chunk_size = 500\nchunk_overlap = 50\n"
+    '[stores.merged]\nchunk_strategy = "structure-merge"\n'
+    "chunk_size = 256\nchunk_overlap = 25\n"
+)
+
+
+def test_the_s1_dev_corpus_pairs_four_store_prefixed_arms() -> None:
+    from lancet_eval.arms import arm_store
+
+    cfg = load_corpus("multihop_rag_s1_dev")
+    assert cfg.arms == [
+        "small/hybrid+rerank+metadata",
+        "small/hybrid+graph+rerank+metadata",
+        "merged/hybrid+rerank+metadata",
+        "merged/hybrid+graph+rerank+metadata",
+    ]
+    assert {arm_store(a) for a in cfg.arms} == {"eval", "eval-s1"}
+    assert cfg.split_role == "dev"
+    assert cfg.map_corpus == "multihop_rag"
+    assert not cfg.has_judge
+
+
+def test_the_s1_dev_corpus_writes_its_chunk_sizes_explicitly() -> None:
+    """The merged store's sizes are o200k tokens and never the gateway's 500/50."""
+    cfg = load_corpus("multihop_rag_s1_dev")
+    merged = cfg.store_chunking["merged"]
+    assert (merged.chunk_strategy, merged.chunk_size, merged.chunk_overlap) == (
+        "structure-merge",
+        256,
+        25,
+    )
+    small = cfg.store_chunking["small"]
+    assert (small.chunk_strategy, small.chunk_size, small.chunk_overlap) == (
+        "structure-aware",
+        500,
+        50,
+    )
+    text = (repo_root() / "eval" / "corpora" / "multihop_rag_s1_dev.toml").read_text(
+        encoding="utf-8"
+    )
+    assert "chunk_size = 256" in text and "chunk_overlap = 25" in text
+
+
+def test_a_corpus_without_store_prefixes_has_no_store_chunking() -> None:
+    for name in ("multihop_rag", "multihop_rag_heldout", "multihop_rag_levers_dev"):
+        assert load_corpus(name).store_chunking == {}, name
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        (_S1_ARMS, r"no \[stores.merged\]"),
+        (
+            _S1_ARMS + _S1_STORES + '[stores.large]\nchunk_strategy = "fixed-size"\n'
+            "chunk_size = 500\nchunk_overlap = 50\n",
+            "large",
+        ),
+        (
+            _S1_ARMS + _S1_STORES.replace('"structure-merge"', '"recursive"'),
+            "recursive",
+        ),
+        (_S1_ARMS + _S1_STORES.replace("chunk_overlap = 25", ""), "chunk_overlap"),
+        (
+            _S1_ARMS + _S1_STORES.replace("chunk_overlap = 25", "chunk_overlap = 256"),
+            "smaller than chunk_size",
+        ),
+        (
+            _S1_ARMS + _S1_STORES.replace("chunk_size = 256", "chunk_size = 0"),
+            "chunk_size",
+        ),
+        (
+            '[arms]\narms = ["hybrid", "merged/hybrid+rerank+metadata"]\n' + _S1_STORES,
+            "mixes",
+        ),
+        ('[arms]\narms = ["hybrid"]\n' + _S1_STORES, "no store-prefixed arm"),
+    ],
+    ids=[
+        "missing-store",
+        "unknown-store",
+        "bad-strategy",
+        "missing-overlap",
+        "overlap-too-big",
+        "zero-size",
+        "mixed-labels",
+        "stores-without-prefixes",
+    ],
+)
+def test_a_bad_store_section_fails_the_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str, message: str
+) -> None:
+    with pytest.raises(CorpusError, match=message):
+        _write_tmp_corpus(tmp_path, monkeypatch, "bad_stores", extra)
+
+
+def test_the_chunk_strategies_match_the_engines() -> None:
+    import re
+
+    source = (repo_root() / "engine" / "src" / "ingest.rs").read_text(encoding="utf-8")
+    match = re.search(r"CHUNK_STRATEGIES: \[&str; \d+\] = \[([^\]]*)\]", source)
+    assert match is not None
+    engine = tuple(re.findall(r'"([^"]+)"', match.group(1)))
+    assert sorted(engine) == sorted(CHUNK_STRATEGIES)
