@@ -24,12 +24,15 @@ import levers_fixture as fx
 import pytest
 from typer.testing import CliRunner
 
-from lancet_eval import external_run, thresholds
+from lancet_eval import external_run, parity, thresholds
 from lancet_eval.cli import app
 from lancet_eval.config import repo_root
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
+    CheckpointRow,
+    ContextExportError,
     ContextExportRow,
+    InMemoryCheckpointSource,
     read_export,
 )
 from lancet_eval.external_run import ExternalRunError, run_external
@@ -39,6 +42,7 @@ from lancet_eval.journal import (
     load_records,
     read_journal_header,
 )
+from lancet_eval.run import write_context_export
 from lancet_eval.score import score_run
 from lancet_eval.thresholds import FamilySpec, LeverPreRegistration
 
@@ -142,7 +146,12 @@ def s0(
         split_sha256=_split_sha(root),
         context_export=True,
     )
-    lancet = [fx.make_record(REFERENCE, q, fx.Spec(), qs) for q in qs.g_ids]
+    lancet = [
+        fx.make_record(REFERENCE, q, fx.Spec(), qs).model_copy(
+            update={"correlation_id": f"trace-{q}"}
+        )
+        for q in qs.g_ids
+    ]
     for rec in lancet:
         journal.append(rec)
     fx.write_external_export(run, lancet)
@@ -285,6 +294,58 @@ def test_the_arm_rows_join_the_run_export_beside_the_lancet_rows(s0: S0) -> None
     )
     lancet = [r for r in rows if r.arm == REFERENCE]
     assert all(r.assembled_prompt is not None for r in lancet)
+
+
+def _checkpoints(s0: S0) -> InMemoryCheckpointSource:
+    """The Lancet arm's `terminal_success` checkpoints, as Postgres would hold them."""
+    rows = []
+    for row in read_export(s0.run / CONTEXT_EXPORT_FILE):
+        if row.arm != REFERENCE:
+            continue
+        snapshot = {
+            "trace_id": row.correlation_id,
+            "original_query": row.question,
+            "evidence_blocks": [
+                {**e.model_dump(), "evidence_meta": e.document_metadata.model_dump()}
+                for e in row.evidence
+            ],
+            "graph_facts": row.graph_facts,
+            "assembled_prompt": row.assembled_prompt,
+        }
+        rows.append(CheckpointRow(trace_id=row.correlation_id or "", snapshot=snapshot))
+    return InMemoryCheckpointSource(rows)
+
+
+def test_the_end_of_drive_export_of_a_shared_journal_keeps_the_external_rows(
+    s0: S0,
+) -> None:
+    _run(s0, FakeBin())
+    source = _checkpoints(s0)
+    before = {(r.question_id, r.arm): r for r in read_export(s0.export)}
+
+    write_context_export(s0.journal, source)
+
+    rows = read_export(s0.run / CONTEXT_EXPORT_FILE)
+    assert len(rows) == 6
+    for row in rows:
+        if row.arm == EXTERNAL:
+            assert row == before[(row.question_id, row.arm)]
+        else:
+            assert row.correlation_id == f"trace-{row.question_id}"
+    score_run(run_dir=s0.run, no_judge=True, gold_chunks_path=s0.gold)
+
+
+def test_the_end_of_drive_export_fails_closed_on_an_external_record_without_a_row(
+    s0: S0,
+) -> None:
+    _run(s0, FakeBin())
+    export = s0.run / CONTEXT_EXPORT_FILE
+    dropped = (s0.qs.g_ids[1], EXTERNAL)
+    kept = [r for r in read_export(export) if (r.question_id, r.arm) != dropped]
+    parity.write_rows(kept, export)
+
+    with pytest.raises(ContextExportError, match=f"{s0.qs.g_ids[1]}/{EXTERNAL}"):
+        write_context_export(s0.journal, _checkpoints(s0))
 
 
 def test_a_second_invocation_resumes_and_appends_nothing(s0: S0) -> None:
