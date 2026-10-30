@@ -8,6 +8,7 @@ until the freeze commit).
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import json
 import math
@@ -19,6 +20,7 @@ from levers_fixture import (
     ARMS,
     CORPUS,
     DECISIONAL,
+    SUPPORTING,
     TOKEN,
     Questions,
     Spec,
@@ -26,6 +28,7 @@ from levers_fixture import (
     make_prereg,
     make_questions,
     write_corpus,
+    write_evidence_export,
     write_journal,
 )
 
@@ -899,3 +902,94 @@ def test_the_exclusion_reasons_partition_the_questions_outside_p_x(
     assert other["own_failure"] == 0
     text = lever_comparison.render_markdown(payload)
     assert "reference-only failure" in text
+
+
+# ---- D-250 evidence Hits@4 as a primary, context tokens per arm (#10) ----------------
+
+
+def _evidence_prereg(primary: str = "evidence_hits_at_4"):  # type: ignore[no-untyped-def]
+    base = make_prereg()
+    decisional, _supporting = base.families
+    return dataclasses.replace(
+        base,
+        families=(
+            decisional,
+            thresholds.FamilySpec(primary, "supporting", SUPPORTING, 0.05),
+        ),
+    )
+
+
+def _hybrid_misses_top_4(a: str, q: str) -> Spec:
+    if a == REF and q in {f"lv-g00{i}" for i in range(8)}:
+        return Spec(ranks=(9, 10))
+    return Spec()
+
+
+def test_a_preregistration_can_name_evidence_hits_at_4_as_primary(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, qs = _setup(
+        tmp_path, monkeypatch, _hybrid_misses_top_4, prereg=_evidence_prereg()
+    )
+    write_evidence_export(run, qs, _hybrid_misses_top_4)
+    payload = build_lever_comparison(run, gold_chunks_path=gold)
+    row = _row(payload, "evidence_hits_at_4", RERANK)
+    assert row["decision"] == "significant"
+    assert row["mean_arm"] == pytest.approx(1.0)
+    assert row["mean_reference"] == pytest.approx(0.2)
+    fam = next(f for f in payload["families"] if f["primary"] == "evidence_hits_at_4")
+    assert fam["matching_rule"] == "export_text_ranks_1_4"
+
+
+def test_the_primary_switch_still_refuses_an_unknown_name(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, qs = _setup(tmp_path, monkeypatch, prereg=_evidence_prereg("hits_9"))
+    write_evidence_export(run, qs, default_spec)
+    with pytest.raises(LeverComparisonError, match="unknown primary 'hits_9'"):
+        build_lever_comparison(run, gold_chunks_path=gold)
+
+
+def test_an_evidence_primary_without_a_context_export_is_refused(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, _ = _setup(tmp_path, monkeypatch, prereg=_evidence_prereg())
+    with pytest.raises(LeverComparisonError, match="context_export.jsonl"):
+        build_lever_comparison(run, gold_chunks_path=gold)
+
+
+def test_the_report_carries_evidence_hits_and_context_tokens_for_every_arm(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, qs = _setup(tmp_path, monkeypatch, _hybrid_misses_top_4)
+    write_evidence_export(
+        run, qs, _hybrid_misses_top_4, texts_fn=lambda a, q: (
+            ["hello world", "hello"] if a == REF else None
+        )
+    )
+    payload = build_lever_comparison(run, gold_chunks_path=gold)
+    context = {c["arm"]: c for c in payload["context"]}
+    assert set(context) == set(ARMS)
+    ref = context[REF]
+    assert ref["n"] == 10
+    assert ref["evidence_hits_at_4"] == pytest.approx(0.0)
+    assert ref["context_tokens_mean"] == pytest.approx(3.0)
+    assert ref["prompt_tokens_mean"] == pytest.approx(500.0)
+    assert context[RERANK]["evidence_hits_at_4"] == pytest.approx(1.0)
+    metrics = {s["metric"] for s in payload["secondaries"]}
+    assert "context_tokens_mean" in metrics
+    # a primary candidate is never also an unadjusted secondary
+    assert "evidence_hits_at_4" not in metrics
+    assert "context_tokens_mean" in lever_comparison.render_markdown(payload)
+    json.dumps(payload)
+
+
+def test_a_run_with_no_context_export_keeps_the_06_3_6_report(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, _ = _setup(tmp_path, monkeypatch)
+    payload = build_lever_comparison(run, gold_chunks_path=gold)
+    assert "context" not in payload
+    assert "Context per arm" not in lever_comparison.render_markdown(payload)
+    metrics = {s["metric"] for s in payload["secondaries"]}
+    assert not metrics & {"evidence_hits_at_4", "context_tokens_mean"}

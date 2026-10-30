@@ -10,6 +10,8 @@ exercised in every branch (plan 06.3.6-10 Task 3, D-149, D-153, D-161).
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -20,15 +22,18 @@ from levers_fixture import (
     TOKEN,
     Spec,
     default_spec,
+    fact,
     make_prereg,
     make_questions,
     write_corpus,
+    write_evidence_export,
     write_journal,
 )
 
-from lancet_eval import thresholds
+from lancet_eval import gitcheck, lever_comparison, thresholds
 from lancet_eval.arms import ARM_REGISTRY, arm_slug
 from lancet_eval.client import LEVER_ORDER
+from lancet_eval.config import repo_root
 from lancet_eval.report import CorpusReport, render_json, render_markdown
 from lancet_eval.score import score_run
 
@@ -200,3 +205,112 @@ def test_a_legacy_four_arm_corpus_keeps_its_report_unlabelled(
 def test_the_corpus_fixture_names_the_06_3_6_token() -> None:
     assert CORPUS == "levers_split"
     assert json.dumps(list(ARMS))
+
+
+# ---- D-250 evidence Hits@4 and context tokens (#10) ----------------------------------
+
+
+def _split_fact_on_hybrid(arm: str, qid: str) -> list[str] | None:
+    """lv-g000 on hybrid: fact a split across ranks 1-2, fact b only at rank 5."""
+    if (arm, qid) != ("hybrid", "lv-g000"):
+        return None
+    head, _, tail = fact(qid, "a").partition(" is ")
+    return [f"{head}.", f"It is {tail}", "x", "x", fact(qid, "b"), "x", "x", "x"]
+
+
+def test_score_reports_evidence_hits_at_4_and_context_tokens_per_arm_from_the_export(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    qs = make_questions(10, 5)
+    write_evidence_export(
+        run, qs, default_spec, ARMS, texts_fn=_split_fact_on_hybrid
+    )
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    for arm in ARMS:
+        hits = _dim(report, f"evidence_hits_at_4__{arm_slug(arm)}")
+        tokens = _dim(report, f"context_tokens_mean__{arm_slug(arm)}")
+        # the G population only: the five null questions are not in n
+        assert hits.n == 10
+        assert tokens.n == 10
+        assert tokens.score is not None and tokens.score > 0
+        expected = 0.9 if arm == "hybrid" else 1.0
+        assert hits.score == pytest.approx(expected)
+    assert "evidence_hits_at_10__hybrid" not in {d.name for d in report.dimensions}
+    on_disk = CorpusReport.model_validate_json(
+        (run / "report.json").read_text(encoding="utf-8")
+    )
+    assert any(d.name.startswith("evidence_hits_at_4__") for d in on_disk.dimensions)
+
+
+def test_context_tokens_count_the_exported_evidence_text(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    qs = make_questions(10, 5)
+    write_evidence_export(
+        run, qs, default_spec, ARMS, texts_fn=lambda a, q: ["hello world", "hello"]
+    )
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    assert _dim(report, "context_tokens_mean__hybrid").score == pytest.approx(3.0)
+
+
+def test_a_run_with_no_export_reports_no_evidence_dimensions(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    names = {d.name for d in report.dimensions}
+    new = ("evidence_hits_at_4", "context_tokens")
+    assert not any(n.startswith(new) for n in names)
+
+
+V1_0_RUN = "eval/runs/2026-10-06-drive2-multihop_rag_diag"
+V1_0_LEVER_RUN = "eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout"
+#: Set to 1 to re-score the v1.0 lever run of record (about eight minutes).
+RESCORE_LEVER_RUN_ENV = "LANCET_EVAL_RESCORE_LEVER_RUN"
+
+
+def _copy_run(source: Path, tmp_path: Path, *names: str) -> Path:
+    """Copies `names` of a run of record, which is read and never written."""
+    run = tmp_path / source.name
+    run.mkdir()
+    for name in names:
+        shutil.copy2(source / name, run / name)
+    return run
+
+
+def _recorded(path: Path) -> dict:  # type: ignore[type-arg]
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_a_v1_0_run_of_record_re_scores_to_its_recorded_dimensions(
+    tmp_path: Path,
+) -> None:
+    source = repo_root() / V1_0_RUN
+    run = _copy_run(source, tmp_path, "journal.jsonl")
+    score_run(run_dir=run, no_judge=True)
+    recorded = _recorded(source / "report.json")
+    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
+
+
+@pytest.mark.skipif(
+    os.environ.get(RESCORE_LEVER_RUN_ENV) != "1",
+    reason=f"re-scores the v1.0 lever run of record; set {RESCORE_LEVER_RUN_ENV}=1",
+)
+def test_the_v1_0_lever_run_re_scores_and_re_compares_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The four-arm and lever paths #10 changed, on the lever run of record.
+
+    Only the clean-tree check is faked; the real D-73 ordering is checked.
+    """
+    monkeypatch.setattr(gitcheck, "is_clean", lambda *paths, repo=None: True)
+    source = repo_root() / V1_0_LEVER_RUN
+    run = _copy_run(source, tmp_path, "journal.jsonl", "gates-heldout.json")
+    score_run(run_dir=run, no_judge=True)
+    recorded = _recorded(source / "report.json")
+    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
+    payload = lever_comparison.build_lever_comparison(run)
+    rebuilt = json.loads(lever_comparison._dump_json(payload))
+    assert rebuilt == _recorded(source / "lever-comparison.json")

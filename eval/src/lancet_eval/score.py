@@ -33,6 +33,7 @@ from lancet_eval.config import V1_STORE, get_commit_sha, get_eval_store
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
+    ContextExportRow,
     read_export,
     require_export_rows,
 )
@@ -94,6 +95,8 @@ from lancet_eval.metrics import (
     abstention_leak,
     abstention_rate,
     context_precision_at_k,
+    context_tokens,
+    evidence_hit_at_4,
     extract_final_answer,
     final_answer_em,
     gold_contained,
@@ -787,6 +790,54 @@ class _Metric:
     counts: bool = False
 
 
+def _load_export_rows(
+    run_dir: Path,
+) -> dict[tuple[str, str], ContextExportRow] | None:
+    """D-250: the run's context-export rows by question and stored arm label.
+
+    None when the run has no export (every v1.0 run), so its report is unchanged.
+    """
+    path = run_dir / CONTEXT_EXPORT_FILE
+    if not path.is_file():
+        return None
+    try:
+        rows = read_export(path)
+    except ContextExportError as exc:
+        raise ScoreError(f"D-250: cannot read the context export: {exc}") from exc
+    return {(row.question_id, row.arm): row for row in rows}
+
+
+def _evidence_metrics(
+    export_rows: Mapping[tuple[str, str], ContextExportRow],
+    gold_map: Mapping[str, Any],
+) -> list[_Metric]:
+    """D-250 evidence Hits@4 and context tokens, read from the context export.
+
+    A record with no export row has no value, so it is counted unscorable (the report
+    is always written; `compare-levers` refuses such a record). Evidence Hits@4 is a
+    primary candidate like `paper_hits_at_4`, so it carries no delta here.
+    """
+
+    def texts(rec: RunRecord) -> list[str] | None:
+        row = export_rows.get((rec.question_id, rec.graph_arm))
+        return None if row is None else [e.text for e in row.evidence]
+
+    def hit(rec: RunRecord) -> float | None:
+        found = texts(rec)
+        if found is None:
+            return None
+        return float(evidence_hit_at_4(found, gold_map[rec.question_id].gold_facts))
+
+    def tokens(rec: RunRecord) -> float | None:
+        found = texts(rec)
+        return None if found is None else float(context_tokens(found))
+
+    return [
+        _Metric("evidence_hits_at_4", hit, "wilson"),
+        _Metric("context_tokens_mean", tokens, "bootstrap", "context_tokens_delta"),
+    ]
+
+
 def _four_arm_dimensions(
     *,
     records: Sequence[RunRecord],
@@ -795,8 +846,12 @@ def _four_arm_dimensions(
     gold_map: Mapping[str, Any],
     arm_metrics: Mapping[str, Mapping[str, Any]],
     provenance_counts: Mapping[str, int],
+    export_rows: Mapping[tuple[str, str], ContextExportRow] | None = None,
 ) -> list[DimensionResult]:
     """The four-arm per-arm dimensions of a `[split]` corpus (06.3.5-10, D-126).
+
+    With `export_rows` (a run that carries a context export) the D-250 evidence
+    dimensions are added; without, the dimension list is the 06.3.6 one.
 
     Every P4 dimension is computed from one per-question value map per arm, so the
     strata sum to the dimension's n by construction. A metric that has no value for
@@ -935,6 +990,8 @@ def _four_arm_dimensions(
         ),
         _Metric("spend_usd_mean", _record_spend_usd, "bootstrap", "spend_usd_delta"),
     ]
+    if export_rows is not None:
+        metrics += _evidence_metrics(export_rows, gold_map)
     percentile_metrics = [
         ("latency_total_ms", duration),
         ("retrieve_node_ms", _retrieve_node_ms),
@@ -3355,6 +3412,7 @@ def score_run(
             gold_map=gold_map,
             arm_metrics=arm_metrics,
             provenance_counts=provenance_counts,
+            export_rows=_load_export_rows(dir_path),
         )
         dimensions.extend(four_arm)
         if has_lever_arms(config):
