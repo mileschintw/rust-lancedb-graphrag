@@ -37,7 +37,7 @@ from pydantic import BaseModel, ConfigDict
 from lancet_eval import gitcheck
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata as strata_mod
-from lancet_eval.arms import ARM_REGISTRY, arm_slug, canonical_arm
+from lancet_eval.arms import ARM_REGISTRY, arm_slug, arm_store, canonical_arm
 from lancet_eval.corpus import load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.metrics import answer_usable as compute_answer_usable
@@ -1412,24 +1412,35 @@ def _require_preregistered(run: Path, git_repo: Path | None) -> None:
 
 
 def _require_06_3_5_corpus(corpus: str) -> None:
-    """#34: `compare` is the 06.3.5 comparison; it refuses a corpus pre-registered else.
+    """#34: `compare` is the 06.3.5 comparison, so it refuses any other corpus up front.
 
     Its arms, Holm families, P4 rebuild and strata are fixed by `PREREGISTRATION_06_3_5`,
     so a corpus naming another `[preregistration] token` (06.3.6, or a v1.1 stage with
-    store-prefixed arms) is refused here, before any judged dimension is looked up.
+    store-prefixed arms) is refused here, before any judged dimension is looked up. So
+    is a corpus left on the 06.3.5 token whose arms carry a store prefix (D-251): the
+    06.3.5 arms are unprefixed, and its judged dimensions would be missing under them.
 
     Raises:
-        ComparisonError: If the corpus cannot be loaded or names another token.
+        ComparisonError: If the corpus cannot be loaded, names another token, or runs
+            store-prefixed arms.
     """
     try:
-        token = load_corpus_config(corpus).preregistration_token
+        config = load_corpus_config(corpus)
     except Exception as exc:
         raise ComparisonError(f"cannot load corpus {corpus!r}: {exc}") from exc
+    token = config.preregistration_token
     if token != gitcheck.PREREGISTRATION_TOKEN:
         raise ComparisonError(
             f"corpus {corpus!r} is pre-registered under {token}, but `compare` is "
             f"the {gitcheck.PREREGISTRATION_TOKEN} four-arm comparison; compare this "
             "run with `lancet-eval compare-levers`"
+        )
+    prefixed = [a for a in config.arms if arm_store(canonical_arm(a)) is not None]
+    if prefixed:
+        raise ComparisonError(
+            f"corpus {corpus!r} runs store-prefixed arms {sorted(prefixed)}, but "
+            f"{gitcheck.PREREGISTRATION_TOKEN} fixes the unprefixed four arms; "
+            "`compare` cannot read this run"
         )
 
 

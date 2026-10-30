@@ -47,6 +47,28 @@ def test_compare_refuses_a_run_under_another_preregistration(
     assert "score --judged" not in message
 
 
+def test_compare_refuses_prefixed_arms_left_on_the_06_3_5_token(
+    prefixed: Scenario, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = cmp_mod.load_corpus_config
+
+    def default_token(corpus: str) -> Any:
+        config = real(corpus)
+        config.preregistration_token = PREREGISTRATION_TOKEN
+        return config
+
+    monkeypatch.setattr(cmp_mod, "load_corpus_config", default_token)
+    with pytest.raises(ComparisonError) as info:
+        build_comparison(
+            prefixed.run, gold_chunks_path=prefixed.gold, git_repo=prefixed.root
+        )
+    message = str(info.value)
+    assert "merged/hybrid+graph" in message
+    assert PREREGISTRATION_TOKEN in message
+    assert "D-120" not in message
+    assert "compare-levers" not in message
+
+
 def test_the_compare_command_exits_one_with_the_mismatch_and_writes_nothing(
     prefixed: Scenario, monkeypatch: pytest.MonkeyPatch
 ) -> None:
