@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-30 15:35 -0700
+Last updated: 2026-10-30 15:25 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -28,9 +28,9 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| — | — | none running | — | — |
+| 44 | #44 | local_926e074a-57c2-4ee7-8614-c320ca44dced (`claude/lane-44-fc59e2`) | started | — |
 
-Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
+Lane 44 started 2026-10-30 15:25 -0700 on the user's typed "Start 44"; runs alone (S2's first ticket; scope includes the CI owner comments on #44). Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
 
 Lane 39 started 2026-10-30 13:35 -0700 on the user's typed "Start 39". Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
 
@@ -47,7 +47,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #49 | — | — | — | S2 spec only (D-254 to D-259, PR #55) | limited: parent spec |
-| #44 | 1 | — | none set | many test files (eval/tests, engine tests), pytest markers, slow opt-in tier, `scripts/engine-test-targets.sh` hardcoded counts; runs first and alone (decisions-2026-10-30 › #44) | free |
+| #44 | 1, lane 44 running | — | none set | many test files (eval/tests, engine tests), pytest markers, slow opt-in tier, `scripts/engine-test-targets.sh` hardcoded counts; runs first and alone (decisions-2026-10-30 › #44) | free |
 | #47 | 2 | #44 | none set | `engine/src/bin/generate_from_context.rs` › chunk-ID parsing: also parse `<document_id>#<n>` (D-259; decided "都照建議", 15:17) | free |
 | #51 | 2 | #44 | none set | new `eval/src/lancet_eval/reader_request.py`, `test_reader_request.py` | free |
 | #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
