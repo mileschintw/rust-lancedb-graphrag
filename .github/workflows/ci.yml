@@ -149,7 +149,8 @@ jobs:
           # main carries legacy findings, so a changed file fails only on a rule it has
           # more findings of than at the base commit (a new file: any finding).
           rules() { sed -nE 's/^.*:[0-9]+: \[([^]]+)\] .*/\1/p' | sort | uniq -c; }
-          lint() { uv run --project eval ruff check --preview --no-fix --output-format pylint "$@" || true; }
+          # ruff exits 1 when it reports findings; any other failure (2: bad config, crash) fails the step
+          lint() { rc=0; uv run --project eval ruff check --preview --no-fix --output-format pylint "$@" || rc=$?; [ "$rc" -le 1 ]; }
           status=0
           for f in $FILES; do
             lint "$f" | rules > "$RUNNER_TEMP/head"
