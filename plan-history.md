@@ -4,7 +4,7 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 
 ## Lane 12 merged (moved 2026-10-29 21:35 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
-- Lane 12, #12 Score external arm records fail-closed: session local_5f2c01f8-0943-4b5d-b4bb-92caa4b4a8f7, branch `claude/lane-12-eb8ff8` @ 7bc4eb76. PR #24 merged 2026-10-29 21:35 -0700 as d15652a0 on the user's "開 PR 並 merge (Recommended)" (no CI). #12 closed as completed. Lane opened #23 (flaky telemetry timing tests). `engine/target` deleted after merge.
+- Lane 12, #12 Score external arm records fail-closed: session local_5f2c01f8-0943-4b5d-b4bb-92caa4b4a8f7, branch `claude/lane-12-eb8ff8` @ 7bc4eb76. PR #24 merged 2026-10-29 21:35 -0700 as d15652a0 on the user's "開 PR 並 merge (Recommended)" (no CI). #12 closed as completed. Lane saw the flaky engine tests filed as #23 (opened by lane 16). `engine/target` deleted after merge.
 
 ## Lane 9 merged (moved 2026-10-29 20:20 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 

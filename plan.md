@@ -47,7 +47,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #13 | 1 | #7 (closed) | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #15 | 1 | #8, #9, #12, #18 all closed | none set | `corpus.py`, `test_run_arms.py`; plus `StagePreRegistration` type in `thresholds.py` (ruling 4) | free |
-| #23 | 1 | — | none set | `engine/src/telemetry_ingest` timing tests (flaky under load; found by lane 12) | free |
+| #23 | 1 | — | none set | engine lib timing tests: `startup_recovery_exceeds_queue_capacity_without_deadlock`, `telemetry_metrics_corpus_generation_gauge_is_numeric`, `telemetry_ingest::index_rebuild_*` (flaky under load; opened by lane 16, lane 12 saw it too) | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
 | #20 | 1 | — | none set | `cli.py` › `run` command (shared with #14, #15) | free |
 
