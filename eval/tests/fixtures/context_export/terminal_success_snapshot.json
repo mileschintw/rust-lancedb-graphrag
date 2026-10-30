@@ -1,0 +1,66 @@
+{
+  "session_id": "sess-1",
+  "trace_id": "trace-q1-on",
+  "original_query": "Which outlet reported the merger first?",
+  "filter": null,
+  "variants": [],
+  "query_embedding": null,
+  "graph_context": "",
+  "graph_facts": [
+    {
+      "fact": {
+        "entity_a_name": "Acme",
+        "relation_type": "ACQUIRED",
+        "entity_b_name": "Globex",
+        "edge_summary": "Acme acquired Globex in 2023.",
+        "score": 0.8
+      }
+    }
+  ],
+  "vector_results": ["c-1", "c-2"],
+  "bm25_results": ["c-2"],
+  "final_candidates": ["c-1", "c-2"],
+  "evidence_blocks": [
+    {
+      "id": "[1]",
+      "chunk_id": "c-1",
+      "document_id": "doc-a",
+      "chunk_index": 0,
+      "title": "acme-globex.md",
+      "section_path": "Root",
+      "content_type": "text/markdown",
+      "provenance": "document_id=doc-a, chunk_index=0, title=\"acme-globex.md\", section=\"Root\"",
+      "text": "Acme announced on Monday that it will buy Globex.",
+      "score": 0.91,
+      "rank": 1,
+      "suspicious": false,
+      "graph_boosted": true,
+      "evidence_meta": {
+        "doc_title": "Acme to buy Globex",
+        "source": "The Verge",
+        "published_date": "2023-10-02"
+      }
+    },
+    {
+      "id": "[2]",
+      "chunk_id": "c-2",
+      "document_id": "doc-b",
+      "chunk_index": 3,
+      "title": null,
+      "section_path": null,
+      "content_type": null,
+      "provenance": "document_id=doc-b, chunk_index=3, title=\"Untitled Document\", section=\"Root\"",
+      "text": "Globex shareholders approved the deal.",
+      "score": 0.42,
+      "rank": 2,
+      "suspicious": false
+    }
+  ],
+  "assembled_prompt": "<evidence>[1] Acme announced ...</evidence>",
+  "answer": "Answer: The Verge",
+  "citations": ["c-1"],
+  "answer_basis": 1,
+  "structured_citations": [],
+  "notices": [],
+  "snapshot": null
+}
