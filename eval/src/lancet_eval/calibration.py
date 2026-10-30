@@ -36,7 +36,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lancet_eval import agreement, gitcheck, thresholds
 from lancet_eval.agreement import (
@@ -46,7 +46,6 @@ from lancet_eval.agreement import (
 )
 from lancet_eval.arms import (
     LEGACY_ARM_LABELS,
-    ArmLabel,
     canonical_arm,
     in_registry_order,
     is_external_arm,
@@ -136,7 +135,8 @@ class CalibrationKeyRow(BaseModel):
 
     Attributes:
         slice_id: The worksheet's opaque ID.
-        arm: The arm the item was drawn from.
+        arm: The arm the item was drawn from: a canonical label, store-prefixed or
+            not (D-251, #30).
         question_id: The gold question ID.
         question_type: The gold question type.
         cache_key: The judge cache key of the item.
@@ -147,12 +147,19 @@ class CalibrationKeyRow(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     slice_id: str = Field(pattern=r"^S\d{2}$")
-    arm: ArmLabel
+    arm: str
     question_id: str
     question_type: str
     cache_key: str = Field(pattern=r"^[0-9a-f]{64}$")
     notes: str = ""
     shared_arms: list[str] = Field(default_factory=list)
+
+    @field_validator("arm")
+    @classmethod
+    def _arm_is_canonical(cls, arm: str) -> str:
+        if canonical_arm(arm) != arm:
+            raise ValueError(f"arm {arm!r} is a legacy alias, not a canonical label")
+        return arm
 
 
 class CalibrationHeader(BaseModel):

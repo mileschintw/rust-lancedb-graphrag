@@ -481,6 +481,20 @@ def test_a_key_row_needs_a_registry_arm_and_a_hex_key() -> None:
         CalibrationKeyRow.model_validate({**good, "cache_key": "xyz"})
 
 
+def test_a_key_row_takes_a_store_prefixed_arm_and_refuses_a_bad_prefix() -> None:
+    good = {
+        "slice_id": "S01",
+        "arm": "merged/hybrid+rerank+metadata",
+        "question_id": "q",
+        "question_type": "comparison_query",
+        "cache_key": "0" * 64,
+    }
+    assert CalibrationKeyRow.model_validate(good).arm == good["arm"]
+    for arm in ("large/hybrid", "merged/graph-sideways", "merged/llamaindex"):
+        with pytest.raises(ValidationError):
+            CalibrationKeyRow.model_validate({**good, "arm": arm})
+
+
 def test_the_header_rejects_an_unknown_field() -> None:
     with pytest.raises(ValidationError):
         CalibrationHeader.model_validate({"type": "header", "arm": "hybrid"})
