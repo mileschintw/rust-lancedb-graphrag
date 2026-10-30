@@ -2,6 +2,11 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lanes 34 and 36 merged (moved 2026-10-30 13:33 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 34, #34 compare bound to the 06.3.5 arms: session local_f2485cb2-2a83-46cb-a547-1370f331e4e1, branch `claude/lane-34-56a8ff` @ 09f1f530 (eval only). Chose the up-front refusal (`_require_06_3_5_corpus`), pointing to `compare-levers`; `_ARM_SLUGS` removed; v1.0 comparison outputs byte-identical. PR #40 merged 2026-10-30 as 9dd01fe0 on the user's "開 PR 並 merge (Recommended)" (no CI). #34 closed. No engine/target was built.
+- Lane 36, #36 judged delta detail keys: session local_af37bee0-c864-4551-88c1-ee2a7097144b, branch `claude/lane-36-d5a37e` @ 8c471911 (eval only). `hybrid` reference keeps the v1.0 names, other references get `*_reference`; v1.0 held-out `report.json` equal on all 187 dimensions. PR #41 merged 2026-10-30 as 6a2cffb7 on the user's "開 PR 並 merge (Recommended)" (no CI). #36 closed. Opened #39. No engine/target was built.
+
 ## Lanes 11 and 30 merged (moved 2026-10-29 23:58 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 11, #11 generate-only engine bin and prompt parity check: session local_d66def13-7ecf-400a-948a-1c4190ee4f40, branch `claude/lane-11-3e9042` @ d670aa76. PR #37 merged 2026-10-29 as 2d552980 on the user's "開 PR 並 merge (Recommended)" (no CI). #11 closed. Engine test targets now 982. Clippy criterion carried by #25 (ruling 5). `engine/target` deleted.
