@@ -50,6 +50,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #44 | 1, lane 44 running | — | none set | many test files (eval/tests, engine tests), pytest markers, slow opt-in tier, `scripts/engine-test-targets.sh` hardcoded counts; runs first and alone (decisions-2026-10-30 › #44) | free |
 | #47 | 2 | #44 | none set | `engine/src/bin/generate_from_context.rs` › chunk-ID parsing: also parse `<document_id>#<n>` (D-259; decided "都照建議", 15:17) | free |
 | #51 | 2 | #44 | none set | new `eval/src/lancet_eval/reader_request.py`, `test_reader_request.py` | free |
+| #56 | 2 (start right after #44 merges, next to #47 and #51) | — (after #44; files overlap) | none set | `engine/Cargo.toml` › `[profile.*]`, new `.cargo/config.toml` if needed, `docs/testing.md` (job-count rule, timings), CI cache check in #44's workflow (opened 2026-10-30 from a forked side session on the user's "把這件事規劃成issue，然後交給coordinator安排如何？") | limited: item 1 (sccache machine setup) needs the user's yes; the rest is free |
 | #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
 | #52 | 3 | #44, #51 | none set | `arms.py` reader suffix, `provenance.py`, `journal.py`, new `replay.py`, `preregistration.py`, `thresholds.py`, `cli.py` › `replay-init`, `test_replay.py` | free |
 | #53 | 4 | #50, #51, #52 | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free |
