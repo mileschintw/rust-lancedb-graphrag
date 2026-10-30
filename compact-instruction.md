@@ -17,7 +17,7 @@ In flight now (2026-10-29 21:48 -0700):
 - Lane 13 was asked to add flat chunk_size/chunk_overlap/rerank_model keys to pipeline_config.json; no confirmation yet.
 
 Next:
-1. Ask the user whether and when to start a lane for #25 (clippy -D warnings on main, opened by lane 11; overlaps #11 and #23).
+1. #25 lane: ruling 5 ("After #11 and #23"). Once both merge, write briefs/25.md and start it in the next turn the user types.
 2. As lanes write done: check report claims with git/gh, ask the PR question, merge one at a time rerunning `ready` before each, then delete that lane's engine/target, fast-forward the main checkout's main, move the lane to plan-history.md, recompute the frontier.
 3. When #11 merges, #14 is the last lane: write briefs/14.md copying the lane 12/13 external echo contract (briefs 12, 13) and the plan's #14 notes, then ask the user to start it in a typed turn.
 4. When #7 to #15 are all merged, remind the user (plan › Waiting for the user to be present) to run the S2 code-prep grill → spec → tickets before the S1 paid run.
