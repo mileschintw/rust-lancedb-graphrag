@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-30 15:02 -0700
+Last updated: 2026-10-30 15:35 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -46,8 +46,16 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
-| #47 | 1 | — (Refs #14, #11, #13) | none set | `engine/src/bin/generate_from_context.rs` chunk-ID parsing or `baselines/llamaindex` chunk IDs; decision first (fairness rules, RESEARCH.md) (opened by coordinator 2026-10-30 on the user's "chunk_index 公平性 (Recommended)") | limited: the fix needs the user's choice among the three options in the issue |
-| #44 | 2 (code prep closed 2026-10-30) | — | none set | pytest markers, the slow opt-in tier, `scripts/engine-test-targets.sh` (removes hardcoded counts) (opened 2026-10-30 from a forked side session on the user's request) | limited: scope it in the S2 grill round or after the S1 paid run; no lane now |
+| #49 | — | — | — | S2 spec only (D-254 to D-259, PR #55) | limited: parent spec |
+| #44 | 1 | — | none set | many test files (eval/tests, engine tests), pytest markers, slow opt-in tier, `scripts/engine-test-targets.sh` hardcoded counts; runs first and alone (decisions-2026-10-30 › #44) | free |
+| #47 | 2 | #44 | none set | `engine/src/bin/generate_from_context.rs` › chunk-ID parsing: also parse `<document_id>#<n>` (D-259; decided "都照建議", 15:17) | free |
+| #51 | 2 | #44 | none set | new `eval/src/lancet_eval/reader_request.py`, `test_reader_request.py` | free |
+| #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
+| #52 | 3 | #44, #51 | none set | `arms.py` reader suffix, `provenance.py`, `journal.py`, new `replay.py`, `preregistration.py`, `thresholds.py`, `cli.py` › `replay-init`, `test_replay.py` | free |
+| #53 | 4 | #50, #51, #52 | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free |
+| #54 | 4 | #52 | none set | `lever_comparison.py`/`comparison.py`, `score.py` (reader-arm Hits@4 skip), `measure.py` › `compute_spend`, `test_reader_comparison.py` | free |
+
+S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 
@@ -63,13 +71,15 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 - Live Atlas for S1 (lane 9 / #9), main checkout only, deferred on the user's "等 S1 建 store 時再跑" (2026-10-29): `docker exec lancet-postgres psql -U postgres -d lancet -c "CREATE SCHEMA IF NOT EXISTS lancet_eval_s1;"` then `(cd gateway && atlas schema apply --env eval-s1 --auto-approve)`. Run when the S1 store is built (#15 / S1), with the user's yes.
 
-- Live checks for the LlamaIndex baseline (lane 13 / #13), deferred on the user's "S0 付費跑分時再跑 (Recommended)" (2026-10-29 22:38 -0700). Both are paid calls, so check D-246's S0 cap and ask first: the `input_type` forwarding check (fairness rule 7; command in `baselines/llamaindex/README.md` › Embedding `input_type`) and the 346-document export `uv run --project baselines/llamaindex lancet-llamaindex export --corpus multihop_rag --arm llamaindex --out <dir>`.
+- Live checks for the LlamaIndex baseline (lane 13 / #13), deferred on the user's "S0 付費跑分時再跑 (Recommended)" (2026-10-29 22:38 -0700). Both are paid calls, so ask first (D-258 amends D-246: no mid-run cap; print a cost estimate): the `input_type` forwarding check (fairness rule 7; command in `baselines/llamaindex/README.md` › Embedding `input_type`) and the 346-document export `uv run --project baselines/llamaindex lancet-llamaindex export --corpus multihop_rag --arm llamaindex --out <dir>`.
 
-- Reminder (user's request 2026-10-29 18:48 -0700, "#7 到 #15 全部 merge 之後、S1 付費跑分之前，提醒我跑 S2 程式碼準備的 grill → spec → tickets（範圍見 #6 的留言）"): once #7 to #15 are all merged, and before the S1 paid run, remind the user to run the S2 code-prep grill → spec → tickets round. Condition met 2026-10-30 14:42 -0700 (#14 merged, PR #45); reminder given the same turn. On the user's "幫我開一個新session做 grill → spec → tickets 這套流程以及所有相關需要決策的事務" (2026-10-30 14:47 -0700), decision session local_ab3487b9-5b99-46f4-8d1c-2ed3f5e8f4b6 ("S2 code prep: grill → spec → tickets", branch `claude/s2-code-prep-spec-*`) runs the round. It also collects decisions on #47, #44, lane 14's lever/generation-model points and lane 15's `PREREGISTRATION_S1` name and S1 question set. Answers go to `decisions-2026-10-30.md` here (the coordinator commits it). Read that file before acting on any of them. Scope is the owner comment on #6: OpenRouter Batch submission script; Claude provider-field rewrite (`require_parameters`, `order`); prompt-cache breakpoint; `render` mode turning batch results into `Answer:` lines; scoring for Claude reader arms. S3 (2Wiki) gets its own round after S2's result. Owner action, no lane. Since 2026-10-29. Also raise #44 (test suite tiering and time budget) in that round, or in the gap after the S1 paid run (forked side session local_04f7c00e-2215-4c3e-a90b-c054163bf26c, 2026-10-30, relaying the user's "可以，開issue並通知coordinator").
+- S2 paid pilot (from `decisions-2026-10-30.md` › Scheduled items): after S1, once #53 has merged, the owner runs `batch submit --limit N` to check `is_byok`, `reasoning_tokens`, the strict schema and whether Sonnet's `between_tools` passes through OpenRouter. Paid; ask first.
+
+The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decision session local_ab3487b9-5b99-46f4-8d1c-2ed3f5e8f4b6 (branch `claude/s2-code-prep-spec-491e69`) on the user's "幫我開一個新session做 grill → spec → tickets 這套流程以及所有相關需要決策的事務". It produced spec #49, tickets #50 to #54, #44 and #47 attached, D-254 to D-259 (PR #55), and `decisions-2026-10-30.md` → plan-history.
 
 ## Waiting for the user's decision
 
-none
+- PR #55 (`docs(plan): S2 code-prep decisions D-254 to D-259`, head 8f91c894, PLAN.md +52 lines only, merges clean): merge needs the user's yes. Opened by the S2 decision session, not a lane.
 
 ## Deadlines
 

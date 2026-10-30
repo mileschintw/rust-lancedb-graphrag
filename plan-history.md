@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## S2 grill → spec → tickets round (moved 2026-10-30 15:35 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Reminder (user's request 2026-10-29 18:48 -0700, "#7 到 #15 全部 merge 之後、S1 付費跑分之前，提醒我跑 S2 程式碼準備的 grill → spec → tickets（範圍見 #6 的留言）") given 2026-10-30 14:42 -0700 after #14 merged. On the user's "幫我開一個新session做 grill → spec → tickets 這套流程以及所有相關需要決策的事務", the coordinator started decision session local_ab3487b9-5b99-46f4-8d1c-2ed3f5e8f4b6 (branch `claude/s2-code-prep-spec-491e69`). Outcome: spec #49; tickets #50 (`render`), #51 (Claude request rewrite), #52 (reader arms, replay record kind), #53 (batch submit/fetch), #54 (reader comparison and cost); #44 and #47 attached with decisions; D-254 to D-259 in PR #55 (open). Every answer with the user's words is in `decisions-2026-10-30.md` (Q1-Q15, #47, #44, lane 14 and lane 15 open points). Key rulings: no mid-run spend caps (D-258 amends D-246; `run-external --stage-cap` stays, set unreachable); no prompt caching (D-256); #47 = bin also parses `<document_id>#<n>` (D-259); #44 runs first and alone; `PREREGISTRATION_S1` kept; S1 keeps the levers-dev question set.
+
 ## Lane 46 merged (moved 2026-10-30 15:02 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 46, #46 stage cap for run-external: session local_7db515c9-3df3-4e94-b36a-0f6f18740672, branch `claude/lane-46-dce2c9` @ 4d7bb524 (eval only). Required `--stage-cap`, checked before each 16-row batch against `compute_spend` over the whole journal; may overshoot by one batch, like `run`. PR #48 merged 2026-10-30 as 087d72dc on the user's "開 PR 並 merge (Recommended)" (no CI). #46 closed. No engine/target was built.
