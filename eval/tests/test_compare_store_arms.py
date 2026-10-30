@@ -9,12 +9,11 @@ prefixed judged dimensions used to trigger. No test makes a network call.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
-from test_score_judged_store_arms import TOKEN, _build
 from test_score_judged_ordered import Scenario
+from test_score_judged_store_arms import TOKEN, _build
 from typer.testing import CliRunner
 
 from lancet_eval import comparison as cmp_mod

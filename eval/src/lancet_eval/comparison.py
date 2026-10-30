@@ -1414,11 +1414,12 @@ def _require_preregistered(run: Path, git_repo: Path | None) -> None:
 def _require_06_3_5_corpus(corpus: str) -> None:
     """#34: `compare` is the 06.3.5 comparison, so it refuses any other corpus up front.
 
-    Its arms, Holm families, P4 rebuild and strata are fixed by `PREREGISTRATION_06_3_5`,
-    so a corpus naming another `[preregistration] token` (06.3.6, or a v1.1 stage with
-    store-prefixed arms) is refused here, before any judged dimension is looked up. So
-    is a corpus left on the 06.3.5 token whose arms carry a store prefix (D-251): the
-    06.3.5 arms are unprefixed, and its judged dimensions would be missing under them.
+    Its arms, Holm families, P4 rebuild and strata are fixed by
+    `PREREGISTRATION_06_3_5`, so a corpus naming another `[preregistration] token`
+    (06.3.6, or a v1.1 stage with store-prefixed arms) is refused here, before any
+    judged dimension is looked up. So is a corpus left on the 06.3.5 token whose arms
+    carry a store prefix (D-251): the 06.3.5 arms are unprefixed, and its judged
+    dimensions would be missing under them.
 
     Raises:
         ComparisonError: If the corpus cannot be loaded, names another token, or runs
