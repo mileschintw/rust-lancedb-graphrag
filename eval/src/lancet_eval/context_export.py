@@ -180,7 +180,10 @@ class PostgresCheckpointSource:
 def _parse_checkpoint_line(line: str) -> CheckpointRow:
     try:
         data = json.loads(line)
-        return CheckpointRow(trace_id=data["trace_id"], snapshot=data["snapshot"])
+        trace_id, snapshot = data["trace_id"], data["snapshot"]
+        if not isinstance(trace_id, str) or not isinstance(snapshot, dict):
+            raise TypeError("trace_id must be a string and snapshot an object")
+        return CheckpointRow(trace_id=trace_id, snapshot=snapshot)
     except (ValueError, KeyError, TypeError) as exc:
         raise ContextExportError(
             f"unreadable checkpoint row from psql: {line[:200]!r}"

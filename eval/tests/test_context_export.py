@@ -617,16 +617,36 @@ def test_export_context_command_exits_non_zero_naming_the_unjoinable_unit(
     assert not (tmp_path / CONTEXT_EXPORT_FILE).exists()
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        pytest.param("not json", id="not-json"),
+        pytest.param('{"snapshot": {}}', id="no-trace-id"),
+        pytest.param('{"trace_id": "t", "snapshot": null}', id="null-snapshot"),
+    ],
+)
 def test_the_postgres_source_turns_an_unreadable_psql_line_into_an_export_error(
+    monkeypatch: pytest.MonkeyPatch, line: str
+) -> None:
+    import lancet_eval.context_export as context_export_mod
+
+    monkeypatch.setattr(context_export_mod, "run_psql", lambda *a, **k: line + "\n")
+
+    with pytest.raises(ContextExportError, match="checkpoint"):
+        PostgresCheckpointSource(EvalSettings()).terminal_success(["trace-q1-on"])
+
+
+def test_the_postgres_source_turns_a_psql_launch_failure_into_an_export_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import lancet_eval.context_export as context_export_mod
 
-    monkeypatch.setattr(
-        context_export_mod, "run_psql", lambda *a, **k: '{"snapshot": {}}\nnot json\n'
-    )
+    def no_psql(*args: object, **kwargs: object) -> str:
+        raise FileNotFoundError("psql")
 
-    with pytest.raises(ContextExportError, match="checkpoint"):
+    monkeypatch.setattr(context_export_mod, "run_psql", no_psql)
+
+    with pytest.raises(ContextExportError, match="reading checkpoints failed"):
         PostgresCheckpointSource(EvalSettings()).terminal_success(["trace-q1-on"])
 
 
