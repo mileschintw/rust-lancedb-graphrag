@@ -47,8 +47,8 @@ from lancet_eval.agreement import (
 from lancet_eval.arms import (
     LEGACY_ARM_LABELS,
     canonical_arm,
-    in_registry_order,
-    is_external_arm,
+    judged_arms,
+    judged_report_arms,
 )
 from lancet_eval.config import repo_root
 from lancet_eval.gate import AGREEMENT_TARGET
@@ -339,7 +339,7 @@ def draw_slice(
             rule leaves an arm with nothing to draw.
     """
     wanted = {canonical_arm(a) for a in arms}
-    ordered = [a for a in in_registry_order(wanted) if not is_external_arm(a)]
+    ordered = judged_arms(wanted)
     if not ordered:
         raise CalibrationError("no arms to draw from")
     p4 = build_p4(records, split, ordered, reference_arm=ordered[0])
@@ -819,18 +819,6 @@ def _human(pair: SlicePair, dimension: str) -> int:
     )
 
 
-def _slice_arms(pairs: Sequence[SlicePair]) -> list[str]:
-    """The arms the per-arm agreement lists, in report order.
-
-    A slice of the four 06.3.5 labels lists all four, as before; any other slice
-    (store-prefixed arms, #30) lists its own arms in ``in_registry_order``.
-    """
-    arms = {p.arm for p in pairs}
-    if arms <= set(LEGACY_ARM_LABELS):
-        return list(LEGACY_ARM_LABELS)
-    return in_registry_order(arms)
-
-
 def _dimension_summary(
     dimension: str,
     scored: Sequence[tuple[SlicePair, int]],
@@ -950,7 +938,10 @@ def agreement_summary(verified: VerifiedSlice, cache: JudgeCache) -> dict[str, A
             )
             scored.append((pair, judge))
         dimensions[dimension] = _dimension_summary(
-            dimension, scored, verified.floor, _slice_arms(verified.pairs)
+            dimension,
+            scored,
+            verified.floor,
+            judged_report_arms(p.arm for p in verified.pairs),
         )
     return {
         "n_slice": len(verified.pairs),

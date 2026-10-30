@@ -36,6 +36,7 @@ from lancet_eval import calibration, judge, judge_stage, thresholds
 from lancet_eval import score as score_mod
 from lancet_eval.arms import arm_slug
 from lancet_eval.journal import Journal
+from lancet_eval.judge_stage import JudgeStageRecord
 from lancet_eval.report import CorpusReport
 from lancet_eval.score import JUDGED_DIMENSIONS as JUDGED
 from lancet_eval.score import JudgedResult, score_run
@@ -178,3 +179,13 @@ def test_the_per_arm_agreement_counts_every_prefixed_arm(prefixed: Scenario) -> 
         per_arm = sidecar.agreement["dimensions"][dimension]["per_arm_exact_agreement"]
         assert list(per_arm) == ORDER
         assert sum(c["n"] for c in per_arm.values()) == 20
+
+
+def test_the_judge_stage_counts_every_prefixed_arm_in_registry_order(
+    prefixed: Scenario,
+) -> None:
+    record = JudgeStageRecord.model_validate_json(
+        (prefixed.run / judge_stage.STAGE_FILE).read_text(encoding="utf-8")
+    )
+    assert list(record.arms) == ORDER
+    assert all(c.judgeable > 0 for c in record.arms.values())

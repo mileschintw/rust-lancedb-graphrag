@@ -372,6 +372,37 @@ def in_registry_order(labels: Iterable[str]) -> list[str]:
     return sorted(labels, key=key)
 
 
+def judged_arms(labels: Iterable[str]) -> list[str]:
+    """The labels the judged pass covers, in report order: every label but an external
+    arm (D-247 arms are never judged), store-prefixed ones included (D-251, #30).
+
+    Args:
+        labels: Canonical labels.
+
+    Returns:
+        The judged labels, in ``in_registry_order``.
+    """
+    return [a for a in in_registry_order(labels) if not is_external_arm(a)]
+
+
+def judged_report_arms(labels: Iterable[str]) -> list[str]:
+    """The rows the judge stage and the per-arm agreement list.
+
+    A corpus of the four 06.3.5 labels lists all four, as v1.0 did; any other corpus
+    lists its ``judged_arms``.
+
+    Args:
+        labels: Canonical labels.
+
+    Returns:
+        The labels to list, in report order.
+    """
+    arms = set(labels)
+    if arms <= set(LEGACY_ARM_LABELS):
+        return list(LEGACY_ARM_LABELS)
+    return judged_arms(arms)
+
+
 def is_external_arm(label: str) -> bool:
     """Whether a label names an external arm (D-247); an unknown label is not one."""
     return label in EXTERNAL_ARMS

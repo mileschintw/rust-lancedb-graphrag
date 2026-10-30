@@ -51,7 +51,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval import gitcheck
-from lancet_eval.arms import LEGACY_ARM_LABELS, canonical_arm, in_registry_order
+from lancet_eval.arms import canonical_arm, judged_report_arms
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
     CorpusConfig,
@@ -82,16 +82,9 @@ STAGE_FILE = "judge-stage.json"
 CACHE_FILE = "judge_cache.json"
 
 
-def stage_arms(config: CorpusConfig) -> list[str]:
-    """The arms the stage counts, in report order.
-
-    A corpus of the four 06.3.5 labels keeps all four rows, as before; any other corpus
-    (lever or store-prefixed arms, #30) counts its own arms in ``in_registry_order``.
-    """
-    arms = {canonical_arm(a) for a in config.arms}
-    if arms <= set(LEGACY_ARM_LABELS):
-        return list(LEGACY_ARM_LABELS)
-    return in_registry_order(arms)
+def _stage_arms(config: CorpusConfig) -> list[str]:
+    """The arms the stage judges and counts, in report order."""
+    return judged_report_arms(canonical_arm(a) for a in config.arms)
 
 
 class JudgeStageError(Exception):
@@ -365,9 +358,12 @@ def select_population(inputs: StageInputs) -> list[JudgeItem]:
         One item per judgeable record, with its judge-call inputs and cache key.
     """
     g_ids = None if inputs.rehearsal else set(inputs.split.heldout_g_ids)
+    order = {arm: i for i, arm in enumerate(_stage_arms(inputs.config))}
     items: list[JudgeItem] = []
     for rec in inputs.records:
         if g_ids is not None and rec.question_id not in g_ids:
+            continue
+        if canonical_arm(rec.graph_arm) not in order:  # an external arm is not judged
             continue
         if not _is_judgeable(rec, inputs.gold_map, policy="06.3.5"):
             continue
@@ -391,7 +387,6 @@ def select_population(inputs: StageInputs) -> list[JudgeItem]:
                 evidence=evidence,
             )
         )
-    order = {arm: i for i, arm in enumerate(stage_arms(inputs.config))}
     items.sort(key=lambda i: (order[i.arm], i.question_id))
     return items
 
@@ -469,7 +464,7 @@ def run_judge_stage(
     if rehearsal and not items:
         raise JudgeStageError("no judgeable rehearsal record: nothing to time")
     unique: dict[str, JudgeItem] = {}
-    counted = stage_arms(config)
+    counted = _stage_arms(config)
     arm_keys: dict[str, set[str]] = {arm: set() for arm in counted}
     arm_judgeable = dict.fromkeys(counted, 0)
     for item in items:

@@ -88,6 +88,7 @@ from lancet_eval.arms import (
     canonical_arm,
     in_registry_order,
     is_external_arm,
+    judged_arms,
     resolve_arm,
 )
 from lancet_eval.metrics import (
@@ -1593,7 +1594,7 @@ def _judged_dimensions(
         )
     except (calibration.CalibrationError, ValueError) as exc:
         raise ScoreError(f"Cannot compute the judged pass: {exc}") from exc
-    arms = [a for a in in_registry_order(pop.arms) if not is_external_arm(a)]
+    arms = judged_arms(pop.arms)
     reference = pop.reference_arm
     index = {(r.question_id, canonical_arm(r.graph_arm)): r for r in records}
     qtype_of = {q: str(gold_map[q].question_type) for q in inputs.split.heldout_g_ids}

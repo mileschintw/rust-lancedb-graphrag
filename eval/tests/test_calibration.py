@@ -367,7 +367,7 @@ def _prefixed(records: list[Any], prefix_of: dict[str, str]) -> list[Any]:
 def test_the_draw_accepts_store_prefixed_arms_and_draws_what_the_bare_arms_draw() -> (
     None
 ):
-    # #30: the draw used to keep only ARM_REGISTRY labels and refuse a prefixed corpus
+    # a store prefix changes neither the pool nor the order within one store (#30)
     records = standard_records(g_ids(12, 12, 6))
     prefix_of = dict.fromkeys(ARMS, "small")
     prefixed = _prefixed(records, prefix_of)
