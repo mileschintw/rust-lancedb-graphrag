@@ -95,6 +95,18 @@ def get_eval_store(name: str) -> EvalStore:
         ) from None
 
 
+def store_for_settings(settings: EvalSettings) -> EvalStore:
+    """The known store whose LanceDB path `settings` use; the v1.0 store otherwise.
+
+    Lets a reader that holds only settings pick the store's document map (#18), so
+    the map always follows the LanceDB store actually in use.
+    """
+    for store in EVAL_STORES.values():
+        if store != V1_STORE and _same_path(settings.lancedb_path, store.lancedb_path):
+            return store
+    return V1_STORE
+
+
 def overlay_lancedb_path(store: EvalStore) -> str | None:
     """Read `[engine].lancedb_path` from the store's overlay; None if absent."""
     if not store.overlay_path.is_file():

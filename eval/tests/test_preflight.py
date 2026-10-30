@@ -510,7 +510,7 @@ def test_cli_preflight_refuses_an_unknown_store(
     assert "eval-s2" in result.output
 
 
-def test_run_preflight_checks_without_settings_loads_the_selected_stores(
+def test_run_preflight_checks_without_settings_loads_the_selected_store(
     httpx_mock: HTTPXMock,
     s1_overlay_root: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -521,7 +521,7 @@ def test_run_preflight_checks_without_settings_loads_the_selected_stores(
 
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
     monkeypatch.setenv("LANCET_EVAL__LANCEDB_PATH", "./data/lancedb-eval")
-    save_document_map_atomic(DocumentMap(corpus="multihop_rag", entries={}))
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag"), S1_STORE)
 
     def error_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("Connection refused")
@@ -534,3 +534,161 @@ def test_run_preflight_checks_without_settings_loads_the_selected_stores(
     assert isolation.passed, isolation.message
     assert isolation.detail["eval_lancedb"] == "./data/lancedb-eval-s1"
     assert isolation.detail["eval_schema"] == "lancet_eval_s1"
+
+
+# --- Per-store document map readers (#18) --------------------------------------------
+
+_DOC_V1 = "doc-v1"
+_DOC_S1 = "doc-s1"
+
+
+@pytest.fixture
+def two_maps(s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A v1.0 map holding doc-v1 and an S1 map holding doc-s1, in one temp repo."""
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    for store, doc_id, generation in (
+        (None, _DOC_V1, "lance-v1"),
+        (S1_STORE, _DOC_S1, "lance-s1"),
+    ):
+        doc_map = DocumentMap(
+            corpus="multihop_rag",
+            index_generation=generation,
+            entries={
+                doc_id: DocumentMapEntry(
+                    corpus_id=doc_id, document_id=doc_id, title=f"Title {doc_id}"
+                )
+            },
+        )
+        if store is None:
+            save_document_map_atomic(doc_map)
+        else:
+            save_document_map_atomic(doc_map, store)
+    return s1_overlay_root
+
+
+def _patch_stores(monkeypatch: pytest.MonkeyPatch, doc_id: str) -> None:
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: {
+            "documents": [doc_id],
+            "nodes": [doc_id],
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_pg_documents",
+        lambda settings: {doc_id: "completed"},
+    )
+
+
+def test_store_for_settings_follows_the_lancedb_path(s1_overlay_root: Path) -> None:
+    from lancet_eval.config import S1_STORE, V1_STORE, store_for_settings
+
+    assert (
+        store_for_settings(_store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"))
+        is S1_STORE
+    )
+    assert (
+        store_for_settings(_store_settings("./data/lancedb-eval", "lancet_eval"))
+        is V1_STORE
+    )
+    other = _store_settings(str(s1_overlay_root / "elsewhere"), "lancet_eval")
+    assert store_for_settings(other) is V1_STORE
+
+
+def test_index_identity_reads_the_map_of_the_store_in_use(
+    two_maps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#18: S1 settings check the S1 map, and the result names the map it checked;
+    v1.0 settings still check document_map.json."""
+    _patch_stores(monkeypatch, _DOC_S1)
+    s1 = check_index_identity(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"), "multihop_rag"
+    )
+    assert s1.passed, s1.message
+    assert "document_map.eval-s1.json" in s1.message
+    assert s1.detail["document_map"].endswith("document_map.eval-s1.json")
+
+    _patch_stores(monkeypatch, _DOC_V1)
+    v1 = check_index_identity(
+        _store_settings("./data/lancedb-eval", "lancet_eval"), "multihop_rag"
+    )
+    assert v1.passed, v1.message
+    assert "(document_map.json)" in v1.message
+
+
+def test_corpus_generation_reads_the_selected_stores_map(
+    two_maps: Path, httpx_mock: HTTPXMock
+) -> None:
+    """#18: the generation probe asks with the selected store's first title and
+    compares with that map's generation."""
+    from lancet_eval.config import S1_STORE
+
+    httpx_mock.add_response(
+        url="http://testserver:8080/rag/query",
+        status_code=200,
+        text=(
+            'data: {"snapshot": {"index_generation": "lance-s1", "excerpts": []}}\n\n'
+        ),
+    )
+    with httpx.Client(base_url="http://testserver:8080") as client:
+        check_corpus_generation(client, "multihop_rag", S1_STORE)
+
+    request = httpx_mock.get_requests()[0]
+    assert json.loads(request.content)["query"] == f"Title {_DOC_S1}"
+
+
+def test_corpus_generation_without_the_stores_map_fails(
+    s1_overlay_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the v1.0 map exists: the S1 generation check fails on the missing S1 map
+    instead of reading v1.0's."""
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag"))
+    with httpx.Client(base_url="http://testserver:8080") as client:
+        res = check_corpus_generation(client, "multihop_rag", S1_STORE)
+    assert not res.passed
+    assert "document_map.eval-s1.json" in res.message.replace("\\", "/")
+
+
+def test_cli_identity_check_store_option_checks_the_s1_map(
+    two_maps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    _patch_stores(monkeypatch, _DOC_S1)
+    result = CliRunner().invoke(app, ["identity", "check", "--store", "eval-s1"])
+    assert result.exit_code == 0, result.output
+
+    result = CliRunner().invoke(app, ["identity", "check"])
+    assert result.exit_code == 1, result.output
+
+
+def test_diagnostic_readers_take_the_selected_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#18: the diagnostic table reads the map of the store it is given; v1.0 by
+    default."""
+    from lancet_eval import diagnostic
+    from lancet_eval.config import S1_STORE, V1_STORE
+
+    seen: list[object] = []
+
+    def fake_load(corpus_name: str, store: object = V1_STORE) -> DocumentMap:
+        seen.append(store)
+        raise RuntimeError("stop after the map lookup")
+
+    monkeypatch.setattr(diagnostic, "load_sample_questions", lambda corpus: [])
+    monkeypatch.setattr(diagnostic, "load_document_map", fake_load)
+    for kwargs in ({}, {"store": S1_STORE}):
+        with pytest.raises(RuntimeError, match="stop after"):
+            diagnostic.build_rows("multihop_rag", None, "gold.jsonl", **kwargs)
+    assert seen == [V1_STORE, S1_STORE]

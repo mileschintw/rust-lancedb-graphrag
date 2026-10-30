@@ -120,8 +120,9 @@ def corpus_sample(
         raise typer.Exit(code=1) from exc
 
 
-#: D-251: the `--store` option of seed, reseed and preflight. None means the default
-#: v1.0 store; preflight also uses None to keep its v1.0 call unchanged.
+#: D-251: the `--store` option of seed, reseed, preflight and the identity commands.
+#: None means the default v1.0 store; preflight also uses None to keep its v1.0 call
+#: unchanged.
 StoreOption = Annotated[
     str | None,
     typer.Option(
@@ -387,11 +388,12 @@ def identity_check(
             help="Corpus to check identity for (e.g. multihop_rag)",
         ),
     ] = "multihop_rag",
+    store: StoreOption = None,
 ) -> None:
     """Run the three-way index identity comparison and print the report."""
     from lancet_eval.identity import compute_identity
 
-    settings = load_settings()
+    settings = load_settings(store=_resolve_store(store))
     report = compute_identity(settings, corpus)
     console.print_json(data=report.model_dump())
 
@@ -429,14 +431,16 @@ def identity_pg_delete_extras(
             ),
         ),
     ] = None,
+    store: StoreOption = None,
 ) -> None:
     """Delete PostgreSQL documents outside the corpus's map (dry-run by default)."""
     from lancet_eval.identity import delete_pg_extras
     from lancet_eval.seed import load_document_map
 
-    settings = load_settings()
+    eval_store = _resolve_store(store)
+    settings = load_settings(store=eval_store)
     try:
-        doc_map = load_document_map(corpus)
+        doc_map = load_document_map(corpus, eval_store)
         allow_ids = set(doc_map.entries.keys())
         result = delete_pg_extras(
             settings, allow_ids, apply=apply, pg_dump_path=pg_dump

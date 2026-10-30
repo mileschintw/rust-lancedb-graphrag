@@ -18,7 +18,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, repo_root
+from lancet_eval.config import EvalSettings, repo_root, store_for_settings
 from lancet_eval.seed import (
     SeedError,
     assert_schema_isolated,
@@ -135,9 +135,10 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     """Compare document ID sets across PostgreSQL, LanceDB, and the committed map.
 
     Uses `load_document_map(corpus_name)` so a corpus that indirects through
-    `map_corpus` (e.g. a diagnostic corpus) resolves to the one shared map.
+    `map_corpus` (e.g. a diagnostic corpus) resolves to the one shared map, and
+    reads the map of the store whose LanceDB path `settings` use (#18).
     """
-    doc_map = load_document_map(corpus_name)
+    doc_map = load_document_map(corpus_name, store_for_settings(settings))
     map_ids = set(doc_map.entries.keys())
     # Only the alias *keys* (stale IDs that resolve elsewhere via aliasing) must be
     # absent from the stores. Alias *values* are the canonical current document_id

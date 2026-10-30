@@ -19,9 +19,10 @@ from lancet_eval.config import (
     overlay_lancedb_path,
     pg_schema_of,
     repo_root,
+    store_for_settings,
     store_target_failures,
 )
-from lancet_eval.seed import load_document_map
+from lancet_eval.seed import DocumentMap, get_document_map_path, load_document_map
 
 if TYPE_CHECKING:
     import httpx
@@ -409,12 +410,19 @@ def check_drive_environment(environ: Mapping[str, str]) -> PreflightCheckResult:
     )
 
 
+def _load_store_map(corpus_name: str, store: EvalStore) -> DocumentMap:
+    """`store`'s document map (#18). The v1.0 store keeps its one-argument call."""
+    if store == V1_STORE:
+        return load_document_map(corpus_name)
+    return load_document_map(corpus_name, store)
+
+
 def check_corpus_generation(
-    client: httpx.Client, corpus_name: str
+    client: httpx.Client, corpus_name: str, store: EvalStore = V1_STORE
 ) -> PreflightCheckResult:
-    """Probe /rag/query, check generation and truncation budget."""
+    """Probe /rag/query; check generation and truncation budget on `store`'s map."""
     try:
-        doc_map = load_document_map(corpus_name)
+        doc_map = _load_store_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
@@ -515,16 +523,18 @@ def check_corpus_generation(
 def corpus_generation_from_canaries(
     corpus_name: str,
     snapshots: Sequence[tuple[str, RetrievalSnapshot]],
+    store: EvalStore = V1_STORE,
 ) -> PreflightCheckResult:
     """Read the index generation from successful canary answers.
 
     Used only when the corpus probe's answer carried no snapshot: a single
     generation is rejected about 31% of the time after F-1 (06.3.4.1-26), so the
     probe alone cannot gate a healthy stack. Every generation observed must agree
-    and match the document map, and the excerpt budget is checked on each snapshot.
+    and match `store`'s document map, and the excerpt budget is checked on each
+    snapshot.
     """
     try:
-        doc_map = load_document_map(corpus_name)
+        doc_map = _load_store_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
@@ -1516,6 +1526,7 @@ def check_index_identity(
     """
     from lancet_eval.identity import compute_identity
 
+    map_path = get_document_map_path(corpus_name, store_for_settings(settings))
     try:
         report = compute_identity(settings, corpus_name)
     except Exception as exc:
@@ -1523,6 +1534,7 @@ def check_index_identity(
             name="index_identity",
             passed=False,
             message=f"Index identity gate could not run: {exc}",
+            detail={"document_map": str(map_path)},
         )
 
     if not report.passed:
@@ -1534,14 +1546,22 @@ def check_index_identity(
                 "failures": report.failures,
                 "alias_ids": report.alias_ids,
                 "staged_rows": report.staged_rows,
+                "document_map": str(map_path),
             },
         )
 
     return PreflightCheckResult(
         name="index_identity",
         passed=True,
-        message="PostgreSQL, LanceDB, and document map document IDs agree.",
-        detail={"map_size": len(report.map_ids), "staged_rows": report.staged_rows},
+        message=(
+            f"PostgreSQL, LanceDB, and document map ({map_path.name}) document IDs "
+            "agree."
+        ),
+        detail={
+            "map_size": len(report.map_ids),
+            "staged_rows": report.staged_rows,
+            "document_map": str(map_path),
+        },
     )
 
 
@@ -1624,7 +1644,7 @@ def run_preflight_checks(
 
         # 5. Gated live checks: corpus generation and canary floors
         if gw_check.passed and eng_check.passed:
-            generation_check = check_corpus_generation(client, corpus_name)
+            generation_check = check_corpus_generation(client, corpus_name, store)
             answered: list[tuple[str, RetrievalSnapshot]] = []
             if skip_legacy_canaries:
                 canary_check = legacy_canary_skip("canary_floors")
@@ -1662,7 +1682,7 @@ def run_preflight_checks(
                     )
             if generation_check.detail.get("probe_snapshot_missing"):
                 generation_check = corpus_generation_from_canaries(
-                    corpus_name, answered
+                    corpus_name, answered, store
                 )
             results.append(generation_check)
             results.append(canary_check)

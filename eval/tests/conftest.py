@@ -42,9 +42,9 @@ def _identity_gate_matches_document_map(
     real_load_document_map = identity_mod.load_document_map
     last_map_ids: dict[str, set[str]] = {"ids": set()}
 
-    def _tracking_load_document_map(corpus_name: str) -> DocumentMap:
+    def _tracking_load_document_map(corpus_name: str, *store: object) -> DocumentMap:
         try:
-            doc_map = real_load_document_map(corpus_name)
+            doc_map = real_load_document_map(corpus_name, *store)
         except Exception:
             doc_map = DocumentMap(corpus=corpus_name, entries={})
         last_map_ids["ids"] = set(doc_map.entries.keys())
