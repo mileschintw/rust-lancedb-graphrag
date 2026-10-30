@@ -514,3 +514,70 @@ def test_d199_legacy_labels_are_held_to_the_same_check() -> None:
         )
         == []
     )
+
+
+# ---- v1.1: the S0 default row and the external arm kind (D-247) ----------------------
+
+
+def test_the_s0_default_row_sends_rerank_and_metadata_with_the_graph_off() -> None:
+    from lancet_eval.arms import explicit_field_failures
+    from lancet_eval.journal import RunRecord
+
+    spec = ARM_REGISTRY["hybrid+rerank+metadata"]
+    assert spec.kind == "engine"
+    assert request_fields("hybrid+rerank+metadata") == {
+        "retrieval_mode": "hybrid",
+        "disable_graph_context": True,
+        "disable_default_levers": True,
+        "include_pre_truncation_ranking": True,
+        "levers": ["rerank", "evidence_metadata"],
+    }
+    from lancet_eval.client import Notice
+
+    live = RunRecord(
+        corpus="c",
+        question_id="q",
+        graph_arm="hybrid+rerank+metadata",
+        outcome="success",
+        notices=[Notice(code="GRAPH_ABLATION", message="", typed_code=18)],
+    )
+    assert explicit_field_failures(live, spec) == []
+
+
+def test_the_external_arm_is_outside_the_engine_registry_and_its_modes() -> None:
+    from lancet_eval.arms import EXTERNAL_ARMS, is_external_arm
+
+    assert "llamaindex" not in ARM_REGISTRY
+    spec = resolve_arm("llamaindex")
+    assert spec is EXTERNAL_ARMS["llamaindex"]
+    assert spec.kind == "external"
+    assert spec.retrieval_mode == "external"
+    assert spec.levers == ()
+    assert canonical_arm("llamaindex") == "llamaindex"
+    assert arm_slug("llamaindex") == "llamaindex"
+    assert is_external_arm("llamaindex")
+    assert not any(is_external_arm(label) for label in ARM_REGISTRY)
+    assert not is_external_arm("graph-off")
+    assert all(s.kind == "engine" for s in ARM_REGISTRY.values())
+
+
+def test_an_external_arm_has_no_gateway_request() -> None:
+    with pytest.raises(ValueError, match="external"):
+        request_fields("llamaindex")
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"retrieval_mode": "hybrid", "kind": "external"},
+        {"retrieval_mode": "external", "kind": "engine"},
+        {"retrieval_mode": "external", "kind": "external", "levers": ("rerank",)},
+    ],
+)
+def test_a_row_mixing_engine_and_external_traits_is_refused(
+    fields: dict[str, object],
+) -> None:
+    from lancet_eval.arms import ArmSpec
+
+    with pytest.raises(ValueError, match="external"):
+        ArmSpec(label="llamaindex", disable_graph_context=True, **fields)  # type: ignore[arg-type]

@@ -10,6 +10,12 @@ The lookup fails closed: a token that names nothing, or names something that is 
 pre-registration (a float, a rule object, a dataclass without a reference arm), raises
 ``PreregistrationError``. It never returns a default, because a default is a value
 nobody pre-registered.
+
+v1.1 (D-247, D-253): a stage constant may list external arms. It declares each one's
+retrieval pipeline in an ``external_pipelines`` attribute, a tuple of
+``(arm label, arms.ExternalPipeline)`` pairs; ``external_pipelines_of`` reads it and
+fails closed when an external arm has no pipeline. Constants without the attribute (the
+v1.0 ones) declare none.
 """
 
 from __future__ import annotations
@@ -18,9 +24,10 @@ from dataclasses import is_dataclass
 from typing import Any
 
 from lancet_eval import thresholds
+from lancet_eval.arms import ExternalPipeline, is_external_arm
 from lancet_eval.gitcheck import PreregistrationError
 
-__all__ = ["PreregistrationError", "arms_of", "resolve"]
+__all__ = ["PreregistrationError", "arms_of", "external_pipelines_of", "resolve"]
 
 
 def resolve(token: str) -> Any:
@@ -76,3 +83,40 @@ def arms_of(prereg: Any) -> tuple[str, ...]:
     else:
         arms.extend(prereg.comparison_arms)
     return tuple(dict.fromkeys(arms))
+
+
+def external_pipelines_of(prereg: Any) -> dict[str, ExternalPipeline]:
+    """The retrieval pipeline a pre-registration fixes for each of its external arms.
+
+    Args:
+        prereg: The object ``resolve`` returned.
+
+    Returns:
+        ``{arm label: pipeline}``; empty for a constant that lists no external arm.
+
+    Raises:
+        PreregistrationError: If a declared label is not an external arm or is
+            declared twice, a declared value is not an ``ExternalPipeline``, or an
+            external arm of ``arms_of(prereg)`` has no declared pipeline.
+    """
+    pipelines: dict[str, ExternalPipeline] = {}
+    for label, pipeline in getattr(prereg, "external_pipelines", ()):
+        if not is_external_arm(label):
+            raise PreregistrationError(
+                f"external_pipelines names {label!r}, which is not an external arm"
+            )
+        if label in pipelines:
+            raise PreregistrationError(f"external_pipelines declares {label!r} twice")
+        if not isinstance(pipeline, ExternalPipeline):
+            raise PreregistrationError(
+                f"external_pipelines[{label!r}] is not an ExternalPipeline "
+                f"(got {type(pipeline).__name__})"
+            )
+        pipelines[label] = pipeline
+    missing = [a for a in arms_of(prereg) if is_external_arm(a) and a not in pipelines]
+    if missing:
+        raise PreregistrationError(
+            f"external arm(s) {missing} have no pre-registered pipeline "
+            "(external_pipelines, D-247)"
+        )
+    return pipelines

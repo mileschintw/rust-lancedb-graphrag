@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval.arms import ExternalPipeline
 from lancet_eval.client import (
     NodeFailed,
     Notice,
@@ -101,6 +102,29 @@ class AttemptRecord(BaseModel):
     session_id: str = ""
 
 
+class ExternalProvenance(BaseModel):
+    """The external record kind's own provenance (D-247).
+
+    An external arm's success record carries this block and no engine snapshot: its
+    retrieval ran outside Lancet, so there is no snapshot to echo, and none is faked.
+    An engine record never carries it. The external provenance clauses read it.
+
+    Attributes:
+        pipeline: The retrieval pipeline the arm ran, compared with the one the
+            pre-registration fixed.
+        index_fingerprint: Identifies the arm's index; one value per arm.
+        generation_model: The reader model the generate-only bin called.
+        generation_provider_order: The provider order it sent.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pipeline: ExternalPipeline
+    index_fingerprint: str = Field(min_length=1)
+    generation_model: str = Field(min_length=1)
+    generation_provider_order: list[str]
+
+
 class RunRecord(BaseModel):
     """Durable record of a single question execution under one experimental arm."""
 
@@ -130,6 +154,13 @@ class RunRecord(BaseModel):
     error: str | None = None
     node_timings: list[NodeTiming] = Field(default_factory=list)
     workflow_meta: WorkflowWireMeta | None = None
+    external: ExternalProvenance | None = Field(
+        default=None,
+        description=(
+            "D-247: the external record kind's provenance; set on an external arm's "
+            "success record only."
+        ),
+    )
     prior_attempts: list[AttemptRecord] = Field(
         default_factory=list,
         description=(
