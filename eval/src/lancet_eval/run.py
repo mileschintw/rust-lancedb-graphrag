@@ -27,7 +27,6 @@ from lancet_eval.client import run_query
 from lancet_eval.config import EvalSettings, repo_root
 from lancet_eval.context_export import (
     CheckpointSource,
-    ContextExportError,
     PostgresCheckpointSource,
     export_context,
 )
@@ -117,7 +116,6 @@ class DriveResult(int):
     @property
     def capped(self) -> bool:
         return self.stopped_by_cap
-
 
 class RerankTripwire:
     """The O10 rerank degrade tripwire of the paid drive (06.3.6 D-174, T-06.3.6-24).
@@ -809,7 +807,9 @@ def drive(
         source = checkpoint_source or PostgresCheckpointSource(eval_settings)
         try:
             export_context(target_path, source)
-        except ContextExportError as exc:
+        except Exception as exc:
+            # D-249: the records are paid for and journalled; `score` fails closed on
+            # the missing export, so the drive reports the failure instead of raising.
             logger.error(
                 "context export failed (D-249); the records stay journalled. "
                 "Rebuild it with `lancet-eval export-context --run %s`: %s",
@@ -968,7 +968,7 @@ def drive(
             logger.error(
                 "explicit-field gate failed: %s", "; ".join(field_gate_failures)
             )
-        return _with_context_export(DriveResult(
+        result = DriveResult(
             executed_count,
             stopped_by_cap=stopped_by_cap,
             observed_spend=total_spend,
@@ -978,7 +978,8 @@ def drive(
             ),
             stopped_by_field_gate=stopped_by_field_gate,
             field_gate_failures=tuple(field_gate_failures),
-        ))
+        )
+        return _with_context_export(result)
     finally:
         _safe_reconcile()
 

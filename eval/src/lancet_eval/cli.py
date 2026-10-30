@@ -721,7 +721,6 @@ def export_context_command(
         raise typer.Exit(code=1) from exc
 
 
-
 @app.command("score")
 def score_benchmark(
     run: Annotated[

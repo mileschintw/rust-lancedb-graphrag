@@ -314,6 +314,8 @@ def test_the_validator_accepts_a_lancet_row_and_an_external_row() -> None:
         pytest.param(_ranks(1, 3, 2), "ranks", id="unordered-ranks"),
         pytest.param(_ranks(1, 2, 2), "ranks", id="duplicate-ranks"),
         pytest.param(_ranks(0, 1, 2), "ranks", id="rank-below-one"),
+        pytest.param(_ranks(1, 2, 7), "ranks", id="gap-in-ranks"),
+        pytest.param(_ranks(2, 3, 4), "ranks", id="ranks-not-from-one"),
         pytest.param(
             _with(correlation_id=None), "both or neither", id="prompt-without-id"
         ),
@@ -613,3 +615,38 @@ def test_export_context_command_exits_non_zero_naming_the_unjoinable_unit(
     assert result.exit_code == 1
     assert "q7/graph-off" in result.output
     assert not (tmp_path / CONTEXT_EXPORT_FILE).exists()
+
+
+def test_the_postgres_source_turns_an_unreadable_psql_line_into_an_export_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lancet_eval.context_export as context_export_mod
+
+    monkeypatch.setattr(
+        context_export_mod, "run_psql", lambda *a, **k: '{"snapshot": {}}\nnot json\n'
+    )
+
+    with pytest.raises(ContextExportError, match="checkpoint"):
+        PostgresCheckpointSource(EvalSettings()).terminal_success(["trace-q1-on"])
+
+
+class _BrokenSource:
+    def terminal_success(self, trace_ids: Collection[str]) -> list[CheckpointRow]:
+        raise OSError("psql not found")
+
+
+def test_an_unexpected_export_failure_still_returns_the_drive_result(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    result = drive(
+        corpus="graphrag_bench",
+        journal_path=tmp_path / "journal.jsonl",
+        stage_spend_cap=10.0,
+        limit=1,
+        client=_gateway(httpx_mock),
+        checkpoint_source=_BrokenSource(),
+    )
+
+    assert result == 2
+    assert result.context_export_error is not None
+    assert "psql not found" in result.context_export_error

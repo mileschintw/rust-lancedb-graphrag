@@ -23,10 +23,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
-from itertools import pairwise
 from pathlib import Path
 from typing import Any, Protocol, Self
 
@@ -74,7 +74,7 @@ class EvidenceEntry(BaseModel):
 class ContextExportRow(BaseModel):
     """One question under one arm, as the reader saw it.
 
-    Evidence ranks start at 1 and strictly increase. A Lancet row carries both
+    Evidence ranks are exactly 1..n in order. A Lancet row carries both
     `assembled_prompt` and `correlation_id`; an external row carries neither.
     """
 
@@ -92,11 +92,8 @@ class ContextExportRow(BaseModel):
     @model_validator(mode="after")
     def _check_contract(self) -> Self:
         ranks = [entry.rank for entry in self.evidence]
-        if ranks and (ranks[0] < 1 or any(b <= a for a, b in pairwise(ranks))):
-            raise ValueError(
-                "evidence ranks must start at 1 or above and strictly increase, "
-                f"got {ranks}"
-            )
+        if ranks != list(range(1, len(ranks) + 1)):
+            raise ValueError(f"evidence ranks must be 1..n in order, got {ranks}")
         if (self.assembled_prompt is None) != (self.correlation_id is None):
             raise ValueError(
                 "assembled_prompt and correlation_id must be both or neither present"
@@ -134,18 +131,19 @@ class InMemoryCheckpointSource:
 #: A trace ID the Postgres source puts in a SQL literal; anything else is refused.
 _SAFE_TRACE_ID = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
 _SAFE_SCHEMA = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_TRACE_IDS_PER_QUERY = 200
 
 
 class PostgresCheckpointSource:
     """Reads checkpoints from the eval schema's `workflow_checkpoints` table via psql.
 
     The schema is the `search_path` of `settings.database_url`. Trace IDs are queried
-    in batches so no statement grows without bound.
+    in batches of `_TRACE_IDS_PER_QUERY` so no statement grows without bound. Every
+    failure, psql's or a row's, is raised as `ContextExportError`.
     """
 
-    def __init__(self, settings: EvalSettings, *, batch_size: int = 200) -> None:
+    def __init__(self, settings: EvalSettings) -> None:
         self._settings = settings
-        self._batch_size = batch_size
 
     def terminal_success(self, trace_ids: Collection[str]) -> list[CheckpointRow]:
         schema = pg_schema_of(self._settings.database_url)
@@ -161,8 +159,8 @@ class PostgresCheckpointSource:
                 f"refusing to query trace_id(s) outside [A-Za-z0-9._:-]: {unsafe[:3]}"
             )
         rows: list[CheckpointRow] = []
-        for start in range(0, len(ids), self._batch_size):
-            batch = ids[start : start + self._batch_size]
+        for start in range(0, len(ids), _TRACE_IDS_PER_QUERY):
+            batch = ids[start : start + _TRACE_IDS_PER_QUERY]
             literals = ", ".join(f"'{t}'" for t in batch)
             sql = (
                 "SELECT json_build_object('trace_id', trace_id, 'snapshot', "
@@ -171,17 +169,22 @@ class PostgresCheckpointSource:
             )
             try:
                 output = run_psql(self._settings, sql, timeout_s=120.0)
-            except SeedError as exc:
+            except (SeedError, OSError, subprocess.SubprocessError) as exc:
                 raise ContextExportError(f"reading checkpoints failed: {exc}") from exc
             for line in output.splitlines():
                 if line.strip():
-                    data = json.loads(line)
-                    rows.append(
-                        CheckpointRow(
-                            trace_id=data["trace_id"], snapshot=data["snapshot"]
-                        )
-                    )
+                    rows.append(_parse_checkpoint_line(line))
         return rows
+
+
+def _parse_checkpoint_line(line: str) -> CheckpointRow:
+    try:
+        data = json.loads(line)
+        return CheckpointRow(trace_id=data["trace_id"], snapshot=data["snapshot"])
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ContextExportError(
+            f"unreadable checkpoint row from psql: {line[:200]!r}"
+        ) from exc
 
 
 def _evidence_entry(block: Mapping[str, Any]) -> dict[str, Any]:
@@ -255,13 +258,25 @@ def read_export(path: Path | str) -> list[ContextExportRow]:
     return rows
 
 
-#: How many missing or stale units a refusal lists before it says how many more.
-_LISTED = 10
+#: How many failing units a refusal lists before it says how many more.
+_MAX_LISTED_UNITS = 10
+_REBUILD_HINT = "Rebuild it with `lancet-eval export-context --run <dir>`"
 
 
 def _listed(problems: list[str]) -> str:
-    more = len(problems) - _LISTED
-    return "; ".join(problems[:_LISTED]) + (f" (and {more} more)" if more > 0 else "")
+    more = len(problems) - _MAX_LISTED_UNITS
+    listed = "; ".join(problems[:_MAX_LISTED_UNITS])
+    return listed + (f" (and {more} more)" if more > 0 else "")
+
+
+def _unit(record: RunRecord) -> str:
+    return f"{record.question_id}/{record.graph_arm}"
+
+
+def _success_records(journal: Path) -> list[RunRecord]:
+    """The journal's success records, one per question and arm (the later one wins)."""
+    records, _ = deduplicate_by_arm(load_records(journal))
+    return [r for r in records if r.outcome == "success"]
 
 
 def require_export_rows(journal_path: Path | str) -> None:
@@ -276,22 +291,20 @@ def require_export_rows(journal_path: Path | str) -> None:
     header = read_journal_header(journal) or {}
     if not header.get("context_export"):
         return
-    records, _ = deduplicate_by_arm(load_records(journal))
-    successes = [r for r in records if r.outcome == "success"]
+    successes = _success_records(journal)
     export_path = journal.parent / CONTEXT_EXPORT_FILE
     if not export_path.is_file():
         if successes:
-            units = [f"{r.question_id}/{r.graph_arm}" for r in successes]
+            units = [_unit(r) for r in successes]
             raise ContextExportError(
                 f"{export_path} is missing, so {len(units)} success record(s) have no "
-                f"export row: {_listed(units)}. Rebuild it with "
-                "`lancet-eval export-context --run <dir>`"
+                f"export row: {_listed(units)}. {_REBUILD_HINT}"
             )
         return
     by_unit = {(row.question_id, row.arm): row for row in read_export(export_path)}
     problems: list[str] = []
     for record in successes:
-        unit = f"{record.question_id}/{record.graph_arm}"
+        unit = _unit(record)
         row = by_unit.get((record.question_id, record.graph_arm))
         if row is None:
             problems.append(f"{unit}: no export row")
@@ -307,8 +320,7 @@ def require_export_rows(journal_path: Path | str) -> None:
     if problems:
         raise ContextExportError(
             f"{export_path} does not cover {len(problems)} success record(s): "
-            f"{_listed(problems)}. Rebuild it with "
-            "`lancet-eval export-context --run <dir>`"
+            f"{_listed(problems)}. {_REBUILD_HINT}"
         )
 
 
@@ -319,8 +331,7 @@ def export_context(journal_path: Path | str, source: CheckpointSource) -> Path:
     success record has no checkpoint or cannot be joined.
     """
     journal = Path(journal_path)
-    records, _ = deduplicate_by_arm(load_records(journal))
-    successes = [r for r in records if r.outcome == "success"]
+    successes = _success_records(journal)
     by_trace: dict[str, list[Mapping[str, Any]]] = {}
     wanted = {r.correlation_id for r in successes if r.correlation_id}
     for checkpoint in source.terminal_success(wanted) if wanted else []:
@@ -328,9 +339,9 @@ def export_context(journal_path: Path | str, source: CheckpointSource) -> Path:
     rows: list[ContextExportRow] = []
     failures: list[str] = []
     for record in successes:
-        unit = f"{record.question_id}/{record.graph_arm}"
+        unit = _unit(record)
         cid = record.correlation_id
-        snapshots = by_trace.get(cid, []) if cid else []
+        snapshots = by_trace.get(cid, [])
         if not cid:
             failures.append(f"{unit}: the record has no correlation_id to join on")
         elif not snapshots:
