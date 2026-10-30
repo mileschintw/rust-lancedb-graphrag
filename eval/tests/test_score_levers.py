@@ -10,6 +10,7 @@ exercised in every branch (plan 06.3.6-10 Task 3, D-149, D-153, D-161).
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,7 @@ from levers_fixture import (
 from lancet_eval import thresholds
 from lancet_eval.arms import ARM_REGISTRY, arm_slug
 from lancet_eval.client import LEVER_ORDER
+from lancet_eval.config import repo_root
 from lancet_eval.report import CorpusReport, render_json, render_markdown
 from lancet_eval.score import score_run
 
@@ -261,3 +263,20 @@ def test_a_run_with_no_export_reports_no_evidence_dimensions(
     names = {d.name for d in report.dimensions}
     new = ("evidence_hits_at_4", "context_tokens")
     assert not any(n.startswith(new) for n in names)
+
+
+V1_0_RUN = "eval/runs/2026-10-06-drive2-multihop_rag_diag"
+
+
+def test_a_v1_0_run_of_record_re_scores_to_its_recorded_dimensions(
+    tmp_path: Path,
+) -> None:
+    """The run of record is read, never written: it is scored from a copy."""
+    source = repo_root() / V1_0_RUN
+    run = tmp_path / source.name
+    run.mkdir()
+    shutil.copy2(source / "journal.jsonl", run / "journal.jsonl")
+    score_run(run_dir=run, no_judge=True)
+    recorded = json.loads((source / "report.json").read_text(encoding="utf-8"))
+    rescored = json.loads((run / "report.json").read_text(encoding="utf-8"))
+    assert rescored["dimensions"] == recorded["dimensions"]
