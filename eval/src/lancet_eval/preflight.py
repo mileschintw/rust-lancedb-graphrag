@@ -11,8 +11,18 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
-from lancet_eval.seed import load_document_map
+from lancet_eval.config import (
+    V1_STORE,
+    EvalSettings,
+    EvalStore,
+    load_settings,
+    overlay_lancedb_path,
+    pg_schema_of,
+    repo_root,
+    store_for_settings,
+    store_target_failures,
+)
+from lancet_eval.seed import get_document_map_path, load_document_map
 
 if TYPE_CHECKING:
     import httpx
@@ -187,8 +197,14 @@ def validate_accepted_known_misses(
     return tuple(misses)
 
 
-def check_store_isolation(settings: EvalSettings) -> PreflightCheckResult:
-    """Verify evaluation store isolation from development store paths."""
+def check_store_isolation(
+    settings: EvalSettings, store: EvalStore = V1_STORE
+) -> PreflightCheckResult:
+    """Verify the eval store is isolated from dev and is the selected `store`.
+
+    For a store other than v1.0 it also refuses the v1.0 path and schema, and fails when
+    the store's overlay and the harness name different LanceDB paths (D-251).
+    """
     eval_lance = str(Path(settings.lancedb_path).resolve())
     dev_lance = str(Path(settings.dev_lancedb_path).resolve())
 
@@ -215,14 +231,29 @@ def check_store_isolation(settings: EvalSettings) -> PreflightCheckResult:
             ),
         )
 
+    detail = {
+        "store": store.name,
+        "eval_lancedb": settings.lancedb_path,
+        "eval_schema": eval_schema,
+        "overlay_lancedb": overlay_lancedb_path(store),
+    }
+    failures = store_target_failures(settings, store)
+    if failures:
+        return PreflightCheckResult(
+            name="store_isolation",
+            passed=False,
+            message=f"Eval store {store.name!r}: " + "; ".join(failures),
+            detail=detail,
+        )
+
     return PreflightCheckResult(
         name="store_isolation",
         passed=True,
-        message="Eval LanceDB and PostgreSQL schema are fully isolated from dev.",
-        detail={
-            "eval_lancedb": settings.lancedb_path,
-            "eval_schema": eval_schema,
-        },
+        message=(
+            f"Eval store {store.name!r} (LanceDB {settings.lancedb_path}, PostgreSQL "
+            f"schema {eval_schema}) is fully isolated from dev."
+        ),
+        detail=detail,
     )
 
 
@@ -380,11 +411,11 @@ def check_drive_environment(environ: Mapping[str, str]) -> PreflightCheckResult:
 
 
 def check_corpus_generation(
-    client: httpx.Client, corpus_name: str
+    client: httpx.Client, corpus_name: str, store: EvalStore = V1_STORE
 ) -> PreflightCheckResult:
-    """Probe /rag/query, check generation and truncation budget."""
+    """Probe /rag/query; check generation and truncation budget on `store`'s map."""
     try:
-        doc_map = load_document_map(corpus_name)
+        doc_map = load_document_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
@@ -485,16 +516,18 @@ def check_corpus_generation(
 def corpus_generation_from_canaries(
     corpus_name: str,
     snapshots: Sequence[tuple[str, RetrievalSnapshot]],
+    store: EvalStore = V1_STORE,
 ) -> PreflightCheckResult:
     """Read the index generation from successful canary answers.
 
     Used only when the corpus probe's answer carried no snapshot: a single
     generation is rejected about 31% of the time after F-1 (06.3.4.1-26), so the
     probe alone cannot gate a healthy stack. Every generation observed must agree
-    and match the document map, and the excerpt budget is checked on each snapshot.
+    and match `store`'s document map, and the excerpt budget is checked on each
+    snapshot.
     """
     try:
-        doc_map = load_document_map(corpus_name)
+        doc_map = load_document_map(corpus_name, store)
     except Exception as exc:
         return PreflightCheckResult(
             name="corpus_generation",
@@ -1486,6 +1519,7 @@ def check_index_identity(
     """
     from lancet_eval.identity import compute_identity
 
+    map_path = get_document_map_path(corpus_name, store_for_settings(settings))
     try:
         report = compute_identity(settings, corpus_name)
     except Exception as exc:
@@ -1493,6 +1527,7 @@ def check_index_identity(
             name="index_identity",
             passed=False,
             message=f"Index identity gate could not run: {exc}",
+            detail={"document_map": str(map_path)},
         )
 
     if not report.passed:
@@ -1504,14 +1539,22 @@ def check_index_identity(
                 "failures": report.failures,
                 "alias_ids": report.alias_ids,
                 "staged_rows": report.staged_rows,
+                "document_map": str(map_path),
             },
         )
 
     return PreflightCheckResult(
         name="index_identity",
         passed=True,
-        message="PostgreSQL, LanceDB, and document map document IDs agree.",
-        detail={"map_size": len(report.map_ids), "staged_rows": report.staged_rows},
+        message=(
+            f"PostgreSQL, LanceDB, and document map ({map_path.name}) document IDs "
+            "agree."
+        ),
+        detail={
+            "map_size": len(report.map_ids),
+            "staged_rows": report.staged_rows,
+            "document_map": str(map_path),
+        },
     )
 
 
@@ -1522,8 +1565,9 @@ def run_preflight_checks(
     client: httpx.Client | None = None,
     generation_model: str = "deepseek/deepseek-v4-flash-0731",
     accepted_known_misses: Sequence[AcceptedKnownMiss] = (),
+    store: EvalStore = V1_STORE,
 ) -> list[PreflightCheckResult]:
-    """Execute the full preflight checklist and return all results.
+    """Execute the full preflight checklist against `store` and return all results.
 
     Raises ``PreflightError`` before any check or request when an accepted known miss
     (D-94) is not the registered one.
@@ -1531,7 +1575,7 @@ def run_preflight_checks(
     import httpx
 
     validate_accepted_known_misses(accepted_known_misses)
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
     results: list[PreflightCheckResult] = []
 
     # 0. Drive environment (06.4 D-199): the first check, before the corpus config load
@@ -1565,7 +1609,7 @@ def run_preflight_checks(
     )
 
     # 1. Store isolation
-    results.append(check_store_isolation(settings))
+    results.append(check_store_isolation(settings, store))
 
     # 2. Index identity (must agree across stores before any live check runs)
     results.append(check_index_identity(settings, corpus_name))
@@ -1593,7 +1637,7 @@ def run_preflight_checks(
 
         # 5. Gated live checks: corpus generation and canary floors
         if gw_check.passed and eng_check.passed:
-            generation_check = check_corpus_generation(client, corpus_name)
+            generation_check = check_corpus_generation(client, corpus_name, store)
             answered: list[tuple[str, RetrievalSnapshot]] = []
             if skip_legacy_canaries:
                 canary_check = legacy_canary_skip("canary_floors")
@@ -1631,7 +1675,7 @@ def run_preflight_checks(
                     )
             if generation_check.detail.get("probe_snapshot_missing"):
                 generation_check = corpus_generation_from_canaries(
-                    corpus_name, answered
+                    corpus_name, answered, store
                 )
             results.append(generation_check)
             results.append(canary_check)

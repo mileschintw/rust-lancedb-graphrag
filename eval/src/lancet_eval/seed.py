@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -14,7 +15,16 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
+from lancet_eval.config import (
+    EVAL_STORES,
+    V1_STORE,
+    EvalSettings,
+    EvalStore,
+    load_settings,
+    pg_schema_of,
+    repo_root,
+    store_target_failures,
+)
 from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
 from lancet_eval.evidence_meta import normalise
 
@@ -63,6 +73,26 @@ def assert_schema_isolated(settings: EvalSettings) -> str:
         )
 
     return eval_schema
+
+
+def assert_store_target(settings: EvalSettings, store: EvalStore) -> None:
+    """Raise unless `settings` target `store` (D-251): an S1 call never touches v1.0.
+
+    A `LANCET_ENV` that names the other store is refused too, so a forgotten
+    `--store` in an S1 shell never falls back to the v1.0 store.
+    """
+    failures = store_target_failures(settings, store)
+    lancet_env = os.environ.get("LANCET_ENV", "").strip()
+    if lancet_env in EVAL_STORES and lancet_env != store.name:
+        failures.append(
+            f"LANCET_ENV={lancet_env} names store {lancet_env!r}; pass "
+            f"--store {lancet_env} or unset LANCET_ENV"
+        )
+    if failures:
+        raise SeedError(
+            f"Eval store {store.name!r} is not the store the settings target: "
+            + "; ".join(failures)
+        )
 
 
 def assert_admin_dsn_targets_eval_database(eval_dsn: str, admin_dsn: str) -> None:
@@ -155,8 +185,9 @@ def run_psql(settings: EvalSettings, sql: str, *, timeout_s: float = 30.0) -> st
     return res.stdout
 
 
-def reset_eval_schema(settings: EvalSettings) -> None:
-    """Reset the PostgreSQL eval schema via drop/create and Atlas apply."""
+def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> None:
+    """Reset the store's PostgreSQL schema via drop/create and its Atlas env."""
+    assert_store_target(settings, store)
     schema_name = assert_schema_isolated(settings)
     assert_admin_dsn_targets_eval_database(
         settings.database_url, settings.dev_database_url
@@ -173,7 +204,7 @@ def reset_eval_schema(settings: EvalSettings) -> None:
 
     gateway_dir = repo_root() / "gateway"
     res_atlas = subprocess.run(
-        ["atlas", "schema", "apply", "--env", "eval", "--auto-approve"],
+        ["atlas", "schema", "apply", "--env", store.name, "--auto-approve"],
         cwd=gateway_dir,
         capture_output=True,
         text=True,
@@ -225,23 +256,28 @@ class DocumentMap(BaseModel):
         return None
 
 
-def get_document_map_path(corpus_name: str) -> Path:
-    """Return the absolute path to a corpus's document_map.json.
+def get_document_map_path(corpus_name: str, store: EvalStore = V1_STORE) -> Path:
+    """Return the absolute path to a corpus's document map for `store`.
 
     Resolves through the corpus's `map_corpus` indirection (D-68) so a corpus
     without its own map (e.g. a diagnostic corpus) shares another corpus's map.
     Falls back to `corpus_name` itself when the corpus config cannot be loaded.
+    The v1.0 store's map is `document_map.json`; any other store's is
+    `document_map.<store>.json` beside it, so the two never share a file (D-251).
     """
     try:
         target_corpus = load_corpus_config(corpus_name).map_corpus
     except CorpusError:
         target_corpus = corpus_name
-    return repo_root() / "eval" / "corpora" / target_corpus / "document_map.json"
+    filename = (
+        "document_map.json" if store == V1_STORE else f"document_map.{store.name}.json"
+    )
+    return repo_root() / "eval" / "corpora" / target_corpus / filename
 
 
-def load_document_map(corpus_name: str) -> DocumentMap:
-    """Load the committed document map for a corpus."""
-    path = get_document_map_path(corpus_name)
+def load_document_map(corpus_name: str, store: EvalStore = V1_STORE) -> DocumentMap:
+    """Load the committed document map for a corpus in `store`."""
+    path = get_document_map_path(corpus_name, store)
     if not path.is_file():
         raise SeedError(f"Document map not found at {path}")
     with open(path, encoding="utf-8") as f:
@@ -258,9 +294,9 @@ def load_document_map(corpus_name: str) -> DocumentMap:
     )
 
 
-def save_document_map_atomic(doc_map: DocumentMap) -> None:
-    """Atomically write the document map to disk."""
-    path = get_document_map_path(doc_map.corpus)
+def save_document_map_atomic(doc_map: DocumentMap, store: EvalStore = V1_STORE) -> None:
+    """Atomically write the document map of `store` to disk."""
+    path = get_document_map_path(doc_map.corpus, store)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(".json.tmp")
 
@@ -284,6 +320,7 @@ def record_index_generation(
     settings: EvalSettings,
     corpus_name: str,
     client: httpx.Client | None = None,
+    store: EvalStore = V1_STORE,
 ) -> str:
     """Probe `/rag/query` for the live index_generation and record it in the map.
 
@@ -296,7 +333,7 @@ def record_index_generation(
     """
     import httpx as httpx_module
 
-    doc_map = load_document_map(corpus_name)
+    doc_map = load_document_map(corpus_name, store)
 
     probe_query = "What hospital program helps teenage patients in Nebraska?"
     if doc_map.entries:
@@ -352,7 +389,7 @@ def record_index_generation(
         )
 
     doc_map.index_generation = observed_generation
-    save_document_map_atomic(doc_map)
+    save_document_map_atomic(doc_map, store)
     return observed_generation
 
 
@@ -368,11 +405,13 @@ def seed_corpus(
     corpus_name: str,
     client: httpx.Client | None = None,
     settings: EvalSettings | None = None,
+    store: EvalStore = V1_STORE,
 ) -> DocumentMap:
-    """Seed documents for a corpus into the isolated evaluation store."""
+    """Seed documents for a corpus into the isolated evaluation store `store`."""
     import httpx
 
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
+    assert_store_target(settings, store)
     _ = load_corpus(corpus_name)
     subset_path = (
         repo_root() / "eval" / "corpora" / corpus_name / "documents.subset.jsonl"
@@ -386,7 +425,7 @@ def seed_corpus(
 
     # Load existing map for resume capability
     try:
-        doc_map = load_document_map(corpus_name)
+        doc_map = load_document_map(corpus_name, store)
     except Exception:
         doc_map = DocumentMap(
             corpus=corpus_name,
@@ -502,7 +541,7 @@ def seed_corpus(
                         title=title,
                         url=url,
                     )
-                    save_document_map_atomic(doc_map)
+                    save_document_map_atomic(doc_map, store)
                     break
                 else:
                     if article_attempt == max_article_attempts - 1:
@@ -520,9 +559,9 @@ def seed_corpus(
         # writer of this field is record_index_generation). Persist first so a
         # fresh, zero-new-document seed still has a map on disk to read back, then
         # reload so the returned object reflects what record_index_generation wrote.
-        save_document_map_atomic(doc_map)
-        record_index_generation(settings, corpus_name, client=client)
-        doc_map = load_document_map(corpus_name)
+        save_document_map_atomic(doc_map, store)
+        record_index_generation(settings, corpus_name, client=client, store=store)
+        doc_map = load_document_map(corpus_name, store)
     finally:
         if should_close_client:
             client.close()
@@ -535,15 +574,21 @@ def reseed_corpus(
     confirmation: bool = False,
     client: httpx.Client | None = None,
     settings: EvalSettings | None = None,
+    store: EvalStore = V1_STORE,
 ) -> DocumentMap:
-    """Drop the eval store and re-seed from scratch."""
+    """Drop the eval store `store` and re-seed it from scratch.
+
+    With a store other than v1.0 selected, the v1.0 path and schema are refused before
+    anything is dropped or deleted (D-251).
+    """
     if not confirmation:
         raise SeedError(
             "Reseeding is destructive and clears the evaluation store. "
             "Pass confirmation=True (--confirm) to proceed."
         )
 
-    settings = settings or load_settings()
+    settings = settings or load_settings(store=store)
+    assert_store_target(settings, store)
 
     # Verify store isolation before destroying anything
     eval_lance = Path(settings.lancedb_path).resolve()
@@ -554,15 +599,15 @@ def reseed_corpus(
         )
 
     # Verify and reset PostgreSQL eval schema before touching LanceDB
-    reset_eval_schema(settings)
+    reset_eval_schema(settings, store)
 
     # Clean eval LanceDB directory
     if eval_lance.exists():
         shutil.rmtree(eval_lance, ignore_errors=True)
 
     # Delete existing document map
-    map_path = get_document_map_path(corpus_name)
+    map_path = get_document_map_path(corpus_name, store)
     if map_path.is_file():
         map_path.unlink()
 
-    return seed_corpus(corpus_name, client=client, settings=settings)
+    return seed_corpus(corpus_name, client=client, settings=settings, store=store)
