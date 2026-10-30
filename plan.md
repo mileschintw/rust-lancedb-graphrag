@@ -22,11 +22,17 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
+| 10 | #10 | local_22f42b71-55f9-4aa8-aad2-1f9f39e36c0e (worktree `lane-10-ea13ed`, branch `claude/lane-10-ea13ed`) | started | — |
+| 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | started | — |
+| 12 | #12 | local_5f2c01f8-0943-4b5d-b4bb-92caa4b4a8f7 (worktree `lane-12-eb8ff8`, branch `claude/lane-12-eb8ff8`) | started | — |
+| 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | started | — |
+| 16 | #16 | local_8cc16651-c299-4094-964f-a2cfabe355a2 (worktree `lane-16-dcd7b8`, branch `claude/lane-16-dcd7b8`) | started | — |
+| 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | started | — |
 | 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | catching up with main after #19, rerunning pytest; then PR + merge on the user's "先追 main 重跑，再開 PR 並 merge" (2026-10-29 20:0x) | — |
 
 Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7 and 8 merged → `plan-history.md`.
 
-Approved, not yet started: lanes 10, 11, 12, 13, 16, 20 (briefs written, ab789a1f) on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700). The app refused `start_session` because that turn began from a session event, not a typed message; start all six in the next turn the user types.
+Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
 ## Roadmap
 
