@@ -398,6 +398,93 @@ def _enforce_preregistered_arm_set(config: CorpusConfig) -> None:
         )
 
 
+def require_split_gates(
+    config: CorpusConfig,
+    questions: Sequence[GoldQuestion],
+    *,
+    git_repo: Path | None = None,
+) -> HeldOutSplit | None:
+    """Runs a `[split]` corpus's gates before any journal I/O; returns its split.
+
+    None for a corpus without a split, which has no gate. Otherwise, unless the corpus
+    is a `dev` corpus (D-170: dev reads precede the freeze commit that introduces the
+    06.3.6 token), the corpus's pre-registration must be committed on a clean tree and
+    the corpus's arms must be the ones it fixed (D-73). Then the split's input files
+    must still hash to what it recorded, and the corpus's question IDs must fit its
+    role (D-105, D-106, D-170). `drive()` and `external_run.run_external()` both call
+    it, so a paid read of a `[split]` corpus passes the same gates for either arm kind.
+
+    Args:
+        config: The corpus config.
+        questions: The corpus's questions.
+        git_repo: The repository the D-73 check reads; the live one when None.
+
+    Raises:
+        gitcheck.PreregistrationError: If a D-73 gate fails.
+        ValueError: If a split input changed or a question ID breaks the role.
+    """
+    if config.split_file is None:
+        return None
+    if config.split_role != "dev":
+        problems = gitcheck.preregistration_problems(
+            (config.preregistration_token,),
+            require_clean_tree=True,
+            unchanged_since_introduction=True,
+            repo=git_repo,
+        )
+        if problems:
+            raise gitcheck.PreregistrationError(
+                f"D-73: refusing to drive the [split] corpus {config.name!r}: "
+                + "; ".join(problems)
+                + f". {config.preregistration_token} must be committed in "
+                f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
+            )
+        # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
+        _enforce_preregistered_arm_set(config)
+    split = load_split(config.split_path)
+    # The split records the hash of each file it was derived from; a changed input (or
+    # a missing one) means the held-out set is no longer the pinned one.
+    input_problems = split_input_problems(split, repo_root())
+    if input_problems:
+        raise ValueError(
+            f"split {config.split_path} no longer matches the files it was "
+            "derived from: " + "; ".join(input_problems) + "; refusing to drive"
+        )
+    _enforce_split_role(config, split, list(questions))
+    return split
+
+
+def resume_state(
+    journal_path: Path, *, resume: bool
+) -> tuple[set[str], list[RunRecord]]:
+    """The done resume keys and the records of the journal a drive appends to.
+
+    With ``resume`` both come from the journal. Without it the journal must hold no
+    record (WR-03): spend is accumulated per invocation, so re-driving every unit into
+    a journal that already holds records restarts spend at zero and duplicates keys.
+
+    Raises:
+        JournalReuseError: If ``resume`` is False and the journal holds a record.
+    """
+    if not resume:
+        if load_records(journal_path):
+            raise JournalReuseError(
+                f"drive with resume=False refused: {journal_path} already holds "
+                "records, and the stage spend cap is per invocation. Use --resume to "
+                "continue it or a fresh run directory for a new drive."
+            )
+        return set(), []
+    return load_done(journal_path), load_records(journal_path)
+
+
+def reconcile_quietly(journal_path: Path, corpus: str) -> None:
+    """Reconciles the journal header after a drive; a failure is logged, not raised."""
+    try:
+        reconcile_header(journal_path, corpus)
+    except Exception as exc:
+        logger.warning("Failed to reconcile header for %s: %s", journal_path, exc)
+
+
 def _attempt_of(record: RunRecord, attempt: int) -> AttemptRecord:
     """The AttemptRecord a retry is about to supersede (06.3.4.1-33, CR-03)."""
     return AttemptRecord(
@@ -781,39 +868,9 @@ def drive(
     questions = load_sample_questions(corpus)
 
     is_limited = limit is not None
-    split: HeldOutSplit | None = None
-    if config.split_file is not None:
-        # D-73: the pre-registration is committed before any paid held-out request, on
-        # the corpus's own configured token. D-170: a `dev` corpus is exempt, because
-        # dev reads precede the freeze commit that introduces the 06.3.6 token.
-        if config.split_role != "dev":
-            problems = gitcheck.preregistration_problems(
-                (config.preregistration_token,),
-                require_clean_tree=True,
-                unchanged_since_introduction=True,
-                repo=git_repo,
-            )
-            if problems:
-                raise gitcheck.PreregistrationError(
-                    f"D-73: refusing to drive the [split] corpus {corpus!r}: "
-                    + "; ".join(problems)
-                    + f". {config.preregistration_token} must be committed in "
-                    f"{gitcheck.THRESHOLDS_PATH} before the first paid request."
-                )
-            # D-73 at drive time (06.3.6): the arm list is the pre-registered one.
-            _enforce_preregistered_arm_set(config)
-        # D-105/D-106/D-107: a [split] corpus is refused before any journal I/O unless
-        # its IDs fit its role, then driven in the seeded balanced rotation.
-        split = load_split(config.split_path)
-        # The split records the hash of each file it was derived from; a changed
-        # input (or a missing one) means the held-out set is no longer the pinned one.
-        input_problems = split_input_problems(split, repo_root())
-        if input_problems:
-            raise ValueError(
-                f"split {config.split_path} no longer matches the files it was "
-                "derived from: " + "; ".join(input_problems) + "; refusing to drive"
-            )
-        _enforce_split_role(config, split, questions)
+    split = require_split_gates(config, questions, git_repo=git_repo)
+    if split is not None:
+        # D-107: a [split] corpus is driven in the seeded balanced rotation.
         work_units = plan_work_units(questions, drive_arms, split.order_seed)
         if limit is not None:
             # --limit takes the first N questions of the rotated order, whole.
@@ -833,16 +890,7 @@ def drive(
         target_path, gate_stage=gate_stage, max_retries=max_retries
     )
     _require_matching_split_marker(target_path, split)
-    if not resume and load_records(target_path):
-        # WR-03: spend is accumulated per invocation, so re-driving every unit into a
-        # journal that already holds records restarts spend at zero and duplicates keys.
-        raise JournalReuseError(
-            f"drive with resume=False refused: {target_path} already holds records, "
-            "and the stage spend cap is per invocation. Use --resume to continue it "
-            "or a fresh run directory for a new drive."
-        )
-    done_keys = load_done(target_path) if resume else set()
-    records: list[RunRecord] = load_records(target_path) if resume else []
+    done_keys, records = resume_state(target_path, resume=resume)
 
     remaining_units = [
         (q, arm)
@@ -860,12 +908,6 @@ def drive(
         split_sha256=split_sha256(split) if split is not None else None,
         context_export=True,
     )
-
-    def _safe_reconcile() -> None:
-        try:
-            reconcile_header(target_path, corpus)
-        except Exception as exc:
-            logger.warning("Failed to reconcile header for %s: %s", target_path, exc)
 
     def _with_context_export(result: DriveResult) -> DriveResult:
         source = checkpoint_source or PostgresCheckpointSource(eval_settings)
@@ -1045,5 +1087,5 @@ def drive(
         )
         return _with_context_export(result)
     finally:
-        _safe_reconcile()
+        reconcile_quietly(target_path, corpus)
 

@@ -703,6 +703,80 @@ def run_benchmark(
         raise typer.Exit(code=1)
 
 
+@app.command("run-external")
+def run_external_command(
+    arm: Annotated[
+        str,
+        typer.Option("--arm", help="The external arm to drive (e.g. llamaindex)"),
+    ],
+    export: Annotated[
+        Path,
+        typer.Option(
+            "--export",
+            help="The arm's context_export.jsonl (pipeline_config.json beside it)",
+        ),
+    ],
+    corpus: Annotated[
+        str,
+        typer.Option("--corpus", "-c", help="Corpus the arm belongs to"),
+    ] = "multihop_rag",
+    pipeline_config: Annotated[
+        Path | None,
+        typer.Option(
+            "--pipeline-config",
+            help="The pipeline echo, when not pipeline_config.json beside --export",
+        ),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            "-o",
+            help="The run's journal.jsonl (the Lancet arms' run directory)",
+        ),
+    ] = None,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume/--no-resume",
+            help="Skip questions the journal already holds a record of",
+        ),
+    ] = True,
+) -> None:
+    """Answer an external arm's context export with the generate-only bin (D-247).
+
+    Appends one record per export row to the run's journal and copies the rows into
+    the run's context_export.jsonl. The bin calls the configured reader: a paid read.
+    """
+    from rich.markup import escape
+
+    try:
+        from lancet_eval.external_run import run_external
+
+        if out is None:
+            out = resolve_run_dir(corpus=corpus, resume=resume) / "journal.jsonl"
+        console.print(
+            f"[bold blue]Driving external arm '{arm}' of corpus '{corpus}' into "
+            f"{out}...[/bold blue]"
+        )
+        result = run_external(
+            corpus=corpus,
+            arm=arm,
+            export_path=export,
+            journal_path=out,
+            pipeline_config=pipeline_config,
+            resume=resume,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Run error:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"[green]Recorded {result.appended} new work unit(s) "
+        f"({result.errors} error record(s)) to {out}; the arm's rows are in "
+        f"{result.export_path}[/green]"
+    )
+
+
 @app.command("staged-gate")
 def staged_gate(
     run: Annotated[
