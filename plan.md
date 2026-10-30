@@ -28,9 +28,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 13 | #13 | local_2cb496f3-680b-426e-b0e7-d4710ae7e26c (worktree `lane-13-08d1ed`, branch `claude/lane-13-08d1ed`) | started | — |
 | 16 | #16 | local_8cc16651-c299-4094-964f-a2cfabe355a2 (worktree `lane-16-dcd7b8`, branch `claude/lane-16-dcd7b8`) | started | — |
 | 20 | #20 | local_d52ca4b3-d72c-4c36-b380-04a573500818 (worktree `lane-20-474a4b`, branch `claude/lane-20-474a4b`) | started | — |
-| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | catching up with main after #19, rerunning pytest; then PR + merge on the user's "先追 main 重跑，再開 PR 並 merge" (2026-10-29 20:0x) | — |
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7 and 8 merged → `plan-history.md`.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8 and 9 merged → `plan-history.md`. #14 waits for #11, #12; #15 waits for #12. Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -43,14 +42,12 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #6 | — | — | — | spec only | limited: parent spec |
-| #9 | 1 | — | none set | `config.py`, `seed.py`, `test_seed.py`, `test_stack_preflight.py` | free |
 | #10 | 1 | #7 (closed) | none set | `metrics.py`, `report.py`, `test_metrics.py` | free |
 | #11 | 1 | #7 (closed) | none set | new `engine/src/bin/generate_from_context.rs`, `generation/openrouter.rs`, new `parity.py` | free |
 | #12 | 1 | #7 (closed) | none set | `provenance.py`, `usability.py`, `p4.py`, `journal.py` (record kind) | free |
 | #13 | 1 | #7 (closed) | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
-| #18 | 1 (lane 9) | — | none set | in lane 9: `seed.py` › `load_document_map`, map lookup in `identity.py`, `diagnostic.py`, `preflight.py`, `cli.py` | free |
-| #15 | 3 | #8, #9, #12, #18 | none set | `corpus.py`, `test_run_arms.py` | free |
+| #15 | 2 | #12 (open); #8, #9, #18 closed | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
 | #20 | 1 | — | none set | `cli.py` › `run` command (shared with #14, #15) | free |
 
