@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-30 13:59 -0700
+Last updated: 2026-10-30 14:42 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -28,11 +28,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 14 | #14 (closes #6) | local_148e4c13-9ad9-4dfa-8467-7fc587f47794 (`claude/lane-14-f3ca8e`) | working | — |
+| — | — | none running | — | — |
 
 Lane 39 started 2026-10-30 13:35 -0700 on the user's typed "Start 39". Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 25, 29, 30, 34, 36 and 39 merged → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 14, 25, 29, 30, 34, 36 and 39 merged (#6 closed with #14, PR #45) → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -44,9 +44,9 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
-| #6 | — | — | — | spec only | limited: parent spec |
-| #14 | 1, lane 14 running | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
-| #44 | 2 (after #14 merges and v1.1 code prep closes) | — | none set | pytest markers, the slow opt-in tier, `scripts/engine-test-targets.sh` (removes hardcoded counts) (opened 2026-10-30 from a forked side session on the user's request) | limited: scope it in the S2 grill round or after the S1 paid run; no lane now |
+| #46 | 1 | — (Refs #14) | none set | `external_run.py`, `cli.py` › `run-external`: `--stage-cap` checked between batches (opened by coordinator 2026-10-30 on the user's "run-external 加 --stage-cap (Recommended)"; needed before the S0 paid run, D-246) | free |
+| #47 | 1 | — (Refs #14, #11, #13) | none set | `engine/src/bin/generate_from_context.rs` chunk-ID parsing or `baselines/llamaindex` chunk IDs; decision first (fairness rules, RESEARCH.md) (opened by coordinator 2026-10-30 on the user's "chunk_index 公平性 (Recommended)") | limited: the fix needs the user's choice among the three options in the issue |
+| #44 | 2 (code prep closed 2026-10-30) | — | none set | pytest markers, the slow opt-in tier, `scripts/engine-test-targets.sh` (removes hardcoded counts) (opened 2026-10-30 from a forked side session on the user's request) | limited: scope it in the S2 grill round or after the S1 paid run; no lane now |
 
 Lane 7 notes for later briefs: #11 may need `validate_row(data, *, lancet: bool | None = None)` to require prompt + correlation_id for Lancet arms (entry points `validate_row`, `read_export`, `ContextExportRow` are stable); #10/#12 extend the one `require_export_rows` block in `score_run`; #14/#15 extend `_with_context_export` in `drive()`; #12 also edits `journal.py`, where lane 7 added the `context_export` header key. Live check still open: Postgres checkpoint export after a real drive (gateway writes checkpoints async), first live drive in the main checkout.
 
@@ -64,7 +64,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 - Live checks for the LlamaIndex baseline (lane 13 / #13), deferred on the user's "S0 付費跑分時再跑 (Recommended)" (2026-10-29 22:38 -0700). Both are paid calls, so check D-246's S0 cap and ask first: the `input_type` forwarding check (fairness rule 7; command in `baselines/llamaindex/README.md` › Embedding `input_type`) and the 346-document export `uv run --project baselines/llamaindex lancet-llamaindex export --corpus multihop_rag --arm llamaindex --out <dir>`.
 
-- Reminder (user's request 2026-10-29 18:48 -0700, "#7 到 #15 全部 merge 之後、S1 付費跑分之前，提醒我跑 S2 程式碼準備的 grill → spec → tickets（範圍見 #6 的留言）"): once #7 to #15 are all merged, and before the S1 paid run, remind the user to run the S2 code-prep grill → spec → tickets round. Scope is the owner comment on #6: OpenRouter Batch submission script; Claude provider-field rewrite (`require_parameters`, `order`); prompt-cache breakpoint; `render` mode turning batch results into `Answer:` lines; scoring for Claude reader arms. S3 (2Wiki) gets its own round after S2's result. Owner action, no lane. Since 2026-10-29. Also raise #44 (test suite tiering and time budget) in that round, or in the gap after the S1 paid run (forked side session local_04f7c00e-2215-4c3e-a90b-c054163bf26c, 2026-10-30, relaying the user's "可以，開issue並通知coordinator").
+- Reminder (user's request 2026-10-29 18:48 -0700, "#7 到 #15 全部 merge 之後、S1 付費跑分之前，提醒我跑 S2 程式碼準備的 grill → spec → tickets（範圍見 #6 的留言）"): once #7 to #15 are all merged, and before the S1 paid run, remind the user to run the S2 code-prep grill → spec → tickets round. Condition met 2026-10-30 14:42 -0700 (#14 merged, PR #45); reminder given the same turn. Scope is the owner comment on #6: OpenRouter Batch submission script; Claude provider-field rewrite (`require_parameters`, `order`); prompt-cache breakpoint; `render` mode turning batch results into `Answer:` lines; scoring for Claude reader arms. S3 (2Wiki) gets its own round after S2's result. Owner action, no lane. Since 2026-10-29. Also raise #44 (test suite tiering and time budget) in that round, or in the gap after the S1 paid run (forked side session local_04f7c00e-2215-4c3e-a90b-c054163bf26c, 2026-10-30, relaying the user's "可以，開issue並通知coordinator").
 
 ## Waiting for the user's decision
 

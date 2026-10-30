@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 14 merged; v1.1 code prep (#6) closed (moved 2026-10-30 14:42 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 14, #14 run-external: session local_148e4c13-9ad9-4dfa-8467-7fc587f47794, branch `claude/lane-14-f3ca8e` @ ce6faac8 (eval only; widened to `cli.py` › `export-context`'s one call to `run.write_context_export`; `context_export.py` unchanged). Batches of 16 per bin call, each appended to the journal; generation model/provider order taken from the `pack` body; reader lever `evidence_metadata` only (D-248). PR #45 merged 2026-10-30 as 00d73ff5 on the user's "開 PR 並 merge (Recommended)" (no CI). #14 and #6 closed. `engine/target` deleted. Follow-ups opened on the user's answers: #46 (stage cap), #47 (chunk_index in external provenance). Notes kept by the lane: run-external header has no `max_retries` marker; atomic export write duplicated 3x; generate's citations/answer_basis/final_answer not kept on RunRecord; `duration_ms` 0.0 for external.
+
 ## Lane 25 merged (moved 2026-10-30 13:59 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 25, #25 clippy `-D warnings`: session local_335ebf28-cea5-4abd-bdf9-dc8a3d7ceb27, branch `claude/lane-25-edb296` @ 51bbd491. 23 lint fixes in 13 engine files, no `#[allow]`, test count unchanged (982). PR #43 merged 2026-10-30 as fd7df9ec on the user's "開 PR 並 merge (Recommended)" (no CI). #25 closed; carries #11's clippy criterion. `engine/target` deleted. Note: `rustfmt --check` has a pre-existing diff in `engine/src/bin/diag_probe.rs` (not in any check).
