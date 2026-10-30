@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 25 merged (moved 2026-10-30 13:59 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 25, #25 clippy `-D warnings`: session local_335ebf28-cea5-4abd-bdf9-dc8a3d7ceb27, branch `claude/lane-25-edb296` @ 51bbd491. 23 lint fixes in 13 engine files, no `#[allow]`, test count unchanged (982). PR #43 merged 2026-10-30 as fd7df9ec on the user's "開 PR 並 merge (Recommended)" (no CI). #25 closed; carries #11's clippy criterion. `engine/target` deleted. Note: `rustfmt --check` has a pre-existing diff in `engine/src/bin/diag_probe.rs` (not in any check).
+
 ## Lane 39 merged (moved 2026-10-30 13:51 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 39, #39 `_delta_dimension` reference keys: session local_acd47167-e78a-4cc6-a3b6-40b9a77ecfe0, branch `claude/lane-39-decbe9` @ e96f00a0 (eval only). `hybrid` reference keeps `mean_hybrid`/`count_hybrid`, others get `*_reference` (same rule as #36); v1.0 held-out `report.json` equal on all 187 dimensions, drive2 unchanged. PR #42 merged 2026-10-30 as 1a84d7eb on the user's "開 PR 並 merge (Recommended)" (no CI). #39 closed. No engine/target was built.
