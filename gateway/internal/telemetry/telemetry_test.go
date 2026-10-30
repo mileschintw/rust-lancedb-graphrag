@@ -260,10 +260,6 @@ func TestCollectorUnavailable(t *testing.T) {
 	}
 }
 
-func TestCollectorUnavailableKeepsConsole(t *testing.T) {
-	TestCollectorUnavailable(t)
-}
-
 func TestRequestOwnedLogsCarryRequestTrace(t *testing.T) {
 	SetupPropagator()
 	exporter := &inMemoryLogExporter{}

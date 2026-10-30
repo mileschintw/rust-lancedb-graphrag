@@ -292,12 +292,19 @@ async fn embedding_config_preserves_bounds_and_redaction() {
     assert_eq!(config.max_concurrency, 2);
     assert_eq!(config.expected_dimension, 2048);
 
+    // One retry reaches the same exhausted-retries error as six, without six real
+    // backoff sleeps (about 90 s, #44).
+    let config = OpenRouterEmbeddingConfig {
+        max_retries: 1,
+        ..config
+    };
     let secret = "secret-must-not-appear";
     let error = OpenRouterClient::new_with_config(secret, config)
         .unwrap()
         .get_embeddings(&["redaction".into()])
         .await
         .unwrap_err();
+    assert!(error.contains("after 2 attempts"), "{error}");
     assert!(
         !error.contains(secret),
         "provider error leaked the credential"

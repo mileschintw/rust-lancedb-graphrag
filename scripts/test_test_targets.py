@@ -34,7 +34,7 @@ GATEWAY_PACKAGES = {
     "gateway/internal/config": 4,
     "gateway/internal/engineclient": 1,
     "gateway/internal/sse": 17,
-    "gateway/internal/telemetry": 12,
+    "gateway/internal/telemetry": 11,
     "gateway/internal/notests": 0,
 }
 
@@ -135,7 +135,7 @@ def test_the_engine_gate_fails_when_nothing_is_listed(tmp_path: Path) -> None:
 def test_the_gateway_gate_passes_at_and_above_its_floors(tmp_path: Path) -> None:
     code, out = _gateway(tmp_path, {**GATEWAY_PACKAGES, "gateway": 90})
     assert code == 0, out
-    assert "TOTAL: 131" in out
+    assert "TOTAL: 130" in out
 
 
 def test_the_gateway_gate_fails_a_package_below_its_floor(tmp_path: Path) -> None:

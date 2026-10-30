@@ -20,7 +20,7 @@ gateway/db 7
 gateway/internal/config 4
 gateway/internal/engineclient 1
 gateway/internal/sse 17
-gateway/internal/telemetry 12"
+gateway/internal/telemetry 11"
 
 # Ensure go is found in standard user environments
 GO_CMD="go"
