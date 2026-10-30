@@ -2,6 +2,11 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lanes 11 and 30 merged (moved 2026-10-29 23:58 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 11, #11 generate-only engine bin and prompt parity check: session local_d66def13-7ecf-400a-948a-1c4190ee4f40, branch `claude/lane-11-3e9042` @ d670aa76. PR #37 merged 2026-10-29 as 2d552980 on the user's "開 PR 並 merge (Recommended)" (no CI). #11 closed. Engine test targets now 982. Clippy criterion carried by #25 (ruling 5). `engine/target` deleted.
+- Lane 30, #30 judged scoring and calibration keep store-prefixed arms: session local_4757ad58-ec8e-41c5-a84a-a2da25bd7ce7, branch `claude/lane-30-1bb6ad` @ c508ca4f (eval only; widened to `judge_stage.py` and `CalibrationKeyRow`, option A). PR #38 merged 2026-10-29 as 546655c9 on the user's "開 PR 並 merge (Recommended)" (no CI). #30 closed. Opened #34 and #36.
+
 ## Lane 29 merged (moved 2026-10-29 23:26 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 29, #29 raw-event dirs for store-prefixed arms: session local_9450bd63-4293-40ea-b77c-2049d7d385d8, branch `claude/lane-29-192208` @ b4240359 (eval only). PR #35 merged 2026-10-29 as 8763cd08 on the user's "開 PR 並 merge (Recommended)" (no CI). #29 closed. No engine/target was built.
