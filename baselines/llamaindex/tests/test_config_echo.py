@@ -1,0 +1,123 @@
+"""The pipeline-config echo names every D-248 value and the installed framework."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, fields
+from importlib.metadata import version
+
+from lancet_eval.arms import ExternalPipeline
+from llama_index.core import Settings
+from llama_index.core.llms import CustomLLM, LLMMetadata
+
+from lancet_llamaindex.pipeline import PIPELINE_CONFIG_FILE, write_outputs
+
+from .test_export import _pipeline, _questions
+
+
+def test_echo_names_every_value_and_the_installed_version(
+    corpus_dir, tmp_path, embedding, reranker
+):
+    pipeline = _pipeline(corpus_dir, embedding, reranker)
+    rows = pipeline.export_rows("fixture", "llamaindex", _questions(corpus_dir))
+    _, echo_path = write_outputs(tmp_path / "out", rows, pipeline.config_echo())
+
+    echo = json.loads(echo_path.read_text("utf-8"))
+
+    assert echo_path.name == PIPELINE_CONFIG_FILE
+    assert echo["framework"] == "llama-index-core"
+    assert echo["framework_version"] == version("llama-index-core") == "0.14.25"
+    assert echo["splitter"]["type"] == "SentenceSplitter"
+    assert (echo["splitter"]["chunk_size"], echo["splitter"]["chunk_overlap"]) == (
+        256,
+        25,
+    )
+    assert echo["dense_top_k"] == 20
+    assert echo["embedding"]["model"] == "voyageai/voyage-4-large"
+    assert echo["embedding"]["endpoint"] == "https://openrouter.ai/api/v1/embeddings"
+    assert echo["embedding"]["input_type"] is None
+    assert echo["rerank"]["model"] == "voyageai/rerank-2.5-lite"
+    assert echo["rerank"]["endpoint"] == "https://openrouter.ai/api/v1/rerank"
+    assert echo["rerank"]["document_text"].startswith("chunk text only")
+    assert echo["keep"] == 8
+    assert echo["embedded_metadata_keys"] == ["title", "source", "published_at"]
+    assert echo["documents"] == 3
+    assert len(echo["index_fingerprint"]) == 64
+
+
+class _GuardLLM(CustomLLM):
+    """An LLM that fails the test if anything asks it for a completion."""
+
+    @property
+    def metadata(self) -> LLMMetadata:
+        return LLMMetadata()
+
+    def complete(self, prompt, formatted=False, **kwargs):
+        raise AssertionError("the baseline called a reader")
+
+    def stream_complete(self, prompt, formatted=False, **kwargs):
+        raise AssertionError("the baseline called a reader")
+
+
+def test_the_pipeline_never_calls_a_reader(corpus_dir, embedding, reranker):
+    previous = Settings._llm
+    Settings.llm = _GuardLLM()
+    try:
+        pipeline = _pipeline(corpus_dir, embedding, reranker)
+        rows = pipeline.export_rows("fixture", "llamaindex", _questions(corpus_dir))
+    finally:
+        Settings._llm = previous
+
+    assert len(rows) == 3
+
+
+def test_flat_keys_for_the_harness_agree_with_the_nested_ones(
+    corpus_dir, embedding, reranker
+):
+    echo = _pipeline(corpus_dir, embedding, reranker).config_echo()
+
+    # The flat keys are the ones lane 12's external clause compares (#12, #14).
+    assert {
+        key: echo[key]
+        for key in (
+            "framework",
+            "framework_version",
+            "chunk_size",
+            "chunk_overlap",
+            "dense_top_k",
+            "rerank_model",
+            "keep",
+            "index_fingerprint",
+        )
+    } == {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": echo["splitter"]["chunk_size"],
+        "chunk_overlap": echo["splitter"]["chunk_overlap"],
+        "dense_top_k": 20,
+        "rerank_model": echo["rerank"]["model"],
+        "keep": 8,
+        "index_fingerprint": echo["index_fingerprint"],
+    }
+    assert (echo["chunk_size"], echo["chunk_overlap"]) == (256, 25)
+    assert echo["rerank_model"] == "voyageai/rerank-2.5-lite"
+
+
+def test_the_flat_keys_parse_as_the_harness_external_pipeline(
+    corpus_dir, embedding, reranker
+):
+    echo = _pipeline(corpus_dir, embedding, reranker).config_echo()
+
+    pipeline = ExternalPipeline(**{
+        f.name: echo[f.name] for f in fields(ExternalPipeline)
+    })
+
+    assert asdict(pipeline) == {
+        "framework": "llama-index-core",
+        "framework_version": "0.14.25",
+        "chunk_size": 256,
+        "chunk_overlap": 25,
+        "dense_top_k": 20,
+        "rerank_model": "voyageai/rerank-2.5-lite",
+        "keep": 8,
+    }
