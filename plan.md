@@ -29,7 +29,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | 11 | #11 | local_d66def13-7ecf-400a-948a-1c4190ee4f40 (worktree `lane-11-3e9042`, branch `claude/lane-11-3e9042`) | review (58da8f5d) | — |
 | 29 | #29 | local_9450bd63-4293-40ea-b77c-2049d7d385d8 (worktree `lane-29-192208`, branch `claude/lane-29-192208`) | started | — |
-| 30 | #30 | local_4757ad58-ec8e-41c5-a84a-a2da25bd7ce7 (worktree pending check) | started | — |
+| 30 | #30 | local_4757ad58-ec8e-41c5-a84a-a2da25bd7ce7 (worktree `lane-30-1bb6ad`, branch `claude/lane-30-1bb6ad`) | started | — |
 
 Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 12, 13, 15, 16, 20 and 23 merged → `plan-history.md`. #14 waits for #11. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
