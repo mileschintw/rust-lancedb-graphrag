@@ -22,9 +22,9 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 7 | #7 | local_62fc0cbb-8a7d-4976-a2c6-5d117782e414 (worktree `lane-7-91faeb`, branch `claude/lane-7-91faeb`) | started | — |
-| 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | started | — |
-| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | started | — |
+| 7 | #7 | local_62fc0cbb-8a7d-4976-a2c6-5d117782e414 (worktree `lane-7-91faeb`, branch `claude/lane-7-91faeb`) | review (final checks running, 19:33) | — |
+| 8 | #8 | local_4a84ea68-2849-4f35-8017-514e7501aaf3 (worktree `lane-8-e87587`, branch `claude/lane-8-e87587`) | working | — |
+| 9 | #9, #18 | local_480eb168-cfbd-41d1-8c41-a352e6f35553 (worktree `lane-9-fa5fe0`, branch `claude/lane-9-fa5fe0`) | review (19:33, head 293536bd) | — |
 
 Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`.
 
@@ -48,6 +48,8 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #18 | 1 (lane 9) | — | none set | in lane 9: `seed.py` › `load_document_map`, map lookup in `identity.py`, `diagnostic.py`, `preflight.py`, `cli.py` | free |
 | #15 | 3 | #8, #9, #12, #18 | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
+
+For #15's brief: lane 9 (293536bd) left `score.py` reading the v1.0 map, since one journal can hold both stores' arms; #15's store-prefixed arm labels must pick the map per arm. #18's "every reader incl. score" criterion is thus partly carried by #15; say so in lane 9's PR body.
 
 `scripts/engine-test-targets.sh` hardcodes Rust test counts (`TOTAL`, `lib`): every lane adding `#[test]`s bumps them, in its own commit; lane 8 owns those lines this wave; a lane merging later (e.g. #11) re-adds its delta on catch-up. Name this in every brief that adds Rust tests.
 
