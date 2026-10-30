@@ -9,9 +9,11 @@ import string
 from collections import Counter
 from collections.abc import Callable, Sequence
 from enum import StrEnum
+from functools import cache
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
+import tiktoken
 from pydantic import BaseModel, ConfigDict, Field
 
 from lancet_eval.client import StructuredCitation
@@ -862,3 +864,37 @@ def paper_metrics(per_question: list[dict[str, Any]]) -> dict[str, float]:
         "paper_mrr_at_10": sum(s["rr"] for s in per_question) / n,
         "paper_map_at_10": sum(s["ap"] for s in per_question) / n,
     }
+
+
+# --- D-250 evidence-form metrics (#10) -----------------------------------------------
+#
+# Evidence Hits@4 is the paper-semantics ``hit4`` with ``text_matcher`` over the final
+# evidence ranks 1-4 of a context export, so it scores any producer (Lancet or an
+# external arm) the same way. Only Hits@4 exists in this form: Hits@10, MRR and MAP are
+# not reported for it. Chunk-ID ``paper_hits_at_4`` stays a Lancet-only secondary.
+
+
+def evidence_hit_at_4(texts: Sequence[str], facts: Sequence[str]) -> bool:
+    """Whether a gold fact's text occurs in one of the first four evidence texts.
+
+    Args:
+        texts: The exported evidence texts in rank order; only ranks 1-4 are read.
+        facts: The question's gold fact strings.
+
+    Raises:
+        ValueError: If ``facts`` is empty: a null question has no evidence Hits@4.
+    """
+    return paper_question_scores(texts[:PAPER_HITS_CUTOFF], facts, text_matcher)[
+        "hit4"
+    ]
+
+
+@cache
+def _o200k() -> tiktoken.Encoding:
+    return tiktoken.get_encoding("o200k_base")
+
+
+def context_tokens(texts: Sequence[str]) -> int:
+    """The o200k token count of every exported evidence text, summed."""
+    encoding = _o200k()
+    return sum(len(encoding.encode_ordinary(text)) for text in texts)
