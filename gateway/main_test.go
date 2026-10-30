@@ -1678,6 +1678,30 @@ func TestCreateDocumentChunkSettingsContract(t *testing.T) {
 		}
 	})
 
+	t.Run("structure-merge strategy is accepted", func(t *testing.T) {
+		store := &fakeStore{}
+		var body bytes.Buffer
+		w := multipart.NewWriter(&body)
+		part, _ := w.CreateFormFile("file", "notes.md")
+		part.Write([]byte("# Notes\n\nhello"))
+		w.WriteField("chunk_strategy", "structure-merge")
+		w.WriteField("chunk_size", "256")
+		w.WriteField("chunk_overlap", "25")
+		w.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/documents", &body)
+		req.Header.Set("Content-Type", w.FormDataContentType())
+
+		recorder := httptest.NewRecorder()
+		app{store: store, engine: engineFunc{}, logger: zap.NewNop()}.routes().ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusAccepted)
+		}
+		if store.inserted.ChunkStrategy != "structure-merge" || store.inserted.ChunkSize != 256 || store.inserted.ChunkOverlap != 25 {
+			t.Fatalf("unexpected structure-merge chunk params: %#v", store.inserted)
+		}
+	})
+
 	t.Run("json document converts to fixed-size", func(t *testing.T) {
 		store := &fakeStore{}
 		recorder := httptest.NewRecorder()

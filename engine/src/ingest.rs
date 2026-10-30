@@ -31,7 +31,9 @@ use tracing::Instrument;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
-use crate::chunker::{chunk_fixed_size, chunk_markdown, estimate_tokens, Chunk};
+use crate::chunker::{
+    chunk_fixed_size, chunk_markdown, chunk_structure_merge, estimate_tokens, Chunk,
+};
 use crate::client::{self, OpenRouterClient};
 use crate::db::{self, DatabaseManager, EntityResolver, ExactMatchResolver};
 use crate::graph::{self, escape_sql_literal};
@@ -59,6 +61,9 @@ impl IngestionStatus {
 pub const DEFAULT_CHUNK_SIZE: usize = 500;
 pub const DEFAULT_CHUNK_OVERLAP: usize = 50;
 pub const MAX_CHUNK_SIZE: usize = 1048576;
+/// The accepted `chunk_strategy` values. `structure-merge` counts `chunk_size` and `chunk_overlap`
+/// in o200k tokens; the others count chars (D-251).
+pub const CHUNK_STRATEGIES: [&str; 3] = ["structure-aware", "fixed-size", "structure-merge"];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ChunkSettings {
@@ -81,7 +86,7 @@ pub fn parse_chunk_settings(metadata: &HashMap<String, String>) -> Result<ChunkS
     let strategy = metadata
         .get("chunk_strategy")
         .ok_or_else(|| Status::invalid_argument("missing metadata key: chunk_strategy"))?;
-    if strategy != "structure-aware" && strategy != "fixed-size" {
+    if !CHUNK_STRATEGIES.contains(&strategy.as_str()) {
         return Err(Status::invalid_argument(format!(
             "invalid chunk_strategy: {strategy}"
         )));
@@ -249,16 +254,18 @@ pub fn chunk_ingestion_job(job: &IngestionJob) -> (&'static str, Vec<Chunk>) {
         .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
     let strategy = if is_json || job.chunk_settings.strategy == "fixed-size" {
         "fixed-size"
+    } else if job.chunk_settings.strategy == "structure-merge" {
+        "structure-merge"
     } else {
         "structure-aware"
     };
     let target_size = job.chunk_settings.size;
     let overlap = job.chunk_settings.overlap;
     let text = String::from_utf8_lossy(&job.raw_data);
-    let mut chunks = if strategy == "fixed-size" {
-        chunk_fixed_size(&text, target_size, overlap)
-    } else {
-        chunk_markdown(&text, target_size, overlap)
+    let mut chunks = match strategy {
+        "fixed-size" => chunk_fixed_size(&text, target_size, overlap),
+        "structure-merge" => chunk_structure_merge(&text, target_size, overlap),
+        _ => chunk_markdown(&text, target_size, overlap),
     };
     for chunk in &mut chunks {
         chunk.estimated_tokens = estimate_tokens(&chunk.content);

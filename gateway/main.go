@@ -56,6 +56,10 @@ const defaultChunkOverlap = 50
 // Authoritative Rust MAX_CHUNK_SIZE ceiling mirror
 const maxChunkSize = 1048576
 
+// Mirrors the engine's CHUNK_STRATEGIES. structure-merge counts chunk_size and chunk_overlap in
+// o200k tokens; the others count chars (D-251).
+var chunkStrategies = []string{"structure-aware", "fixed-size", "structure-merge"}
+
 // Evidence-metadata bounds, counted as runes. They mirror the engine's re-validation
 // (plan 06.3.6-14); the corpus maxima are 177 (title) and 59 (source), so these leave
 // room without letting an oversized value into a prompt block (T-06.3.6-28).
@@ -435,7 +439,7 @@ func (a app) createDocument(w http.ResponseWriter, r *http.Request) {
 
 	strategy := "structure-aware"
 	if reqStrategy := r.FormValue("chunk_strategy"); reqStrategy != "" {
-		if reqStrategy != "structure-aware" && reqStrategy != "fixed-size" {
+		if !slices.Contains(chunkStrategies, reqStrategy) {
 			http.Error(w, "invalid chunk_strategy", http.StatusBadRequest)
 			return
 		}

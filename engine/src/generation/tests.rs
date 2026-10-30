@@ -1742,26 +1742,19 @@ async fn openrouter_capabilities_cache_single_flight() {
     let request_count_server = Arc::clone(&request_count);
 
     let server_handle = thread::spawn(move || {
-        let start = Instant::now();
-        while start.elapsed() < Duration::from_secs(5) {
-            match accept_with_deadline(&listener) {
-                Ok((mut stream, _)) => {
-                    request_count_server.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    // Slight delay to allow concurrent callers to arrive and wait on OnceCell
-                    thread::sleep(Duration::from_millis(50));
-                    let mut buf = [0u8; 4096];
-                    let _ = stream.read(&mut buf);
-                    let payload = json!({
-                        "data": [{
-                            "id": "mock/single-flight-model",
-                            "supported_parameters": ["response_format", "json_schema"]
-                        }]
-                    });
-                    write_json_response(&mut stream, payload);
-                    break;
-                }
-                Err(_) => break,
-            }
+        if let Ok((mut stream, _)) = accept_with_deadline(&listener) {
+            request_count_server.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            // Slight delay to allow concurrent callers to arrive and wait on OnceCell
+            thread::sleep(Duration::from_millis(50));
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let payload = json!({
+                "data": [{
+                    "id": "mock/single-flight-model",
+                    "supported_parameters": ["response_format", "json_schema"]
+                }]
+            });
+            write_json_response(&mut stream, payload);
         }
     });
 
