@@ -13,6 +13,9 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 ## Rulings
 
 1. Lane workers (7, 8, 9) may push their own lane branch to origin; PR open and merge still need the user's yes. User's words (2026-10-29 18:55 -0700), answering lane 8's push question: "都開worktree再merge", then on clarifying (local merge without push vs push then PR): "不對，可以 push 再開 PR". Sent to all three lanes.
+2. S1 per-store document map is its own issue, #18, which blocks #15 and is blocked by #9 (sub-issue of #6). User's words (2026-10-29, answering the lane 9 finding): "New issue, blocks #15".
+
+Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo uses no triage labels"), opened 2026-10-29 19:21 -0700 outside relay; left to the user.
 
 ## Now
 
@@ -41,7 +44,8 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #12 | 2 | #7 | none set | `provenance.py`, `usability.py`, `p4.py`, `journal.py` (record kind) | free |
 | #13 | 2 | #7 | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
-| #15 | 3 | #8, #9, #12 | none set | `corpus.py`, `test_run_arms.py` | free |
+| #18 | 2 | #9 | none set | `seed.py` › `load_document_map` and reseed delete path; map lookup in `identity.py`, `diagnostic.py` | free |
+| #15 | 3 | #8, #9, #12, #18 | none set | `corpus.py`, `test_run_arms.py` | free |
 | #16 | 1 | — | none set | `.gitattributes` | free |
 
 Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytest fails one `scripts/` test on Windows because of CRLF in `*.sh` (→ #16); repo-wide `ruff check` on `eval` has ~740 errors, so lanes hold their own files to zero new ruff errors and PR bodies must say so; parallel cold `cargo` builds have hit rustc `STATUS_STACK_BUFFER_OVERRUN`, so rerun before calling a Rust check failed. Lane 9 (19:20) adds: `cl.exe` 0xc000012d (out of commit memory) and rustc "only metadata stub found"; ruling to lanes: `CARGO_BUILD_JOBS=2` for every cargo command and rerun once before reporting a failure.
@@ -52,7 +56,7 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 
 ## Waiting for the user's decision
 
-- S1 document map (found by lane 9, 2026-10-29 19:20 -0700): `reseed` deletes `eval/corpora/<map_corpus>/document_map.json`, and identity/score/run read only that one map. An S1 reseed of a corpus sharing the v1.0 map would delete the committed v1.0 map. Neither #9 nor #15 specifies a per-store map. Options: (a) new issue for a per-store document map, blocking #15 (recommended); (b) fold it into #15's scope; (c) fold it into #9 now. Since 2026-10-29.
+none
 
 ## Deadlines
 
