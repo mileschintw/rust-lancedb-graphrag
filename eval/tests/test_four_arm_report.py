@@ -1042,6 +1042,10 @@ def test_the_missing_rate_delta_carries_the_counts(
     b = dim(report, "final_answer_missing_rate_delta__bm25_only")
     assert (b.detail["count_x"], b.detail["count_hybrid"]) == (0.0, 0.0)
     assert b.detail["count_delta"] == 0.0
+    # #39: a `hybrid` reference keeps the v1.0 names and gains no neutral twin
+    for delta in (d, b):
+        assert "count_reference" not in delta.detail
+        assert "mean_reference" not in delta.detail
 
 
 def test_the_abstention_delta_reads_a_decline_against_hybrid(

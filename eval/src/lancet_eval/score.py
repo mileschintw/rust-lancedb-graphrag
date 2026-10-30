@@ -654,18 +654,21 @@ def _delta_dimension(
     values_x: Mapping[str, float],
     values_ref: Mapping[str, float],
     *,
+    reference: str,
     qtype_of: Mapping[str, str],
     counts: bool,
     detail: Mapping[str, float],
     empty_reason: str,
 ) -> DimensionResult:
-    """A secondary paired delta of arm X against `hybrid` over one question set.
+    """A secondary paired delta of arm X against a reference arm over one question set.
 
-    `score` is the mean paired difference, which equals `mean_x - mean_hybrid` over the
-    same questions, and `n` is the number of pairs. The CI is the percentile bootstrap
-    of `p4.paired_delta` (B and seed from `stats`). There is no p-value and no Holm
-    field: a secondary delta is estimation only and is never called significant
-    (D-111, D-123).
+    `score` is the mean paired difference, which equals `mean_x` minus the reference
+    arm's mean over the same questions, and `n` is the number of pairs. The reference
+    arm's mean and count keep their v1.0 names (`mean_hybrid`, `count_hybrid`) for a
+    `hybrid` reference and are `mean_reference`, `count_reference` for any other (#39).
+    The CI is the percentile bootstrap of `p4.paired_delta` (B and seed from `stats`).
+    There is no p-value and no Holm field: a secondary delta is estimation only and is
+    never called significant (D-111, D-123).
     """
     if not values_x:
         return DimensionResult(
@@ -678,11 +681,13 @@ def _delta_dimension(
     out["ci_upper"] = float(pd.ci_upper)
     out["n_pairs"] = float(pd.n)
     out["mean_x"] = float(fmean(values_x[k] for k in keys))
-    out["mean_hybrid"] = float(fmean(values_ref[k] for k in keys))
+    # #39: the same rule as `_judged_dimensions`' reference keys (#36)
+    ref_key = "hybrid" if reference == "hybrid" else "reference"
+    out[f"mean_{ref_key}"] = float(fmean(values_ref[k] for k in keys))
     if counts:
         out["count_x"] = float(sum(values_x[k] for k in keys))
-        out["count_hybrid"] = float(sum(values_ref[k] for k in keys))
-        out["count_delta"] = out["count_x"] - out["count_hybrid"]
+        out[f"count_{ref_key}"] = float(sum(values_ref[k] for k in keys))
+        out["count_delta"] = out["count_x"] - out[f"count_{ref_key}"]
     out.update(strata.paired_delta_strata(values_x, values_ref, qtype_of))
     return DimensionResult(
         name=name, status="ok", score=float(pd.delta), detail=out, n=pd.n
@@ -1108,6 +1113,7 @@ def _four_arm_dimensions(
                     f"{metric.delta_name}__{arm_slug(arm)}",
                     by_arm[arm],
                     by_arm[reference],
+                    reference=reference,
                     qtype_of=qtype_of,
                     counts=metric.counts,
                     detail={
@@ -1739,6 +1745,7 @@ def _judged_dimensions(
                 f"answer_{dimension}_delta__{slug}",
                 {q: score_of(index[(q, arm)], dimension) for q in pairs},
                 {q: score_of(index[(q, reference)], dimension) for q in pairs},
+                reference=reference,
                 qtype_of=qtype_of,
                 counts=False,
                 detail=detail,
