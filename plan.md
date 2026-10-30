@@ -10,6 +10,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 - **Standing instructions:** (1) each PR open/merge needs the user's yes per lane, asked as the PR-and-merge question; no CI exists, so "merge once CI passes" means merge with `--match-head-commit` at the sha `ready` prints. (2) After each merge, delete that lane's `engine/target` (user's "清 lane 7、8、9 的 target (Recommended)", 2026-10-29 21:20 -0700); never the main checkout's. (3) After each merge, fast-forward the main checkout's `main` to origin (new worktrees cut from it). (4) Sessions start only in a turn the user typed; an answer to AskUserQuestion inside an event turn is refused by the app.
 - **Alarm:** a background `sleep 1200` is re-armed after each wake; on wake run `ready` and read `status/`.
 - **Unattended log:** none.
+- **Pause (user, 2026-10-29 23:26 -0700):** "現在還在執行的session結束之後，我們先wrap up，做總結並暫時休息". Let lanes 11 and 30 finish; start no new lanes (#14, #25, #34 wait); then write the summary and stop. PR open/merge for 11 and 30 still needs the user's yes.
 
 ## Rulings
 
