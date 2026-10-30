@@ -42,6 +42,9 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #13 | 2 | #7 | none set | new `baselines/llamaindex/` | free |
 | #14 | 3 | #11, #12 | none set | new `external_run.py`, `test_run_external.py` | free |
 | #15 | 3 | #8, #9, #12 | none set | `corpus.py`, `test_run_arms.py` | free |
+| #16 | 1 | — | none set | `.gitattributes` | free |
+
+Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytest fails one `scripts/` test on Windows because of CRLF in `*.sh` (→ #16); repo-wide `ruff check` on `eval` has ~740 errors, so lanes hold their own files to zero new ruff errors and PR bodies must say so; parallel cold `cargo` builds have hit rustc `STATUS_STACK_BUFFER_OVERRUN`, so rerun before calling a Rust check failed.
 
 ## Waiting for the user to be present
 
