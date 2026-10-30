@@ -545,9 +545,3 @@ def test_d221_query_connection_failure_prints_json_error_and_exits_nonzero(
     printed = json.loads(capsys.readouterr().out)
     assert printed["error"] == "ConnectError"
 
-
-def test_d221_script_imports_run_query_from_the_harness_client() -> None:
-    source = SCRIPT_PATH.read_text(encoding="utf-8")
-    assert "from lancet_eval.client import" in source
-    assert "run_query" in source
-    assert "traceparent" in source

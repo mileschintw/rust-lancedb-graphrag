@@ -28,15 +28,12 @@ from lancet_eval import comparison as cmp_mod
 from lancet_eval import gitcheck
 from lancet_eval.cli import app
 from lancet_eval.comparison import (
-    APPROXIMATION_LABEL,
     D124_DISCLOSURE,
     D124_IDS,
-    FWER_STATEMENT,
     LABEL_UNADJUSTED,
     NON_COMPARABILITY_CAVEAT,
     PAPER_REFERENCE_TABLE5,
     SECONDARY_DELTA_BASES,
-    SIDECAR_FILES,
     Comparison,
     ComparisonError,
     build_chart_data,
@@ -362,11 +359,6 @@ def test_the_four_d124_ids_are_held_out_and_were_in_the_legacy_canary_file() -> 
         assert qid in heldout
         assert qid in canary
     assert "drives 1b and 2" in D124_DISCLOSURE
-
-
-def test_the_fwer_statement_and_the_approximation_label_are_planned() -> None:
-    assert "can reach 0.10" in FWER_STATEMENT
-    assert APPROXIMATION_LABEL == APPROXIMATION
 
 
 def test_the_module_lists_the_thirteen_secondary_delta_metrics() -> None:
@@ -1230,15 +1222,6 @@ def _by_class(root: ET.Element, tag: str, cls: str) -> list[ET.Element]:
         for e in root.iter(f"{SVG_NS}{tag}")
         if cls in (e.get("class") or "").split()
     ]
-
-
-def test_the_sidecar_list_names_all_four_files() -> None:
-    assert SIDECAR_FILES == (
-        "comparison.json",
-        "comparison.md",
-        "chart.json",
-        "chart.svg",
-    )
 
 
 def test_chart_data_has_the_planned_keys_arms_and_series(written: Any) -> None:

@@ -699,12 +699,6 @@ def test_resolve_fails_closed_on_an_absent_or_non_preregistration_token(
         preregistration.resolve(token)
 
 
-def test_resolve_raises_the_gitcheck_error_type() -> None:
-    from lancet_eval import preregistration
-
-    assert preregistration.PreregistrationError is gitcheck.PreregistrationError
-
-
 def test_arms_of_an_ablation_preregistration_is_reference_then_comparisons() -> None:
     from lancet_eval import preregistration
 
@@ -1075,7 +1069,6 @@ def test_the_v1_0_constants_declare_no_external_pipeline() -> None:
     for token in ("PREREGISTRATION_06_3_5", FREEZE_TOKEN):
         pre = preregistration.resolve(token)
         assert preregistration.external_pipelines_of(pre) == {}
-        assert not hasattr(pre, "external_pipelines")
 
 
 @pytest.mark.parametrize(

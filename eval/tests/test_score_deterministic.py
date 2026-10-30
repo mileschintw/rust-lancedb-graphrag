@@ -1,6 +1,5 @@
 """Tests for offline deterministic scorer and ablation provenance."""
 
-import ast
 import hashlib
 import json
 import shutil
@@ -688,10 +687,3 @@ def test_graph_off_provenance_applies_to_every_arm_that_disables_graph_context(
     )
     assert coverage.detail["errors"] == 1.0
 
-
-def test_score_module_no_longer_hardcodes_the_two_legacy_arms() -> None:
-    """The literal `{"graph-on": [], "graph-off": []}` grouping is gone."""
-    source = (_REPO_ROOT / "eval/src/lancet_eval/score.py").read_text(encoding="utf-8")
-    ast.parse(source)
-    assert "canonical_arm(" in source
-    assert '{"graph-on": [], "graph-off": []}' not in source

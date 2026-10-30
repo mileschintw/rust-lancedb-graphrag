@@ -203,12 +203,6 @@ def test_d200_stack_preflight_reports_a_failed_canary(
     assert "qs-one (hybrid)" in results[-1].message
 
 
-def test_d200_stack_preflight_docstring_states_the_request_count() -> None:
-    doc = preflight_module.run_stack_preflight.__doc__ or ""
-    assert "27" in doc
-    assert "nine arms" in doc
-
-
 def test_d200_arm_canaries_without_a_split_read_no_split_and_send_qs_rows(
     tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:

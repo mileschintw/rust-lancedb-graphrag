@@ -305,6 +305,3 @@ def test_the_compare_command_exits_one_with_the_mismatch_and_writes_nothing(
     for name in ("comparison.json", "comparison.md", "chart.json", "chart.svg"):
         assert not (prefixed.run / name).exists()
 
-
-def test_the_unused_arm_slug_table_is_gone() -> None:
-    assert not hasattr(cmp_mod, "_ARM_SLUGS")

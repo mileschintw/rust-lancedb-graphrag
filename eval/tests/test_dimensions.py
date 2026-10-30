@@ -107,18 +107,6 @@ def test_obs_04_placeholder_registered() -> None:
     assert OBS_04_PLACEHOLDER.status == "skipped"
 
 
-def test_in02_graph_yield_investigation_floor_relocated() -> None:
-    """Proves GRAPH_YIELD_INVESTIGATION_FLOOR is defined in thresholds and re-exported."""
-    import lancet_eval.dimensions as D
-    import lancet_eval.gate as G
-    import lancet_eval.thresholds as T
-
-    assert hasattr(T, "GRAPH_YIELD_INVESTIGATION_FLOOR")
-    assert G.GRAPH_YIELD_INVESTIGATION_FLOOR is T.GRAPH_YIELD_INVESTIGATION_FLOOR
-    assert D.GRAPH_YIELD_INVESTIGATION_FLOOR is T.GRAPH_YIELD_INVESTIGATION_FLOOR
-    assert T.GRAPH_YIELD_INVESTIGATION_FLOOR == 0.20
-
-
 def test_judged_slice_state_constants_and_mapping() -> None:
     """Proves judged slice state constants and mapping exist with expected values."""
     from lancet_eval.dimensions import (

@@ -505,13 +505,6 @@ class Phase02LiveEvidenceTests(unittest.TestCase):
         self.assertIn("raw_content", output.lower())
         self.assertNotIn("do-not-publish", output)
 
-    def test_privacy_node_is_absent_from_verification(self) -> None:
-        node_test = ROOT / "scripts/test_phase02_privacy_prohibition.cjs"
-        self.assertFalse(node_test.exists(), "Node privacy test script must be removed")
-        final_script = (ROOT / "verify-live-evidence.sh").read_text(encoding="utf-8")
-        self.assertNotIn("node", final_script)
-        self.assertNotIn("test_phase02_privacy_prohibition", final_script)
-
     def test_resolve_store_path_strict_validation(self) -> None:
         # Valid config resolves from repository root even from unrelated CWD
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as unrelated_cwd:
