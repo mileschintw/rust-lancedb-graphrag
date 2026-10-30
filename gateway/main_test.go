@@ -2469,6 +2469,9 @@ type ragMockState struct {
 }
 
 func TestRAGQueryCrossRuntime(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow tier (#44): builds and runs the Rust engine; run go test without -short")
+	}
 	repoRoot, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatalf("resolve repository root: %v", err)
