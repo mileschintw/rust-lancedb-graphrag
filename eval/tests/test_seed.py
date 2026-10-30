@@ -767,4 +767,86 @@ def test_atlas_env_eval_s1_applies_the_eval_schema_renamed() -> None:
     v1 = (gateway / "db" / "schema.eval.hcl").read_text(encoding="utf-8")
     s1 = (gateway / "db" / "schema.eval-s1.hcl").read_text(encoding="utf-8")
     renamed = re.sub(r"\blancet_eval\b", "lancet_eval_s1", v1)
-    assert s1.splitlines() == renamed.splitlines()
+    # Line 1 is each file's provenance comment; every line after it must match.
+    assert s1.splitlines()[0].startswith("// schema.eval.hcl with the schema renamed")
+    assert s1.splitlines()[1:] == renamed.splitlines()[1:]
+
+
+def test_s1_reseed_keeps_the_v1_document_map(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-251: the S1 store has its own document map file, so an S1 reseed deletes only
+    that file and the committed v1.0 map stays byte-identical."""
+    import subprocess
+
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    monkeypatch.setattr("lancet_eval.config.repo_root", lambda: tmp_path)
+    monkeypatch.chdir(tmp_path)
+    _s1_layout(tmp_path)
+    v1_map = get_document_map_path("multihop_rag")
+    s1_map = get_document_map_path("multihop_rag", S1_STORE)
+    assert s1_map.parent == v1_map.parent
+    assert s1_map.name == "document_map.eval-s1.json"
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag", index_generation="v1"))
+    save_document_map_atomic(
+        DocumentMap(corpus="multihop_rag", index_generation="s1"), S1_STORE
+    )
+    v1_bytes = v1_map.read_bytes()
+    assert load_document_map("multihop_rag", S1_STORE).index_generation == "s1"
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "", ""),
+    )
+    seeded: dict[str, object] = {}
+    monkeypatch.setattr(
+        "lancet_eval.seed.seed_corpus",
+        lambda corpus, **kw: seeded.update(kw) or DocumentMap(corpus=corpus),
+    )
+
+    reseed_corpus(
+        "multihop_rag",
+        confirmation=True,
+        settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        store=S1_STORE,
+    )
+
+    assert not s1_map.exists()
+    assert v1_map.read_bytes() == v1_bytes
+    assert seeded["store"] is S1_STORE
+
+
+@pytest.mark.parametrize(
+    ("lancet_env", "store_name"), [("eval-s1", "eval"), ("eval", "eval-s1")]
+)
+def test_reseed_refuses_a_lancet_env_that_names_the_other_store(
+    s1_repo: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    lancet_env: str,
+    store_name: str,
+) -> None:
+    """A shell whose LANCET_ENV names one store never reseeds the other: a forgotten
+    --store under LANCET_ENV=eval-s1 does not fall back to wiping v1.0."""
+    from lancet_eval.config import get_eval_store
+
+    monkeypatch.setenv("LANCET_ENV", lancet_env)
+    store = get_eval_store(store_name)
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match=f"LANCET_ENV={lancet_env}"):
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings(store.lancedb_path, store.pg_schema),
+            store=store,
+        )
+    with pytest.raises(SeedError, match=f"LANCET_ENV={lancet_env}"):
+        seed_corpus(
+            "multihop_rag",
+            settings=_s1_settings(store.lancedb_path, store.pg_schema),
+            store=store,
+        )
+    assert v1_canary.exists()
+    assert s1_canary.exists()

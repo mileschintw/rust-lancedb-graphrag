@@ -488,9 +488,7 @@ def test_cli_preflight_store_option_selects_the_store(
 
     assert result.exit_code == 0, result.output
     assert seen["store"] is S1_STORE
-    settings = seen["settings"]
-    assert isinstance(settings, EvalSettings)
-    assert settings.lancedb_path == S1_STORE.lancedb_path
+    assert seen["corpus_name"] == "multihop_rag"
 
 
 def test_cli_preflight_refuses_an_unknown_store(

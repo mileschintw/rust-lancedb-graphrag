@@ -18,7 +18,7 @@ from lancet_eval.client import (
     QueryOutcome,
     run_query,
 )
-from lancet_eval.config import get_commit_sha, load_settings, repo_root
+from lancet_eval.config import EvalStore, get_commit_sha, load_settings, repo_root
 from lancet_eval.dimensions import OBS_04_PLACEHOLDER, DimensionResult
 from lancet_eval.report import (
     CorpusReport,
@@ -120,6 +120,21 @@ def corpus_sample(
         raise typer.Exit(code=1) from exc
 
 
+#: D-251: the `--store` option of seed, reseed and preflight. None means the default
+#: v1.0 store; preflight also uses None to keep its v1.0 call unchanged.
+StoreOption = Annotated[
+    str | None,
+    typer.Option(
+        "--store",
+        help=(
+            "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
+            "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
+            "v1.0 path and schema are refused."
+        ),
+    ),
+]
+
+
 @app.command("preflight")
 def preflight_command(
     corpus: Annotated[
@@ -165,17 +180,7 @@ def preflight_command(
             help="With --stack: the quickstart arm canary manifest (qs- question IDs).",
         ),
     ] = Path("eval/corpora/quickstart/canary.arms.jsonl"),
-    store: Annotated[
-        str | None,
-        typer.Option(
-            "--store",
-            help=(
-                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
-                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
-                "v1.0 path and schema are refused."
-            ),
-        ),
-    ] = None,
+    store: StoreOption = None,
 ) -> None:
     """Run preflight health, isolation, and model checks."""
     from rich.markup import escape
@@ -202,7 +207,6 @@ def preflight_command(
             results = preflight_module.run_preflight_checks(
                 corpus_name=corpus,
                 judged=judged,
-                settings=load_settings(store=eval_store),
                 accepted_known_misses=accepted,
                 store=eval_store,
             )
@@ -279,12 +283,14 @@ def _parse_accepted_known_misses(values: list[str], preflight_module: Any) -> li
         raise typer.Exit(code=2) from exc
 
 
-def _resolve_store(name: str) -> Any:
-    """Resolve a --store value to its EvalStore; exit 2 on an unknown name."""
+def _resolve_store(name: str | None) -> EvalStore:
+    """Resolve a --store value (None: v1.0) to its EvalStore; exit 2 if unknown."""
     from rich.markup import escape
 
-    from lancet_eval.config import EvalConfigError, get_eval_store
+    from lancet_eval.config import V1_STORE, EvalConfigError, get_eval_store
 
+    if name is None:
+        return V1_STORE
     try:
         return get_eval_store(name)
     except EvalConfigError as exc:
@@ -320,20 +326,10 @@ def seed_command(
             help="Corpus to seed (e.g. multihop_rag)",
         ),
     ] = "multihop_rag",
-    store: Annotated[
-        str | None,
-        typer.Option(
-            "--store",
-            help=(
-                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
-                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
-                "v1.0 path and schema are refused."
-            ),
-        ),
-    ] = None,
+    store: StoreOption = None,
 ) -> None:
     """Seed benchmark documents into evaluation store."""
-    eval_store = _resolve_store(store or "eval")
+    eval_store = _resolve_store(store)
     try:
         from lancet_eval.seed import seed_corpus
 
@@ -364,20 +360,10 @@ def reseed_command(
             help="Confirm destructive drop and recreation of evaluation store",
         ),
     ] = False,
-    store: Annotated[
-        str | None,
-        typer.Option(
-            "--store",
-            help=(
-                "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
-                "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
-                "v1.0 path and schema are refused."
-            ),
-        ),
-    ] = None,
+    store: StoreOption = None,
 ) -> None:
     """Reseed evaluation store with clean schema."""
-    eval_store = _resolve_store(store or "eval")
+    eval_store = _resolve_store(store)
     try:
         from lancet_eval.seed import reseed_corpus
 
