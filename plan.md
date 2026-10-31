@@ -84,6 +84,8 @@ Baseline notes from lane 7 (2026-10-29 19:15 -0700): on `main`, root-level pytes
 - S2 paid pilot (from `decisions-2026-10-30.md` › Scheduled items): after S1, once #53 has merged, the owner runs `batch submit --limit N` to check `is_byok`, `reasoning_tokens`, the strict schema and whether Sonnet's `between_tools` passes through OpenRouter. Paid; ask first.
 
 The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decision session local_ab3487b9-5b99-46f4-8d1c-2ed3f5e8f4b6 (branch `claude/s2-code-prep-spec-491e69`) on the user's "幫我開一個新session做 grill → spec → tickets 這套流程以及所有相關需要決策的事務". It produced spec #49, tickets #50 to #54, #44 and #47 attached, D-254 to D-259 (PR #55), and `decisions-2026-10-30.md` → plan-history.
+- S0/S1 pre-registration lane `prereg-s01` approved on the user's "現在開 pre-registration session (Recommended)" (2026-10-30); brief written. The app refused the start (event turn); start it on the user's next typed message. After it merges, ask the user to start the run lane in the main checkout (`use_worktree: false`, cwd `D:Reposlancet`); while that run lane is active, do not fast-forward the main checkout.
+
 
 ## Waiting for the user's decision
 
