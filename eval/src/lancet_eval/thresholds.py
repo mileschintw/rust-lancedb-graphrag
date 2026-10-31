@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from lancet_eval.arms import ExternalPipeline
-
-if TYPE_CHECKING:
-    from lancet_eval.reader_request import ReaderDeclaration
+from lancet_eval.reader_request import (  # ReaderPrice: for the S2 constant (RUN-S2.md)
+    ReaderDeclaration,
+    ReaderPrice,  # noqa: F401
+)
 
 
 class ThresholdError(ValueError):
@@ -547,6 +548,45 @@ class StagePreRegistration(LeverPreRegistration):
 
     external_pipelines: tuple[tuple[str, ExternalPipeline], ...] = ()
     readers: tuple[tuple[str, ReaderDeclaration], ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReplayStagePreRegistration(StagePreRegistration):
+    """v1.1 S2 (D-254, D-257): a stage that replays one earlier arm to Claude readers.
+
+    Its reference arm is the carried arm, and every other arm is that arm under a
+    reader (``<arm>@<reader>``); a constant that names any other base arm is refused
+    when it is built. ``replay-init`` reads ``replay_source_arm`` to refuse carrying an
+    arm the pre-registration did not fix (#109).
+
+    The S2 constant of this type is not defined here yet. Its draft is the code block
+    in experiments/v1.1/EXPERIMENT-S2.md, and RUN-S2.md has the runner add it in one
+    commit, once S1's winner and the readers' targets are known. D-73 dates a constant
+    by the first commit whose diff adds or removes its name anywhere in this file (`git
+    log -S`), so that name appears in this file only from that commit on, comments
+    included.
+
+    Attributes:
+        replay_source_arm: The canonical label of the S1 arm S2 replays (S1's winner,
+            written in EXPERIMENT-S1.md › Result).
+    """
+
+    replay_source_arm: str
+
+    def __post_init__(self) -> None:
+        source = self.replay_source_arm
+        labels = (
+            self.reference_arm,
+            *(a for family in self.families for a in family.arms),
+            *self.descriptive_arms,
+            *self.null_guard_arms,
+        )
+        stray = [a for a in labels if a.partition("@")[0] != source]
+        if self.reference_arm != source or stray:
+            raise ThresholdError(
+                f"a replay stage's arms are replay_source_arm {source!r} and its "
+                f"reader arms; got reference {self.reference_arm!r} and {stray}"
+            )
 
 
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
