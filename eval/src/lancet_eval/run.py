@@ -34,9 +34,10 @@ from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     CheckpointSource,
     ContextExportError,
-    PostgresCheckpointSource,
+    StoreSources,
     export_context,
     read_export,
+    store_checkpoint_sources,
 )
 from lancet_eval.corpus import (
     CorpusConfig,
@@ -801,7 +802,9 @@ def select_arms(config: CorpusConfig, arms: Sequence[str] | None) -> list[str]:
     return selected
 
 
-def write_context_export(journal_path: Path, source: CheckpointSource) -> Path:
+def write_context_export(
+    journal_path: Path, source: CheckpointSource | StoreSources
+) -> Path:
     """Writes the run's `context_export.jsonl` at the end of a drive (D-249).
 
     The Lancet arms' rows come from their `terminal_success` checkpoints
@@ -879,7 +882,7 @@ def drive(
     max_retries: int = 0,
     gate_stage: str | None = None,
     git_repo: Path | None = None,
-    checkpoint_source: CheckpointSource | None = None,
+    checkpoint_source: CheckpointSource | StoreSources | None = None,
     arms: Sequence[str] | None = None,
 ) -> DriveResult:
     """Drive questions across the corpus's arms into a journal.
@@ -909,7 +912,9 @@ def drive(
 
     When the drive ends, `context_export.jsonl` is written beside the journal from the
     ``terminal_success`` checkpoints of every success record (D-249), read from
-    ``checkpoint_source`` or, when None, from the eval Postgres schema. A failed export
+    ``checkpoint_source`` or, when None, from each record's own store's Postgres schema
+    (``store_checkpoint_sources``), so the second store's drive of an S1 journal exports
+    both stores' records (#65). A failed export
     is logged and returned as ``context_export_error``; `lancet-eval export-context`
     rebuilds it.
     """
@@ -982,7 +987,11 @@ def drive(
     )
 
     def _with_context_export(result: DriveResult) -> DriveResult:
-        source = checkpoint_source or PostgresCheckpointSource(eval_settings)
+        source = (
+            store_checkpoint_sources(eval_settings)
+            if checkpoint_source is None
+            else checkpoint_source
+        )
         try:
             write_context_export(target_path, source)
         except Exception as exc:
