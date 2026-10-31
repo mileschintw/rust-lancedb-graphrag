@@ -135,10 +135,40 @@ def test_an_arm_whose_store_has_no_source_fails_closed(tmp_path: Path) -> None:
         export_context(journal, {"eval": _source("trace-small-1", "trace-small-2")})
 
     message = str(exc.value)
-    assert f"q1/{MERGED}" in message and f"q2/{MERGED}" in message
-    assert "'eval-s1'" in message
+    assert f"q1/{MERGED}: no checkpoint source for store 'eval-s1'" in message
+    assert f"q2/{MERGED}: no checkpoint source for store 'eval-s1'" in message
     assert f"q1/{SMALL}" not in message
     assert not (tmp_path / CONTEXT_EXPORT_FILE).exists()
+
+
+def test_an_arm_with_an_unknown_store_prefix_fails_closed(tmp_path: Path) -> None:
+    journal = _journal(
+        tmp_path,
+        _record("q1", "large/hybrid", "trace-large-1"),
+        _record("q1", SMALL, "trace-small-1"),
+    )
+
+    with pytest.raises(ContextExportError) as exc:
+        export_context(journal, _two_store_sources())
+
+    message = str(exc.value)
+    assert "q1/large/hybrid: unknown store prefix" in message
+    assert f"q1/{SMALL}" not in message
+    assert not (tmp_path / CONTEXT_EXPORT_FILE).exists()
+
+
+def test_failures_are_listed_in_journal_order(tmp_path: Path) -> None:
+    journal = _journal(
+        tmp_path,
+        _record("q1", SMALL, "trace-missing"),
+        _record("q2", MERGED, "trace-merged-2"),
+    )
+
+    with pytest.raises(ContextExportError) as exc:
+        export_context(journal, {"eval": _source()})
+
+    message = str(exc.value)
+    assert message.index(f"q1/{SMALL}") < message.index(f"q2/{MERGED}")
 
 
 @pytest.mark.parametrize(
@@ -172,16 +202,18 @@ def test_a_one_store_journal_exports_byte_identically_to_one_source(
 # --- the per-store Postgres sources -------------------------------------------------
 
 
-def test_store_checkpoint_sources_read_each_store_from_its_own_schema(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture
+def _sources_are_their_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Makes each Postgres source its own settings, to read the schema it would use."""
     import lancet_eval.context_export as context_export_mod
 
     monkeypatch.setattr(
-        context_export_mod,
-        "PostgresCheckpointSource",
-        lambda settings: settings,
+        context_export_mod, "PostgresCheckpointSource", lambda settings: settings
     )
+
+
+@pytest.mark.usefixtures("_sources_are_their_settings")
+def test_store_checkpoint_sources_read_each_store_from_its_own_schema() -> None:
     settings = EvalSettings(
         database_url="postgres://u@db:5432/lancet?search_path=lancet_eval_s1",
         lancedb_path="./data/lancedb-eval-s1",
@@ -196,14 +228,8 @@ def test_store_checkpoint_sources_read_each_store_from_its_own_schema(
     assert sources["eval-s1"] is settings
 
 
-def test_store_checkpoint_sources_keep_the_drive_settings_for_their_own_store(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import lancet_eval.context_export as context_export_mod
-
-    monkeypatch.setattr(
-        context_export_mod, "PostgresCheckpointSource", lambda settings: settings
-    )
+@pytest.mark.usefixtures("_sources_are_their_settings")
+def test_store_checkpoint_sources_keep_the_drive_settings_for_their_own_store() -> None:
     settings = EvalSettings(
         database_url="postgres://u@db:5432/lancet?search_path=custom_v1"
     )
@@ -258,22 +284,35 @@ def _correlated_gateway(httpx_mock: HTTPXMock) -> httpx.Client:
 def test_the_second_stores_drive_ends_with_a_complete_export(
     tmp_path: Path, httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import lancet_eval.context_export as context_export_mod
+
     monkeypatch.delenv("LANCET_ENV", raising=False)
     monkeypatch.setattr("lancet_eval.run.require_index_identity", lambda *a, **k: None)
     journal = tmp_path / "journal.jsonl"
     client = _correlated_gateway(httpx_mock)
+    # The drive's default sources, one per store schema (`store_checkpoint_sources`).
     small, merged = _StoreEchoSource(), _StoreEchoSource()
-    sources = {"eval": small, "eval-s1": merged}
+    by_schema = {"lancet_eval": small, "lancet_eval_s1": merged}
+    monkeypatch.setattr(
+        context_export_mod,
+        "PostgresCheckpointSource",
+        lambda settings: by_schema[pg_schema_of(settings.database_url)],
+    )
     common = {
         "corpus": "multihop_rag_s1_dev",
         "journal_path": journal,
         "stage_spend_cap": 10.0,
         "limit": 2,
         "client": client,
-        "checkpoint_source": sources,
     }
 
-    first = drive(**common, settings=EvalSettings(), arms=[SMALL])
+    first = drive(
+        **common,
+        settings=EvalSettings(
+            database_url="postgres://localhost/lancet?search_path=lancet_eval"
+        ),
+        arms=[SMALL],
+    )
     second = drive(
         **common,
         settings=EvalSettings(
@@ -303,6 +342,12 @@ def test_export_context_command_rebuilds_a_two_store_export(
 ) -> None:
     import lancet_eval.context_export as context_export_mod
 
+    monkeypatch.setattr(
+        "lancet_eval.cli.load_settings",
+        lambda: EvalSettings(
+            database_url="postgres://localhost/lancet?search_path=lancet_eval"
+        ),
+    )
     journal = _two_store_journal(tmp_path)
     expected = write_context_export(journal, _two_store_sources()).read_bytes()
     (tmp_path / CONTEXT_EXPORT_FILE).write_text("stale\n", encoding="utf-8")
@@ -320,4 +365,4 @@ def test_export_context_command_rebuilds_a_two_store_export(
 
     assert result.exit_code == 0, result.output
     assert (tmp_path / CONTEXT_EXPORT_FILE).read_bytes() == expected
-    assert len(json.loads(f"[{','.join(expected.decode().splitlines())}]")) == 4
+    assert len(expected.splitlines()) == 4

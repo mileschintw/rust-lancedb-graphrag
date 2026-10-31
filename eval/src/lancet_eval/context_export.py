@@ -419,31 +419,33 @@ def export_context(
     per_store = isinstance(source, Mapping)
     # One source alone serves every record under the key "".
     sources: Mapping[str, CheckpointSource] = source if per_store else {"": source}
-    failures: list[str] = []
-    store_of: dict[int, str] = {}
-    for i, record in enumerate(successes):
+    # Each record's store key, or why it has none; then each store queried once.
+    placed: list[tuple[RunRecord, str | None, str | None]] = []
+    by_store: dict[str, list[RunRecord]] = {}
+    for record in successes:
         try:
             store = _store_name(record.graph_arm) if per_store else ""
         except ValueError as exc:
-            failures.append(f"{_unit(record)}: {exc}")
+            placed.append((record, None, str(exc)))
             continue
-        if store in sources:
-            store_of[i] = store
-        else:
-            failures.append(
-                f"{_unit(record)}: no checkpoint source for store {store!r}"
-            )
-    by_store = {
-        store: _checkpoints_by_trace(
-            [successes[i] for i, s in store_of.items() if s == store], sources[store]
-        )
-        for store in dict.fromkeys(store_of.values())
+        if store not in sources:
+            placed.append((record, None, f"no checkpoint source for store {store!r}"))
+            continue
+        placed.append((record, store, None))
+        by_store.setdefault(store, []).append(record)
+    checkpoints = {
+        store: _checkpoints_by_trace(records, sources[store])
+        for store, records in by_store.items()
     }
     rows: list[ContextExportRow] = []
-    for i, store in store_of.items():
-        record = successes[i]
-        snapshots = by_store[store].get(record.correlation_id or "", [])
-        failure = _join_failure(record, snapshots)
+    failures: list[str] = []
+    for record, store, failure in placed:
+        snapshots = (
+            []
+            if store is None
+            else checkpoints[store].get(record.correlation_id or "", [])
+        )
+        failure = failure or _join_failure(record, snapshots)
         if failure is not None:
             failures.append(f"{_unit(record)}: {failure}")
             continue
