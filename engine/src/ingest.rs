@@ -1544,32 +1544,34 @@ pub fn reset_rebuild_invocation_count() {
 #[cfg(test)]
 pub static REBUILD_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+// The rebuild fault hooks are per thread: tests run in parallel, and a process-wide flag would
+// fail whichever rebuild ran next, often another test's (#61). A `#[tokio::test]` polls its
+// rebuild on the thread that armed the hook, so arm and rebuild on the same thread.
 #[cfg(test)]
-static REBUILD_FAIL_NEXT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+thread_local! {
+    static REBUILD_FAIL_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static REBUILD_CHECKOUT_FAIL_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static REBUILD_DOC_META_FAIL_NEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 
 #[cfg(test)]
 pub fn arm_rebuild_fail_next() {
-    REBUILD_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+    REBUILD_FAIL_NEXT.set(true);
 }
 
 #[cfg(test)]
 pub fn clear_rebuild_fail_next() {
-    REBUILD_FAIL_NEXT.store(false, std::sync::atomic::Ordering::SeqCst);
+    REBUILD_FAIL_NEXT.set(false);
 }
 
 #[cfg(test)]
-static REBUILD_CHECKOUT_FAIL_NEXT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-#[cfg(test)]
 pub fn arm_rebuild_checkout_fail_next() {
-    REBUILD_CHECKOUT_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+    REBUILD_CHECKOUT_FAIL_NEXT.set(true);
 }
 
 #[cfg(test)]
 pub fn clear_rebuild_checkout_fail_next() {
-    REBUILD_CHECKOUT_FAIL_NEXT.store(false, std::sync::atomic::Ordering::SeqCst);
+    REBUILD_CHECKOUT_FAIL_NEXT.set(false);
 }
 
 pub fn inert_rebuild_channel() -> (watch::Sender<u64>, watch::Receiver<u64>) {
@@ -1711,12 +1713,8 @@ pub async fn load_doc_meta(
 }
 
 #[cfg(test)]
-static REBUILD_DOC_META_FAIL_NEXT: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-#[cfg(test)]
 pub fn arm_rebuild_doc_meta_fail_next() {
-    REBUILD_DOC_META_FAIL_NEXT.store(true, std::sync::atomic::Ordering::SeqCst);
+    REBUILD_DOC_META_FAIL_NEXT.set(true);
 }
 
 /// Builds the graph index for one rebuild. A function value so a test can inject a failure.
@@ -1769,7 +1767,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
 
     #[cfg(test)]
     {
-        if REBUILD_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        if REBUILD_FAIL_NEXT.replace(false) {
             tracing::error!("rebuild_and_swap injected fault triggered");
             let degraded_snapshot = Arc::new(crate::workflow::ports::CorpusSnapshot {
                 bm25: Arc::clone(&prior.bm25),
@@ -1805,7 +1803,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
     };
 
     #[cfg(test)]
-    let checkout_res = if REBUILD_CHECKOUT_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+    let checkout_res = if REBUILD_CHECKOUT_FAIL_NEXT.replace(false) {
         Err(lancedb::Error::Runtime {
             message: "injected checkout_latest failure".into(),
         })
@@ -1905,7 +1903,7 @@ pub async fn rebuild_and_swap_with_graph_builder(
     // failed scan keeps the prior snapshot whole and never swaps in an empty map.
     #[cfg(test)]
     let doc_meta_result =
-        if REBUILD_DOC_META_FAIL_NEXT.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        if REBUILD_DOC_META_FAIL_NEXT.replace(false) {
             Err("injected document metadata scan failure".to_string())
         } else {
             load_doc_meta(&nodes_latest, nodes_version).await
