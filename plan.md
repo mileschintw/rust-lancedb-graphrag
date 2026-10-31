@@ -103,6 +103,11 @@ No open question here. S3 input below. (PR #55 merged by the user 2026-10-30 15:
     - Which weak readers? The v1.0 deepseek (exact slug from the v1.0 run records), plus at least one model cheaper and weaker than any deepseek.
     - Writers: the same question, i.e. a weak or old extraction model as an extra writer arm.
   - **Open S3 items:** no S3 code prep yet (2Wiki ingest, Claude extraction, baseline, issues). Undecided: the 2Wiki license, the HippoRAG 2 embedding test (LightRAG is the fallback), and new credit (the user says it comes later).
+  - **Writer × reader grid (relayed 2026-10-31 from side session local_f43dc3e5-37e7-46be-88d7-67ea1480d78c; not decided).** The user asked: "假如S3時，想要跟當初開啟V1.1的那篇論文一樣，做grid測試，合理嗎？例如，測deepseek flash, haiku, sonnet, 便宜模型，同時前面有兩組graph，甚至三組 (deepseek, haiku, sonnet)，也就是4*2、4*3組實驗？" The user's go-ahead to record it: "可以，把這個grid規劃以及你的建議以及context都轉給coordinator紀錄". The side session's advice, for the grill:
+    1. Add a hybrid (no-graph) column: readers × (hybrid + writers), so 4×3 or 4×4 = 12 to 16 cells.
+    2. Cost is in the writers. Each writer re-extracts the corpus and builds a store; Sonnet over all of 2Wiki is likely the largest cost and time item. Readers are cheap (S2 estimates: Sonnet about $0.5, Haiku about $0.03 per dev arm). Suggestion: all 4 readers; deepseek plus one Claude writer; decide on a third writer after a pilot extraction cost estimate.
+    3. Two tiers, both pre-registered. Decisional: 2 to 3 hypotheses only, namely the graph-gain × reader-strength interaction and the writer effect under the S2 winner. Descriptive: every other cell. A pilot must check whether the 2Wiki held-out size can power an interaction test. The whole grid fits inside one held-out read.
+    4. Timing: the current Claude credit (expires 2026-11-03) covers S2 only; S3 uses the later credit. This grid is a main topic for the S3 grill round.
 
 ## Deadlines
 
