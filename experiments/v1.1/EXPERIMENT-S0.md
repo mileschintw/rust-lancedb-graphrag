@@ -112,3 +112,29 @@ rejected. Neither arm leads.
 - Spend: observed $1.01 (Lancet drive $0.0461 + $0.3190, `run-external` $0.6417). The LlamaIndex export prints no
   cost; about $0.25 is estimated for it.
 - Every `lancet-eval` command ran with `PYTHONUTF8=1` to work around #84 (cp950 decoding of `psql` output).
+
+### Validity checks (2026-10-31, read only, no paid call)
+
+- **`evidence_metadata` reads only document fields (#98).** Clean: no path reads gold evidence, `qrels` or any
+  question-side field. On the Lancet arm the lever's header comes from `DocMetaMap`
+  (`engine/src/doc_meta.rs`), which `load_doc_meta` (`engine/src/ingest.rs`) fills from the nodes table's
+  `doc_title`, `source` and `published_date` columns, keyed by `document_id`. `RetrieveHybrid::attach_doc_meta`
+  (`engine/src/workflow/nodes/retrieve.rs`) looks each final evidence block up by its `document_id` and nothing else.
+  Those columns hold only what `lancet_eval.evidence_meta.normalise` derives from a corpus article's `title`,
+  `source` and `published_at`, whether written by a fresh ingest (`eval/src/lancet_eval/seed.py`, form fields) or
+  by the v1.0 store's backfill (`eval/scripts/build_metadata_sidecar.py`, joining `document_map.json` to
+  `documents.subset.jsonl`). The articles in `documents.subset.jsonl` carry `title`, `author`, `source`,
+  `published_at`, `category`, `url` and `body` only. On the `llamaindex` arm the export's `document_metadata` is the
+  same `normalise` over the node's metadata (`baselines/llamaindex/src/lancet_llamaindex/pipeline.py`, `_evidence`),
+  set from the article's `title`, `source` and `published_at` (`corpus.py`, `load_documents`); the export reads only
+  `question_id` and `question` from each question. The generate-only bin attaches each row's `document_metadata`
+  as-is (`engine/src/bin/generate_from_context.rs`, `evidence_blocks`).
+- **Embedding `input_type` (#99, fairness rule 7).** The S0 export's embedding requests carried **no**
+  `input_type`, and neither did Lancet's, so both arms got the same no-prompt Voyage embeddings for queries and
+  documents. Evidence: the run's `llamaindex/pipeline_config.json` echoes `"input_type": null`; the export at
+  `c69d4868` builds each request body as `{model, input, dimensions}` only
+  (`baselines/llamaindex/src/lancet_llamaindex/providers.py`, pinned by `tests/test_providers.py`), and the
+  engine's embedding client (`engine/src/client/mod.rs`) has never sent it (`git log -S input_type`). The live
+  forwarding check also ran, before the held-out read: RUN-S0-S1 step 2.1 printed `forwarded` (largest vector
+  difference 0.0366), recorded in the run-s01 lane report. OpenRouter therefore does forward `input_type`, so an arm
+  that later sends it gets different embeddings; rule 7 holds for S0 because neither arm sends it.
