@@ -25,7 +25,13 @@ from lancet_eval.config import (
     repo_root,
     store_target_failures,
 )
-from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
+from lancet_eval.corpus import (
+    CorpusConfig,
+    CorpusError,
+    StoreChunking,
+    load_corpus,
+    load_corpus_config,
+)
 from lancet_eval.evidence_meta import normalise
 
 if TYPE_CHECKING:
@@ -393,6 +399,29 @@ def record_index_generation(
     return observed_generation
 
 
+def store_chunking_of(corpus: CorpusConfig, store: EvalStore) -> StoreChunking | None:
+    """The chunking `store` is built with, from the corpus's `[stores.<prefix>]` (#67).
+
+    None for the v1.0 store, which keeps the gateway's default chunking. Any other
+    store needs its prefix's entry, so it never falls back to that default.
+
+    Raises:
+        SeedError: If the corpus has no `[stores.<prefix>]` entry for `store`.
+    """
+    if store == V1_STORE:
+        return None
+    from lancet_eval.arms import STORE_PREFIXES
+
+    prefix = next((p for p, s in STORE_PREFIXES.items() if s == store.name), None)
+    chunking = corpus.store_chunking.get(prefix) if prefix else None
+    if chunking is None:
+        raise SeedError(
+            f"Corpus {corpus.name!r} has no [stores.{prefix}] entry for store "
+            f"{store.name!r}; its chunking must be declared (#67, D-251)"
+        )
+    return chunking
+
+
 def _sanitize_filename(name: str) -> str:
     """Sanitize string for multipart filename header."""
     clean = re.sub(r"[^\w\-_.]", "_", name.strip())
@@ -412,9 +441,15 @@ def seed_corpus(
 
     settings = settings or load_settings(store=store)
     assert_store_target(settings, store)
-    _ = load_corpus(corpus_name)
+    corpus = load_corpus(corpus_name)
+    chunking = store_chunking_of(corpus, store)
+    # A corpus that shares another corpus's map (D-68) seeds that corpus's documents.
     subset_path = (
-        repo_root() / "eval" / "corpora" / corpus_name / "documents.subset.jsonl"
+        repo_root()
+        / "eval"
+        / "corpora"
+        / corpus.map_corpus
+        / "documents.subset.jsonl"
     )
 
     if not subset_path.is_file():
@@ -471,7 +506,6 @@ def seed_corpus(
             if len(content_bytes) > 10 * 1024 * 1024:
                 continue
 
-            # Multipart file upload without chunk_size / chunk_overlap overrides
             safe_name = _sanitize_filename(corpus_id)
             files = {
                 "file": (safe_name, content_bytes, "text/plain"),
@@ -481,6 +515,14 @@ def seed_corpus(
             # non-empty normalised values are sent, so a row without one ingests with
             # that key absent.
             form_fields = {k: v for k, v in normalise(doc).items() if v}
+            # #67: a store other than v1.0 sends its declared chunking; a v1.0 upload
+            # sends none, so the gateway's default chunking applies as before.
+            if chunking is not None:
+                form_fields |= {
+                    "chunk_strategy": chunking.chunk_strategy,
+                    "chunk_size": str(chunking.chunk_size),
+                    "chunk_overlap": str(chunking.chunk_overlap),
+                }
 
             max_article_attempts = 5
             last_err = ""
