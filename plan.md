@@ -57,10 +57,10 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | audit-s1b | none (read-only audit) | local_4cf636bb-f778-4b7e-b41a-a891d0b6b7fc | done (reports/audit-s1b.md). S1 step 4: no code blocker, but #105 needs settling before 4.2; #106 for the stale text. S2: blockers opened as #107 (batch payload missing endpoint/model/provider), #108 (schema maxLength/maxItems vs Anthropic; check in the pilot), #109 (pilot records cannot be replaced; D-73 checked only after the spend), #110 (no S2 prereg, stage toml, run guide or .gitignore entry; handoff unchecked) | — |
 | run-s1store | none (S1 store build, steps 0-1) | local_51a319aa-e1e9-489f-b5d9-9bc448cd73a9 | step 0 builds done (exit 0, 15:12); seed (1.3) running on the user's yes; about 2.5 h at 7 docs per 3 min; scratch_new.txt deleted on the user's yes; started on the user's "Start the S1 build"; runs in the main checkout; **HOLD other lanes off engine builds and LLM traffic while it runs**; the coordinator does not move the main checkout | — |
-| 105 | #105 #106 | local_ca46dd76-e6a3-4f2c-911e-13825e19e398 | done; PR #111, merge on green | — |
+| 105 | #105 #106 #113 | local_ca46dd76-e6a3-4f2c-911e-13825e19e398 | PR #111 open; **merge held** while lane 105 adds #113 (step 4.5/4.7 `python -c` snippets fail with IndentationError when pasted) | — |
 | 107 | #107 | local_b6b60624-dbf9-47d4-ac5e-440de1040908 | done; PR #112, merge on green | — |
 | 109 | #109 | local_7a8f7151-65da-4274-ab3e-bc4a463227af | started | — |
-| 110 | #110 | local_fec1d7cf-a95f-4174-acd4-fc031387bd63 | started | — |
+| 110 | #110 | local_fec1d7cf-a95f-4174-acd4-fc031387bd63 | review, on the new branch `claude/lane-110-s2-prereg`. **Never merge `claude/peaceful-robinson-2e31dd`**: its history carries `PREREGISTRATION_S2` in thresholds.py (D-73) | — |
 | audit-s1a | none (read-only audit) | local_484d4a13-5af3-4296-9c4d-deb975f8e6ec | done: **passed**, no blocker (reports/audit-s1a.md). Cost about $1.9-2.9, ceiling about $10.8 excluding retries (A3). Before the build: redo step 0's builds after pulling (A1) and remove the untracked `scratch_new.txt` from the main checkout (A5). Optional: check `document_count=0` after 1.2 (A2); seed prints no D-258 estimate (A4) | — |
 
 Lanes 64, 74, 76, 77 and 95 started 2026-10-31 13:55 -0700 on the user's answers: "#64 計數器 flake, #74 + #75 執行指南, #76 免費預演, #77 + #78 成本與保留讀取" and "新增 D-ID". The same answer set: PR #89 merged ("直接合併"), #49 closed ("關掉"). Only lane 64 builds the engine. Owners: lane 74 owns `RUN-S0-S1.md`, `external_run.py` and `journal.py`; lane 77 owns `eval/src/lancet_eval/cli.py`; lane 76 owns the stub and the export's client construction; lane 95 owns `experiments/v1.1/PLAN.md` (D-265 pinned). #94 and lane 64 both edit `engine/src/tests.rs`, different tests (mechanical overlap).
@@ -92,6 +92,8 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #108 | pilot | — | none | engine answer schema vs Anthropic structured outputs; settle in the paid pilot, then a D-ID if needed | limited: paid pilot |
 | #109 | 1 (lane 109 running) | — | none | `replay.py`/`batch.py` (D-73 check before spend; pilot record handling) | free; blocks S2 |
 | #110 | 1 (lane 110 running) | — | none | `thresholds.py` › `PREREGISTRATION_S2`, new `EXPERIMENT-S2.md`, S2 stage toml, S2 run guide, `.gitignore`, S1→S2 handoff check | limited: pre-registration needs owner decisions |
+| #113 | 1 (lane 105) | — | none | `RUN-S0-S1.md` › 4.5, 4.7 snippets (opened by lane 110) | free; before S1 step 4 |
+| #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
