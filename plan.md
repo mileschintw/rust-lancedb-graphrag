@@ -60,6 +60,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #59 | 1 | — | none set | `engine/` telemetry_query tests (`engine_logs_carry_no_user_content`, two `graph_augmentation_record_*`, `graph_spans_survive_a_dropped_parent_*`) and any shared tracing/OTel test setup; per-test timeout in `.github/workflows/ci.yml` or `docs/testing.md` only after lane 56 merges (opened 2026-10-30 by lane 56: main run 41156665462 cancelled at 45 min, 4 tests hung; PR run of the same commit passed) | free (lane 59 running) |
 | #61 | 1 | — | none set | `engine/src/tests.rs` › rebuild-failure tests, `engine/src/ingest.rs` › `REBUILD_*_FAIL_NEXT` test hooks (opened 2026-10-30 by lane 47: lib tests race on process-wide hooks) | free; folded into lane 59 on the user's "併進 lane 59 (Recommended)" (2026-10-30) |
+| #64 | 1 (after #59) | — | after #59 merges: `engine/src/tests.rs`, `engine/src/ingest.rs` (lane 59 edits both) | `engine/src/ingest.rs` › `REBUILD_COUNTER` (product counter; count per store or test-scoped), `engine/src/tests.rs` › `debounce_coalesces_burst` (opened 2026-10-31 by lane 59; not seen failing yet) | free; needs a product change in `ingest.rs` |
 | #50 | 1 | #44, #47 (both merged) | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free (lane 50 running) |
 | #53 | 4 | #50 (open), #51 (merged), #52 (merged) | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free. Brief note from lane 54: `measure.compute_spend` refuses reader-arm records unless called with `readers=preregistration.readers_of(prereg)` (prices = declared sync × `BATCH_PRICE_FACTOR` 0.5; an error record with no replay block costs 0); existing callers pass no readers, so #53's spend accounting over an S2 journal must; `replay.reasoning_tokens <= workflow_meta.completion_tokens` (completion includes reasoning) |
 | #54 | 1 | #52 (merged) | none set | `lever_comparison.py`/`comparison.py`, `score.py` (reader-arm Hits@4 skip), `measure.py` › `compute_spend`, `test_reader_comparison.py` | free (lane 54 running) |
@@ -89,7 +90,15 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
 
 ## Waiting for the user's decision
 
-none (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
+No open question here. S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
+- **S3 grill input (not yet a decision; for the S3 grill → spec → tickets session to read).** Relayed 2026-10-31 from the user's side session local_97b7d7f4-6748-4ee2-a8b6-9343471d99e4, with the user's words: "可以，把這點補進去到時候可以參考到的地方，並且我甚至覺得我們用的deepseek模型都太強，可能可以再多找一個更便宜的模型來測".
+  - **Ceiling risk:** a strong fixed reader (S2's winner) may compress the graph-vs-hybrid and writer-vs-writer gaps. Add weaker-model arms whose test content is identical to the other arms.
+  - **Pre-register them:** put these arms in the S3 pre-registration with the hypothesis (graph gain × reader strength: a larger graph-vs-hybrid gain under a weak reader). Arms added after the run are descriptive only: post-hoc model choice, an unbudgeted Holm m, and a second held-out read.
+  - **Grill questions:**
+    - Decisional or descriptive? Decisional enlarges Holm m. Check whether the 2Wiki held-out size can power an interaction test.
+    - Which weak readers? The v1.0 deepseek (exact slug from the v1.0 run records), plus at least one model cheaper and weaker than any deepseek.
+    - Writers: the same question, i.e. a weak or old extraction model as an extra writer arm.
+  - **Open S3 items:** no S3 code prep yet (2Wiki ingest, Claude extraction, baseline, issues). Undecided: the 2Wiki license, the HippoRAG 2 embedding test (LightRAG is the fallback), and new credit (the user says it comes later).
 
 ## Deadlines
 
