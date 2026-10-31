@@ -942,13 +942,17 @@ def export_context_command(
         ),
     ],
 ) -> None:
-    """Rebuild context_export.jsonl from terminal_success checkpoints (D-249)."""
+    """Rebuild context_export.jsonl from terminal_success checkpoints (D-249).
+
+    Each record's checkpoint is read from the schema of the store its arm declares,
+    so a two-store S1 journal needs no --store (#65).
+    """
     try:
         from lancet_eval import context_export
         from lancet_eval.run import write_context_export
 
-        source = context_export.PostgresCheckpointSource(load_settings())
-        written = write_context_export(run / "journal.jsonl", source)
+        sources = context_export.store_checkpoint_sources(load_settings())
+        written = write_context_export(run / "journal.jsonl", sources)
         rows = len(context_export.read_export(written))
         console.print(f"[green]Wrote {rows} context-export row(s) to {written}[/green]")
     except Exception as exc:
