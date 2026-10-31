@@ -7,7 +7,8 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 ## Handover
 
 - **Coordinator:** title unknown, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, id local_e5497074-397c-4170-ba22-60a6e066d35b, mode normal.
-- **Standing instructions:** (1) each PR open/merge needs the user's yes per lane, asked as the PR-and-merge question; no CI exists, so "merge once CI passes" means merge with `--match-head-commit` at the sha `ready` prints. (2) After each merge, delete that lane's `engine/target` (user's "清 lane 7、8、9 的 target (Recommended)", 2026-10-29 21:20 -0700); never the main checkout's. (3) After each merge, fast-forward the main checkout's `main` to origin (new worktrees cut from it). (4) Sessions start only in a turn the user typed; an answer to AskUserQuestion inside an event turn is refused by the app.
+- **Standing instructions:**
+  1. **PRs, from 2026-10-31 on:** when a lane is `done`, open its PR without asking. Merge once `ci` passes, with `--match-head-commit` at the sha `ready` prints. The user's words: "我還沒要睡，等我要睡會跟你說無人值守，同時先預設只要做完就開PR，CI過就merge" (2026-10-31). Paid calls, store rebuilds and held-out reads still wait for the user. The user will say when to switch to unattended. A failed check gets one rerun, then a question to the user. Before this, each PR needed the user's yes per lane. (2) After each merge, delete that lane's `engine/target` (user's "清 lane 7、8、9 的 target (Recommended)", 2026-10-29 21:20 -0700); never the main checkout's. (3) After each merge, fast-forward the main checkout's `main` to origin (new worktrees cut from it). (4) Sessions start only in a turn the user typed; an answer to AskUserQuestion inside an event turn is refused by the app.
 - **Alarm:** a background `sleep 1200` is re-armed after each wake; on wake run `ready` and read `status/`.
 - **Unattended log:** none.
 - **Pause (user, 2026-10-29 23:26 -0700):** "現在還在執行的session結束之後，我們先wrap up，做總結並暫時休息". Done 2026-10-29 23:58 -0700. Resumed 2026-10-30 on the user's "繼續開始"; lanes 14, 25, 34, 36 started on "Start all four".
@@ -29,10 +30,10 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
+| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | done @ d5543f44; PR #71 open, merge once `ci` passes (user: "開 PR，CI 過 merge，並刪殘留 (Recommended)", 2026-10-31; then delete `D:ane56-targets`) |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
-| prereg-s01 | none | local_d5df8b19-d4ed-4c18-b9b6-7e7ff2b0372e (`claude/lane-prereg-s01-73d291`) | started 2026-10-30 23:45 -0700 on the user's typed "Start prereg" (approved "現在開 pre-registration session (Recommended)"); after merge, ask to start the S0/S1 run lane in the main checkout (`use_worktree: false`, cwd `D:\Repos\lancet`); no main-checkout fast-forward while it runs | — |
+| prereg-s01 | none | local_d5df8b19-d4ed-4c18-b9b6-7e7ff2b0372e (`claude/lane-prereg-s01-73d291`) | done @ 5e7f0232; PR #70 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-31); after merge ask to start the S0/S1 run lane in the main checkout | — |
 | 65 | #65 | local_b7cfc571-373e-4470-bddf-1aab4c6c0242 (`claude/lane-65-53b502`) | started 2026-10-31 00:04 -0700 on the user's typed "Start 65" (S1 critical path) | — |
 | 67 | #67 | local_dd601ae8-4af5-4751-8aa3-86e68c29b59f (`claude/lane-67-ddf8d3`) | started 2026-10-31 00:10 -0700 on the user's typed "Start 67" (blocks the paid S1 store build) | — |
 | 68 | #68 | local_698777e7-e8f4-479a-8181-1d7d2e5cab68 (`claude/lane-68-db7b79`) | started 2026-10-31 00:16 -0700 on the user's typed "Start 68" (blocks scoring of S1 and S2) | — |

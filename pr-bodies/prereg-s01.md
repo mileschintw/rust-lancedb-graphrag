@@ -44,6 +44,7 @@ Every number reuses `PREREGISTRATION_06_3_6`. `PREREGISTRATION_06_3_6` itself is
 ### Blockers found for the run (filed, not fixed here)
 
 - Refs #67: `seed --store eval-s1` sends no chunking, so the "merged" store would repeat the v1.0 chunker. It blocks RUN step 1.
+- Refs #69 (filed by the coordinator): the identity check reads only `lancet_eval`, so the S1 store's preflight and the merged drive fail. It blocks RUN steps 1.5, 4.3 and 4.4.
 - Refs #65: a two-store S1 journal's context export reads one schema. RUN step 4.5 carries a stopgap.
 - Refs #68: `score` and `compare-levers` read only held-out IDs, so no dev-role run (S1, S2) can be scored. It blocks RUN steps 4.6 to 4.8.
 
