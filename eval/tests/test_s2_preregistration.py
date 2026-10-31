@@ -49,6 +49,12 @@ def build_draft(arm: str = PLACEHOLDER) -> Any:
     return namespace[TOKEN]
 
 
+def corpus_source() -> str:
+    """The arm the S2 corpus names now: the placeholder until RUN-S2.md step 1."""
+    pre = getattr(thresholds, TOKEN, None)
+    return PLACEHOLDER if pre is None else pre.replay_source_arm
+
+
 def _s2_toml_text() -> str:
     return (CORPORA / f"{S2_CORPUS}.toml").read_text(encoding="utf-8")
 
@@ -56,11 +62,11 @@ def _s2_toml_text() -> str:
 def _load_filled_corpus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str
 ) -> Any:
-    """Loads the S2 corpus with the placeholder replaced by `arm`."""
+    """Loads the S2 corpus with the arm it names replaced by `arm`."""
     corpora = tmp_path / "eval" / "corpora"
     corpora.mkdir(parents=True)
     (corpora / f"{S2_CORPUS}.toml").write_text(
-        _s2_toml_text().replace(PLACEHOLDER, arm), encoding="utf-8"
+        _s2_toml_text().replace(corpus_source(), arm), encoding="utf-8"
     )
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: tmp_path)
     return load_corpus(S2_CORPUS)
@@ -87,22 +93,20 @@ def test_the_constant_is_absent_or_equals_its_draft() -> None:
     assert pre == build_draft(pre.replay_source_arm)
 
 
-def test_the_committed_constant_holds_no_todo() -> None:
-    pre = getattr(thresholds, TOKEN, None)
-    if pre is None:
-        pytest.skip("not pre-registered yet: the draft lives in EXPERIMENT-S2.md")
-    assert "TODO" not in pre.default_rule
-    assert "TODO" not in pre.provenance
+def test_the_draft_holds_no_open_question() -> None:
+    """D-267 to D-270 settled every TODO of the draft (2026-10-31)."""
+    assert "TODO" not in draft_source()
+    assert "TODO" not in EXPERIMENT.read_text(encoding="utf-8")
 
 
 def test_an_unfilled_draft_and_corpus_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    with pytest.raises(ValueError, match=PLACEHOLDER):
+        _load_filled_corpus(tmp_path, monkeypatch, PLACEHOLDER)
     monkeypatch.setattr(thresholds, TOKEN, build_draft(), raising=False)
     with pytest.raises(preregistration.PreregistrationError, match="unknown arm"):
         preregistration.resolve(TOKEN)
-    with pytest.raises(ValueError, match=PLACEHOLDER):
-        _load_filled_corpus(tmp_path, monkeypatch, PLACEHOLDER)
 
 
 @pytest.mark.parametrize("arm", S1_ARMS)
@@ -125,7 +129,8 @@ def test_the_corpus_copies_s1s_sections() -> None:
     for section in COPIED:
         assert s2[section] == s1[section], section
     assert s2["preregistration"]["token"] == TOKEN
-    assert {label.partition("@")[0] for label in s2["arms"]["arms"]} == {PLACEHOLDER}
+    bases = {label.partition("@")[0] for label in s2["arms"]["arms"]}
+    assert bases == {corpus_source()}
 
 
 @pytest.mark.parametrize("arm", S1_ARMS)
@@ -158,8 +163,14 @@ def test_the_reader_table_is_the_decided_one() -> None:
         ("openrouter", "anthropic/claude-sonnet-5.5"),
         ("anthropic", "claude-sonnet-5-5"),
     }
-    opus = readers["opus-5.5"]
-    assert (opus.thinking, opus.effort) == ("on", "low")
+    # D-269: Anthropic's list price, read 2026-10-31; over OpenRouter like Haiku.
+    assert readers["opus-5.5"] == ReaderDeclaration(
+        slug="anthropic/claude-opus-5.5",
+        target="openrouter",
+        thinking="on",
+        effort="low",
+        price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+    )
 
 
 def test_the_numbers_are_s1s() -> None:
@@ -191,8 +202,9 @@ def test_an_arm_off_the_source_arm_is_refused(change: dict[str, Any]) -> None:
         dataclasses.replace(pre, **change)
 
 
-def test_the_s2_run_directory_is_not_ignored() -> None:
-    rel = f"eval/runs/2026-11-02-s2-{S2_CORPUS}/journal.jsonl"
+@pytest.mark.parametrize("corpus", [S2_CORPUS, "multihop_rag_s2_opus_dev"])
+def test_the_s2_run_directories_are_not_ignored(corpus: str) -> None:
+    rel = f"eval/runs/2026-11-02-s2-{corpus}/journal.jsonl"
     result = subprocess.run(
         ["git", "check-ignore", "-q", rel], cwd=repo_root(), check=False
     )

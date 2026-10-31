@@ -2,7 +2,7 @@
 
 Its Python snippets compile, every `lancet-eval` command it gives names options the
 CLI has, and its step-1 snippet, run on copies of the files it reads and edits,
-appends the EXPERIMENT-S2.md draft to `thresholds.py` with the winner filled in, fills
+inserts the EXPERIMENT-S2.md draft into `thresholds.py` with the winner filled in, fills
 the corpus, and refuses to run twice.
 """
 
@@ -70,9 +70,11 @@ def test_every_command_names_options_the_cli_has() -> None:
         assert used <= known, f"{command.name}: unknown {sorted(used - known)}"
 
 
-def test_the_fill_snippet_appends_the_draft_and_fills_the_corpus(
+def test_the_fill_snippet_inserts_the_draft_and_fills_the_corpus(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    if (repo_root() / THRESHOLDS).read_text(encoding="utf-8").count(TOKEN):
+        pytest.skip("RUN-S2.md step 1 has run: its snippet refuses a second paste")
     (fill,) = [s for s in _snippets() if "S1_WINNER_UNSET" in s]
     winner = "merged/hybrid+graph+rerank+metadata"
     for rel in (THRESHOLDS, S2_TOML, EXPERIMENT):
@@ -83,7 +85,16 @@ def test_the_fill_snippet_appends_the_draft_and_fills_the_corpus(
 
     before = (repo_root() / THRESHOLDS).read_text(encoding="utf-8")
     after = (tmp_path / THRESHOLDS).read_text(encoding="utf-8")
-    assert after.startswith(before.rstrip())
+    # The import's noqa for ReaderPrice goes: the pasted constant now uses it.
+    assert "# noqa: F401" in before
+    assert "# noqa: F401" not in after
+    start = after.index("# v1.1 S2 (D-252")
+    end = after.index("# 06.3.6 D-154 freeze")
+    assert start < end, "the S2 constant goes before the 06.3.6 freeze block"
+    unpasted = before.replace(
+        "  # ReaderPrice: for the S2 constant (RUN-S2.md)", ""
+    ).replace("ReaderPrice,  # noqa: F401", "ReaderPrice,")
+    assert after[:start] + after[end:] == unpasted
     namespace: dict[str, object] = {}
     exec(compile(after, str(THRESHOLDS), "exec"), namespace)  # noqa: S102
     # A fresh exec defines its own classes, so compare the values field by field.

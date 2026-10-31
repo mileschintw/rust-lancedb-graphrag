@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from lancet_eval.arms import ExternalPipeline
-from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice
+from lancet_eval.reader_request import (  # ReaderPrice: for the S2 constant (RUN-S2.md)
+    ReaderDeclaration,
+    ReaderPrice,  # noqa: F401
+)
 
 
 class ThresholdError(ValueError):
@@ -556,11 +559,12 @@ class ReplayStagePreRegistration(StagePreRegistration):
     when it is built. ``replay-init`` reads ``replay_source_arm`` to refuse carrying an
     arm the pre-registration did not fix (#109).
 
-    The S2 constant of this type is not defined here yet. Its draft is the code block in
-    experiments/v1.1/EXPERIMENT-S2.md, and RUN-S2.md has the runner add it in one commit,
-    once S1's winner and the readers' targets are known. D-73 dates a constant by the
-    first commit whose diff adds or removes its name anywhere in this file (`git log
-    -S`), so that name appears in this file only from that commit on, comments included.
+    The S2 constant of this type is not defined here yet. Its draft is the code block
+    in experiments/v1.1/EXPERIMENT-S2.md, and RUN-S2.md has the runner add it in one
+    commit, once S1's winner and the readers' targets are known. D-73 dates a constant
+    by the first commit whose diff adds or removes its name anywhere in this file (`git
+    log -S`), so that name appears in this file only from that commit on, comments
+    included.
 
     Attributes:
         replay_source_arm: The canonical label of the S1 arm S2 replays (S1's winner,

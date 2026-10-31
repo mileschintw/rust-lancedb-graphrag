@@ -312,6 +312,37 @@ are [EXPERIMENT-S0.md](EXPERIMENT-S0.md) and [EXPERIMENT-S1.md](EXPERIMENT-S1.md
   reading of D-252 and D-263; `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` are unchanged. Written
   before any S1 data.
 
+### S2 pre-registration decisions
+
+Decided by the owner on 2026-10-31, answering the five open questions of the S2 draft (lane 110, #110). The stage
+file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/src/lancet_eval/thresholds.py` once, by
+[RUN-S2.md](RUN-S2.md) step 4, because D-73 dates a constant by the first commit that adds its name to that file.
+
+- **D-267 Opus 5.5 joins through its own constant** (owner: "另立常數 (Recommended)", 2026-10-31). If D-252's Opus
+  condition holds (the Sonnet 5.5 delta minus the Haiku 5.5 delta is at least +5 points on the S2 reading), a second
+  constant, `PREREGISTRATION_OPUS_S2`, is written: equal to the S2 constant plus the `<S1 winner>@opus-5.5` arm in its
+  family and null guard. Its name does not start with the S2 constant's name, so adding it leaves the S2 constant's
+  D-73 date unchanged. It is read in its own run directory, on its own corpus `multihop_rag_s2_opus_dev` (the S2
+  corpus plus the Opus arm), committed before that run's `replay-init`: `compare-levers` refuses a journal whose arms
+  differ from the constant's, and D-73 refuses a constant younger than its run, so the S2 run cannot take it. That
+  run re-reads Haiku 5.5 and Sonnet 5.5 beside Opus 5.5 (about $0.5 more). The first S2 reading stays as registered.
+  Without the condition, no Opus arm is run.
+- **D-268 D-245's "not significantly worse" reads the Holm-adjusted p** (owner: "Holm 調整後 (Recommended)",
+  2026-10-31). Haiku 5.5 is significantly worse than deepseek only if Holm, over the S2 family (m = 2: Haiku 5.5 and
+  Sonnet 5.5 against deepseek, alpha 0.05), rejects the Haiku row and its delta is negative. The raw p is reported,
+  not read.
+- **D-269 S2 reuses the v1.0 numbers; Opus at list price over OpenRouter** (owner: "沿用 + 查牌價 (Recommended)",
+  2026-10-31). S2 takes D-262's and D-264's numbers: alpha 0.05, null-guard margin 0.10 and pair fraction 0.80,
+  complete-case floor 0.80, bootstrap 10,000 with seed 42 (the SC-2 floor and rerank tripwire are carried, and no drive
+  runs). Opus 5.5's reader row is `anthropic/claude-opus-5.5` over OpenRouter, like Haiku 5.5, at Anthropic's list
+  price of $4 / $20 per MTok (input / output), read 2026-10-31 from
+  https://platform.claude.com/docs/en/about-claude/pricing (claude.com/pricing agrees).
+- **D-270 Three readings of D-252's S2 rule** (owner: "照草稿 (Recommended)", 2026-10-31). (a) deepseek is the null
+  guard's reference and has no guard of its own; it stays a candidate. (b) If more than one cheaper reader is within
+  2 points of the leader, the cheapest of them wins. (c) Two Claude readers are compared through their paired deltas
+  against deepseek on the common population, since the lever comparison pairs each family arm with the reference
+  only. Amends the reading of D-252; written before any S2 data.
+
 ## Model access
 
 Two paths, chosen by where the call happens:

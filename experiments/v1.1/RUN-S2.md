@@ -60,7 +60,7 @@ requests that were never billed.
 | 2 Pilot, 5 questions × 2 readers | about $0.03 | about $0.10 |
 | 6 Haiku 5.5 arm, 100 questions | about $0.03 | about $0.10 |
 | 6 Sonnet 5.5 arm, 100 questions | about $0.50 | about $1.90 |
-| 8 Opus 5.5 arm, only if it joins | about $2.00 | about $3.80 |
+| 8 Opus 5.5 run, only if it joins: Opus plus a second Haiku and Sonnet reading | about $2.50 | about $5.80 |
 | **Total without Opus** | **about $0.56** | **about $2.10** |
 
 A native Sonnet re-pilot (step 3) adds about $0.03.
@@ -100,7 +100,8 @@ Start no *Paid* step until this build has exited 0.
 `PREREGISTRATION_S2` is not in `thresholds.py` on `main`. D-73 dates a constant by the first commit that adds its name
 to that file, so the name enters it once, in step 4. Its draft is the code block in EXPERIMENT-S2.md › The constant,
 and `eval/corpora/multihop_rag_s2_dev.toml` holds the same placeholder `S1_WINNER_UNSET` where the winner goes. This
-snippet appends the block to `thresholds.py` and fills both with `<WINNER>`. Commit nothing yet.
+snippet inserts the block into `thresholds.py` before the 06.3.6 freeze block (beside S0 and S1), fills both with `<WINNER>`, and drops the `noqa` the import of
+`ReaderPrice` carries until the constant uses it. Commit nothing yet.
 
 ```bash
 uv run --project eval python -c "
@@ -111,7 +112,9 @@ block = doc.split('### The constant (draft)')[1].split('~~~python')[1].split('~~
 t = Path('eval/src/lancet_eval/thresholds.py')
 s = t.read_text(encoding='utf-8')
 assert 'PREREGISTRATION_S2' not in s, 'the constant is already in thresholds.py'
-t.write_text(s + chr(10) * 2 + block.replace('S1_WINNER_UNSET', arm).lstrip(), encoding='utf-8', newline=chr(10))
+s = s.replace('  # ReaderPrice: for the S2 constant (RUN-S2.md)', '').replace('ReaderPrice,  # noqa: F401', 'ReaderPrice,')
+i = s.index('# 06.3.6 D-154 freeze')
+t.write_text(s[:i] + block.replace('S1_WINNER_UNSET', arm).lstrip() + chr(10) * 2 + s[i:], encoding='utf-8', newline=chr(10))
 c = Path('eval/corpora/multihop_rag_s2_dev.toml')
 c.write_text(c.read_text(encoding='utf-8').replace('S1_WINNER_UNSET', arm), encoding='utf-8', newline=chr(10))
 "
@@ -123,8 +126,7 @@ Check:
 uv run --project eval pytest -p no:xdist -q eval/tests/test_s2_preregistration.py eval/tests/test_s2_run_guide.py
 ```
 
-Every test passes except `test_the_committed_constant_holds_no_todo`, which fails while a TODO is left. The TODOs are
-settled in step 4.
+Every test must pass.
 
 ## Step 2: pilot (Paid)
 
@@ -228,13 +230,11 @@ run of record.
 
 ## Step 4: freeze the pre-registration (D-73)
 
-1. The five TODOs in EXPERIMENT-S2.md › Open questions must be settled by the owner. Write each answer into
-   EXPERIMENT-S2.md and into the working tree's constant, and delete every TODO from both. An open TODO stops the run
-   here: tell the user which.
-2. In EXPERIMENT-S2.md, change the status line to "pre-registered <date>, before any S2 data" and write `<WINNER>`
+1. In EXPERIMENT-S2.md, change the status line to "pre-registered <date>, before any S2 data" and write `<WINNER>`
    under Arms. Delete the `DRAFT` sentences from the corpus's header comment.
-3. Run step 1's check again. Every test must pass.
-4. Commit `thresholds.py`, the corpus and EXPERIMENT-S2.md as one commit, on the run lane's own branch, with no other
+2. Run step 1's check again. Every test must pass. The one skip is
+   `test_the_fill_snippet_inserts_the_draft_and_fills_the_corpus`, since the snippet has already run.
+3. Commit `thresholds.py`, the corpus and EXPERIMENT-S2.md as one commit, on the run lane's own branch, with no other
    change. It is the commit that adds the name `PREREGISTRATION_S2` to `thresholds.py`, so D-73 dates the constant by
    it. The coordinator merges it to `main` through a PR. Then pull `main` in the main checkout. From here on the
    constant is never edited: any change makes D-73 refuse the run of record.
@@ -302,9 +302,24 @@ Ignore `default_decisions`. S2 is applied by hand.
 ## Step 8: Opus 5.5 (Paid, only if it joins)
 
 Opus joins only if the Sonnet 5.5 delta minus the Haiku 5.5 delta is at least +5 points (D-252). If it does not, skip
-this step. If it does, the way its arm is pre-registered is EXPERIMENT-S2.md › Open questions 1. Follow the answer
-recorded there, and commit it before any Opus submit. Then ask the user (**about $2, ceiling about $3.80**), and run
-step 6 for `<WINNER>@opus-5.5`, then step 7 again.
+this step. If it does (D-267):
+
+The S2 run cannot take an Opus arm: `compare-levers` refuses a journal whose arms differ from its constant's, and
+D-73 refuses a constant younger than its run. So Opus is read in its own run, `<S2_OPUS_RUN>` =
+`eval/runs/<YYYY-MM-DD>-s2-opus-multihop_rag_s2_opus_dev`, beside fresh Haiku 5.5 and Sonnet 5.5 arms.
+
+1. Add `PREREGISTRATION_OPUS_S2` to the end of `thresholds.py`: a copy of `PREREGISTRATION_S2` with
+   `<WINNER>@opus-5.5` added to the family's arms and to `null_guard_arms`, and its comment and `provenance` citing
+   D-267 and the S2 reading that met the condition. Leave `PREREGISTRATION_S2` byte for byte as it is, or D-73 refuses
+   the S2 run.
+2. Copy `eval/corpora/multihop_rag_s2_dev.toml` to `eval/corpora/multihop_rag_s2_opus_dev.toml`. In the copy, add
+   `<WINNER>@opus-5.5` to the arms and set `[preregistration] token` to `PREREGISTRATION_OPUS_S2`.
+3. Commit both as one commit through a PR, as in step 4, and pull `main`.
+4. Ask the user (**about $2.5, ceiling about $5.80**: Opus plus a second Haiku and Sonnet reading). Then run steps 5,
+   6 and 7 with `<S2_OPUS_RUN>` for `<S2_RUN>` and `multihop_rag_s2_opus_dev` for the corpus, for the Haiku, Sonnet
+   and Opus arms.
+5. Read Opus by EXPERIMENT-S2.md › Decision rule in that run's `lever-comparison.json`. The first S2 reading stands
+   as registered.
 
 ## Step 9: record
 
