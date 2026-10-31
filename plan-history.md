@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 47 merged (moved 2026-10-30, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 47, #47 External evidence shows chunk_index=0: session local_f74dc425-7470-4904-974a-b8e78264bf9e, branch `claude/lane-47-239abf` @ a596c66a. PR #62 merged 2026-10-30 as 2c9ca064 on the user's "開 PR，CI 過了就 merge (Recommended)". The first engine job (14m49s) failed on the flaky `graph_augmentation_attempted_and_failed_is_observable_end_to_end` (tracing interest caching, unrelated; lane 59 fixes it). A rerun of the failed job passed (engine 12m13s), per the user's rerun-once rule. #47 closed. `chunk_index_of` parses `:` and `#`; Lancet pack byte-identical. Follow-up #61 (rebuild-hook race) was folded into lane 59. `engine/target` (49 GB) deleted. Engine CI time for #58: 12m13s on the rerun (> 8 min; decide after #56 merges).
+
 ## Lane 52 merged (moved 2026-10-30, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 52, #52 Reader arms and the replay record kind: session local_f927678d-e609-4878-ab6d-f5b300b78106, branch `claude/lane-52-f0a385` @ ffa05c99. PR #63 merged 2026-10-30 as 72c6d2c8 on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 1m42s; engine and gateway skipped). #52 closed. Adds reader-arm labels, the replay record kind (9 zero-tolerance clauses), `replay-init`, and D-260 (ruling 7). Eval fast tier 2716 passed; v1.0 re-score slow checks byte-identical. Coordinator calls: the ruff bar is "no new errors" on files with pre-existing errors; GLOSSARY terms wait until S2 settles. For #53/#54: replay record fields and journal header keys are in PR #63's "For #53 and #54" section; each batch success record needs an export row (the carried base row with `arm` set to the reader-arm label).
