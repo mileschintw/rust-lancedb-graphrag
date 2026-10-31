@@ -75,8 +75,7 @@ impl tracing::Subscriber for Disabled {
 
 /// This thread's default `tracing` subscriber for one test, gone before the test's providers drop.
 ///
-/// Use it in place of `tracing::subscriber::set_default` for every test subscriber, and declare
-/// any OpenTelemetry provider locals before it so they drop after it.
+/// Use it in place of `tracing::subscriber::set_default` for every test subscriber.
 ///
 /// tracing-core briefly upgrades every live subscriber while it rebuilds callsite interest,
 /// holding its global dispatcher lock. With a plain `set_default` guard another test's thread can
@@ -84,9 +83,10 @@ impl tracing::Subscriber for Disabled {
 /// that lock. The shutdown emits internal `tracing` events, and registering a new callsite there
 /// takes the same lock again behind any waiting writer: the lib tests deadlock (#59). Dropping
 /// this guard waits until no other thread holds the subscriber and then drops it here, so the
-/// subscriber and the providers it references always drop on the test thread. Installing it also keeps a second dispatcher
-/// registered for the rest of the run, so a callsite another thread hits first stays visible to
-/// this subscriber.
+/// subscriber and the providers it references always drop on the test thread.
+///
+/// Installing it also keeps a second dispatcher registered for the rest of the run, so a
+/// callsite another thread hits first stays visible to this subscriber.
 ///
 /// # Panics
 ///
