@@ -31,7 +31,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
-| 54 | #54 | local_c8000942-9af7-443f-833d-077017fa96fd (`claude/lane-54-5835c0`) | started 2026-10-30 23:12 -0700 on the user's typed "Start 54" | — |
+| 54 | #54 | local_c8000942-9af7-443f-833d-077017fa96fd (`claude/lane-54-5835c0`) | done @ 1af22049; PR #66 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-31; interpretations accepted) | — |
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
 | prereg-s01 | none | local_d5df8b19-d4ed-4c18-b9b6-7e7ff2b0372e (`claude/lane-prereg-s01-73d291`) | started 2026-10-30 23:45 -0700 on the user's typed "Start prereg" (approved "現在開 pre-registration session (Recommended)"); after merge, ask to start the S0/S1 run lane in the main checkout (`use_worktree: false`, cwd `D:\Repos\lancet`); no main-checkout fast-forward while it runs | — |
 
