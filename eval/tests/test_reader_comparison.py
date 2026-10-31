@@ -82,12 +82,12 @@ def _s2(  # type: ignore[no-untyped-def]
     prereg: Any = None,
     usage: dict[str, tuple[int, int, int]] | None = None,
     reader_arms: tuple[str, ...] = READER_ARMS,
-    role: str = "heldout",
+    role: str = "dev",
 ):
     """An S2 run of the carried deepseek arm and `reader_arms`, plus its gold table."""
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = fx.write_corpus(root, qs, (rf.BASE, *reader_arms), role=role)
+    gold = rf.write_corpora(root, qs, reader_arms, s2_role=role)
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     declared = tuple(
         (name, decl) for name, decl in DECLARED if f"{rf.BASE}@{name}" in reader_arms
@@ -101,7 +101,7 @@ def _s2(  # type: ignore[no-untyped-def]
     s1 = tmp_path / "s1"
     rf.write_s1_run(s1, qs)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    replay_init(source_run=s1, arms=[rf.BASE], run=s2, corpus=fx.CORPUS)
     for arm in reader_arms:
         rf.append_reader_arm(
             s2, qs, build=_builder(arm, (usage or {}).get(arm)), arm=arm
@@ -284,13 +284,13 @@ def test_a_reader_arm_with_no_batch_record_yet_reports_none(
 
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = fx.write_corpus(root, qs, (rf.BASE, HAIKU_ARM))
+    gold = rf.write_corpora(root, qs, (HAIKU_ARM,))
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     monkeypatch.setattr(thresholds, fx.TOKEN, rf.s2_prereg(), raising=False)
     s1 = tmp_path / "s1"
     rf.write_s1_run(s1, qs)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    replay_init(source_run=s1, arms=[rf.BASE], run=s2, corpus=fx.CORPUS)
     rf.append_reader_arm(s2, qs, build=errored)
     _score(s2, gold)
     rows = {r["arm"]: r for r in _group(_compare(s2, gold))["readers"]}
