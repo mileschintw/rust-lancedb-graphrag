@@ -32,6 +32,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | done @ a596c66a; PR #62 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-30; rerun once on a #59/#61 flake, then ask) | — |
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
+| 54 | #54 | local_c8000942-9af7-443f-833d-077017fa96fd (`claude/lane-54-5835c0`) | started 2026-10-30 23:12 -0700 on the user's typed "Start 54" | — |
 
 Lanes 52 and 59 started 2026-10-30 22:20 -0700 on the user's typed "Start 52 and 59". Lane 52 records ruling 7 as D-260. Lane 59 must not touch lane 56's files; any CI/doc timeout change it needs is applied after lane 56 merges. Three engine builders now (47, 56, 59), each at `CARGO_BUILD_JOBS=2`. The sccache cache location is pinned by `%APPDATA%\Mozilla\sccache\config\config` (`[cache.disk]` dir `D:\sccache`, 40 GiB). It was set in a side session on the user's "可以，就這麼做" (2026-10-30). Lane 56 documents it in `docs/testing.md`. The `SCCACHE_DIR` prefix is no longer needed, and lanes 47, 56 and 59 have been told. Lane 59 widened by the coordinator (test-only, 2026-10-30): the ScopedSubscriber guard goes to every test subscriber site (`telemetry_ingest.rs`, `telemetry_metrics.rs`, `telemetry/mod.rs` tests) and `engine/src/testkit.rs`; cause reproduced as a tracing-core dispatcher-lock deadlock when an OTel provider shuts down on another thread.
 
@@ -61,7 +62,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #61 | 1 | — | none set | `engine/src/tests.rs` › rebuild-failure tests, `engine/src/ingest.rs` › `REBUILD_*_FAIL_NEXT` test hooks (opened 2026-10-30 by lane 47: lib tests race on process-wide hooks) | free; folded into lane 59 on the user's "併進 lane 59 (Recommended)" (2026-10-30) |
 | #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
 | #53 | 4 | #50 (open), #51 (merged), #52 (merged) | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free |
-| #54 | 1 | #52 (merged) | none set | `lever_comparison.py`/`comparison.py`, `score.py` (reader-arm Hits@4 skip), `measure.py` › `compute_spend`, `test_reader_comparison.py` | free |
+| #54 | 1 | #52 (merged) | none set | `lever_comparison.py`/`comparison.py`, `score.py` (reader-arm Hits@4 skip), `measure.py` › `compute_spend`, `test_reader_comparison.py` | free (lane 54 running) |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
 
