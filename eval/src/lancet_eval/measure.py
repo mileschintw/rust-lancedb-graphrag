@@ -232,6 +232,13 @@ def count_failed_generation_attempts(records: Sequence[RunRecord]) -> int:
     )
 
 
+def tokens_usd(meta: WorkflowWireMeta, price: ReaderPrice) -> float:
+    """A record's prompt and completion tokens at a per-million-token price."""
+    return (meta.prompt_tokens / 1_000_000.0) * price.input_per_mtok + (
+        meta.completion_tokens / 1_000_000.0
+    ) * price.output_per_mtok
+
+
 def reader_record_usd(
     rec: RunRecord, price: ReaderPrice, *, factor: float = 1.0
 ) -> float:
@@ -260,10 +267,7 @@ def reader_record_usd(
             f"reasoning tokens exceed the {meta.completion_tokens} completion tokens "
             "they are billed in"
         )
-    usd = (meta.prompt_tokens / 1_000_000.0) * price.input_per_mtok + (
-        meta.completion_tokens / 1_000_000.0
-    ) * price.output_per_mtok
-    return usd * factor
+    return tokens_usd(meta, price) * factor
 
 
 def reader_declaration(

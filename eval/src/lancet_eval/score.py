@@ -818,9 +818,10 @@ class _Metric:
     kind: Literal["wilson", "bootstrap"]
     delta_name: str | None = None
     counts: bool = False
-    # #54, D-257: a Hits@4 metric has no value on a reader arm, which replays another
-    # arm's retrieval; the reader arm is left out of it rather than scored as a miss.
-    hits_at_4: bool = False
+    # #54, D-257: a metric of the arm's own retrieval ranking (chunk-ID or evidence
+    # Hits@4, Hits@10, MRR, MAP). A reader arm replays its base arm's retrieval, so
+    # it is left out of such a metric rather than scored as a miss.
+    own_ranking: bool = False
 
 
 def _load_export_rows(
@@ -866,7 +867,7 @@ def _evidence_metrics(
         return None if found is None else float(context_tokens(found))
 
     return [
-        _Metric("evidence_hits_at_4", hit, "wilson", hits_at_4=True),
+        _Metric("evidence_hits_at_4", hit, "wilson", own_ranking=True),
         _Metric("context_tokens_mean", tokens, "bootstrap", "context_tokens_delta"),
     ]
 
@@ -949,25 +950,28 @@ def _four_arm_dimensions(
             "paper_hits_at_4",
             lambda r: float(paper(r)["hit4"]),
             "wilson",
-            hits_at_4=True,
+            own_ranking=True,
         ),
         _Metric(
             "paper_hits_at_10",
             lambda r: float(paper(r)["hit10"]),
             "wilson",
             "paper_hits_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_mrr_at_10",
             lambda r: float(paper(r)["rr"]),
             "bootstrap",
             "paper_mrr_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_map_at_10",
             lambda r: float(paper(r)["ap"]),
             "bootstrap",
             "paper_map_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "answer_usable_p4",
@@ -1051,9 +1055,9 @@ def _four_arm_dimensions(
 
     def p4_values(
         fn: Callable[[RunRecord], float | None],
-        arms: Sequence[str] = arms,
+        value_arms: Sequence[str],
     ) -> tuple[dict[str, dict[str, float]], int]:
-        """Per-arm value maps over the P4 questions every arm can score."""
+        """Per-arm value maps over the P4 questions all of `value_arms` can score."""
         raw = {
             arm: p4_mod.per_question_values(
                 records,
@@ -1061,13 +1065,15 @@ def _four_arm_dimensions(
                 arm,
                 lambda rec: math.nan if (v := fn(rec)) is None else v,
             )
-            for arm in arms
+            for arm in value_arms
         }
         common = [
-            q for q in p4_ids if all(not math.isnan(raw[arm][q]) for arm in arms)
+            q
+            for q in p4_ids
+            if all(not math.isnan(raw[arm][q]) for arm in value_arms)
         ]
         return (
-            {arm: {q: raw[arm][q] for q in common} for arm in arms},
+            {arm: {q: raw[arm][q] for q in common} for arm in value_arms},
             len(p4_ids) - len(common),
         )
 
@@ -1126,7 +1132,7 @@ def _four_arm_dimensions(
 
     for metric in metrics:
         metric_arms = [
-            a for a in arms if not (metric.hits_at_4 and is_reader_arm(a))
+            a for a in arms if not (metric.own_ranking and is_reader_arm(a))
         ]
         by_arm, n_unscorable = p4_values(metric.value, metric_arms)
         for arm in metric_arms:
@@ -1176,7 +1182,7 @@ def _four_arm_dimensions(
             )
 
     for base, fn in percentile_metrics:
-        by_arm, n_unscorable = p4_values(fn)
+        by_arm, n_unscorable = p4_values(fn, arms)
         for arm in arms:
             for statistic in ("p50", "p95"):
                 dims.append(
@@ -1195,8 +1201,11 @@ def _four_arm_dimensions(
                 )
 
     # D-122 script-faithful line: every held-out G question per arm; a record with no
-    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive.
+    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive. A
+    # reader arm has no ranking of its own (#54, D-257) and has no such line.
     for arm in arms:
+        if is_reader_arm(arm):
+            continue
         scores: dict[str, dict[str, Any]] = {}
         no_ranking = 0
         for qid in g_ids:
@@ -1212,8 +1221,6 @@ def _four_arm_dimensions(
             ("paper_mrr_at_10_script_faithful", "rr", "bootstrap"),
             ("paper_map_at_10_script_faithful", "ap", "bootstrap"),
         ):
-            if key == "hit4" and is_reader_arm(arm):
-                continue
             dims.append(
                 _per_arm_dimension(
                     f"{name}__{arm_slug(arm)}",

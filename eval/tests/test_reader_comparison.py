@@ -152,6 +152,7 @@ def test_the_report_holds_every_reader_figure_for_three_readers(
         au = rows[arm]["answer_usable"]
         assert (au["n"], au["n_usable"]) == (n_g, n_usable)
         assert au["mean"] == pytest.approx(n_usable / n_g)
+        assert au["n_excluded"] == 0
 
     # Paired differences against every other reader, p reported but not used.
     pairs = {(p["arm"], p["against"]): p for p in group["pairs"]}
@@ -200,6 +201,14 @@ def test_cost_per_answered_question_uses_the_declared_sync_prices(
         assert cost["sync_usd"] == pytest.approx(sync)
         assert cost["n_answered"] == rows[arm]["answer_usable"]["n_usable"]
         assert cost["per_answered_usd"] == pytest.approx(sync / cost["n_answered"])
+
+    # The same figures as literals: 10 G records each, 8, 10 and 9 answered.
+    per_answered = {a: rows[a]["cost"]["per_answered_usd"] for a in READER_ARMS}
+    assert per_answered == {
+        HAIKU_ARM: pytest.approx(7e-4 / 8),
+        SONNET_ARM: pytest.approx(1.4e-2 / 10),
+        OPUS_ARM: pytest.approx(8.5e-2 / 9),
+    }
 
     # The carried deepseek arm is costed at the engine reader's list price.
     base = rows[rf.BASE]
@@ -299,7 +308,7 @@ def test_a_reader_with_no_declared_price_fails_closed(
     s2, gold, _ = _s2(tmp_path, monkeypatch)
     _score(s2, gold)
     undeclared = rf.s2_prereg(readers=DECLARED[:2], arms=READER_ARMS)
-    with pytest.raises(LeverComparisonError, match="opus-5.5.*no declared price"):
+    with pytest.raises(LeverComparisonError, match="no declared price.*opus-5.5"):
         _compare(s2, gold, prereg=undeclared)
 
 
@@ -357,12 +366,14 @@ def test_the_report_holds_no_hits_at_4_for_reader_arms(
     s2, gold, _ = _s2(tmp_path, monkeypatch)
     _score(s2, gold)
 
-    # score: no Hits@4 dimension of either kind for a reader arm; the base has both.
+    # score: no ranking metric (Hits@4 of either kind, Hits@10, MRR, MAP) for a reader
+    # arm, which replays its base arm's retrieval; the base keeps them.
     report = json.loads((s2 / "report.json").read_text(encoding="utf-8"))
     names = [d["name"] for d in report["dimensions"]]
     for arm in READER_ARMS:
         slug = arm_slug(arm)
-        assert not [n for n in names if "hits_at_4" in n and n.endswith(f"__{slug}")]
+        ranking = ("paper_", "evidence_hits_at_4")
+        assert not [n for n in names if n.startswith(ranking) and slug in n]
     base = arm_slug(rf.BASE)
     assert f"paper_hits_at_4__{base}" in names
     assert f"evidence_hits_at_4__{base}" in names

@@ -70,6 +70,7 @@ from lancet_eval.measure import (
     compute_spend,
     reader_declaration,
     reader_record_usd,
+    tokens_usd,
 )
 from lancet_eval.metrics import (
     answer_usable,
@@ -1338,23 +1339,21 @@ def _reader_declarations(
 ) -> dict[str, ReaderDeclaration] | None:
     """The declaration of every reader the run's reader arms name; None without any.
 
+    `arms` are the pre-registered arms (the run's arm set equals them), so
+    `readers_of` refuses a reader arm whose reader has no declaration.
+
     Raises:
         LeverComparisonError: If a reader arm's reader has no declared price, or the
             pre-registration's reader table is bad.
     """
-    reader_arms = [a for a in arms if is_reader_arm(a)]
-    if not reader_arms:
+    if not any(is_reader_arm(a) for a in arms):
         return None
-    declared = dict(getattr(prereg, "readers", ()))
-    for arm in reader_arms:
-        try:
-            reader_declaration(arm, declared)
-        except ReaderPriceError as exc:
-            raise LeverComparisonError(f"D-257: {exc}") from exc
     try:
         return preregistration.readers_of(prereg)
     except preregistration.PreregistrationError as exc:
-        raise LeverComparisonError(f"D-257: {exc}") from exc
+        raise LeverComparisonError(
+            f"D-257: a reader with no declared price, or a bad reader table: {exc}"
+        ) from exc
 
 
 def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
@@ -1364,10 +1363,8 @@ def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
             ReaderPrice(GENERATION_INPUT_PRICE_PER_1M, GENERATION_OUTPUT_PRICE_PER_1M),
             ENGINE_PRICE_SOURCE,
         )
-    try:
-        return reader_declaration(arm, ctx.readers).price, "preregistration"
-    except ReaderPriceError as exc:
-        raise LeverComparisonError(f"D-257: {exc}") from exc
+    price = _priced(lambda: reader_declaration(arm, ctx.readers).price)
+    return price, "preregistration"
 
 
 def _ok_g_records(ctx: _Ctx, arm: str) -> list[RunRecord]:
@@ -1385,11 +1382,7 @@ def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
     if is_reader_arm(rec.graph_arm):
         return _priced(lambda: reader_record_usd(rec, price))
     meta = rec.workflow_meta
-    if meta is None:
-        return 0.0
-    return (meta.prompt_tokens / 1_000_000.0) * price.input_per_mtok + (
-        meta.completion_tokens / 1_000_000.0
-    ) * price.output_per_mtok
+    return 0.0 if meta is None else tokens_usd(meta, price)
 
 
 def _reader_row(ctx: _Ctx, arm: str) -> dict[str, Any]:
@@ -1414,6 +1407,7 @@ def _reader_row(ctx: _Ctx, arm: str) -> dict[str, Any]:
         },
         "answer_usable": {
             "n": len(recs),
+            "n_excluded": ctx.n_g - len(recs),
             "n_usable": n_usable,
             "mean": n_usable / len(recs) if recs else None,
         },
@@ -1482,7 +1476,7 @@ def _reader_guard(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
     return {**asdict(guard), "against": against}
 
 
-def reader_comparison(ctx: _Ctx, arms: Sequence[str]) -> dict[str, Any] | None:
+def _reader_comparison(ctx: _Ctx, arms: Sequence[str]) -> dict[str, Any] | None:
     """The reader comparison of a run whose arms differ only by reader (#54, D-257).
 
     One group per replayed base arm: the base (the carried engine reader) and its
@@ -1853,7 +1847,7 @@ def build_lever_comparison(
     }
     if ctx.export is not None:
         payload["context"] = _context_rows(ctx)
-    readers = reader_comparison(ctx, preregistration.arms_of(prereg))
+    readers = _reader_comparison(ctx, preregistration.arms_of(prereg))
     if readers is not None:
         payload["reader_comparison"] = readers
     return payload
