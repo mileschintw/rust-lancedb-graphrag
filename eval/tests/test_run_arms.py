@@ -1129,7 +1129,8 @@ def test_d198_direct_drive_still_accepts_legacy_labels_for_offline_callers(
     )
 
     assert count == 2
-    assert sorted(r.graph_arm for r in load_records(j_path)) == ["graph-off", "graph-on"]
+    labels = sorted(r.graph_arm for r in load_records(j_path))
+    assert labels == ["graph-off", "graph-on"]
 
 
 @pytest.mark.parametrize("label", ["", "  ", "has space", "tab\there"])

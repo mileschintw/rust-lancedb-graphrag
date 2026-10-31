@@ -544,4 +544,3 @@ def test_d221_query_connection_failure_prints_json_error_and_exits_nonzero(
     assert code == 1
     printed = json.loads(capsys.readouterr().out)
     assert printed["error"] == "ConnectError"
-

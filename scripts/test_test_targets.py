@@ -19,7 +19,7 @@ SH = shutil.which("sh")
 pytestmark = pytest.mark.skipif(SH is None, reason="needs a POSIX sh on PATH")
 
 ENGINE_TARGETS = {
-    "unittests src\\lib.rs": 856,
+    "unittests src\\lib.rs": 854,
     "unittests src\\main.rs": 0,
     "unittests src\\bin\\inspect_lancedb.rs": 58,
     "unittests src\\bin\\reconcile_eval_store.rs": 18,
@@ -96,7 +96,7 @@ def _gateway(tmp_path: Path, packages: dict[str, int]) -> tuple[int, str]:
 def test_the_engine_gate_passes_at_its_floors(tmp_path: Path) -> None:
     code, out = _engine(tmp_path, ENGINE_TARGETS)
     assert code == 0, out
-    assert "TOTAL: 982" in out
+    assert "TOTAL: 980" in out
 
 
 def test_the_engine_gate_passes_when_a_lane_adds_tests(tmp_path: Path) -> None:

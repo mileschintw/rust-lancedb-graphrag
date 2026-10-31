@@ -138,15 +138,6 @@ async fn telemetry_metrics_corpus_generation_gauge_is_numeric() {
 }
 
 #[tokio::test]
-async fn telemetry_metrics_query_duration_outcome_set_is_exactly_two() {
-    let _lock = METRIC_TEST_MUTEX.lock().await;
-    let outcomes = [OUTCOME_COMPLETED, OUTCOME_FAILED];
-    assert_eq!(outcomes.len(), 2);
-    assert_eq!(OUTCOME_COMPLETED, "completed");
-    assert_eq!(OUTCOME_FAILED, "failed");
-}
-
-#[tokio::test]
 async fn telemetry_metrics_no_instrument_carries_an_identifier_attribute() {
     let _lock = METRIC_TEST_MUTEX.lock().await;
     let (exporter, meter_provider) = setup_test_meter();
@@ -634,6 +625,9 @@ async fn metrics_query_duration_outcome_stays_two_valued() {
 
     let dps_duration = find_hist_total_count(&finished, "lancet.rag.query.duration");
     assert_eq!(dps_duration, 1);
+    // the two outcome values the duration histogram carries on the wire
+    assert_eq!(OUTCOME_COMPLETED, "completed");
+    assert_eq!(OUTCOME_FAILED, "failed");
 
     let dps_degraded = find_sum_datapoints(&finished, "lancet.rag.answer.degraded");
     assert_eq!(dps_degraded.len(), 0, "no degraded answer increment when terminal basis is retrieval");

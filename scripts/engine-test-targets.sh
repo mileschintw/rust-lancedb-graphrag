@@ -27,7 +27,7 @@ fi
 
 # "<target source path> <floor>", one per line. The path is what cargo prints after
 # `Running` (`unittests` dropped), with forward slashes.
-FLOORS="src/lib.rs 856
+FLOORS="src/lib.rs 854
 src/bin/inspect_lancedb.rs 58
 src/bin/reconcile_eval_store.rs 18
 src/bin/backfill_evidence_metadata.rs 14

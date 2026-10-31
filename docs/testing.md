@@ -76,7 +76,10 @@ What each command adds:
   Go and Rust runtimes against a loopback mock provider, and `TestRAGQueryClientDisconnectCancelsRustWorkflow`, which
   runs the bins it built.
 - `LANCET_EVAL_INTEGRATION=1` builds the `generate_from_context` bin in release mode and runs it against the loopback
-  `provider_stub` (seam S-C). The first run includes a cold release build.
+  `provider_stub` (seam S-C). The harness gives each `cargo run --release` 30 minutes, so a cold release build that
+  takes longer times the tests out (about 70 minutes here with `CARGO_BUILD_JOBS=2`). Build the bin first with
+  `cargo build --manifest-path engine/Cargo.toml --locked --release --bin generate_from_context`; the tests then take
+  about 10 seconds.
 
 None of them makes a paid call. The v1.0 drive-2 re-score
 (`test_score_deterministic.py::test_rescore_of_the_recorded_drive2_reproduces_its_report`) and the held-out
