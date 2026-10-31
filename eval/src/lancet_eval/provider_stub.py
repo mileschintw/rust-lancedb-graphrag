@@ -1,9 +1,9 @@
 """Loopback-only OpenRouter provider stub for the OI-02 full-stack replay (06.3.4.1-07 Task 2).
 
 Python stdlib only (`http.server.ThreadingHTTPServer`, `json`) -- no new dependency (AI-SPEC
-§2). Serves the three endpoints the engine's OpenRouter client actually calls:
-`/models` (capability check at startup, before any query runs), `/embeddings`, and
-`/chat/completions`. All responses are synthetic; no request body is logged beyond its length
+§2). Serves the endpoints the engine's OpenRouter clients call: `/models` (capability check at
+startup, before any query runs), `/embeddings`, `/chat/completions`, and `/rerank` (the rerank
+lever's client, and the LlamaIndex baseline's; added for the free S0 rehearsal, #76). All responses are synthetic; no request body is logged beyond its length
 (T-06.3.4.1-07-04/09).
 
 The stub refuses to bind to any host other than ``127.0.0.1``/``::1`` -- this is enforced in
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import socket
 import struct
 import threading
@@ -191,12 +192,37 @@ def build_embeddings_response(
     return body, fallback_count
 
 
+def build_rerank_response(model: str, query: str, documents: list[str]) -> dict[str, Any]:
+    """The `/rerank` response body (#76): one result per document, each index once, scored by
+    the share of the query's words the document holds, best first (ties to the lower index).
+    `model` echoes the request's, as both the engine's rerank client
+    (`engine/src/rerank/openrouter.rs`) and the LlamaIndex baseline's refuse a reply naming
+    another model. `usage.cost` is 0.0: a stub call is free."""
+    query_words = set(re.findall(r"[a-z0-9]+", query.lower()))
+    scored = []
+    for index, document in enumerate(documents):
+        doc_words = set(re.findall(r"[a-z0-9]+", str(document).lower()))
+        score = len(query_words & doc_words) / len(query_words) if query_words else 0.0
+        scored.append((index, float(score)))
+    scored.sort(key=lambda pair: (-pair[1], pair[0]))
+    return {
+        "model": model,
+        "results": [{"index": i, "relevance_score": s} for i, s in scored],
+        "usage": {"cost": 0.0},
+    }
+
+
 class StubStats:
     """Thread-safe per-endpoint request counters, served at `GET /__stub/stats`."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._counts: dict[str, int] = {"models": 0, "embeddings": 0, "chat_completions": 0}
+        self._counts: dict[str, int] = {
+            "models": 0,
+            "embeddings": 0,
+            "chat_completions": 0,
+            "rerank": 0,
+        }
         self._fallback_count = 0
 
     def increment(self, endpoint: str) -> None:
@@ -308,6 +334,17 @@ def make_handler(
                 _ = len(json.dumps(body))
                 prompt_tokens_estimate = 2000
                 self._write_json(200, build_chat_completion_response(prompt_tokens_estimate))
+                return
+            if path.endswith("/rerank"):
+                stats.increment("rerank")
+                raw_documents = body.get("documents", [])
+                documents = raw_documents if isinstance(raw_documents, list) else []
+                self._write_json(
+                    200,
+                    build_rerank_response(
+                        str(body.get("model", "")), str(body.get("query", "")), documents
+                    ),
+                )
                 return
             self._write_json(404, {"error": "not found"})
 

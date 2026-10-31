@@ -16,6 +16,7 @@ from lancet_eval.provider_stub import (
     build_chat_completion_response,
     build_embeddings_response,
     build_models_response,
+    build_rerank_response,
     delay_for_call,
     embedding_for,
     hash_vector,
@@ -186,6 +187,43 @@ def test_build_embeddings_response_zero_fallback_when_all_known():
     assert fallback == 0
 
 
+# --- build_rerank_response -----------------------------------------------------------------
+
+
+def test_build_rerank_response_scores_every_document_once():
+    body = build_rerank_response("voyageai/rerank-2.5-lite", "acme revenue", ["a", "b", "c"])
+
+    assert sorted(r["index"] for r in body["results"]) == [0, 1, 2]
+    assert all(isinstance(r["relevance_score"], float) for r in body["results"])
+
+
+def test_build_rerank_response_echoes_the_requested_model():
+    # The engine and the LlamaIndex reranker refuse a reply naming another model.
+    body = build_rerank_response("voyageai/rerank-2.5-lite", "q", ["d"])
+
+    assert body["model"] == "voyageai/rerank-2.5-lite"
+
+
+def test_build_rerank_response_ranks_query_word_overlap_first():
+    docs = ["globex factory workers", "acme widgets revenue rose", "nothing here"]
+
+    body = build_rerank_response("m", "How did Acme revenue change?", docs)
+
+    assert body["results"][0]["index"] == 1
+    scores = [r["relevance_score"] for r in body["results"]]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_build_rerank_response_is_deterministic():
+    args = ("m", "acme revenue", ["acme", "revenue acme", "x"])
+
+    assert build_rerank_response(*args) == build_rerank_response(*args)
+
+
+def test_build_rerank_response_reports_zero_cost():
+    assert build_rerank_response("m", "q", ["d"])["usage"]["cost"] == 0.0
+
+
 # --- delay_for_call: per-slice delay schedule (06.3.4.1-07 Task 4 Route B step 4, stub -------
 # pacing to production's growing per-slice medians -- the one step-4 factor with no existing
 # equivalent: pre-warm is covered by -WarmupQuestions, journaled variants are confirmed equal
@@ -280,15 +318,33 @@ def test_live_server_chat_completions_endpoint(live_server: str):
     assert parsed["answer_basis"] == "retrieval"
 
 
+def test_live_server_rerank_endpoint(live_server: str):
+    status, body = _post(
+        f"{live_server}/rerank",
+        {
+            "model": "voyageai/rerank-2.5-lite",
+            "query": "acme revenue",
+            "documents": ["globex", "acme revenue"],
+            "top_n": 2,
+            "provider": {"allow_fallbacks": False},
+        },
+    )
+    assert status == 200
+    assert body["model"] == "voyageai/rerank-2.5-lite"
+    assert [r["index"] for r in body["results"]] == [1, 0]
+
+
 def test_live_server_stats_endpoint_counts_requests(live_server: str):
     _get(f"{live_server}/models")
     _post(f"{live_server}/embeddings", {"input": ["x"]})
     _post(f"{live_server}/chat/completions", {"messages": []})
+    _post(f"{live_server}/rerank", {"model": "m", "query": "q", "documents": ["d"]})
     status, stats = _get(f"{live_server}/__stub/stats")
     assert status == 200
     assert stats["models"] == 1
     assert stats["embeddings"] == 1
     assert stats["chat_completions"] == 1
+    assert stats["rerank"] == 1
 
 
 def test_live_server_unknown_path_returns_404(live_server: str):
