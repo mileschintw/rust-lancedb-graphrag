@@ -686,7 +686,7 @@ fn validate_extraction_output_logs_confidence_field_on_out_of_range_failure() {
     let subscriber = tracing_subscriber::registry()
         .with(tracing_subscriber::filter::LevelFilter::DEBUG)
         .with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let output = super::extraction::ExtractionOutput {
         entities: vec![],

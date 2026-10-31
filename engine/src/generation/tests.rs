@@ -2189,7 +2189,7 @@ async fn generate_against_mock(
         tracing_subscriber::registry(),
         recorder.clone(),
     );
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     adapter
         .check_supported_parameters()
@@ -2468,7 +2468,7 @@ fn generation_output_rejected_renders_as_one_fmt_line_with_escaped_free_text() {
         .with_writer(move || writer.clone())
         .finish();
     {
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
         emit_generation_output_rejected(&RejectedOutput {
             stage: "parse",
             reason: "bad \"quote\"\nsecond line",
@@ -2801,7 +2801,7 @@ async fn d96_generate_against_mock(response: serde_json::Value) -> D96Run {
                 .with_ansi(false)
                 .with_writer(move || writer.clone()),
         );
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
     let mut request = GenerationRequest::new("Question?", evidence);
@@ -3159,7 +3159,7 @@ async fn abstention_fixture_passes_the_adapter_and_the_generate_node() {
             .clone()
             .with_filter(crate::telemetry::resolve_log_filter(None).targets),
     );
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let mut request = crate::testkit::test_query_request("Did both outlets agree?", "sess-abstain");
     request.allow_model_only = Some(false);
