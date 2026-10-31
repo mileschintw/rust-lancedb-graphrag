@@ -33,9 +33,13 @@ def test_the_rehearsal_reads_the_three_rehearsal_questions_only() -> None:
     assert config.has_judge is False
 
 
-def test_run_external_accepts_the_llamaindex_arm(tmp_path: Path) -> None:
+def test_run_external_accepts_the_llamaindex_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # The arm and split gates pass; the drive stops first at the missing export echo,
-    # before any reader is called.
+    # before any reader is called. D-73's clean-tree rule is lifted so the test holds
+    # in a checkout with uncommitted edits; the token and split-hash gates still run.
+    monkeypatch.setattr("lancet_eval.gitcheck.is_clean", lambda *a, **k: True)
     with pytest.raises(ExternalRunError, match="cannot read the pipeline echo"):
         run_external(
             corpus=REHEARSAL,

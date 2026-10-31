@@ -33,8 +33,9 @@ EMBEDDING_DIMENSIONS = 2048
 RERANK_ENDPOINT = "https://openrouter.ai/api/v1/rerank"
 RERANK_MODEL = "voyageai/rerank-2.5-lite"
 
-# The engine's own endpoint overrides (`engine/src/config.rs`), so one set of variables
-# points both the Lancet arm and this export at `lancet_eval.provider_stub` (#76).
+# The variables the engine reads its endpoints from (`engine/src/config.rs`), so one
+# set points both the Lancet arm and this export at `lancet_eval.provider_stub` (#76).
+# Unlike the engine, a blank value here means OpenRouter rather than an error.
 EMBEDDING_ENDPOINT_ENV = "LANCET_OPENROUTER__EMBEDDING_ENDPOINT"
 RERANK_ENDPOINT_ENV = "LANCET_OPENROUTER__RERANK_ENDPOINT"
 

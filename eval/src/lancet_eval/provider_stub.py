@@ -193,6 +193,10 @@ def build_embeddings_response(
     return body, fallback_count
 
 
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", text.lower()))
+
+
 def build_rerank_response(
     model: str, query: str, documents: list[str]
 ) -> dict[str, Any]:
@@ -201,10 +205,10 @@ def build_rerank_response(
     the lower index). `model` echoes the request's, as both the engine's rerank client
     (`engine/src/rerank/openrouter.rs`) and the LlamaIndex baseline's refuse a reply
     naming another model. `usage.cost` is 0.0: a stub call is free."""
-    query_words = set(re.findall(r"[a-z0-9]+", query.lower()))
+    query_words = _words(query)
     scored = []
     for index, document in enumerate(documents):
-        doc_words = set(re.findall(r"[a-z0-9]+", str(document).lower()))
+        doc_words = _words(str(document))
         score = len(query_words & doc_words) / len(query_words) if query_words else 0.0
         scored.append((index, float(score)))
     scored.sort(key=lambda pair: (-pair[1], pair[0]))
