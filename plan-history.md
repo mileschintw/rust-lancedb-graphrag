@@ -118,3 +118,10 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 ## Lane 79 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 79, #79 (S1 seed failed rows, run guide recovery, S1 document map commit): session local_1bcc1f38-7e77-4d99-8d8c-a80616cd1707, branch `claude/lane-79-415c90` @ 17801a6c. PR #85 merged 2026-10-31 under the auto-PR rule after `ci` passed (engine 9m3s, eval 2m6s). #79 closed. Main checkout not fast-forwarded (run-s01 active).
+
+## Lanes 50, 81, 84 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b, unattended)
+
+- Lane 50, #50 (engine `render` mode for batch results): session local_966633ab-d14a-4d0a-b91e-32999fa2a658, branch `claude/lane-50-c453ac` @ d61c2b0b. Paused for the S0 HOLD, then reran the release build, clippy and the integration tier (46 passed). PR #86 merged 2026-10-31 ~04:03 -0700 under the auto-PR rule after `ci` passed. Its PR body's "For #53" section carries the render CLI, the results-line schema and `--levers`.
+- Lane 81, #81 (S2 reader rows: deepseek priced at the budget ceiling, per-reader rows unpaired): session local_73abd391-fc59-4104-8901-ddc3156a2e76, branch `claude/lane-81-559d88` @ 61c2333f. PR #87 merged ~04:03 after `ci` passed. It merged before #90 (lane 80), so lane 80 owns the test_reader_comparison.py overlap.
+- Lane 84, #84 (run_psql cp950 decode): session local_50f4f434-be2a-4a71-bf1a-79762e0f6183, branch `claude/lane-84-c98881` @ 16602691. All five subprocess call sites now decode as UTF-8, with a cp950 regression test. PR #88 merged ~04:03 after `ci` passed. S1 no longer needs `PYTHONUTF8=1`.
+- All three lanes' engine/target were deleted; the main checkout was fast-forwarded to 2b16415f, and `lane-80-base` was reset to it.
