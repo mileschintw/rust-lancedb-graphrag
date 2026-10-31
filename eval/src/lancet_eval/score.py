@@ -599,7 +599,7 @@ class _SplitInputs:
     split: HeldOutSplit
     gold_sets: dict[str, list[frozenset[str]]]
     on_disk: HeldOutSplit
-    population: str = "held-out"
+    population: str
 
 
 def _load_split_inputs(
@@ -621,7 +621,7 @@ def _load_split_inputs(
         on_disk = load_split(config.split_path)
     except (OSError, ValueError) as exc:
         raise ScoreError(
-            f"Could not load the held-out split {config.split_path}: {exc}"
+            f"Could not load the split {config.split_path}: {exc}"
         ) from exc
     role = getattr(config, "split_role", None)
     population = population_label(role)
