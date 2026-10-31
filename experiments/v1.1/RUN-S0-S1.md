@@ -64,9 +64,8 @@ Token counts used below: the 346 seeded documents hold 812,734 o200k body tokens
 2,700 to 3,000 prompt and about 300 completion tokens (`2026-10-10-levers-heldout`), so one Lancet question costs about
 $0.0011 with rerank. The engine caps the evidence at 8,192 tokens and an answer at 2,048, so one attempt stays under
 about $0.0042; the ceilings below assume every question pays that once. `run` retries a failed question up to twice
-(`--retries 2`), and a
-resumed `run-external` re-reads an `error` question up to twice; both can add to the ceiling for the questions that
-fail.
+(`--retries 2`), and a resumed `run-external` re-reads an `error` question up to twice; both can add to the ceiling for
+the questions that fail.
 
 | Step | Estimate | Ceiling |
 |---|---|---|
@@ -100,8 +99,8 @@ cargo build --manifest-path engine/Cargo.toml --locked
 
 Then build the two release bins the harness runs through `cargo run --release` (#74): `inspect_lancedb` for the
 index identity check (steps 1.5, 3.1, 3.2, 4.1 to 4.4) and `generate_from_context` for steps 3.3 and 3.5. The harness
-gives each such call 1800 s, and a cold release build takes about 70-74 minutes on this machine (`docs/testing.md`),
-so a build left to the first call times out, possibly after a paid step. Start it with `run_in_background`:
+gives each such call 1800 s, and a cold release build takes about 70-74 minutes on this machine with
+`CARGO_BUILD_JOBS=2` (`docs/testing.md`, #56), so a build left to the first call times out, possibly after a paid step. Start it with `run_in_background`:
 
 ```bash
 cargo build --manifest-path engine/Cargo.toml --locked --release --bin inspect_lancedb --bin generate_from_context
