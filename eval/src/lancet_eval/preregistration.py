@@ -92,10 +92,11 @@ def resolve(token: str) -> Any:
             canonical_arm(label)
         except ValueError as exc:
             raise PreregistrationError(f"{token} names an unknown arm: {exc}") from exc
-    try:
-        readers_of(prereg)
-    except PreregistrationError as exc:
-        raise PreregistrationError(f"{token}: {exc}") from exc
+    if getattr(prereg, "readers", ()) or any(arm_reader(a) for a in labels):
+        try:
+            readers_of(prereg)
+        except PreregistrationError as exc:
+            raise PreregistrationError(f"{token}: {exc}") from exc
     return prereg
 
 

@@ -204,6 +204,18 @@ def test_replay_init_refuses_an_arm_the_source_run_does_not_hold(
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
 
+def test_replay_init_refuses_a_source_record_it_cannot_read_naming_the_line(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    journal = s1 / "journal.jsonl"
+    with open(journal, "a", encoding="utf-8") as f:
+        f.write('{"corpus": "c", "question_id": "q", "graph_arm": "no-such-arm",')
+        f.write(' "outcome": "success"}\n')
+    with pytest.raises(ReplayError, match="line 32: unknown arm label"):
+        replay_init(source_run=s1, arms=[rf.BASE], run=tmp_path / "s2")
+
+
 def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> None:
     from lancet_eval.cli import app
 

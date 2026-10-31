@@ -108,7 +108,7 @@ def _record_lines(journal: Path, arms: set[str]) -> list[tuple[str, RunRecord]]:
     """The journal's record lines whose arm is one of ``arms``, as written."""
     lines: list[tuple[str, RunRecord]] = []
     with open(journal, encoding="utf-8") as f:
-        for raw in f:
+        for line_num, raw in enumerate(f, 1):
             text = raw.rstrip("\r\n")
             try:
                 data = json.loads(text)
@@ -116,8 +116,12 @@ def _record_lines(journal: Path, arms: set[str]) -> list[tuple[str, RunRecord]]:
                 continue
             if not isinstance(data, dict) or "graph_arm" not in data:
                 continue
-            record = RunRecord.model_validate(data)
-            if canonical_arm(record.graph_arm) in arms:
+            try:
+                record = RunRecord.model_validate(data)
+                arm = canonical_arm(record.graph_arm)
+            except ValueError as exc:
+                raise ReplayError(f"{journal} line {line_num}: {exc}") from exc
+            if arm in arms:
                 lines.append((text, record))
     return lines
 
@@ -205,7 +209,7 @@ def replay_init(
             carried_rows[key] = rows[key]
     hashes: dict[str, dict[str, str]] = {}
     for (qid, arm), (_, row) in carried_rows.items():
-        hashes.setdefault(arm, {})[qid] = export_row_sha256(row)
+        hashes.setdefault(canonical_arm(arm), {})[qid] = export_row_sha256(row)
 
     header = read_journal_header(source_journal) or {}
     Journal(journal_path).write_header(

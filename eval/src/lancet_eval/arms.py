@@ -257,8 +257,9 @@ def _split_reader(label: str) -> tuple[str, str | None]:
     """Splits a label into its base label and its reader (None when it has none).
 
     Raises:
-        ValueError: If the reader is unknown, or the base is not a canonical label (a
-            legacy alias, a second reader or an unknown label), naming the label.
+        ValueError: If the reader is unknown (a second ``@`` included), or the base
+            is not a canonical label (a legacy alias or an unknown label), naming the
+            label.
     """
     base, sep, reader = label.partition("@")
     if not sep:
