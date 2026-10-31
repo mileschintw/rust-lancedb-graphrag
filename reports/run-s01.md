@@ -1,9 +1,11 @@
-# run-s01 報告：S0 執行（**blocked**：3.2 被 rerank tripwire 停在 50/351）
+# run-s01 報告：S0 完成（held-out read 1/2）
 
-- 狀態：**blocked**（無人值守模式）。重開機後 3.1 通過，3.2 跑到 50 筆時 rerank degrade tripwire（O10、D-174）觸發，drive 以 **exit 0** 提前停止（正是 #75 預告的情況）。依 #75 計數：**50/351，不足**，所以停下，沒有跑 3.3–3.7。**held-out read 1/2 已開始（50 題已送出）**。stack 已停。
-- 續跑需要使用者同意；見文末「給 coordinator／使用者的選項」。
-- checkout：主 checkout `D:\Repos\lancet`，`main` @ `c69d4868`（= `origin/main`，未 pull），樹乾淨（只有不屬於本 lane 的 `scratch_new.txt`）。無分支、無 commit、無 PR。
-- 注意：app 把本 session 開在 coordinator 的 worktree（`vigorous-elgamal-87e693`），但每個指令都以 `cd D:/Repos/lancet` 開頭，在主 checkout 執行；worktree 內沒有寫入任何東西（`git status` 乾淨、無 `engine/target`）。
+- 狀態：**步驟 3.1–3.7 全部完成**，exit 全為 0，兩個 arm 各 351 筆。stack 已停（8080、50051 無 listener）。等 coordinator 決定是否寫 `EXPERIMENT-S0.md › Result` 與 commit run dir（兩者都動追蹤檔，我未動）。
+- **S0 判讀：no significant difference**。`llamaindex` − `hybrid+rerank+metadata` 的 `answer_usable` Δ = **−0.34 點**，95% CI [−5.05, +4.38]（unadjusted, estimation only），raw p = 1.0、Holm p = 1.0，未 reject。
+- run dir：`D:/Repos/lancet/eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/`（目前 untracked）。
+- 本 lane 總花費約 **$1.21**（observed：3.2 $0.0461 + $0.3190、3.5 $0.6417；3.4 與 2.2 工具未印，估各 ~$0.15–0.25；其餘 < $0.02），在上限 $3.5 內。
+- checkout：主 checkout `D:\Repos\lancet`，`main` @ `c69d4868`（= `origin/main`，未 pull）；`git status` 只有新 run dir 與不屬於本 lane 的 `scratch_new.txt`。無分支、無 commit、無 PR。
+- 注意：app 把本 session 開在 coordinator 的 worktree（`vigorous-elgamal-87e693`），但每個指令都以 `cd D:/Repos/lancet` 開頭，在主 checkout 執行；worktree 內沒有寫入任何東西。
 
 ## 各步驟
 
@@ -22,7 +24,16 @@
 | 重開機後 | Docker Desktop、`docker start lancet-postgres`、`pg_isready`；engine（debug）+ gateway（`go run .`，`search_path=lancet_eval`） | 0 | `serving addr=127.0.0.1:50051`、`gateway listening 127.0.0.1:8080` | 0 |
 | 3.1 | `PYTHONUTF8=1 uv run --project eval lancet-eval preflight --corpus multihop_rag_s0_heldout`（02:14 -0700） | 0 | 9 項全 PASS，generation `lance-703` | < $0.01 |
 | 3.2 | `PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus multihop_rag_s0_heldout --arms hybrid+rerank+metadata --out eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/journal.jsonl --stage-cap 100`（02:14:50–02:20:27） | **0** | **tripwire 停止**：`rerank degraded on 12 of 50 attempts (0.24), above the 0.2 tripwire rate`。journal 51 行 = 1 header + **50 筆 success**；`context_export.jsonl` 50 列（`PYTHONUTF8=1` 繞過 #84 有效）。12 筆 degraded 依工具說明「stay journalled off-arm」 | observed spend **$0.0461** |
-| 3.3–3.7 | 未執行 | — | 因 3.2 計數不足（#75 規則）停下 | 0 |
+| 暫停 | coordinator 依使用者要求 hold 住其他 lane（lane 50、59、81、84 回 paused；確認無 cargo/rustc/go/link/python/uv） | — | — | 0 |
+| 重啟 + 3.1 | 重啟 engine／gateway；`PYTHONUTF8=1 uv run --project eval lancet-eval preflight --corpus multihop_rag_s0_heldout` | 0 | 9 項全 PASS | < $0.01 |
+| 3.2 接續 | 與 3.2 相同指令、同一個 `--out`（`resume=True`）（02:31:14–03:01:49） | 0 | `Successfully recorded 301 new work units`；1 次 `outcome=error` 自動重試成功；這段 rerank degraded **0** 次。**計數（#75）：Lancet arm 351/351 success，351 個不同 question_id** ✅；`context_export.jsonl` 351 列 | observed **$0.3190** |
+| 3.3 | `PYTHONUTF8=1 uv run --project eval lancet-eval check-prompt-parity --run eval/runs/2026-10-31-s0-multihop_rag_s0_heldout` | 0 | `Prompt parity holds for 351 Lancet row(s)` | 0 |
+| 3.4 | `PYTHONUTF8=1 uv run --project baselines/llamaindex lancet-llamaindex export --corpus multihop_rag_s0_heldout --arm llamaindex --out eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/llamaindex`（03:02:09–03:11:30） | 0 | 351 列；`pipeline_config.json`：0.14.25、chunk 256/25、dense_top_k 20、`voyageai/rerank-2.5-lite`、keep 8、documents 346、chunks 4701、embedding `voyageai/voyage-4-large` 2048 維、fingerprint `d8e70d8e…19d8`，全部符合 `PREREGISTRATION_S0`，與 2.2 相同 | 工具未印；估 ~$0.25 |
+| 3.5 | `PYTHONUTF8=1 uv run --project eval lancet-eval run-external --corpus multihop_rag_s0_heldout --arm llamaindex --export eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/llamaindex/context_export.jsonl --out eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/journal.jsonl --stage-cap 100`（03:11:39–03:42:35） | 0 | `Recorded 351 new work unit(s) (0 error record(s))`。**計數（#75）：llamaindex 351/351 success、Lancet 仍 351/351**（journal 703 行 = 1 header + 702） ✅ | observed **$0.6417** |
+| 3.6a | `PYTHONUTF8=1 uv run --project eval lancet-eval score --run eval/runs/2026-10-31-s0-multihop_rag_s0_heldout --no-judge` | 0 | 寫出 `report.json` | 0 |
+| 3.6b | `PYTHONUTF8=1 uv run --project eval lancet-eval compare-levers --run eval/runs/2026-10-31-s0-multihop_rag_s0_heldout` | 0 | `|H_G| = 308, |H_N| = 43`；`llamaindex: not significant`；寫出 `lever-comparison.json`／`.md` | 0 |
+| 3.7 | 讀 `lever-comparison.json` | — | 見下方「S0 判讀」 | 0 |
+| 收尾 | 停 engine 與 gateway | — | 8080、50051 無 listener；`lancet-postgres` 保留 | 0 |
 
 目前總花費：約 $0.20-0.21（含 3.2 的 $0.0461；先前約 $0.15-0.16，2.2 為估計值）。
 
@@ -31,6 +42,24 @@
 本機 Python 的 `locale.getpreferredencoding(False)` 是 `cp950`。`run_psql`（`seed.py:181`）`text=True` 沒給 `encoding`，讀 checkpoint 時遇到 UTF-8 位元組就崩。**不處理的話，3.2 付費 drive 跑完 351 題後會在 context export 失敗並 exit 1**（紀錄仍在 journal，可用 `export-context` 補）。
 
 已驗證的繞法（不改任何追蹤檔）：**步驟 3 的每個 `lancet-eval` 指令前加 `PYTHONUTF8=1`**。建議重開機後照此執行；或者先由另一個 lane 修 #84 再跑（需 coordinator 決定，會動到 `eval/src`）。
+
+## S0 判讀（依 `EXPERIMENT-S0.md › Decision rule`）
+
+`lever-comparison.json` › families › `answer_usable`（decisional，m = 1，alpha 0.05），`llamaindex` 對 `hybrid+rerank+metadata`：
+
+| evaluable | rejected | delta | ci_lo | ci_hi | n_pos | n_neg | raw_p | Holm p | n_pairs | coverage |
+|---|---|---|---|---|---|---|---|---|---|---|
+| true | false | −0.00337 | −0.05051 | +0.04377 | 25 | 26 | 1.0 | 1.0 | 297 | 0.964 |
+
+- mean `answer_usable`：llamaindex 0.7306、hybrid+rerank+metadata 0.7340（在 297 對上）。
+- 排除 11 對：全部是 `reference_only_failure` › `of_which_reference_provenance` = 11（Lancet 那邊因 provenance 被排除；推測就是第一段 rerank degraded 的紀錄，12 筆 degraded 中 11 筆在 G 題，見下方注意）。llamaindex 本身 0 排除。
+- 規則 2：297/308 = 0.964 ≥ 0.80 → evaluable。
+- 規則 1／4：Holm 未 reject → 判讀為 **「no significant difference」**，配對 Δ = **−0.34 點**，95% CI **[−5.05, +4.38]**。
+- null guard（`null_guards` › llamaindex）：n_pairs 42（≥ 35）、b 0、c 1、status **PASS**（net loss −1/42，one-sided 95% bound 0.021）。Lancet 方向：(c − b)/n_pairs = 1/42 = 0.024 ≤ 0.10，也 **passes**。因為沒有 reject，guard 不影響判讀。
+- 分層（estimation only）：comparison Δ −0.8 點（n 120）、inference Δ −4.9 點 [−8.8, −1.0]（n 102）、temporal Δ +6.7 點 [−4.0, +18.7]（n 75）。非二元 gold（n 110）Δ −4.5 點 [−9.1, −0.9]。這些都沒有經過 Holm，只是描述。
+- `compare-levers` 的 default decision：`stays off: not significant`（S0 不改 default，見 Decision rule 開頭）。
+
+**注意（給 coordinator 判斷是否寫進 Result）**：3.2 的第一段觸發 rerank tripwire（12/50 degraded，D-262 的 0.20 門檻）。使用者核准「閒置後接續 3.2」，在其他 lane 暫停後用 `resume=True` 接著跑完，第二段 0 degraded。degraded 的紀錄沒有重跑，`compare-levers` 把其中 11 筆在 G 的題目排除（coverage 0.964，仍高於 0.80）。
 
 ## 3.2 tripwire 的原因（只讀 log，免費）
 
@@ -55,7 +84,7 @@
 
 ## Held-out read 紀錄（D-237）
 
-- held-out read 1/2（S0：3.2、3.4、3.5）：**已開始** 2026-10-31 02:14:50 -0700（3.2）。3.2 送出 50 題（另 12 次 attempt 因 rerank degraded 標為 off-arm）後被 tripwire 停下；3.4、3.5 尚未執行。續跑同一個 run dir 仍算這一次 held-out read（S0），不是第 2 次。
+- **held-out read 1/2（S0）：已完成**。2026-10-31 02:14:50 -0700 開始（3.2 第一段，50 題後被 tripwire 停下），02:31:14 起接續 3.2 剩下 301 題，03:02–03:11 跑 3.4（351 題），03:11–03:42 跑 3.5（351 題）。全部寫在同一個 run dir `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout`。v1.1 剩 1 次 held-out read（Confirm）。工具本身不計 held-out read（#78），以本紀錄為準。
 - 兩次 `preflight --corpus multihop_rag_s0_heldout` 不讀 held-out 題目內容（程式確認）：`CorpusConfig.questions` 是 lazy property，`preflight_command`（`cli.py:140`）與 `run_preflight_checks`（`preflight.py:1708`）都沒碰它；probe 題目是 document map 第一筆的標題；兩個 arm 時 `run_arm_canaries` 為 false（需 `len(arms) > 2`），legacy canary 因 `legacy_canaries = false` 跳過。
 - 彩排只用 dev 題目（`multihop_rag_s1_dev`，`questions.diag.jsonl`，role dev）。
 - run-external（3.5）無法在不讀 held-out 的情況下彩排（唯一含 `llamaindex` arm 的 corpus 是 held-out），所以它會在正式 run 第一次執行。
@@ -85,19 +114,30 @@ uns6-10-31-s0-multihop_rag_s0_heldout\`（`journal.jsonl`、`context_export.js
 6. 重開機後（本 session，繁中問句，列出 3.2 約 $0.40／上限 $1.5、3.4 約 $0.25、3.5 約 $0.30／上限 $1.5，合計約 $1、上限約 $3.5）：「開跑 S0 (Recommended)」
 7. 經 coordinator 轉述：無人值守 —「我離開前在 run-s01 同意，讓它跑完 (Recommended)」。非零 exit／計數不足／步驟 3 以外的付費呼叫 → 停下、blocked、通知 coordinator。
 
+8. tripwire 停下後（本 session）：「閒置後接續 3.2」
+9. 「通知coordinator你要做這些測試，讓他hold住其他lane的行為。等他回傳你就可以繼續了，你執行完可以釋放資源了再跟coordinator回報，讓他繼續其他lane的執行。」→ coordinator 回 HOLD OK 後才開跑。
+
 ## Decided while unattended
 
 - 3.2 計數 50/351 不足 → 依規則停下，未重跑、未接續、未跑 3.3–3.7。
 - 停掉 engine 與 gateway（8080、50051 已無 listener）；`lancet-postgres` 與 Docker 保留。
+- 接續後：3.2 的 1 次 `outcome=error` 由工具自動重試成功（retries=2），不算非零 exit 或計數不足，所以繼續。
+- 12 筆 rerank degraded 紀錄沒有重跑（沒有人決定要重跑）。
 
 註：前兩題問句誤用英文撰寫（應為繁中），之後改正。
 
-## 給 coordinator／使用者的選項（續跑需要使用者同意）
+## 給 coordinator 的問題
+
+1. 可以把上面的判讀寫進 `experiments/v1.1/EXPERIMENT-S0.md › Result` 嗎？（追蹤檔，要寫在哪個分支？）
+2. 指南說 run dir 要 commit 在 lane 自己的分支，不能 commit 到 main。要我開分支 commit `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/` 嗎？分支名稱？
+3. 3.2 tripwire 之後接續的事，要不要寫進 Result？
+
+## （已處理）tripwire 後的選項（使用者選了 1）
 
 1. **（建議）等其他 lane 的 build／test 停下、機器閒置後，重啟 stack，先暖一下 LanceDB 快取，再用同一個 `--out` 重跑 3.2**（`resume=True` 從 50 筆接續，仍是 held-out read 1/2）。剩約 301 題，估約 $0.30，上限 $1.5。12 筆 degraded 是否要重跑，請 owner 決定（工具不會自動重跑）。
 2. 換新 run dir 從頭重跑 3.2（拋棄這 50 筆）。仍算 S0 同一次 read，但 50 題已經看過，乾淨度不如選項 1。
 3. 先不跑，交由 coordinator 調查（例如要不要調 tripwire 或 timeout；這會改 `config/` 或 `eval/src`，屬 off-limits，S0 期間不能中途改）。
 
-## 給 coordinator 的問題（舊）
+## 給 coordinator 的問題（舊，已答：用 PYTHONUTF8=1 繞過）
 
 - #84：S0 用 `PYTHONUTF8=1` 繞過即可，還是要先開 lane 修完再跑？（建議：繞過，修補另排；S0 的 D-73 乾淨樹檢查只看 `eval/src`，修 #84 會改 `eval/src`，需在 S0 前合併或之後再修，不能中途改。）
