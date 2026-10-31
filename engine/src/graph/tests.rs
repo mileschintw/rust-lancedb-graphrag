@@ -244,6 +244,115 @@ async fn extraction_generator_trait_and_fake() {
     assert_eq!(res, fake_output);
 }
 
+/// D-271: the extraction request carries the configured provider pin and price cap, without
+/// generation's `require_parameters`, and sends no `provider` object when nothing is pinned.
+#[test]
+fn extraction_request_carries_the_provider_pin() {
+    use super::extraction::OpenRouterExtractionGenerator;
+    use crate::generation::openrouter::{MaxPrice, OpenRouterGenerationConfig};
+    use std::time::Duration;
+
+    let config = || {
+        OpenRouterGenerationConfig::new(
+            "test-model",
+            "https://example.com/chat",
+            "https://example.com/models",
+            Duration::from_secs(10),
+            0.0,
+            1.0,
+            768,
+            768,
+        )
+        .expect("OpenRouterGenerationConfig must construct")
+    };
+    let pinned = config()
+        .with_provider_order(vec!["wafer/us".to_string()])
+        .with_max_price(MaxPrice::new(Some(0.07), Some(0.45)));
+    let body = OpenRouterExtractionGenerator::new_with_config("api-key", pinned)
+        .expect("OpenRouterExtractionGenerator must construct")
+        .build_request_payload("Test chunk text");
+    assert_eq!(
+        body["provider"],
+        serde_json::json!({
+            "order": ["wafer/us"],
+            "allow_fallbacks": false,
+            "max_price": {"prompt": 0.07, "completion": 0.45}
+        })
+    );
+
+    let unpinned = OpenRouterExtractionGenerator::new_with_config("api-key", config())
+        .expect("OpenRouterExtractionGenerator must construct")
+        .build_request_payload("Test chunk text");
+    assert!(
+        unpinned.get("provider").is_none(),
+        "an unpinned extraction keeps its old request bytes"
+    );
+}
+
+/// D-272: a schema-maximal extraction answer fits under the extraction output cap with a 25%
+/// margin. The answer fills every array to `maxItems` and every string to `maxLength`, read from
+/// the schema the request sends, and is pretty-printed, since providers may indent JSON output.
+/// Tokens are estimated at 3 bytes each, below the 4 or so of English text under BPE, so the
+/// estimate errs high.
+#[test]
+fn schema_maximal_extraction_fits_under_the_output_cap() {
+    use super::extraction::{OpenRouterExtractionGenerator, EXTRACTION_MAX_COMPLETION_TOKENS};
+    use crate::generation::openrouter::OpenRouterGenerationConfig;
+    use std::time::Duration;
+
+    let config = OpenRouterGenerationConfig::new(
+        "test-model",
+        "https://example.com/chat",
+        "https://example.com/models",
+        Duration::from_secs(10),
+        0.0,
+        1.0,
+        768,
+        768,
+    )
+    .expect("OpenRouterGenerationConfig must construct");
+    let body = OpenRouterExtractionGenerator::new_with_config("api-key", config)
+        .expect("OpenRouterExtractionGenerator must construct")
+        .build_request_payload("Test chunk text");
+    assert_eq!(
+        body["max_completion_tokens"], EXTRACTION_MAX_COMPLETION_TOKENS,
+        "extraction sends its own output cap, not the generation limits'"
+    );
+
+    let properties = &body["response_format"]["json_schema"]["schema"]["properties"];
+    let maximal_items = |name: &str| -> Vec<serde_json::Value> {
+        let array = &properties[name];
+        let max_items = array["maxItems"].as_u64().expect("maxItems") as usize;
+        let item_properties = array["items"]["properties"]
+            .as_object()
+            .expect("item properties");
+        let item: serde_json::Map<String, serde_json::Value> = item_properties
+            .iter()
+            .map(|(key, schema)| {
+                let value = match schema["maxLength"].as_u64() {
+                    Some(max_length) => serde_json::json!("x".repeat(max_length as usize)),
+                    None => serde_json::json!(0.123_456_789),
+                };
+                (key.clone(), value)
+            })
+            .collect();
+        vec![serde_json::Value::Object(item); max_items]
+    };
+    let maximal = serde_json::json!({
+        "entities": maximal_items("entities"),
+        "relations": maximal_items("relations"),
+    });
+    let bytes = serde_json::to_string_pretty(&maximal)
+        .expect("maximal answer serializes")
+        .len();
+    let estimated_tokens = bytes.div_ceil(3);
+    assert!(
+        estimated_tokens * 5 / 4 <= EXTRACTION_MAX_COMPLETION_TOKENS,
+        "a schema-maximal answer of {bytes} bytes (~{estimated_tokens} tokens) plus 25% must fit \
+         under {EXTRACTION_MAX_COMPLETION_TOKENS}"
+    );
+}
+
 #[test]
 fn structured_extraction_json_schema_validation() {
     use super::extraction::OpenRouterExtractionGenerator;

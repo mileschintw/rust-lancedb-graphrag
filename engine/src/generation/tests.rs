@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::{
     generation::{
         bounded_excerpt, emit_generation_output_rejected,
-        openrouter::{OpenRouterGenerationConfig, OpenRouterGenerator},
+        openrouter::{MaxPrice, OpenRouterGenerationConfig, OpenRouterGenerator},
         AnswerBasis, FakeGenerator, GenerationErrorKind, GenerationRequest, Generator, ModelOutput,
         ModelUsage, RejectedOutput,
     },
@@ -2864,6 +2864,11 @@ async fn d96_chat_payload_requires_parameters() {
 /// Runs one `generate` call against a local mock, with the adapter built through the config
 /// path `main.rs` uses and pinned to `order`, and returns the chat request body the mock read.
 async fn d191_chat_body(order: &[&str]) -> serde_json::Value {
+    d191_chat_body_capped(order, MaxPrice::default()).await
+}
+
+/// [`d191_chat_body`] with the adapter's price cap set to `max_price` (D-271).
+async fn d191_chat_body_capped(order: &[&str], max_price: MaxPrice) -> serde_json::Value {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind local mock server");
     let addr = listener.local_addr().unwrap();
     let server = thread::spawn(move || {
@@ -2883,7 +2888,8 @@ async fn d191_chat_body(order: &[&str]) -> serde_json::Value {
         crate::generation::GroundingLimits::default_limits(),
     )
     .expect("generation config")
-    .with_provider_order(order.iter().map(|slug| (*slug).to_string()).collect());
+    .with_provider_order(order.iter().map(|slug| (*slug).to_string()).collect())
+    .with_max_price(max_price);
     let adapter = OpenRouterGenerator::new_with_config("test-key", config).expect("adapter");
 
     let evidence = assemble_evidence_blocks(&[sample_candidate("1", "Text.")]);
@@ -2905,6 +2911,21 @@ async fn d191_chat_payload_pins_the_configured_provider_order() {
             "allow_fallbacks": false
         }),
         "the pin rides beside require_parameters and turns fallbacks off"
+    );
+}
+
+#[tokio::test]
+async fn d271_chat_payload_pins_wafer_with_fallbacks_off_and_a_price_cap() {
+    let body = d191_chat_body_capped(&["wafer/us"], MaxPrice::new(Some(0.07), Some(0.45))).await;
+    assert_eq!(
+        body["provider"],
+        json!({
+            "require_parameters": true,
+            "order": ["wafer/us"],
+            "allow_fallbacks": false,
+            "max_price": {"prompt": 0.07, "completion": 0.45}
+        }),
+        "the price cap rides beside the pin, in dollars per million tokens"
     );
 }
 

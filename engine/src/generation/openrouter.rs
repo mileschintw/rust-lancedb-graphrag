@@ -57,6 +57,7 @@ pub struct OpenRouterGenerationConfig {
     temperature: f64,
     top_p: f64,
     provider_order: Vec<String>,
+    max_price: MaxPrice,
     pub grounding_limits: Arc<GroundingLimits>,
 }
 
@@ -115,6 +116,7 @@ impl OpenRouterGenerationConfig {
             temperature,
             top_p,
             provider_order: Vec::new(),
+            max_price: MaxPrice::default(),
             grounding_limits: limits,
         };
         config.validate()?;
@@ -161,6 +163,19 @@ impl OpenRouterGenerationConfig {
     /// The provider slugs the chat request is pinned to, empty when unpinned (D-191).
     pub fn provider_order(&self) -> &[String] {
         &self.provider_order
+    }
+
+    /// Caps the price OpenRouter may route the chat request at (D-271).
+    ///
+    /// The default, no cap on either side, sends no `max_price`.
+    pub fn with_max_price(mut self, max_price: MaxPrice) -> Self {
+        self.max_price = max_price;
+        self
+    }
+
+    /// The provider order and price cap the chat request carries (D-191, D-271).
+    pub(crate) fn provider_pin(&self) -> ProviderPin {
+        ProviderPin::new(self.provider_order.clone(), self.max_price)
     }
 
     pub fn max_completion_tokens(&self) -> usize {
@@ -586,7 +601,7 @@ pub async fn chat_request_body(
                 schema: schema_json,
             },
         },
-        provider: ProviderPreferences::for_order(config.provider_order()),
+        provider: ProviderPreferences::for_pin(&config.provider_pin()),
     };
 
     serde_json::to_vec(&payload).map_err(|err| {
@@ -1043,24 +1058,82 @@ struct OpenRouterChatPayload {
 /// It is hard-coded because it is a routing invariant of the strict-schema contract, not a
 /// tunable. With no configured provider order, fallback among the qualifying endpoints stays on
 /// and `require_parameters` is the only key under `provider` (D-96). A configured order adds
-/// `order` and `allow_fallbacks = false`, which pins generation to those providers (D-191).
+/// `order` and `allow_fallbacks = false`, which pins generation to those providers (D-191). A
+/// configured price cap adds `max_price` (D-271).
 #[derive(Serialize)]
 struct ProviderPreferences {
     require_parameters: bool,
+    #[serde(flatten)]
+    pin: ProviderPin,
+}
+
+impl ProviderPreferences {
+    /// The preferences for a chat request carrying `pin`, unpinned when `pin` is empty.
+    fn for_pin(pin: &ProviderPin) -> Self {
+        Self {
+            require_parameters: true,
+            pin: pin.clone(),
+        }
+    }
+}
+
+/// The most OpenRouter may charge for a routed request, in US dollars per million tokens (D-271).
+///
+/// It is sent as `provider.max_price`; OpenRouter refuses to run a request no endpoint can serve
+/// within the cap. A side left `None` is not sent.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct MaxPrice {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    completion: Option<f64>,
+}
+
+impl MaxPrice {
+    /// A cap of `prompt` and `completion` dollars per million tokens; `None` leaves a side open.
+    pub fn new(prompt: Option<f64>, completion: Option<f64>) -> Self {
+        Self { prompt, completion }
+    }
+
+    pub fn prompt(&self) -> Option<f64> {
+        self.prompt
+    }
+
+    pub fn completion(&self) -> Option<f64> {
+        self.completion
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.prompt.is_none() && self.completion.is_none()
+    }
+}
+
+/// The provider order and price cap a chat request carries under `provider` (D-191, D-271).
+///
+/// A non-empty order adds `order` and `allow_fallbacks = false`; a non-empty cap adds
+/// `max_price`. Generation sends it beside `require_parameters`; extraction sends it alone.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ProviderPin {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     order: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     allow_fallbacks: Option<bool>,
+    #[serde(skip_serializing_if = "MaxPrice::is_empty")]
+    max_price: MaxPrice,
 }
 
-impl ProviderPreferences {
-    /// The preferences for a chat request pinned to `order`, unpinned when `order` is empty.
-    fn for_order(order: &[String]) -> Self {
+impl ProviderPin {
+    pub(crate) fn new(order: Vec<String>, max_price: MaxPrice) -> Self {
         Self {
-            require_parameters: true,
-            order: order.to_vec(),
             allow_fallbacks: (!order.is_empty()).then_some(false),
+            order,
+            max_price,
         }
+    }
+
+    /// True when the pin sends nothing: no order and no price cap.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.order.is_empty() && self.max_price.is_empty()
     }
 }
 
@@ -1172,29 +1245,34 @@ struct UsageMeta {
 
 #[cfg(test)]
 mod tests {
-    use super::ProviderPreferences;
+    use super::{MaxPrice, ProviderPin, ProviderPreferences};
 
     fn slugs(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    fn pinned_to(names: &[&str]) -> ProviderPin {
+        ProviderPin::new(slugs(names), MaxPrice::default())
     }
 
     /// D-191: the `provider` object carries the order and `allow_fallbacks = false` after
     /// `require_parameters` when pinned, and is byte-identical to D-96's when unpinned.
     #[test]
     fn provider_object_bytes_with_and_without_the_pin() {
-        let pinned =
-            serde_json::to_string(&ProviderPreferences::for_order(&slugs(&["sail-research"])))
-                .expect("preferences serialize");
+        let pinned = serde_json::to_string(&ProviderPreferences::for_pin(&pinned_to(&[
+            "sail-research",
+        ])))
+        .expect("preferences serialize");
         assert_eq!(
             pinned,
             r#"{"require_parameters":true,"order":["sail-research"],"allow_fallbacks":false}"#
         );
 
-        let unpinned = serde_json::to_string(&ProviderPreferences::for_order(&[]))
+        let unpinned = serde_json::to_string(&ProviderPreferences::for_pin(&pinned_to(&[])))
             .expect("preferences serialize");
         assert_eq!(unpinned, r#"{"require_parameters":true}"#);
 
-        let ordered = serde_json::to_string(&ProviderPreferences::for_order(&slugs(&[
+        let ordered = serde_json::to_string(&ProviderPreferences::for_pin(&pinned_to(&[
             "sail-research",
             "other-provider",
         ])))
@@ -1204,5 +1282,36 @@ mod tests {
             r#"{"require_parameters":true,"order":["sail-research","other-provider"],"allow_fallbacks":false}"#,
             "the configured order is kept as written"
         );
+    }
+
+    /// D-271: a price cap rides after the pin, in dollars per million tokens, and a side left
+    /// unset is left out.
+    #[test]
+    fn provider_object_bytes_with_a_price_cap() {
+        let pin = ProviderPin::new(slugs(&["wafer/us"]), MaxPrice::new(Some(0.07), Some(0.45)));
+        let capped = serde_json::to_string(&ProviderPreferences::for_pin(&pin))
+            .expect("preferences serialize");
+        assert_eq!(
+            capped,
+            r#"{"require_parameters":true,"order":["wafer/us"],"allow_fallbacks":false,"max_price":{"prompt":0.07,"completion":0.45}}"#
+        );
+
+        let prompt_only = ProviderPin::new(Vec::new(), MaxPrice::new(Some(0.07), None));
+        assert_eq!(
+            serde_json::to_string(&ProviderPreferences::for_pin(&prompt_only))
+                .expect("preferences serialize"),
+            r#"{"require_parameters":true,"max_price":{"prompt":0.07}}"#
+        );
+        assert_eq!(
+            serde_json::to_value(&pin).expect("pin serializes"),
+            serde_json::json!({
+                "order": ["wafer/us"],
+                "allow_fallbacks": false,
+                "max_price": {"prompt": 0.07, "completion": 0.45}
+            }),
+            "the pin alone carries no require_parameters"
+        );
+        assert!(ProviderPin::new(Vec::new(), MaxPrice::default()).is_empty());
+        assert!(!pin.is_empty());
     }
 }

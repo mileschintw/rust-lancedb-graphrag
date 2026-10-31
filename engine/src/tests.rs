@@ -116,6 +116,8 @@ const REQUIRED_EFFECTIVE_RAG_KEYS: &[&str] = &[
     "openrouter.top_p",
     "openrouter.max_output_tokens",
     "openrouter.generation_provider_order",
+    "openrouter.generation_max_price_prompt",
+    "openrouter.generation_max_price_completion",
 ];
 
 const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
@@ -286,6 +288,14 @@ const REQUIRED_EFFECTIVE_RAG_ANNOTATIONS: &[(&str, &str)] = &[
     (
         "openrouter.generation_provider_order",
         "unit=provider slugs; range=empty, or unique entries of 1..=64 chars without whitespace",
+    ),
+    (
+        "openrouter.generation_max_price_prompt",
+        "unit=USD per million prompt tokens; range=finite >0, or absent for no cap",
+    ),
+    (
+        "openrouter.generation_max_price_completion",
+        "unit=USD per million completion tokens; range=finite >0, or absent for no cap",
     ),
 ];
 
@@ -665,30 +675,81 @@ fn config_generation_provider_order_has_no_environment_override() {
             .unwrap_or_else(|error| panic!("{name}={value:?} must not break startup: {error}"));
         assert_eq!(
             settings.openrouter.generation_provider_order,
-            ["sail-research"],
+            ["wafer/us"],
             "{name}={value:?} must leave the committed pin in force"
         );
     }
 }
 
-/// D-191: `main` hands the configured provider order to the generation config it builds from the
-/// effective settings, and to no other config (extraction and rerank keep their own requests).
+/// D-271: the price cap is set in the configuration files only, like the D-191 pin.
 #[test]
-fn main_pins_only_the_generation_config_to_the_configured_provider_order() {
+fn config_generation_max_price_has_no_environment_override() {
+    let _guard = ENV_MUTEX.lock().unwrap();
+
+    for name in [
+        "LANCET_OPENROUTER__GENERATION_MAX_PRICE_PROMPT",
+        "LANCET_OPENROUTER__GENERATION_MAX_PRICE_COMPLETION",
+    ] {
+        let settings = load_settings_with_env(name, "9.0")
+            .unwrap_or_else(|error| panic!("{name} must not break startup: {error}"));
+        assert_eq!(settings.openrouter.generation_max_price_prompt, Some(0.07));
+        assert_eq!(settings.openrouter.generation_max_price_completion, Some(0.45));
+    }
+}
+
+/// D-191, D-271: `main` hands the configured provider order and price cap to the extraction and
+/// generation configs it builds from the effective settings, and to no other config (rerank
+/// keeps its own D-131 body).
+#[test]
+fn main_pins_the_extraction_and_generation_configs_to_the_configured_provider() {
     let main = include_str!("main.rs");
     let pin = ".with_provider_order(effective_settings.generation_provider_order.clone())";
-    assert_eq!(main.matches(".with_provider_order(").count(), 1);
-    let pin_at = main.find(pin).expect("main pins the generation config");
-    let generation = main
-        .find("let generation_config =")
-        .expect("main builds the generation config");
-    let generator = main
-        .find("OpenRouterGenerator::new_with_config(api_key, generation_config)")
-        .expect("main builds the generator from the generation config");
-    assert!(
-        generation < pin_at && pin_at < generator,
-        "the pin sits between the generation config and the generator"
+    let cap = ".with_max_price(effective_settings.generation_max_price)";
+    assert_eq!(main.matches(".with_provider_order(").count(), 2);
+    assert_eq!(main.matches(".with_max_price(").count(), 2);
+    for (config, client) in [
+        (
+            "let extraction_config =",
+            "OpenRouterExtractionGenerator::new_with_config(",
+        ),
+        (
+            "let generation_config =",
+            "OpenRouterGenerator::new_with_config(api_key, generation_config)",
+        ),
+    ] {
+        let start = main.find(config).expect("main builds the config");
+        let end = start + main[start..].find(client).expect("main builds the client");
+        let span = &main[start..end];
+        assert!(span.contains(pin), "{config} carries the provider order");
+        assert!(span.contains(cap), "{config} carries the price cap");
+    }
+}
+
+/// D-272: `main` builds the extraction client with extraction's own 120 s timeout, and the
+/// generation client keeps `generation_timeout_secs`.
+#[test]
+fn main_gives_extraction_its_own_timeout() {
+    assert_eq!(
+        crate::graph::extraction::EXTRACTION_TIMEOUT,
+        std::time::Duration::from_secs(120)
     );
+    let main = include_str!("main.rs");
+    let span = |config: &str, client: &str| {
+        let start = main.find(config).expect("main builds the config");
+        let end = start + main[start..].find(client).expect("main builds the client");
+        &main[start..end]
+    };
+    let extraction = span(
+        "let extraction_config =",
+        "OpenRouterExtractionGenerator::new_with_config(",
+    );
+    assert!(extraction.contains("graph::extraction::EXTRACTION_TIMEOUT,"));
+    assert!(!extraction.contains("generation_timeout_secs"));
+    let generation = span(
+        "let generation_config =",
+        "OpenRouterGenerator::new_with_config(api_key, generation_config)",
+    );
+    assert!(generation.contains("Duration::from_secs(effective_settings.generation_timeout_secs)"));
 }
 
 /// Sets `name` to `value` under the caller's `ENV_MUTEX` guard, runs `load_settings`, and restores

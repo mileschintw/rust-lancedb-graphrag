@@ -726,7 +726,8 @@ fn generation_config(
         settings.grounding_limits_arc(),
     )
     .map_err(|err| format!("invalid generation configuration: {}", err.message()))?
-    .with_provider_order(settings.generation_provider_order.clone()))
+    .with_provider_order(settings.generation_provider_order.clone())
+    .with_max_price(settings.generation_max_price))
 }
 
 #[tokio::main]

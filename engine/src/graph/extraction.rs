@@ -4,6 +4,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
     sync::Mutex,
+    time::Duration,
 };
 
 use reqwest::Client;
@@ -14,6 +15,25 @@ use crate::generation::{
 };
 
 pub const MIN_CHUNK_CONTENT_LENGTH: usize = 40;
+
+/// The `max_completion_tokens` every extraction request sends (D-272).
+///
+/// It is extraction's own cap, apart from the generation limits its config carries (which stop
+/// at `MAX_SERVICE_OUTPUT_TOKENS`). The old cap of 768 truncated answers mid-JSON, and the S1
+/// seed lost about 18% of chunks to "EOF while parsing". A schema-maximal answer (32 entities
+/// and 64 relations, every string at its `maxLength`, pretty-printed) is about 35,600 bytes,
+/// estimated at 11,900 tokens at 3 bytes a token; 16,384 holds that with a 25% margin. Billing
+/// is per token produced, so the headroom costs nothing on ordinary answers.
+pub const EXTRACTION_MAX_COMPLETION_TOKENS: usize = 16_384;
+
+/// The HTTP timeout of one extraction attempt (D-272), apart from generation's
+/// `generation_timeout_secs`.
+///
+/// With [`EXTRACTION_MAX_COMPLETION_TOKENS`] raised, a long answer would otherwise trade a
+/// truncation for a timeout: at wafer/us's P50 of about 112 tokens/s a schema-maximal answer of
+/// about 11,900 tokens takes about 106 s, and 2,000 to 4,000 tokens can pass 30 s at its P99 of
+/// about 43 tokens/s.
+pub const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A request to extract entities and relationships from a single chunk.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -230,7 +250,7 @@ impl OpenRouterExtractionGenerator {
             "additionalProperties": false
         });
 
-        serde_json::json!({
+        let mut payload = serde_json::json!({
             "model": self.config.model(),
             "messages": [
                 { "role": "system", "content": system_msg },
@@ -238,7 +258,7 @@ impl OpenRouterExtractionGenerator {
             ],
             "temperature": self.config.temperature(),
             "top_p": self.config.top_p(),
-            "max_completion_tokens": self.config.max_completion_tokens(),
+            "max_completion_tokens": EXTRACTION_MAX_COMPLETION_TOKENS,
             "reasoning": { "effort": "none" },
             "response_format": {
                 "type": "json_schema",
@@ -248,7 +268,15 @@ impl OpenRouterExtractionGenerator {
                     "schema": schema_json
                 }
             }
-        })
+        });
+        // D-271: extraction carries the same provider pin as generation, without generation's
+        // D-96 `require_parameters`; an unpinned extraction keeps its old request bytes.
+        let pin = self.config.provider_pin();
+        if !pin.is_empty() {
+            payload["provider"] = serde_json::to_value(&pin)
+                .expect("a provider pin of strings, a bool and finite floats serializes");
+        }
+        payload
     }
 }
 
