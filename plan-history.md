@@ -110,3 +110,7 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 
 - Lane 7, #7 Context export from engine checkpoints: session local_62fc0cbb-8a7d-4976-a2c6-5d117782e414, branch `claude/lane-7-91faeb` @ 07efa9df. PR #19 merged 2026-10-29 20:01 -0700 as 8c252d47 on the user's "開 PR 並 merge" (no CI exists). #7 closed as completed.
 - Follow-up #20 (`run` exits non-zero on export failure) opened on the user's "開 issue (Recommended)".
+
+## audit-s012 finished (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Read-only paper audit of the S0/S1/S2 pipelines, session local_0b05ece6-b691-41ff-ab64-1658bbffdae1. It had no branch commits and no PR (`ready` lists it as "branch not pushed", which is expected). It filed #74 to #82 and commented on #49, #53 and #78; the report is `reports/audit-s012.md`. S0 had no code blocker. #74, #75 and #76 were carried into brief run-s01, #79 got lane 79, #80 and #82 got lane 80, which failed to start, #81 got lane 81, and #77 and #78 block nothing.
