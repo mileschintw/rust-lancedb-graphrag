@@ -269,6 +269,30 @@ documents no `between_tools`; Anthropic rejects `temperature` and `top_p` since 
   reader declared `off` or `between_tools` must report 0, and a thinking-on reader (Opus 5.5 at effort low, D-252) is
   exempt.
 
+### S0 and S1 pre-registration decisions
+
+Decided by the owner on 2026-10-30, answering the S0/S1 pre-registration questions (lane prereg-s01). The stage files
+are [EXPERIMENT-S0.md](EXPERIMENT-S0.md) and [EXPERIMENT-S1.md](EXPERIMENT-S1.md); the constants are
+`PREREGISTRATION_S0`, `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` in `eval/src/lancet_eval/thresholds.py`;
+the run order is [RUN-S0-S1.md](RUN-S0-S1.md).
+
+- **D-261 S0 null guard in both directions** (owner: "雙向讀，勝方須過"). D-252's "null guard on both arms" is read
+  as one guard per direction over the same null pairs: `llamaindex` against the Lancet default as the lever
+  comparison computes it (`b - c`), and the Lancet default against `llamaindex` with `b` and `c` swapped (`c - b`).
+  An arm leads only if Holm rejects and the guard in its own direction passes; otherwise the difference is reported
+  with the failed guard and no lead is claimed.
+- **D-262 S0 and S1 reuse the v1.0 numbers** (owner: "全部沿用 v1.0"). alpha 0.05, null-guard margin 0.10 and pair
+  fraction 0.80, complete-case floor 0.80, bootstrap 10,000 with seed 42, SC-2 timeout floor 0.025, rerank tripwire
+  0.20 after 50 attempts or 5 consecutive degrades, all as in `PREREGISTRATION_06_3_6`.
+- **D-263 S1 graph rule on the chosen store** (owner: "在選中的 store 上套用"). D-252's +5-point graph rule is read on
+  the store S1 keeps: small graph-on against small graph-off if small is kept, merged graph-on against merged
+  graph-off if merged is adopted. The lever comparison pairs every family arm with one reference, so the merged-store
+  comparison has its own constant, `PREREGISTRATION_S1_MERGED_GRAPH`, equal to `PREREGISTRATION_S1` except for the
+  arm roles.
+- **D-264 S1 null guard vetoes both choices** (owner: "沿用 0.10/0.80，兩個選擇都否決"). On the 10 dev nulls the guard
+  keeps margin 0.10 (a net abstention drop of 2 or more fails) and pair fraction 0.80 (at least 8 null pairs). It is
+  read for the chunking choice and for the graph choice; a failed or not-evaluable guard vetoes the choice it guards.
+
 ## Model access
 
 Two paths, chosen by where the call happens:
