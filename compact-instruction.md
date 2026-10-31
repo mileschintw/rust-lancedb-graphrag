@@ -1,22 +1,26 @@
-You are the relay coordinator of mileschintw/rust-lancedb-graphrag (v1.1 code prep, parent spec #6). Session id local_e5497074-397c-4170-ba22-60a6e066d35b, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, records folder D:/Repos/lancet-coord (branch coord, only you push it). Mode: normal. Merge right: none standing; each PR open/merge needs the user's yes per lane (no CI: merge with --match-head-commit at the sha `ready` prints).
+You are the relay coordinator for mileschintw/rust-lancedb-graphrag. Session "S2 程式碼準備提醒", id local_e5497074-397c-4170-ba22-60a6e066d35b, worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693. The records folder is D:/Repos/lancet-coord (branch `coord`; only you push it). Talk to the user in Traditional Chinese, and write briefs, the plan and issues in English.
 
-Talk to the user in Traditional Chinese; write briefs, plan, issues in English.
+Mode: UNATTENDED since 2026-10-31 02:20 -0700. The scope and the user's words are in plan.md › Handover › Unattended log. The merge right is standing instruction 1 ("我還沒要睡…先預設只要做完就開PR，CI過就merge"): a done lane gets its PR, and it merges once `ci` passes. A failed check gets one rerun; if it fails again, that lane is Stuck. Merge with `gh pr merge <N> --merge --match-head-commit <full sha>`, not `relay.py merge --checkout`. Never fast-forward the main checkout D:/Repos/lancet while run-s01 runs S0 there. Paid calls, store builds and held-out reads stay with the user, except S0 step 3, which the user approves in run-s01 before leaving.
 
-After the compact, reread, and trust files over this summary:
-- C:/Users/user3/.claude/plugins/cache/relay/relay/0.1.0/skills/coordinate/SKILL.md
+Files over summary. After the compact, reread these; where a file and this summary disagree, the file wins:
+- C:/Users/user3/.claude/plugins/cache/relay/relay/0.3.1/skills/coordinate/SKILL.md
+- C:/Users/user3/.claude/plugins/cache/relay/relay/0.3.1/skills/coordinate/unattended.md
 - D:/Repos/lancet-coord/project.md
-- D:/Repos/lancet-coord/plan.md: Handover (standing instructions 1-4, the Pause line, alarm), Rulings 1-6, Now (empty), Roadmap and the notes under it, both Waiting sections (deferred live Atlas, LlamaIndex live checks at S0, S2 grill reminder).
-- D:/Repos/lancet-coord/plan-history.md for merged lanes 7-13, 15, 16, 20, 23, 29, 30.
+- D:/Repos/lancet-coord/plan.md: Handover (the standing instructions, the Unattended log, the relay 0.3.1 notes), Now, Roadmap, Deadlines (the Claude credit expires 2026-11-03; S2 must be submitted by the morning of 11-02), and both Waiting sections.
+- D:/Repos/lancet-coord/decisions-2026-10-30.md, for any S2 question.
 
-Run `ready` with: py -3 -I C:/Users/user3/.claude/plugins/cache/relay/relay/0.1.0/tools/relay.py ready D:/Repos/lancet-coord --repo mileschintw/rust-lancedb-graphrag --checkout D:/Repos/lancet
+`ready`: `py -3 -I C:/Users/user3/.claude/plugins/cache/relay/relay/0.3.1/tools/relay.py ready D:/Repos/lancet-coord --repo mileschintw/rust-lancedb-graphrag --checkout D:/Repos/lancet`. It is slow, so give it a 600 s timeout. audit-s012 shows as "branch not pushed"; that is expected.
 
-State at pause (2026-10-29 23:58 -0700): paused on the user's "現在還在執行的session結束之後，我們先wrap up，做總結並暫時休息". No lane running, no alarm armed. Merged: lanes 7-13, 15, 16, 20, 23, 29, 30 (PRs #19, #21, #22, #24, #26, #27, #28, #31, #32, #33, #35, #37, #38; #17 by the user). main at 546655c9; main checkout fast-forwarded. Open issues: #6 (parent, closes with #14), #14, #25, #34, #36. Finished lane sessions are not archived (archiving needs the user's yes).
+In flight:
+- A background `sleep 1200` alarm is running. Re-arm it before every turn ends while any lane is in Now.
+- Lane 50 is building the release bin (about 70 min cold), then runs the integration tier. It was told `render` must take `--levers`.
+- Lane 59 is running its final test loops.
+- Lanes 80, 81 and 84 are working. Lane 53 is parked.
+- run-s01 waits for the user's yes to step 3, then runs S0.
 
-Practices still in force: CARGO_BUILD_JOBS=2 for every cargo command; after each merge delete that lane's engine/target (and any C: scratchpad target), fast-forward the main checkout, move the lane to plan-history; eval-only lanes may skip cargo/Go; root pytest has 1 known scripts/ failure (python -O); engine lib flakes are fixed (#23), so an engine lib failure is real.
-
-On resume:
-1. Run `ready` and `gh issue list`; report the frontier #14, #25, #34, #36 (all free, no running lane overlaps) and ask which to start. Starts need a turn the user typed.
-2. #14: write briefs/14.md first, copying briefs 12/13's external echo contract (label `llamaindex`, flat pipeline keys), the plan's note that #14 fills generation_model/generation_provider_order from what generate_from_context actually sent, lane 7's `_with_context_export` note, and that `run --arms` (#15) sits next to it in cli.py.
-3. #25: ruling 5 is met (#11 and #23 merged); the user's "After #11 and #23" is the go-ahead, but the start still needs a typed turn. Name the owner of engine/src/tests.rs and src/generation/ sections if #14 runs alongside.
-4. #34 and #36 block nothing planned; #36 must keep the v1.0 held-out report.json bytes or record why not.
-5. When #14 merges (#7-#15 all merged), give the S2 grill → spec → tickets reminder before the S1 paid run (plan › Waiting for the user to be present).
+Next:
+- On each wake, read status/ and gh.
+- When 59 merges, tell lane 56 to merge origin/main into `claude/lane-56-ed9b87` and push. Merge PR #71 on green, then delete D:/lane56-targets.
+- When 50 and 80 have both merged, send GO #53 with #50's render CLI and results-line schema and #80's new replay fields (both from their PR bodies).
+- When S0 ends, fast-forward the main checkout.
+- When no in-scope lane is running or parked, write the closing summary in the Unattended log, push, and set no alarm.
