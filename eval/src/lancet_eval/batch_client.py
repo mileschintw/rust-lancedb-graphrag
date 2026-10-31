@@ -248,26 +248,30 @@ def _openrouter_head(requests: Sequence[BatchRequest]) -> dict[str, Any]:
             or disagree on either: a batch without the pin may run, and be billed,
             on shared capacity.
     """
-    heads = set()
+    head: dict[str, Any] | None = None
     for r in requests:
         try:
             body = json.loads(r.body_json)
         except ValueError as exc:
             raise BatchClientError(f"{r.custom_id}: the body is not JSON") from exc
-        model = body.get("model") if isinstance(body, dict) else None
-        provider = body.get("provider") if isinstance(body, dict) else None
+        if not isinstance(body, dict):
+            raise BatchClientError(f"{r.custom_id}: the body is not an object")
+        model, provider = body.get("model"), body.get("provider")
         if not isinstance(model, str) or not model:
             raise BatchClientError(f"{r.custom_id}: the body names no model")
         if not isinstance(provider, dict) or not provider.get("only"):
             raise BatchClientError(f"{r.custom_id}: the body pins no provider")
         pin = {k: provider[k] for k in ("only", "allow_fallbacks") if k in provider}
-        heads.add(json.dumps({"model": model, "provider": pin}))
-    if len(heads) != 1:
-        raise BatchClientError(
-            "an OpenRouter batch needs one model and one provider pin, got "
-            f"{len(heads)}"
-        )
-    return {"endpoint": OPENROUTER_ENDPOINT, **json.loads(heads.pop())}
+        this = {"endpoint": OPENROUTER_ENDPOINT, "model": model, "provider": pin}
+        if head is not None and this != head:
+            raise BatchClientError(
+                f"{r.custom_id}: an OpenRouter batch needs one model and one "
+                "provider pin"
+            )
+        head = this
+    if head is None:
+        raise BatchClientError("an OpenRouter batch needs at least one request")
+    return head
 
 
 def _error_text(error: Any) -> str:
