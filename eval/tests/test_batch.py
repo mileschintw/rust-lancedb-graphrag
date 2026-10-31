@@ -22,7 +22,7 @@ import pytest
 import replay_fixture as rf
 from typer.testing import CliRunner
 
-from lancet_eval import batch, batch_client, parity, thresholds
+from lancet_eval import batch, batch_client, gitcheck, parity, thresholds
 from lancet_eval.batch_client import (
     MISSING_REASONING_TOKENS,
     BatchClientError,
@@ -35,7 +35,7 @@ from lancet_eval.batch_client import (
     openrouter_output,
 )
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, ContextExportRow
-from lancet_eval.journal import RunRecord, load_records
+from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.measure import compute_spend
 from lancet_eval.pairing import deduplicate_by_arm
 from lancet_eval.preregistration import readers_of
@@ -44,6 +44,10 @@ from lancet_eval.replay import replay_init
 
 ARM = rf.READER_ARM
 REJECT = "REJECT"
+
+# A submit into a run of record runs the D-73 check (#109); the tests about it
+# replace `gitcheck.preregistration_problems` themselves.
+pytestmark = pytest.mark.usefixtures("preregistered_clean_tree")
 
 
 # ---- fakes -----------------------------------------------------------------------
@@ -172,7 +176,7 @@ def s2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-unty
     return _make_s2(tmp_path, monkeypatch)
 
 
-def _make_s2(tmp_path, monkeypatch, spec_fn=fx.default_spec):  # type: ignore[no-untyped-def]
+def _make_s2(tmp_path, monkeypatch, spec_fn=fx.default_spec, *, pilot=False):  # type: ignore[no-untyped-def]
     qs = fx.make_questions(6, 2)
     root = tmp_path / "repo"
     gold = rf.write_corpora(root, qs)
@@ -182,7 +186,7 @@ def _make_s2(tmp_path, monkeypatch, spec_fn=fx.default_spec):  # type: ignore[no
     rf.write_s1_run(s1, qs, spec_fn=spec_fn)
     _with_correlation_ids(s1)
     run = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=run, corpus=fx.CORPUS)
+    replay_init(source_run=s1, arms=[rf.BASE], run=run, corpus=fx.CORPUS, pilot=pilot)
     client, binary = FakeClient(), FakeBin()
     monkeypatch.setattr(batch, "client_factory", lambda target: client)
     monkeypatch.setattr(batch, "bin_runner", binary)
@@ -275,7 +279,7 @@ def test_the_manifest_body_hashes_are_the_hashes_the_replay_clauses_check(s2) ->
 
 def test_a_second_submit_refuses_while_the_arm_has_a_pending_batch(s2) -> None:
     run, _, _, client, _ = s2
-    batch.submit(run=run, arm=ARM, limit=2, echo=lambda _: None)
+    batch.submit(run=run, arm=ARM, echo=lambda _: None)
     with pytest.raises(batch.BatchError, match="pending batch"):
         batch.submit(run=run, arm=ARM, echo=lambda _: None)
     assert len(client.batches) == 1
@@ -354,8 +358,10 @@ def test_a_request_the_batch_returned_no_result_for_is_an_error_record(s2) -> No
     assert _latest(run)[qs.g_ids[0]].error_type == batch.NO_RESULT
 
 
-def test_limit_3_submits_three_and_the_next_submit_takes_the_rest(s2) -> None:
-    run, qs, _, client, _ = s2
+def test_limit_3_submits_three_and_the_next_submit_takes_the_rest(
+    tmp_path, monkeypatch
+) -> None:
+    run, qs, _, client, _ = _make_s2(tmp_path, monkeypatch, pilot=True)
     pilot = batch.submit(run=run, arm=ARM, limit=3, echo=lambda _: None)
     assert [r.custom_id for r in client.batches[pilot.batch_id]] == _all(qs)[:3]
     batch.fetch(run=run, echo=lambda _: None)
@@ -830,3 +836,78 @@ def test_pack_rewrite_fake_submit_render_with_the_built_bin() -> None:
     assert line["outcome"] == "success", line
     assert line["arm"] == ARM
     assert line["answer"].splitlines()[-1].startswith("Answer:")
+
+
+# ---- #109: a pilot gets its own run; D-73 before the spend ----------------------
+
+
+def test_a_run_of_record_refuses_limit_before_any_request(s2) -> None:
+    run, _, _, client, binary = s2
+    with pytest.raises(batch.BatchError, match="pilot") as excinfo:
+        batch.submit(run=run, arm=ARM, limit=3, echo=lambda _: None)
+    assert "--limit" in str(excinfo.value)
+    assert client.batches == {} and binary.calls == []
+    assert batch.manifest_paths(run) == []
+
+
+def test_a_run_of_record_refuses_a_submit_before_d73_holds(s2, monkeypatch) -> None:
+    run, _, _, client, binary = s2
+    header = read_journal_header(run / "journal.jsonl")
+    assert header is not None
+    calls: list[dict[str, Any]] = []
+
+    def problems(tokens, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"tokens": tokens, **kwargs})
+        return [f"the commit introducing {tokens[0]} is not older than created_at"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", problems)
+    with pytest.raises(batch.BatchError, match="D-73"):
+        batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    assert client.batches == {} and binary.calls == []
+    assert batch.manifest_paths(run) == []
+    # The gate compare-levers applies later, against the same created_at.
+    assert calls == [
+        {
+            "tokens": (fx.TOKEN,),
+            "require_clean_tree": True,
+            "created_at": header["created_at"],
+            "unchanged_since_introduction": True,
+        }
+    ]
+
+
+def test_a_run_of_record_refuses_a_header_without_created_at(s2) -> None:
+    run, _, _, client, _ = s2
+    journal = run / "journal.jsonl"
+    lines = journal.read_text(encoding="utf-8").splitlines(keepends=True)
+    head = json.loads(lines[0])
+    del head["created_at"]
+    lines[0] = json.dumps(head) + "\n"
+    journal.write_text("".join(lines), encoding="utf-8")
+    with pytest.raises(batch.BatchError, match="created_at"):
+        batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    assert client.batches == {}
+
+
+def test_a_pilot_run_takes_limit_without_d73(tmp_path, monkeypatch) -> None:
+    run, qs, _, client, _ = _make_s2(tmp_path, monkeypatch, pilot=True)
+    monkeypatch.setattr(
+        gitcheck,
+        "preregistration_problems",
+        lambda tokens, **kwargs: ["not committed"],
+    )
+    lines: list[str] = []
+    sent = batch.submit(run=run, arm=ARM, limit=2, echo=lines.append)
+    assert [r.custom_id for r in client.batches[sent.batch_id]] == _all(qs)[:2]
+    assert any("pilot run" in line for line in lines)
+
+
+def test_the_batch_submit_command_refuses_limit_in_a_run_of_record(s2) -> None:
+    from lancet_eval.cli import app
+
+    run, _, _, client, _ = s2
+    args = ["batch", "submit", "--run", str(run), "--arm", ARM, "--limit", "2"]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 1
+    assert "pilot" in result.output
+    assert client.batches == {}

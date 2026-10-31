@@ -16,7 +16,7 @@ import pytest
 import replay_fixture as rf
 from typer.testing import CliRunner
 
-from lancet_eval import preregistration, thresholds
+from lancet_eval import gitcheck, preregistration, thresholds
 from lancet_eval.arms import (
     READERS,
     arm_reader,
@@ -39,8 +39,13 @@ from lancet_eval.replay import (
     REPLAY_SOURCE_KEY,
     ReplayError,
     export_row_sha256,
+    is_pilot_run,
     replay_init,
 )
+
+# Every replay-init into a run of record runs the D-73 check (#109); the tests that
+# are about it replace `gitcheck.preregistration_problems` themselves.
+pytestmark = pytest.mark.usefixtures("preregistered_clean_tree")
 
 # ---- reader-arm labels ------------------------------------------------------------
 
@@ -125,8 +130,12 @@ def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, roles=None, **kwargs
     return s1, gold, qs
 
 
-def _init(s1: Path, s2: Path, arms=(rf.BASE,), corpus: str = fx.CORPUS):  # type: ignore[no-untyped-def]
-    return replay_init(source_run=s1, arms=list(arms), run=s2, corpus=corpus)
+def _init(  # type: ignore[no-untyped-def]
+    s1: Path, s2: Path, arms=(rf.BASE,), corpus: str = fx.CORPUS, *, pilot=False
+):
+    return replay_init(
+        source_run=s1, arms=list(arms), run=s2, corpus=corpus, pilot=pilot
+    )
 
 
 def _s2(tmp_path, monkeypatch, *, build=None, row_fn=None):  # type: ignore[no-untyped-def]
@@ -264,6 +273,196 @@ def test_replay_init_refuses_a_source_record_it_cannot_read_naming_the_line(
         f.write(' "outcome": "success"}\n')
     with pytest.raises(ReplayError, match="line 32: unknown arm label"):
         _init(s1, tmp_path / "s2")
+
+
+# ---- #109: D-73 and the S1 handoff before any paid call ----------------------------
+
+
+def _d73_fails(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Makes the D-73 check report a problem; returns the calls it saw."""
+    calls: list[dict[str, object]] = []
+
+    def problems(tokens, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append({"tokens": tokens, **kwargs})
+        return [f"no commit in thresholds.py introduces {tokens[0]}"]
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", problems)
+    return calls
+
+
+def _with_source_arm(monkeypatch: pytest.MonkeyPatch, arm: str) -> None:
+    monkeypatch.setattr(
+        thresholds, fx.TOKEN, rf.s2_prereg(replay_source_arm=arm), raising=False
+    )
+
+
+def test_replay_init_into_a_run_of_record_refuses_before_d73_holds(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    calls = _d73_fails(monkeypatch)
+    with pytest.raises(ReplayError, match="D-73") as excinfo:
+        _init(s1, tmp_path / "s2")
+    assert fx.TOKEN in str(excinfo.value)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+    # The gate score and compare-levers apply later: committed, clean, unchanged.
+    assert calls == [
+        {
+            "tokens": (fx.TOKEN,),
+            "require_clean_tree": True,
+            "created_at": None,
+            "unchanged_since_introduction": True,
+        }
+    ]
+
+
+def test_replay_init_refuses_when_git_cannot_prove_d73(tmp_path, monkeypatch) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+
+    def broken(tokens, **kwargs):  # type: ignore[no-untyped-def]
+        raise gitcheck.GitCheckError("git log failed")
+
+    monkeypatch.setattr(gitcheck, "preregistration_problems", broken)
+    with pytest.raises(ReplayError, match="D-73.*git log failed"):
+        _init(s1, tmp_path / "s2")
+
+
+def test_a_pilot_replay_init_skips_d73_and_marks_the_run(tmp_path, monkeypatch) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    _d73_fails(monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2, pilot=True)
+    header = read_journal_header(s2 / "journal.jsonl")
+    assert header is not None and header[REPLAY_SOURCE_KEY]["pilot"] is True
+    assert is_pilot_run(header)
+
+
+def test_a_run_of_record_is_not_a_pilot_run(tmp_path, monkeypatch) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2)
+    header = read_journal_header(s2 / "journal.jsonl")
+    assert header is not None and header[REPLAY_SOURCE_KEY]["pilot"] is False
+    assert not is_pilot_run(header)
+    assert not is_pilot_run(None)
+
+
+def test_replay_init_refuses_an_arm_other_than_the_declared_source_arm(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    _with_source_arm(monkeypatch, rf.OTHER)
+    with pytest.raises(ReplayError, match="replay_source_arm") as excinfo:
+        _init(s1, tmp_path / "s2")
+    assert rf.OTHER in str(excinfo.value) and rf.BASE in str(excinfo.value)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+    # A pilot replays whatever arm it is given.
+    _init(s1, tmp_path / "pilot", pilot=True)
+
+
+@pytest.mark.parametrize("placeholder", ["", "TODO-S1-WINNER", rf.READER_ARM])
+def test_replay_init_refuses_a_placeholder_source_arm_in_a_run_of_record(
+    tmp_path, monkeypatch, placeholder
+) -> None:
+    # Lane 110 commits the S2 constant with a placeholder until S1's Result names the
+    # winner: no run of record may start from it.
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    _with_source_arm(monkeypatch, placeholder)
+    with pytest.raises(ReplayError, match="replay_source_arm"):
+        _init(s1, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+    _init(s1, tmp_path / "pilot", pilot=True)
+
+
+def test_replay_init_refuses_a_constant_without_a_source_arm(
+    tmp_path, monkeypatch
+) -> None:
+    if "replay_source_arm" in {
+        f.name for f in dataclasses.fields(thresholds.StagePreRegistration)
+    }:
+        pytest.skip("the type declares replay_source_arm (#110)")
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    full = rf.s2_prereg()
+    plain = thresholds.StagePreRegistration(**{
+        f.name: getattr(full, f.name)
+        for f in dataclasses.fields(thresholds.StagePreRegistration)
+    })
+    monkeypatch.setattr(thresholds, fx.TOKEN, plain, raising=False)
+    with pytest.raises(ReplayError, match="replay_source_arm"):
+        _init(s1, tmp_path / "s2")
+
+
+def test_replay_init_refuses_a_partial_source_run(tmp_path, monkeypatch) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    journal = s1 / "journal.jsonl"
+    lines = journal.read_text(encoding="utf-8").splitlines(keepends=True)
+    assert '"partial": false' in lines[0]
+    lines[0] = lines[0].replace('"partial": false', '"partial": true')
+    journal.write_text("".join(lines), encoding="utf-8")
+    with pytest.raises(ReplayError, match="partial"):
+        _init(s1, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+    _init(s1, tmp_path / "pilot", pilot=True)
+
+
+def test_replay_init_refuses_a_source_arm_missing_a_question(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    journal = s1 / "journal.jsonl"
+    kept = [
+        line
+        for line in journal.read_text(encoding="utf-8").splitlines(keepends=True)
+        if not ('"lv-g004"' in line and f'"{rf.BASE}"' in line)
+    ]
+    journal.write_text("".join(kept), encoding="utf-8")
+    with pytest.raises(ReplayError, match="lv-g004") as excinfo:
+        _init(s1, tmp_path / "s2")
+    assert "incomplete" in str(excinfo.value)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+    _init(s1, tmp_path / "pilot", pilot=True)
+
+
+def test_a_pilot_replay_init_never_writes_into_a_run_of_record(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2)
+    journal = (s2 / "journal.jsonl").read_bytes()
+    export = (s2 / CONTEXT_EXPORT_FILE).read_bytes()
+    with pytest.raises(ReplayError, match="already holds"):
+        _init(s1, s2, pilot=True)
+    assert (s2 / "journal.jsonl").read_bytes() == journal
+    assert (s2 / CONTEXT_EXPORT_FILE).read_bytes() == export
+    assert not is_pilot_run(read_journal_header(s2 / "journal.jsonl"))
+
+
+def test_a_pilot_run_with_reader_records_is_never_scored(tmp_path, monkeypatch) -> None:
+    from lancet_eval.score import ScoreError
+
+    s1, gold, qs = _s1(tmp_path, monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2, pilot=True)
+    rf.append_reader_arm(s2, qs)
+    with pytest.raises(ScoreError, match="pilot run"):
+        _score(s2, gold)
+
+
+def test_the_replay_init_command_writes_a_pilot_run(tmp_path, monkeypatch) -> None:
+    from lancet_eval.cli import app
+
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    _d73_fails(monkeypatch)
+    s2 = tmp_path / "s2"
+    args = ["replay-init", "--source-run", str(s1), "--arms", rf.BASE]
+    args += ["--run", str(s2), "--corpus", fx.CORPUS]
+    refused = CliRunner().invoke(app, args)
+    assert refused.exit_code == 1 and "D-73" in refused.output
+    ok = CliRunner().invoke(app, [*args, "--pilot"])
+    assert ok.exit_code == 0, ok.output
+    assert "pilot" in ok.output
+    assert is_pilot_run(read_journal_header(s2 / "journal.jsonl"))
 
 
 def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> None:

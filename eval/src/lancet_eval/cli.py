@@ -852,13 +852,24 @@ def replay_init_command(
             ),
         ),
     ],
+    pilot: Annotated[
+        bool,
+        typer.Option(
+            "--pilot",
+            help=(
+                "Make a pilot run (batch submit --limit), never the run of record: "
+                "skips the D-73, source-arm and completeness checks"
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Carry S1 arms' records and export rows into a new S2 journal (D-257).
 
     Copies every record of each arm and the export row of each success record under
     the S2 corpus, and records the source run, its corpus and the row hashes in the
-    journal header. Refuses a source run or S2 corpus that is not dev (D-237). No paid
-    call.
+    journal header. Refuses a source run or S2 corpus that is not dev (D-237). A run of
+    record also needs the S2 pre-registration committed on a clean tree (D-73), the
+    arm it names in replay_source_arm, and a complete source arm (#109). No paid call.
     """
     from rich.markup import escape
 
@@ -866,13 +877,16 @@ def replay_init_command(
 
     labels = [a.strip() for value in arms for a in value.split(",") if a.strip()]
     try:
-        result = replay_init(source_run=source_run, arms=labels, run=run, corpus=corpus)
+        result = replay_init(
+            source_run=source_run, arms=labels, run=run, corpus=corpus, pilot=pilot
+        )
     except ReplayError as exc:
         console.print(f"[bold red]Replay init refused:[/bold red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
     console.print(
         f"[green]Carried {result.records} record(s) and {result.rows} export row(s) "
-        f"of {escape(', '.join(labels))} into {result.journal_path}[/green]"
+        f"of {escape(', '.join(labels))} into "
+        f"{'the pilot run ' if pilot else ''}{result.journal_path}[/green]"
     )
 
 
@@ -896,7 +910,13 @@ def batch_submit_command(
     ],
     limit: Annotated[
         int | None,
-        typer.Option("--limit", help="Submit only the first N questions (the pilot)"),
+        typer.Option(
+            "--limit",
+            help=(
+                "Submit only the first N questions (a pilot run only: replay-init "
+                "--pilot)"
+            ),
+        ),
     ] = None,
     retry_errors: Annotated[
         bool,
@@ -909,7 +929,9 @@ def batch_submit_command(
     """Pack, rewrite and submit one batch of a reader arm (D-254, D-255).
 
     Prints a cost estimate first (D-258: it never refuses) and writes the manifest
-    under <run>/batches before the submit. A paid call.
+    under <run>/batches before the submit. In a run of record it refuses --limit and
+    refuses unless the S2 pre-registration passes D-73 against the journal (#109). A
+    paid call.
     """
     from rich.markup import escape
 
