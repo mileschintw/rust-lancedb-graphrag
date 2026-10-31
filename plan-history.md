@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 68 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 68, #68, dev-role scoring: session local_698777e7-e8f4-479a-8181-1d7d2e5cab68, branch `claude/lane-68-db7b79` @ bea798b0. PR #83 was opened and merged 2026-10-31 under the standing auto-PR rule, once `ci` passed (eval 2m42s). #68 closed. On a dev-role corpus, `score` and `compare-levers` now read the dev population (real S1 split 90 G / 10 null), and held-out output stays byte-identical. The main checkout was not fast-forwarded, because run-s01 is active.
+
 ## Lanes 65 and 67 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - **Lane 65**, #65 (two-store S1 context export):
