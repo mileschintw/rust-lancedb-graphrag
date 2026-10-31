@@ -24,12 +24,20 @@ from lancet_eval.config import (
     store_for_settings,
     store_target_failures,
 )
-from lancet_eval.seed import get_document_map_path, load_document_map
+from lancet_eval.seed import (
+    assert_schema_isolated,
+    get_document_map_path,
+    load_document_map,
+    quote_pg_identifier,
+    run_psql,
+    store_chunking_of,
+)
 
 if TYPE_CHECKING:
     import httpx
 
     from lancet_eval.client import RetrievalSnapshot
+    from lancet_eval.corpus import CorpusConfig
 
 
 class PreflightError(Exception):
@@ -1631,6 +1639,64 @@ def check_index_identity(
     )
 
 
+def check_store_chunking(
+    settings: EvalSettings, corpus_config: CorpusConfig, store: EvalStore
+) -> PreflightCheckResult:
+    """Verify every document in `store` was chunked as the corpus declares (#67).
+
+    Reads `chunk_strategy`, `chunk_size` and `chunk_overlap` of the store's PostgreSQL
+    `documents` rows and compares them with the corpus's `[stores.<prefix>]` entry. A
+    store with no documents, or a corpus without that entry, fails. Never raises.
+    """
+    name = "store_chunking"
+    try:
+        expected = store_chunking_of(corpus_config, store)
+        if expected is None:
+            raise ValueError(f"store {store.name!r} declares no chunking to check")
+        schema = quote_pg_identifier(assert_schema_isolated(settings))
+        output = run_psql(
+            settings,
+            "SELECT chunk_strategy, chunk_size, chunk_overlap, count(*) "
+            f"FROM {schema}.documents GROUP BY 1, 2, 3 ORDER BY 1, 2, 3;",
+        )
+    except Exception as exc:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=f"Store chunking check could not run: {exc}",
+            detail={"store": store.name},
+        )
+
+    want = (expected.chunk_strategy, expected.chunk_size, expected.chunk_overlap)
+    found: dict[str, int] = {}
+    for line in output.splitlines():
+        if line.strip():
+            strategy, size, overlap, count = line.strip().split("|")
+            found[f"{strategy} {size}/{overlap}"] = int(count)
+    want_key = f"{want[0]} {want[1]}/{want[2]}"
+    detail = {"store": store.name, "expected": want_key, "found": found}
+    if list(found) != [want_key]:
+        return PreflightCheckResult(
+            name=name,
+            passed=False,
+            message=(
+                f"Store {store.name!r} documents were not all chunked {want_key} as "
+                f"{corpus_config.name!r} declares; found "
+                f"{found or 'no documents'}. Reseed the store."
+            ),
+            detail=detail,
+        )
+    return PreflightCheckResult(
+        name=name,
+        passed=True,
+        message=(
+            f"All {found[want_key]} documents in store {store.name!r} were chunked "
+            f"{want_key}."
+        ),
+        detail=detail,
+    )
+
+
 def run_preflight_checks(
     corpus_name: str,
     judged: bool = False,
@@ -1707,6 +1773,9 @@ def run_preflight_checks(
 
     # 2. Index identity (must agree across stores before any live check runs)
     results.append(check_index_identity(settings, corpus_name))
+    # #67: a store other than v1.0 must hold the chunking its corpus declares.
+    if store != V1_STORE:
+        results.append(check_store_chunking(settings, corpus_config, store))
 
     # 3. Canary manifest check (unconditional, independent of gateway/engine)
     results.append(

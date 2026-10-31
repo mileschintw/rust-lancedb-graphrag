@@ -42,7 +42,7 @@ class SeedError(Exception):
     """Raised when seeding fails or is blocked by an isolation error."""
 
 
-def _quote_pg_identifier(name: str) -> str:
+def quote_pg_identifier(name: str) -> str:
     """Validate and quote a PostgreSQL identifier."""
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
         raise SeedError(f"Invalid PostgreSQL identifier: {name!r}")
@@ -199,8 +199,8 @@ def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> No
         settings.database_url, settings.dev_database_url
     )
 
-    drop_sql = f"DROP SCHEMA IF EXISTS {_quote_pg_identifier(schema_name)} CASCADE;"
-    create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
+    drop_sql = f"DROP SCHEMA IF EXISTS {quote_pg_identifier(schema_name)} CASCADE;"
+    create_sql = f"CREATE SCHEMA {quote_pg_identifier(schema_name)};"
     drop_create_sql = f"{drop_sql} {create_sql}"
 
     try:
@@ -445,11 +445,7 @@ def seed_corpus(
     chunking = store_chunking_of(corpus, store)
     # A corpus that shares another corpus's map (D-68) seeds that corpus's documents.
     subset_path = (
-        repo_root()
-        / "eval"
-        / "corpora"
-        / corpus.map_corpus
-        / "documents.subset.jsonl"
+        repo_root() / "eval" / "corpora" / corpus.map_corpus / "documents.subset.jsonl"
     )
 
     if not subset_path.is_file():
