@@ -376,15 +376,14 @@ def _one_question():  # type: ignore[no-untyped-def]
 def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> None:
     qs, qid, source = _one_question()
     opus_arm = f"{rf.BASE}@opus-5.5"
-    rows = {
-        (qid, rf.BASE): source,
-        (qid, opus_arm): source.model_copy(update={"arm": opus_arm}),
-        (qid, rf.READER_ARM): source.model_copy(update={"arm": rf.READER_ARM}),
-    }
+    sonnet_arm = f"{rf.BASE}@sonnet-5.5"
+    rows = {(qid, rf.BASE): source}
+    for arm in (opus_arm, sonnet_arm, rf.READER_ARM):
+        rows[(qid, arm)] = source.model_copy(update={"arm": arm})
     kwargs = {
         "export_rows": rows,
         "source_row_sha256": {(qid, rf.BASE): export_row_sha256(source)},
-        "readers": {"opus-5.5": rf.OPUS, rf.READER: rf.HAIKU},
+        "readers": {"opus-5.5": rf.OPUS, "sonnet-5.5": rf.SONNET, rf.READER: rf.HAIKU},
     }
 
     def thinking(rec):  # type: ignore[no-untyped-def]
@@ -394,8 +393,11 @@ def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> No
     opus = rf.make_replay_record(qid, qs, source, reader=rf.OPUS, arm=opus_arm)
     haiku = rf.make_replay_record(qid, qs, source)
     assert replay_run_failures([thinking(opus)], **kwargs) == []
-    failures = replay_run_failures([thinking(haiku)], **kwargs)
-    assert [f.code for f in failures] == ["reasoning_tokens"]
+    sonnet = rf.make_replay_record(qid, qs, source, reader=rf.SONNET, arm=sonnet_arm)
+    for rec in (haiku, sonnet):
+        failures = replay_run_failures([thinking(rec)], **kwargs)
+        assert [f.code for f in failures] == ["reasoning_tokens"]
+        assert replay_run_failures([rec], **kwargs) == []
 
 
 def test_engine_and_external_records_carrying_a_replay_block_fail() -> None:

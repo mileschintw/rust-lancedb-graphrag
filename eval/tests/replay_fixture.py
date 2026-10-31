@@ -37,6 +37,12 @@ HAIKU = ReaderDeclaration(
     thinking="off",
     price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
 )
+SONNET = ReaderDeclaration(
+    slug="anthropic/claude-sonnet-5.5",
+    target="openrouter",
+    thinking="between_tools",
+    price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+)
 OPUS = ReaderDeclaration(
     slug="anthropic/claude-opus-5.5",
     target="openrouter",
