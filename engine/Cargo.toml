@@ -40,3 +40,12 @@ opentelemetry-otlp = { version = "~0.32", default-features = false, features = [
 tracing-opentelemetry = "~0.33"
 opentelemetry-appender-tracing = "~0.32"
 opentelemetry-semantic-conventions = "~0.32.1"
+
+# Smaller engine/target and faster links for lane builds (#56). Line tables keep file:line
+# in backtraces and panics; dependencies carry no debug info. The `test` profile inherits
+# these. CI turns debug info off entirely (`.github/workflows/ci.yml`).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

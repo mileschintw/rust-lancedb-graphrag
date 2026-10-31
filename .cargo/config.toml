@@ -1,0 +1,8 @@
+# Read by cargo when it runs anywhere in the repository (cargo looks for config from the
+# working directory up, not from --manifest-path), so it covers the engine and the Go
+# tests that build it.
+
+# rust-lld ships with the MSVC toolchain and links the engine's test binaries faster than
+# link.exe (#56). Linux toolchains already default to lld.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
