@@ -1,0 +1,50 @@
+# v1.1 S2 (D-254, D-257): S1's winning arm, carried from the S1 run, against the same
+# prompts read by Claude readers. No drive: `replay-init` carries the deepseek records and
+# `batch submit`/`fetch` write the reader arms. [documents], [questions],
+# [document_subset], [split] and [stores] are copied from multihop_rag_s1_dev.toml, so
+# score reads the same question pool and document map (a test pins this).
+# DRAFT: the placeholder arm label stands for S1's winner until RUN-S2.md step 1
+# replaces it here and in the constant; until then this corpus does not load.
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.diag.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 100
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[arms]
+# The carried deepseek arm, then its reader arms (D-257). Opus 5.5 is added only if
+# D-252's condition holds (EXPERIMENT-S2.md).
+arms = [
+  "S1_WINNER_UNSET",
+  "S1_WINNER_UNSET@haiku-5.5",
+  "S1_WINNER_UNSET@sonnet-5.5",
+]
+
+[stores.small]
+chunk_strategy = "structure-aware"
+chunk_size = 500
+chunk_overlap = 50
+
+[stores.merged]
+chunk_strategy = "structure-merge"
+chunk_size = 256
+chunk_overlap = 25
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "dev"
+
+[preregistration]
+token = "PREREGISTRATION_S2"
