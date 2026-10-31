@@ -24,12 +24,12 @@ selection_algorithm = "referenced_plus_distractors"
 distractor_count = 25
 
 [arms]
-# The carried deepseek arm, then its reader arms (D-257). Opus 5.5 is added only if
-# D-252's condition holds (EXPERIMENT-S2.md).
+# The carried deepseek arm, then its reader arms (D-257); Opus 5.5 is descriptive (D-267).
 arms = [
   "S1_WINNER_UNSET",
   "S1_WINNER_UNSET@haiku-5.5",
   "S1_WINNER_UNSET@sonnet-5.5",
+  "S1_WINNER_UNSET@opus-5.5",
 ]
 
 [stores.small]

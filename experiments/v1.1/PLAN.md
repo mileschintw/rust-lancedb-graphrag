@@ -318,15 +318,14 @@ Decided by the owner on 2026-10-31, answering the five open questions of the S2 
 file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/src/lancet_eval/thresholds.py` once, by
 [RUN-S2.md](RUN-S2.md) step 4, because D-73 dates a constant by the first commit that adds its name to that file.
 
-- **D-267 Opus 5.5 joins through its own constant** (owner: "另立常數 (Recommended)", 2026-10-31). If D-252's Opus
-  condition holds (the Sonnet 5.5 delta minus the Haiku 5.5 delta is at least +5 points on the S2 reading), a second
-  constant, `PREREGISTRATION_OPUS_S2`, is written: equal to the S2 constant plus the `<S1 winner>@opus-5.5` arm in its
-  family and null guard. Its name does not start with the S2 constant's name, so adding it leaves the S2 constant's
-  D-73 date unchanged. It is read in its own run directory, on its own corpus `multihop_rag_s2_opus_dev` (the S2
-  corpus plus the Opus arm), committed before that run's `replay-init`: `compare-levers` refuses a journal whose arms
-  differ from the constant's, and D-73 refuses a constant younger than its run, so the S2 run cannot take it. That
-  run re-reads Haiku 5.5 and Sonnet 5.5 beside Opus 5.5 (about $0.5 more). The first S2 reading stays as registered.
-  Without the condition, no Opus arm is run.
+- **D-267 Opus 5.5 runs unconditionally as a descriptive arm** (owner: "是，無條件跑 (Recommended)", 2026-10-31, first
+  decided in the owner's side session: "可以，都轉告coordinator"). The `<S1 winner>@opus-5.5` arm is in the S2 constant's
+  `descriptive_arms` and the S2 corpus. It is read in the S2 pilot and submitted in the run of record in parallel with
+  Haiku 5.5 and Sonnet 5.5. It is reported, with its paired difference against deepseek and its cost per answered
+  question, but it does not enter D-252's winner rule or the Holm family, so m stays 2 (D-268). It is thinking on at
+  effort low, so the replay clauses' thinking-on exemption applies (D-265). The owner's reason: the $200 Claude credit
+  is lost if unused, so neither the cost nor the gate matters. Supersedes D-252's "Opus 5.5 joins only if Sonnet minus
+  Haiku is at least +5 points" for S2.
 - **D-268 D-245's "not significantly worse" reads the Holm-adjusted p** (owner: "Holm 調整後 (Recommended)",
   2026-10-31). Haiku 5.5 is significantly worse than deepseek only if Holm, over the S2 family (m = 2: Haiku 5.5 and
   Sonnet 5.5 against deepseek, alpha 0.05), rejects the Haiku row and its delta is negative. The raw p is reported,

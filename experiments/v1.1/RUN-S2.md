@@ -50,18 +50,19 @@ read the run offline.
 Sync list prices from `PREREGISTRATION_S2` (USD per M tokens, in / out): Haiku 5.5 0.10 / 0.50, Sonnet 5.5 2 / 10,
 Opus 5.5 4 / 20. The Batch API bills half. S1's answers used about 3,500 prompt tokens and 300 completion tokens
 (merged store; about 2,700 to 3,000 on the small store). So one batch request costs about $0.00025 with Haiku and
-$0.005 with Sonnet. The ceiling assumes every request uses the engine's caps: 8,192 tokens of evidence plus about
-500 of policy and question, and 2,048 completion tokens. That is at most $0.00095 for Haiku and $0.019 for Sonnet.
-Opus thinks at effort low; its estimate allows 1,000 reasoning tokens a request. `--retry-errors` resubmits only
+$0.005 with Sonnet. Opus thinks at effort low; its estimate allows 1,000 reasoning tokens a request, about $0.02.
+The ceiling assumes every request uses the engine's caps: 8,192 tokens of evidence plus about 500 of policy and
+question, and 2,048 completion tokens, reasoning included. That is at most $0.00095 for Haiku, $0.019 for Sonnet and
+$0.038 for Opus. `--retry-errors` resubmits only
 requests that were never billed.
 
 | Step | Estimate | Ceiling |
 |---|---|---|
-| 2 Pilot, 5 questions × 2 readers | about $0.03 | about $0.10 |
+| 2 Pilot, 5 questions × 3 readers | about $0.13 | about $0.29 |
 | 6 Haiku 5.5 arm, 100 questions | about $0.03 | about $0.10 |
 | 6 Sonnet 5.5 arm, 100 questions | about $0.50 | about $1.90 |
-| 8 Opus 5.5 run, only if it joins: Opus plus a second Haiku and Sonnet reading | about $2.50 | about $5.80 |
-| **Total without Opus** | **about $0.56** | **about $2.10** |
+| 6 Opus 5.5 arm, 100 questions (descriptive, D-267) | about $2.00 | about $3.80 |
+| **Total** | **about $2.66** | **about $6.09** |
 
 A native Sonnet re-pilot (step 3) adds about $0.03.
 
@@ -72,9 +73,9 @@ issue is closed and its fix is on `main` (`git log origin/main --oneline --grep 
 
 | Issue | Blocks | Why |
 |---|---|---|
-| #107 OpenRouter batch payload | steps 2 to 8 | the OpenRouter batch request lacks top-level fields the endpoint needs |
-| #108 schema `maxLength`/`maxItems` | steps 2 to 8 | Anthropic may reject the strict output schema; if so the owner needs a new D-ID |
-| #109 D-73 before the spend; pilot records | steps 2 to 8 | without it `replay-init` does not check `replay_source_arm` or the S1 arm's completeness |
+| #107 OpenRouter batch payload | steps 2 to 7 | the OpenRouter batch request lacks top-level fields the endpoint needs |
+| #108 schema `maxLength`/`maxItems` | steps 2 to 7 | Anthropic may reject the strict output schema; if so the owner needs a new D-ID |
+| #109 D-73 before the spend; pilot records | steps 2 to 7 | without it `replay-init` does not check `replay_source_arm` or the S1 arm's completeness |
 
 Then check the prerequisites. Stop and tell the user if any fails.
 
@@ -130,13 +131,13 @@ Every test must pass.
 
 ## Step 2: pilot (Paid)
 
-Ask once for steps 2.1 to 2.5: **about $0.03, ceiling about $0.10**. The pilot checks what the code cannot settle
+Ask once for steps 2.1 to 2.5: **about $0.13, ceiling about $0.29**. The pilot checks what the code cannot settle
 offline:
 
 - `is_byok` and the provider;
 - `reasoning_tokens`;
 - the model the response names;
-- whether Anthropic accepts the strict output schema;
+- whether Anthropic accepts the strict output schema, for every reader (#108);
 - whether Sonnet's `between_tools` passes through OpenRouter (D-260).
 
 It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pilot` takes `--limit` (#109).
@@ -157,6 +158,10 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
 
    ```bash
    uv run --project eval lancet-eval batch submit --run <PILOT_RUN> --arm <WINNER>@sonnet-5.5 --limit 5
+   ```
+
+   ```bash
+   uv run --project eval lancet-eval batch submit --run <PILOT_RUN> --arm <WINNER>@opus-5.5 --limit 5
    ```
 
 3. Fetch. The test batch on 2026-10-25 took 10.9 minutes, and a batch may take up to 24 hours. Rerun this command
@@ -199,15 +204,15 @@ print(len(failures), 'replay clause failure(s)')
 Read the lines from steps 2.4 and 2.5. All five requests of each reader must be `success`, step 2.5 must print
 `0 replay clause failure(s)`, and:
 
-| Field | Haiku 5.5 | Sonnet 5.5, OpenRouter |
-|---|---|---|
-| model | `anthropic/claude-haiku-5.5` exactly | `anthropic/claude-sonnet-5.5` exactly |
-| provider | `Anthropic` | `Anthropic` |
-| `is_byok` | `True` | `True` |
-| `reasoning_tokens` | `0` | `0` |
+| Field | Haiku 5.5 | Sonnet 5.5, OpenRouter | Opus 5.5 |
+|---|---|---|---|
+| model | `anthropic/claude-haiku-5.5` exactly | `anthropic/claude-sonnet-5.5` exactly | `anthropic/claude-opus-5.5` exactly |
+| provider | `Anthropic` | `Anthropic` | `Anthropic` |
+| `is_byok` | `True` | `True` | `True` |
+| `reasoning_tokens` | `0` | `0` | any; thinking on is exempt (D-265) |
 
-- **Haiku fails any row**, an error record's message names the schema (#108), or a model is a dated variant: stop and
-  tell the user. Each needs an owner decision.
+- **Haiku or Opus fails any row**, an error record's message names the schema (#108), or a model is a dated variant:
+  stop and tell the user. Each needs an owner decision.
 - **Sonnet's `reasoning_tokens` is above 0, or is -1:** OpenRouter dropped `between_tools`, and Sonnet goes native
   (D-260). The same holds if a Sonnet request was refused for its `thinking` field. To switch:
   1. In the working tree's `PREREGISTRATION_S2` and in EXPERIMENT-S2.md › The constant, change the `sonnet-5.5` row
@@ -253,31 +258,40 @@ included.
 
 ## Step 6: reader arms (Paid)
 
-Ask once for steps 6.1 to 6.3: **about $0.53, ceiling about $2.00**. Do one arm at a time: Haiku 5.5, then Sonnet 5.5.
+Ask once for steps 6.1 to 6.3: **about $2.53, ceiling about $5.80**. The three readers run in parallel (D-267): a
+pending batch blocks only another submit of its own arm.
 
-1. Submit the whole arm. Read the cost estimate line first.
+1. Submit the three arms, one after the other, without waiting. Read each cost estimate line first.
 
    ```bash
    uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@haiku-5.5
    ```
 
-2. Fetch, about every 10 minutes, until it reports `0 batch(es) still pending`:
+   ```bash
+   uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@sonnet-5.5
+   ```
+
+   ```bash
+   uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@opus-5.5
+   ```
+
+2. Fetch every arm, about every 10 minutes, until it reports `0 batch(es) still pending`:
 
    ```bash
    uv run --project eval lancet-eval batch fetch --run <S2_RUN>
    ```
 
-3. Count (*Count after each*). The arm must reach 100. If any `error` line shows an expired or errored request,
-   resubmit only those, then repeat 6.2 and the count:
+3. Count (*Count after each*). Each of the three arms must reach 100. For each arm whose `error` lines show an
+   expired or errored request, resubmit only those (`<READER>` is `haiku-5.5`, `sonnet-5.5` or `opus-5.5`), then
+   repeat 6.2 and the count:
 
    ```bash
-   uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@haiku-5.5 --retry-errors
+   uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@<READER> --retry-errors
    ```
 
    Retry at most twice. Error records that are left, and render errors (billed, never retried), are missing pairs.
    Name each one in the run report.
 
-Then the same three steps for `<WINNER>@sonnet-5.5`.
 
 ## Step 7: score and compare
 
@@ -295,33 +309,12 @@ uv run --project eval lancet-eval compare-levers --run <S2_RUN>
 read the result by EXPERIMENT-S2.md › Decision rule:
 
 - the family rows and null guards in `lever-comparison.json`;
-- `reader_comparison` for each reader's `answer_usable`, paired differences and cost per answered question.
+- `reader_comparison` for each reader's `answer_usable`, paired differences and cost per answered question. Opus
+  5.5 is a descriptive row: report it, and leave it out of the choice (D-267).
 
 Ignore `default_decisions`. S2 is applied by hand.
 
-## Step 8: Opus 5.5 (Paid, only if it joins)
-
-Opus joins only if the Sonnet 5.5 delta minus the Haiku 5.5 delta is at least +5 points (D-252). If it does not, skip
-this step. If it does (D-267):
-
-The S2 run cannot take an Opus arm: `compare-levers` refuses a journal whose arms differ from its constant's, and
-D-73 refuses a constant younger than its run. So Opus is read in its own run, `<S2_OPUS_RUN>` =
-`eval/runs/<YYYY-MM-DD>-s2-opus-multihop_rag_s2_opus_dev`, beside fresh Haiku 5.5 and Sonnet 5.5 arms.
-
-1. Add `PREREGISTRATION_OPUS_S2` to the end of `thresholds.py`: a copy of `PREREGISTRATION_S2` with
-   `<WINNER>@opus-5.5` added to the family's arms and to `null_guard_arms`, and its comment and `provenance` citing
-   D-267 and the S2 reading that met the condition. Leave `PREREGISTRATION_S2` byte for byte as it is, or D-73 refuses
-   the S2 run.
-2. Copy `eval/corpora/multihop_rag_s2_dev.toml` to `eval/corpora/multihop_rag_s2_opus_dev.toml`. In the copy, add
-   `<WINNER>@opus-5.5` to the arms and set `[preregistration] token` to `PREREGISTRATION_OPUS_S2`.
-3. Commit both as one commit through a PR, as in step 4, and pull `main`.
-4. Ask the user (**about $2.5, ceiling about $5.80**: Opus plus a second Haiku and Sonnet reading). Then run steps 5,
-   6 and 7 with `<S2_OPUS_RUN>` for `<S2_RUN>` and `multihop_rag_s2_opus_dev` for the corpus, for the Haiku, Sonnet
-   and Opus arms.
-5. Read Opus by EXPERIMENT-S2.md › Decision rule in that run's `lever-comparison.json`. The first S2 reading stands
-   as registered.
-
-## Step 9: record
+## Step 8: record
 
 Write the choice into EXPERIMENT-S2.md › Result:
 

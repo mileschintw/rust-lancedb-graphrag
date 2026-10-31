@@ -23,7 +23,7 @@ context export rows and row hashes (Q9). Each Claude reader reads the same packe
 | `<S1 winner>` (reference) | `deepseek/deepseek-v4-flash-0731`, as in S1 | carried from the S1 run of record |
 | `<S1 winner>@haiku-5.5` | Haiku 5.5 | OpenRouter batch, BYOK |
 | `<S1 winner>@sonnet-5.5` | Sonnet 5.5 | OpenRouter batch, or the native Anthropic Message Batches API if the pilot says so (D-260) |
-| `<S1 winner>@opus-5.5` | Opus 5.5 | only if D-252's condition holds; see *Opus 5.5* |
+| `<S1 winner>@opus-5.5` (descriptive) | Opus 5.5 | OpenRouter batch, BYOK, in parallel with the other two (D-267) |
 
 `<S1 winner>` is the arm EXPERIMENT-S1.md › Result names: the chosen store's `hybrid+rerank+metadata` arm, or its
 graph-on arm if the graph joined (one of `small/hybrid+rerank+metadata`, `small/hybrid+graph+rerank+metadata`,
@@ -45,6 +45,7 @@ Corpus `multihop_rag_s2_dev`: the S1 dev corpus's documents, questions (`questio
 - Reference: the carried deepseek arm. One `answer_usable` family: the Haiku 5.5 and Sonnet 5.5 reader arms. The
   family is `decisional` only because the lever comparison needs one; S2 is direction-finding.
 - The null guard reads both reader arms.
+- `descriptive_arms`: the Opus 5.5 reader arm (D-267).
 - `readers`: the per-reader table below. The constant refuses any arm that is not `replay_source_arm` or one of its
   reader arms.
 
@@ -78,7 +79,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
             alpha=0.05,
         ),
     ),
-    descriptive_arms=(),
+    descriptive_arms=("S1_WINNER_UNSET@opus-5.5",),
     test="paired_sign_flip_exact_two_sided",
     non_evaluable_rule="p=1_m_unchanged",
     population="pairwise_per_comparison",
@@ -109,10 +110,10 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "reader the cheapest wins (D-270b). Cheaper means a lower cost per answered "
         "question at sync list price x tokens (reader_comparison, D-257). Two "
         "Claude readers' point estimates are compared through their paired deltas "
-        "against deepseek on the common population (D-270c). Opus 5.5 is run only "
-        "if the sonnet-5.5 delta minus the haiku-5.5 delta is at least +0.05, "
-        "through its own constant PREREGISTRATION_OPUS_S2, committed before its "
-        "submit (D-267); this reading is unchanged by it. Default-model switch "
+        "against deepseek on the common population (D-270c). opus-5.5 is a "
+        "descriptive arm, run unconditionally beside the other two: reported with "
+        "its paired delta and cost per answered question, outside the winner rule "
+        "and the Holm family (D-267). Default-model switch "
         "(D-245): Lancet's default generation model may change from deepseek to "
         "haiku-5.5 iff the haiku-5.5 row is not significantly worse (Holm over this "
         "family, m = 2, alpha 0.05, does not reject it with a negative delta; "
@@ -123,8 +124,8 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
     ),
     provenance=(
         "v1.1 S2. D-252 (direction-finding reader rule: highest point estimate wins "
-        "unless a cheaper reader is within 2 points, null guard on every candidate, "
-        "Opus only if Sonnet minus Haiku is at least +5 points; D-245 read as a "
+        "unless a cheaper reader is within 2 points, null guard on every candidate; "
+        "D-245 read as a "
         "paired Haiku vs deepseek comparison with a point estimate of at least -3 "
         "points), D-245 (default-model switch rule), D-254 (replay path; the "
         "deepseek arm is carried, not re-run), D-255 and D-260 (request rewrite and "
@@ -132,7 +133,9 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "Opus 5.5 on at effort low), D-257 (reader arms, replay clauses, cost per "
         "answered question at sync list price; no evidence Hits@4), D-265 (clauses "
         "by reader target), D-237 (dev pool of 100, no held-out read), D-267 (Opus "
-        "through its own constant; owner 2026-10-31: '另立常數 (Recommended)'), "
+        "a descriptive arm, run unconditionally; supersedes D-252's 'Opus only if "
+        "Sonnet minus Haiku is at least +5 points'; owner 2026-10-31: '是，無條件跑 "
+        "(Recommended)'), "
         "D-268 (Holm-adjusted p for D-245; owner: 'Holm 調整後 (Recommended)'), "
         "D-269 (numbers as D-262 and D-264; Opus over OpenRouter at list price; "
         "owner: '沿用 + 查牌價 (Recommended)'), D-270 (three readings of D-252; "
@@ -182,7 +185,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 |---|---|---|---|---|
 | Haiku 5.5 | `anthropic/claude-haiku-5.5` | OpenRouter | off: `reasoning: {enabled: false}` | 0.10 / 0.50 |
 | Sonnet 5.5 | `anthropic/claude-sonnet-5.5` | OpenRouter (else native `claude-sonnet-5-5`) | `between_tools` | 2 / 10 |
-| Opus 5.5, only if it joins (D-267) | `anthropic/claude-opus-5.5` | OpenRouter (D-269) | on, effort low | 4 / 20 (D-269) |
+| Opus 5.5, descriptive (D-267) | `anthropic/claude-opus-5.5` | OpenRouter (D-269) | on, effort low | 4 / 20 (D-269) |
 
 - A reader declared `off` or `between_tools` must report `reasoning_tokens` = 0; a record that does not is a provenance
   failure (D-255, D-260). Opus at effort low is exempt.
@@ -213,8 +216,7 @@ not-significantly-worse test.
    cost per answered question. Two Claude readers are compared through their paired deltas against deepseek on the
    common population (D-270c).
    The winner becomes S3's fixed reader.
-3. **Opus 5.5.** Opus joins only if the Sonnet 5.5 delta minus the Haiku 5.5 delta is at least +5 points (D-252),
-   through its own constant (D-267; see *Opus 5.5* below).
+3. **Opus 5.5** is a descriptive arm (D-267): reported, never a candidate, and outside the Holm family (m = 2).
 4. **Default-model switch (D-245).** Lancet's default generation model may change from deepseek to Haiku 5.5 only if
    all of these hold for the Haiku 5.5 row:
    - it is not significantly worse than deepseek: Holm over this family (m = 2, alpha 0.05) does not reject the
@@ -229,13 +231,12 @@ not-significantly-worse test.
 
 ### Opus 5.5
 
-D-252 lets Opus join only after the first reading. Its reader row is declared in this constant now (Q13, D-269): Opus
-5.5 over OpenRouter at $4 / $20 per MTok, Anthropic's list price read 2026-10-31 from
-<https://platform.claude.com/docs/en/about-claude/pricing>. Its arm is not in this constant (D-267). If the condition
-holds, `PREREGISTRATION_OPUS_S2` is written: this constant plus `<S1 winner>@opus-5.5` in the family and the null
-guard. Its name does not start with `PREREGISTRATION_S2`, so it leaves this constant's D-73 date alone, and the first
-reading stays as registered. It is read in its own run directory on its own corpus, `multihop_rag_s2_opus_dev`,
-where Haiku 5.5 and Sonnet 5.5 are read again beside Opus 5.5 (RUN-S2.md step 8).
+Opus 5.5 runs unconditionally, in the pilot and in the run of record, in parallel with Haiku 5.5 and Sonnet 5.5
+(D-267, superseding D-252's "Opus 5.5 joins only if Sonnet minus Haiku is at least +5 points"). Its arm is in
+`descriptive_arms`, so it is reported with its paired difference against deepseek and its cost per answered question,
+but it is not a candidate and does not enter the Holm family. Its reader row (Q13, D-269): over OpenRouter, thinking on
+at effort low (exempt from the `reasoning_tokens` clause, D-265), at $4 / $20 per MTok, Anthropic's list price read
+2026-10-31 from <https://platform.claude.com/docs/en/about-claude/pricing>.
 
 ## Smallest detectable effect (D-237, D-239)
 
@@ -256,7 +257,7 @@ cheaper-reader band and the -3-point D-245 floor are 2 and 3 net questions of 90
 
 The owner settled the draft's five open questions on 2026-10-31 (PLAN.md › S2 pre-registration decisions):
 
-- **D-267:** Opus 5.5 joins through its own constant, `PREREGISTRATION_OPUS_S2`.
+- **D-267:** Opus 5.5 runs unconditionally as a descriptive arm, in parallel with the other readers.
 - **D-268:** D-245's "not significantly worse" reads the Holm-adjusted p (m = 2, alpha 0.05).
 - **D-269:** S2 reuses D-262's and D-264's numbers; Opus 5.5 is read over OpenRouter at Anthropic's list price.
 - **D-270:** D-252's three open readings are applied as drafted.

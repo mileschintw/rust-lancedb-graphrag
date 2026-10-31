@@ -26,8 +26,6 @@ from lancet_eval.corpus import load_corpus
 GUIDE = repo_root() / "experiments" / "v1.1" / "RUN-S2.md"
 THRESHOLDS = Path("eval") / "src" / "lancet_eval" / "thresholds.py"
 EXPERIMENT = Path("experiments") / "v1.1" / "EXPERIMENT-S2.md"
-#: Options the guide uses that lane 109 (#109) adds; drop each once it is on main.
-PENDING = {("replay-init", "--pilot")}
 S2_TOML = Path("eval") / "corpora" / "multihop_rag_s2_dev.toml"
 
 
@@ -65,7 +63,6 @@ def test_every_command_names_options_the_cli_has() -> None:
         while argv and argv[0] in getattr(command, "commands", {}):
             command = command.commands[argv.pop(0)]  # type: ignore[attr-defined]
         known = {opt for p in command.params for opt in p.opts}
-        known |= {opt for name, opt in PENDING if name == command.name}
         used = {a for a in argv if a.startswith("--")}
         assert used <= known, f"{command.name}: unknown {sorted(used - known)}"
 
@@ -102,7 +99,8 @@ def test_the_fill_snippet_inserts_the_draft_and_fills_the_corpus(
 
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: tmp_path)
     corpus = load_corpus("multihop_rag_s2_dev")
-    assert corpus.arms == [winner, f"{winner}@haiku-5.5", f"{winner}@sonnet-5.5"]
+    readers = ("haiku-5.5", "sonnet-5.5", "opus-5.5")
+    assert corpus.arms == [winner, *(f"{winner}@{r}" for r in readers)]
 
     again = subprocess.run(run, cwd=tmp_path, check=False, capture_output=True)
     assert again.returncode != 0, "a second fill must refuse"

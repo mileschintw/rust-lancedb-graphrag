@@ -118,7 +118,12 @@ def test_each_s1_winner_builds_a_constant_that_resolves(
     assert pre.replay_source_arm == pre.reference_arm == arm
     assert pre.families[0].arms == (f"{arm}@haiku-5.5", f"{arm}@sonnet-5.5")
     assert pre.null_guard_arms == pre.families[0].arms
-    assert set(preregistration.readers_of(pre)) >= {"haiku-5.5", "sonnet-5.5"}
+    assert pre.descriptive_arms == (f"{arm}@opus-5.5",)  # D-267
+    assert set(preregistration.readers_of(pre)) == {
+        "haiku-5.5",
+        "sonnet-5.5",
+        "opus-5.5",
+    }
 
 
 def test_the_corpus_copies_s1s_sections() -> None:
@@ -184,7 +189,7 @@ def test_the_numbers_are_s1s() -> None:
     assert [(f.primary, f.role, f.alpha) for f in s2.families] == [
         ("answer_usable", "decisional", 0.05)
     ]
-    assert s2.descriptive_arms == ()
+    assert s2.descriptive_arms == ("S1_WINNER_UNSET@opus-5.5",)
 
 
 @pytest.mark.parametrize(
@@ -202,10 +207,32 @@ def test_an_arm_off_the_source_arm_is_refused(change: dict[str, Any]) -> None:
         dataclasses.replace(pre, **change)
 
 
-@pytest.mark.parametrize("corpus", [S2_CORPUS, "multihop_rag_s2_opus_dev"])
-def test_the_s2_run_directories_are_not_ignored(corpus: str) -> None:
-    rel = f"eval/runs/2026-11-02-s2-{corpus}/journal.jsonl"
+def test_the_s2_run_directory_is_not_ignored() -> None:
+    rel = f"eval/runs/2026-11-02-s2-{S2_CORPUS}/journal.jsonl"
     result = subprocess.run(
         ["git", "check-ignore", "-q", rel], cwd=repo_root(), check=False
     )
     assert result.returncode == 1, f"{rel} is ignored"
+
+
+def test_score_and_compare_levers_read_opus_as_a_descriptive_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preregistered_clean_tree: str
+) -> None:
+    """D-267: an Opus arm with records is scored and reported, outside the family."""
+    import replay_fixture as rf
+    from test_reader_comparison import OPUS_ARM, _compare, _group, _s2, _score
+
+    s2, gold, qs = _s2(tmp_path, monkeypatch, prereg=build_draft(rf.BASE))
+    _score(s2, gold)
+    payload = _compare(s2, gold)
+
+    (family,) = payload["families"]
+    assert [c["arm"] for c in family["comparisons"]] == [
+        f"{rf.BASE}@haiku-5.5",
+        f"{rf.BASE}@sonnet-5.5",
+    ]
+    rows = {r["arm"]: r for r in _group(payload)["readers"]}
+    opus = rows[OPUS_ARM]
+    assert opus["answer_usable"]["n_usable"] == len(qs.g_ids) - 1
+    assert opus["cost"]["n_answered"] == opus["answer_usable"]["n_usable"]
+    assert opus["cost"]["per_answered_usd"] > 0
