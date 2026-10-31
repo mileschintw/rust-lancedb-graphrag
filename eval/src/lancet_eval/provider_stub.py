@@ -1,10 +1,11 @@
 """Loopback-only OpenRouter provider stub for the OI-02 full-stack replay (06.3.4.1-07 Task 2).
 
 Python stdlib only (`http.server.ThreadingHTTPServer`, `json`) -- no new dependency (AI-SPEC
-§2). Serves the endpoints the engine's OpenRouter clients call: `/models` (capability check at
-startup, before any query runs), `/embeddings`, `/chat/completions`, and `/rerank` (the rerank
-lever's client, and the LlamaIndex baseline's; added for the free S0 rehearsal, #76). All responses are synthetic; no request body is logged beyond its length
-(T-06.3.4.1-07-04/09).
+§2). Serves the endpoints the engine's OpenRouter clients call: `/models`
+(capability check at startup, before any query runs), `/embeddings`,
+`/chat/completions`, and `/rerank` (the rerank lever's client and the LlamaIndex
+baseline's; added for the free S0 rehearsal, #76). All responses are synthetic; no
+request body is logged beyond its length (T-06.3.4.1-07-04/09).
 
 The stub refuses to bind to any host other than ``127.0.0.1``/``::1`` -- this is enforced in
 ``run_server`` before the socket is ever opened, not just documented.
@@ -192,12 +193,14 @@ def build_embeddings_response(
     return body, fallback_count
 
 
-def build_rerank_response(model: str, query: str, documents: list[str]) -> dict[str, Any]:
-    """The `/rerank` response body (#76): one result per document, each index once, scored by
-    the share of the query's words the document holds, best first (ties to the lower index).
-    `model` echoes the request's, as both the engine's rerank client
-    (`engine/src/rerank/openrouter.rs`) and the LlamaIndex baseline's refuse a reply naming
-    another model. `usage.cost` is 0.0: a stub call is free."""
+def build_rerank_response(
+    model: str, query: str, documents: list[str]
+) -> dict[str, Any]:
+    """The `/rerank` response body (#76): one result per document, each index once,
+    scored by the share of the query's words the document holds, best first (ties to
+    the lower index). `model` echoes the request's, as both the engine's rerank client
+    (`engine/src/rerank/openrouter.rs`) and the LlamaIndex baseline's refuse a reply
+    naming another model. `usage.cost` is 0.0: a stub call is free."""
     query_words = set(re.findall(r"[a-z0-9]+", query.lower()))
     scored = []
     for index, document in enumerate(documents):
@@ -339,12 +342,9 @@ def make_handler(
                 stats.increment("rerank")
                 raw_documents = body.get("documents", [])
                 documents = raw_documents if isinstance(raw_documents, list) else []
-                self._write_json(
-                    200,
-                    build_rerank_response(
-                        str(body.get("model", "")), str(body.get("query", "")), documents
-                    ),
-                )
+                model = str(body.get("model", ""))
+                query = str(body.get("query", ""))
+                self._write_json(200, build_rerank_response(model, query, documents))
                 return
             self._write_json(404, {"error": "not found"})
 

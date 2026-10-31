@@ -187,11 +187,12 @@ def test_build_embeddings_response_zero_fallback_when_all_known():
     assert fallback == 0
 
 
-# --- build_rerank_response -----------------------------------------------------------------
+# --- build_rerank_response ----------------------------------------------------
 
 
 def test_build_rerank_response_scores_every_document_once():
-    body = build_rerank_response("voyageai/rerank-2.5-lite", "acme revenue", ["a", "b", "c"])
+    model = "voyageai/rerank-2.5-lite"
+    body = build_rerank_response(model, "acme revenue", ["a", "b", "c"])
 
     assert sorted(r["index"] for r in body["results"]) == [0, 1, 2]
     assert all(isinstance(r["relevance_score"], float) for r in body["results"])
