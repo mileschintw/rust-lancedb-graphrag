@@ -30,6 +30,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | — | — | none running | — | — |
 
+Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); briefs written. The app refused the start because the user was on Remote Control (sessions start only on a message typed in the desktop app); start them on the user's next typed desktop message. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`.
+
 Lane 44 started 2026-10-30 15:25 -0700 on the user's typed "Start 44"; runs alone (S2's first ticket; scope includes the CI owner comments on #44). Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
 
 Lane 39 started 2026-10-30 13:35 -0700 on the user's typed "Start 39". Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
