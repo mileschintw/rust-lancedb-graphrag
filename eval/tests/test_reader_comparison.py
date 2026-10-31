@@ -83,8 +83,12 @@ def _s2(  # type: ignore[no-untyped-def]
     usage: dict[str, tuple[int, int, int]] | None = None,
     reader_arms: tuple[str, ...] = READER_ARMS,
     role: str = "heldout",
+    spec_fn: fx.SpecFn = fx.default_spec,
 ):
-    """An S2 run of the carried deepseek arm and `reader_arms`, plus its gold table."""
+    """An S2 run of the carried deepseek arm and `reader_arms`, plus its gold table.
+
+    `spec_fn` shapes the S1 records the deepseek arm carries.
+    """
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
     gold = fx.write_corpus(root, qs, (rf.BASE, *reader_arms), role=role)
@@ -99,7 +103,7 @@ def _s2(  # type: ignore[no-untyped-def]
         raising=False,
     )
     s1 = tmp_path / "s1"
-    rf.write_s1_run(s1, qs)
+    rf.write_s1_run(s1, qs, spec_fn=spec_fn)
     s2 = tmp_path / "s2"
     replay_init(source_run=s1, arms=[rf.BASE], run=s2)
     for arm in reader_arms:
@@ -211,16 +215,72 @@ def test_cost_per_answered_question_uses_the_declared_sync_prices(
         OPUS_ARM: pytest.approx(8.5e-2 / 9),
     }
 
-    # The carried deepseek arm is costed at the engine reader's list price.
+    # The carried deepseek arm is costed at its sync list price, not at the budget
+    # ceiling `measure` charges a drive (#81).
     base = rows[rf.BASE]
-    assert base["price"]["source"] == "measure.GENERATION_*_PRICE_PER_1M"
-    per_record = _sync_usd(
-        500,
-        50,
-        measure.GENERATION_INPUT_PRICE_PER_1M,
-        measure.GENERATION_OUTPUT_PRICE_PER_1M,
-    )
+    assert base["price"] == {
+        "input_per_mtok": 0.0137,
+        "output_per_mtok": 1.28,
+        "source": "measure.GENERATION_LIST_*_PRICE_PER_1M",
+    }
+    per_record = _sync_usd(500, 50, 0.0137, 1.28)
     assert base["cost"]["per_answered_usd"] == pytest.approx(per_record)
+    assert measure.GENERATION_INPUT_PRICE_PER_1M == 0.14  # the ceiling is untouched
+
+
+def test_a_degraded_deepseek_record_drops_its_question_from_every_reader_row(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from lancet_eval.lever_comparison import render_markdown
+
+    # lv-g000 is answered wrongly by Haiku and Opus; lv-g002 by none of them.
+    degraded = {"lv-g000", "lv-g002"}
+
+    def spec(arm: str, qid: str) -> fx.Spec:
+        return fx.Spec(degraded=arm == rf.BASE and qid in degraded)
+
+    s2, gold, qs = _s2(tmp_path, monkeypatch, spec_fn=spec)
+    _score(s2, gold)
+    payload = _compare(s2, gold)
+    group = _group(payload)
+    rows = {r["arm"]: r for r in group["readers"]}
+    n_g = len(qs.g_ids)
+    n = n_g - len(degraded)
+
+    # Every reader is scored and costed on the same questions: the ones every
+    # compared arm is ok on. A reader's replay of a degraded context is not one.
+    usable = {rf.BASE: n, HAIKU_ARM: n - 1, SONNET_ARM: n, OPUS_ARM: n}
+    for arm, n_usable in usable.items():
+        au = rows[arm]["answer_usable"]
+        assert (au["n"], au["n_excluded"], au["n_usable"]) == (n, 2, n_usable)
+        assert au["mean"] == pytest.approx(n_usable / n)
+        assert rows[arm]["cost"]["n_answered"] == n_usable
+    prompt, completion, _ = USAGE[HAIKU_ARM]
+    haiku = DECLARATION[HAIKU_ARM].price
+    assert rows[HAIKU_ARM]["cost"]["sync_usd"] == pytest.approx(
+        n * _sync_usd(prompt, completion, haiku.input_per_mtok, haiku.output_per_mtok)
+    )
+
+    # Each row says which arm drops how many questions, and why.
+    drops = {d["arm"]: d for d in group["population"]["drops"]}
+    assert group["population"]["n"] == n
+    assert list(drops) == list(ALL_ARMS)
+    assert drops[rf.BASE] == {
+        "arm": rf.BASE,
+        "n": 2,
+        "own_failure": 0,
+        "own_provenance": 2,
+        "of_which_rerank_degrade": 2,
+    }
+    for arm in READER_ARMS:
+        assert drops[arm]["n"] == 0
+    report = render_markdown(payload)
+    assert f"`{rf.BASE}` drops 2 (provenance 2, of which rerank degraded 2)" in report
+
+    # The paired rows keep their own pairwise populations.
+    pairs = {(p["arm"], p["against"]): p for p in group["pairs"]}
+    assert pairs[(HAIKU_ARM, rf.BASE)]["n_pairs"] == n
+    assert pairs[(SONNET_ARM, HAIKU_ARM)]["n_pairs"] == n_g
 
 
 def test_a_thinking_on_reader_is_costed_with_its_reasoning_tokens(

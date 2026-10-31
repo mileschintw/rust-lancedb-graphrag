@@ -71,6 +71,11 @@ MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 # tests/fixtures/openrouter_models_excerpt_2026-10-09.json.
 GENERATION_INPUT_PRICE_PER_1M = 0.14
 GENERATION_OUTPUT_PRICE_PER_1M = 1.28
+# #81, D-257: the 2026-10-09 listing above, as a price and not a budget ceiling. The S2
+# reader comparison costs the carried deepseek arm at it, like every other reader at
+# its sync list price; the ceilings above still bound what a drive may spend.
+GENERATION_LIST_INPUT_PRICE_PER_1M = 0.0137
+GENERATION_LIST_OUTPUT_PRICE_PER_1M = 1.28
 # #54, D-255 fact (2026-10-30): a Claude reader's batch request costs half its sync
 # list price. The sync price is the reader's declaration in the pre-registration.
 BATCH_PRICE_FACTOR = 0.5

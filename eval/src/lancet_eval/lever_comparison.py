@@ -64,8 +64,8 @@ from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_que
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.measure import (
     BATCH_PRICE_FACTOR,
-    GENERATION_INPUT_PRICE_PER_1M,
-    GENERATION_OUTPUT_PRICE_PER_1M,
+    GENERATION_LIST_INPUT_PRICE_PER_1M,
+    GENERATION_LIST_OUTPUT_PRICE_PER_1M,
     ReaderPriceError,
     compute_spend,
     reader_declaration,
@@ -1318,13 +1318,17 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
 LABEL_READER_P = (
     "exact paired sign-flip p, reported, not used (direction-finding, D-252)"
 )
-#: The carried engine arm's sync list price: the deepseek price `measure` charges.
-ENGINE_PRICE_SOURCE = "measure.GENERATION_*_PRICE_PER_1M"
+#: The carried engine arm's sync list price: deepseek's listing, not the budget
+#: ceiling `measure` charges a drive (#81).
+ENGINE_PRICE_SOURCE = "measure.GENERATION_LIST_*_PRICE_PER_1M"
 COST_BASIS = (
-    "cost per answered question = sync list price x the reader's tokens over its ok G "
-    "records, divided by its answer_usable G answers; the retrieval every reader "
-    "shares is left out. The batch spend is the reader's actual usage at the batch "
-    f"rate ({BATCH_PRICE_FACTOR} x the sync price), apart from the comparison."
+    "Every reader is scored on the same G questions: the ones every reader of the "
+    "group is ok on (a reader replaying a rerank-degraded context is dropped with its "
+    "base). cost per answered question = sync list price x the reader's tokens over "
+    "those questions, divided by its answer_usable answers among them; the retrieval "
+    "every reader shares is left out. The batch spend is the reader's actual usage at "
+    f"the batch rate ({BATCH_PRICE_FACTOR} x the sync price), apart from the "
+    "comparison."
 )
 
 
@@ -1362,21 +1366,48 @@ def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
     """The sync list price of an arm's reader, and where it is declared."""
     if not is_reader_arm(arm):
         return (
-            ReaderPrice(GENERATION_INPUT_PRICE_PER_1M, GENERATION_OUTPUT_PRICE_PER_1M),
+            ReaderPrice(
+                GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
+            ),
             ENGINE_PRICE_SOURCE,
         )
     price = _priced(lambda: reader_declaration(arm, ctx.readers).price)
     return price, "preregistration"
 
 
-def _ok_g_records(ctx: _Ctx, arm: str) -> list[RunRecord]:
-    label = canonical_arm(arm)
-    return [
-        rec
-        for qid in ctx.g_ids
-        if (rec := ctx.by_key.get((qid, label))) is not None
-        and _record_state(rec) == "ok"
-    ]
+def _reader_population(
+    ctx: _Ctx, members: Sequence[str]
+) -> tuple[list[str], dict[str, Any]]:
+    """The G questions every reader of a group is ok on, and why the rest are not.
+
+    A reader record carries none of the engine clauses, so its replay of a degraded
+    context is ok; the common population drops it with its base record (#81). Each
+    reader's own drops are counted the way `_exclusions` counts them; a question two
+    readers drop is counted under both.
+    """
+    states = {
+        arm: {
+            qid: _record_state(ctx.by_key.get((qid, canonical_arm(arm))))
+            for qid in ctx.g_ids
+        }
+        for arm in members
+    }
+    common = [qid for qid in ctx.g_ids if all(states[a][qid] == "ok" for a in members)]
+    drops: list[dict[str, Any]] = []
+    for arm in members:
+        failure = [q for q, s in states[arm].items() if s == "failure"]
+        provenance = [q for q, s in states[arm].items() if s == "provenance"]
+        drops.append({
+            "arm": arm,
+            "n": len(failure) + len(provenance),
+            "own_failure": len(failure),
+            "own_provenance": len(provenance),
+            "of_which_rerank_degrade": sum(
+                carries_rerank_degraded(ctx.by_key[(q, canonical_arm(arm))])
+                for q in provenance
+            ),
+        })
+    return common, {"n": len(common), "n_g": ctx.n_g, "drops": drops}
 
 
 def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
@@ -1387,9 +1418,10 @@ def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
     return 0.0 if meta is None else tokens_usd(meta, price)
 
 
-def _reader_row(ctx: _Ctx, arm: str) -> dict[str, Any]:
+def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any]:
+    """One reader's `answer_usable` and cost over the group's common population."""
     price, source = _reader_price(ctx, arm)
-    recs = _ok_g_records(ctx, arm)
+    recs = [ctx.rec(qid, arm) for qid in population]
     usable = _usable_value(ctx)
     n_usable = sum(int(usable(r) or 0) for r in recs)
     sync = sum(_sync_usd(r, price) for r in recs)
@@ -1498,9 +1530,11 @@ def _reader_comparison(ctx: _Ctx, arms: Sequence[str]) -> dict[str, Any] | None:
             base,
             *in_registry_order([a for a in reader_arms if reader_base_arm(a) == base]),
         ]
+        common, population = _reader_population(ctx, members)
         groups.append({
             "base": base,
-            "readers": [_reader_row(ctx, a) for a in members],
+            "population": population,
+            "readers": [_reader_row(ctx, a, common) for a in members],
             "pairs": [
                 _reader_pair(ctx, members[j], members[i])
                 for i in range(len(members))
@@ -1892,6 +1926,23 @@ def _table(header: Sequence[str], rows: Sequence[Sequence[object]]) -> list[str]
     ]
 
 
+def _render_drop(drop: Mapping[str, Any]) -> str:
+    """How many G questions one reader drops from the common population, and why."""
+    out = f"`{drop['arm']}` drops {drop['n']}"
+    if not drop["n"]:
+        return out
+    why = []
+    if drop["own_failure"]:
+        why.append(f"failure {drop['own_failure']}")
+    if drop["own_provenance"]:
+        degraded = drop["of_which_rerank_degrade"]
+        why.append(
+            f"provenance {drop['own_provenance']}"
+            + (f", of which rerank degraded {degraded}" if degraded else "")
+        )
+    return f"{out} ({'; '.join(why)})"
+
+
 def _render_readers(rc: Mapping[str, Any]) -> list[str]:
     """The reader comparison (#54): per group, readers, pairs and null guards."""
     out: list[str] = []
@@ -1930,6 +1981,13 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
                 for r in group["readers"]
             ],
         )
+        pop = group["population"]
+        out += [
+            f"{pop['n']} of {pop['n_g']} G questions are ok on every reader. "
+            + "; ".join(_render_drop(d) for d in pop["drops"])
+            + ".",
+            "",
+        ]
         out += [f"Paired `answer_usable` differences on G; {group['p_label']}.", ""]
         out += _table(
             ["arm - against", "n_pairs", "delta", "95% CI", "n_pos/n_neg", "raw p"],
