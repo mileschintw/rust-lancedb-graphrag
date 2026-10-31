@@ -36,7 +36,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
 | audit-s012 | none (opens issues) | local_0b05ece6-b691-41ff-ab64-1658bbffdae1 (`claude/lane-audit-s012-ce867a`) | started 2026-10-31 on the user's typed "Start audit"; read-only, no PR; S0 section first (user decides S0 tonight); if clean, ask to start a free provider_stub S0 rehearsal in the main checkout | — |
 | run-s01 | none (S0 run) | local_84c49113-d407-4be2-bb02-3ba19e84b3a8 (app put it in the coordinator worktree despite cwd; told 2026-10-31 to run every command in D:/Repos/lancet) | paused for the reboot (steps 0, 2 and the rehearsal done; no held-out read). S0 with `PYTHONUTF8=1` (#84 workaround, user's choice) after the reboot; asks before 3.2; **do not fast-forward the main checkout while it runs** | — |
-| 79 | #79 | local_1bcc1f38-7e77-4d99-8d8c-a80616cd1707 | started 2026-10-31 on the user's typed "Start all three" | — |
+| 79 | #79 | local_1bcc1f38-7e77-4d99-8d8c-a80616cd1707 | done @ 17801a6c; PR #85 open, merge on green (auto-PR rule); recheck CI after the reboot | — |
 | 80 | #80 #82 | local_73af9a6c-5f1e-47a9-9bd6-b2b6e5122e73 | FAILED TO START (app: "Background full checkout failed: config-hooks-refused"); the user can retry from that session; not restarted | — |
 | 81 | #81 | local_73abd391-fc59-4104-8901-ddc3156a2e76 | parked; #68 merged (PR #83). Send GO #81 after the reboot (held so it starts no work before the reboot) | GO #81 after #68 merges |
 
