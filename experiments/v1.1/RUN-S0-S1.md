@@ -61,11 +61,12 @@ issue is closed and its fix is on `main` (`git log origin/main --oneline --grep 
 | Issue | Blocks | Why |
 |---|---|---|
 | #67 seed sends no chunking | step 1 | `seed --store eval-s1` would build paragraph fragments, not merged chunks |
+| #69 identity check reads only `lancet_eval` | steps 1.5, 4.3, 4.4 | `preflight --store eval-s1` and the merged drive's identity gate fail on a correct S1 store |
 | #65 two-store context export | step 4.5 | stopgap given in step 4.5 |
 | #68 dev-role scoring | steps 4.6 to 4.8 | `score` and `compare-levers` read only held-out IDs and refuse a dev run |
 
-Steps 2 and 3 do not depend on any of them. With #67 open, run steps 2 and 3 and stop before step 1. With #68 open,
-steps 4.1 to 4.5 may run, and the run stops before 4.6 until it clears.
+Steps 2 and 3 do not depend on any of them. With #67 or #69 open, run steps 2 and 3 and stop before step 1. With #68
+open, steps 4.1 to 4.5 may run, and the run stops before 4.6 until it clears.
 
 Then `git pull --ff-only` on `main`, check that `git status` is clean, fix `<S0_RUN>` and `<S1_RUN>`, and build the
 engine once:
@@ -79,7 +80,7 @@ The generate-only bin (`generate_from_context`) is built by cargo on its first u
 ## Step 1: S1 store build (Store build, Paid)
 
 Ask once for the whole step: **about $2-3, ceiling about $11**. It builds the second store `data/lancedb-eval-s1` and
-the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 cleared.
+the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 and #69 cleared.
 
 1. Create the schema and apply the eval tables. Free; touches only `lancet_eval_s1`.
 
@@ -112,7 +113,8 @@ the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 cleared.
    uv run --project eval lancet-eval seed --corpus multihop_rag_s1_dev --store eval-s1
    ```
 
-4. Check the chunking took. This query is the authoritative check:
+4. Check the chunking took. Step 1.5's preflight reports it as its `store_chunking` check (added by #67); this query
+   checks the same thing directly:
 
    ```bash
    docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT chunk_strategy, chunk_size, chunk_overlap, count(*) FROM lancet_eval_s1.documents GROUP BY 1, 2, 3;"
@@ -121,7 +123,8 @@ the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 cleared.
    It must print one row: `structure-merge`, 256, 25, 346. Anything else: stop and tell the user; the store is not
    the S1 store.
 
-5. Preflight the store. It sends the arm canaries of the two merged arms, a few cents:
+5. Preflight the store. It sends the arm canaries of the two merged arms, a few cents. Every check must pass,
+   `store_chunking` and `index_identity` included:
 
    ```bash
    uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev
@@ -168,8 +171,8 @@ LANCET_ENV=eval ./engine/target/debug/engine
 (cd gateway && LANCET_ENV=eval LANCET_GATEWAY__DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval' go run .)
 ```
 
-1. Preflight. Free: a two-arm corpus sends no arm canary, so this checks only store isolation, index identity and
-   gateway and engine reachability.
+1. Preflight, under a cent. A two-arm corpus sends no arm canary; this checks store isolation, index identity,
+   gateway and engine reachability, and answers one corpus-generation probe question.
 
    ```bash
    uv run --project eval lancet-eval preflight --corpus multihop_rag_s0_heldout
