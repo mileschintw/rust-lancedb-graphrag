@@ -129,3 +129,10 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - Lane 59, #59 + #61 (telemetry_query CI hang; PR #62's tracing flake): session local_c2bb79da-b215-4c0b-932a-492cfac1a805, branch `claude/lane-59-c47b6e` @ baa4ed76. Final loops passed 20/20 at t4 and 5/5 at the default thread count, plus the fast tier and clippy. PR #91 merged 2026-10-31 ~04:55 -0700 after `ci` passed. #59 and #61 closed. #64 is now startable on the user's yes.
 - Lane 53, #53 (batch submit and fetch): session local_52506005-0052-4550-9ba5-b4037844160e, branch `claude/lane-53-f21668` @ 8953897f. Built after GO #53 against #50's render and #80's replay fields. It went through three review rounds with no blocker, and the fast tier, slow re-score and integration tests passed. No paid batch was submitted. PR #92 merged ~04:55 after `ci` passed. #53 closed. Both lanes' engine/target were deleted; the main checkout is at cc10774e.
 - Unattended note 2026-10-31 ~05:20 -0700: main's push run at dc8a6ccc (the merge of #91) failed engine on `graph_augmentation_attempted_and_failed_is_observable_end_to_end` (`left: []`). PR #71 failed the same test twice. Opened #93 under the follow-up permission. PR #71 is held, not Stuck, because main itself is red. Lane 59 was asked to diagnose only.
+
+## 2026-10-31 afternoon: S0 record, #93 fix, #49 closed
+
+- **run-s01:** PR #89 (S0 run of record) merged 2026-10-31 as b3fba1c5 on the user's "直接合併 (Recommended)". The worktree D:/Repos/lancet-run-s01 was removed. D:/s0-run-backup/ is left for the user to delete by hand (the coordinator's delete was blocked as a protected path).
+- **#93:** PR #94 from `lane-93` (lane 59's test-only fix) was opened on the user's "好，開始 lane 93" and merged as 0fc830e8 after `ci` passed (engine 3m27s).
+- **#49 (parent):** closed on the user's "關掉 (Recommended)".
+- **#95** (D-265) was opened on the user's "新增 D-ID (Recommended)".

@@ -55,8 +55,14 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | PR #71 @ 2fc97126 (main merged in) **held**: engine failed twice (run + one rerun) on the test in #93, which also fails on main's push run at dc8a6ccc, so the lane itself is not at fault. Merge once #93 is fixed and `ci` passes; then delete `D:/lane56-targets` (user: "等 lane 59 merge 後再跑 (Recommended)") | — |
-| run-s01 | none (S0 run) | local_84c49113-d407-4be2-bb02-3ba19e84b3a8 (app put it in the coordinator worktree despite cwd; told 2026-10-31 to run every command in D:/Repos/lancet) | S0 done 03:45 (no significant difference; held-out read 1/2 complete); PR #89 (`lane-run-s01` @ 97eaa82e) open, **merge held for the user**; worktree D:/Repos/lancet-run-s01 and D:/s0-run-backup/ kept until then | — |
+| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | PR #71: #93 fixed by PR #94 (merged 0fc830e8, 2026-10-31); lane 56 told to merge origin/main and push. Merge once `ci` passes; then delete `D:/lane56-targets` (user: "等 lane 59 merge 後再跑 (Recommended)") | — |
+| 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | started | — |
+| 74 | #74 #75 | local_66433095-dc50-4460-bbe1-8a93078ad6f6 | started | — |
+| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | started | — |
+| 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | parked | #76 merged (same section: llamaindex `cli.py` › `export`) |
+| 95 | #95 | local_b6b939b9-0c70-4fa0-84e9-974bea1fcea2 | started | — |
+
+Lanes 64, 74, 76, 77 and 95 started 2026-10-31 13:55 -0700 on the user's answers: "#64 計數器 flake, #74 + #75 執行指南, #76 免費預演, #77 + #78 成本與保留讀取" and "新增 D-ID". The same answer set: PR #89 merged ("直接合併"), #49 closed ("關掉"). Only lane 64 builds the engine. Owners: lane 74 owns `RUN-S0-S1.md`, `external_run.py` and `journal.py`; lane 77 owns `eval/src/lancet_eval/cli.py`; lane 76 owns the stub and the export's client construction; lane 95 owns `experiments/v1.1/PLAN.md` (D-265 pinned). #94 and lane 64 both edit `engine/src/tests.rs`, different tests (mechanical overlap).
 
 Lanes 52 and 59 started 2026-10-30 22:20 -0700 on the user's typed "Start 52 and 59". Lane 52 records ruling 7 as D-260. Lane 59 must not touch lane 56's files; any CI/doc timeout change it needs is applied after lane 56 merges. Three engine builders now (47, 56, 59), each at `CARGO_BUILD_JOBS=2`. The sccache cache location is pinned by `%APPDATA%\Mozilla\sccache\config\config` (`[cache.disk]` dir `D:\sccache`, 40 GiB). It was set in a side session on the user's "可以，就這麼做" (2026-10-30). Lane 56 documents it in `docs/testing.md`. The `SCCACHE_DIR` prefix is no longer needed, and lanes 47, 56 and 59 have been told. Lane rule (lane 56, 2026-10-30): never set `CARGO_TARGET_DIR` or `CARGO_PROFILE_*`, since sccache keys on them (warm second worktree 991 s vs cold 1,430-1,605 s, 63% hits); `CARGO_BUILD_JOBS` is not in the key. Copy into engine briefs until `docs/testing.md` carries it. Lane 59 widened by the coordinator (test-only, 2026-10-30): the ScopedSubscriber guard goes to every test subscriber site (`telemetry_ingest.rs`, `telemetry_metrics.rs`, `telemetry/mod.rs` tests) and `engine/src/testkit.rs`; cause reproduced as a tracing-core dispatcher-lock deadlock when an OTel provider shuts down on another thread. Lane 59 also fixes the PR #62 flake (`graph_augmentation_attempted_and_failed_is_observable_end_to_end`: tracing callsite interest cached as never on a thread with no subscriber; test-only, all test `set_default` sites converted to `ScopedSubscriber`; coordinator call, 2026-10-30).
 
@@ -78,16 +84,15 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
-| #49 | — | — | — | S2 spec only (D-254 to D-259, PR #55) | limited: parent spec |
 | #56 | 1 (next to #47 and #51) | — (after #44; files overlap) | none set | `engine/Cargo.toml` › `[profile.*]`, new `.cargo/config.toml` if needed, `docs/testing.md` (job-count rule, timings), CI cache check in #44's workflow (opened 2026-10-30 from a forked side session on the user's "把這件事規劃成issue，然後交給coordinator安排如何？") | limited: item 1 (sccache machine setup) needs the user's yes; the rest is free |
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
-| #64 | 1 (#59 merged; startable on the user's yes, outside the unattended scope) | — | lane 59's edits are on main: `engine/src/tests.rs`, `engine/src/ingest.rs` (lane 59 edits both) | `engine/src/ingest.rs` › `REBUILD_COUNTER` (product counter; count per store or test-scoped), `engine/src/tests.rs` › `debounce_coalesces_burst` (opened 2026-10-31 by lane 59; not seen failing yet) | free; needs a product change in `ingest.rs` |
-| #93 | 1 | — | none set | `engine/src/tests.rs` › `graph_augmentation_attempted_and_failed_is_observable_end_to_end` + #91's dispatcher setup (fails on main after #91 + #86; opened 2026-10-31 by the coordinator) | main engine CI fails intermittently; blocks PR #71. Diagnosed: graph op timeout under CI load. Verified test-only fix on `lane-93` @ 87434100 (t4 20/20, fast tier, clippy); a fix lane waits for the user's yes |
-| #74 | 1 | — | none set | `experiments/v1.1/RUN-S0-S1.md` step 0: build release bins up front (audit-s012) | free; carried in brief run-s01 for tonight |
-| #75 | 1 | — | none set | RUN guide: count 351 records per arm after 3.2/3.5 (rerank halt exits 0; run-external errors final) (audit-s012) | free; carried in brief run-s01 |
-| #76 | 2 | — | none set | `provider_stub` /rerank, LlamaIndex endpoint override, S0 rehearsal corpus (audit-s012) | free; tonight replaced by a paid 3-question rehearsal |
-| #77 | 2 | — | none set | drive commands print no D-258 cost estimate (audit-s012) | free; blocks nothing |
-| #78 | 2 | — | none set | D-237 held-out reads not counted; export skips split gates (audit-s012) | free; blocks nothing |
+| #64 | 1 (lane 64 running) | — | none | `engine/src/ingest.rs` › `REBUILD_COUNTER`, `engine/src/tests.rs` › `debounce_coalesces_burst` | free |
+| #74 | 1 (lane 74 running, with #75) | — | none | `experiments/v1.1/RUN-S0-S1.md` › step 0 | free |
+| #75 | 1 (lane 74 running) | — | none | `RUN-S0-S1.md` › drive steps (per-arm count); `external_run.py` › resume | free |
+| #76 | 1 (lane 76 running) | — | none | `provider_stub.py`, llamaindex `providers.py`, `cli.py` › `export` client construction, new `multihop_rag_s0_rehearsal.toml` | free |
+| #77 | 2 (lane 77 parked, with #78) | — | after #76: llamaindex `cli.py` › `export` | `eval/src/lancet_eval/cli.py` › `run_benchmark`, `run_external_command`; llamaindex `cli.py` › `export` | free |
+| #78 | 2 (lane 77 parked) | — | after #76: llamaindex `cli.py` › `export` | llamaindex `cli.py` › `export` (split gates); `run.py` › `require_split_gates` | free |
+| #95 | 1 (lane 95 running) | — | none | `experiments/v1.1/PLAN.md` › D-257 pointer, new D-265 | free |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
 
@@ -114,12 +119,7 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
 
 ## Waiting for the user's decision
 
-- **Merge PR #89 (S0 run of record + EXPERIMENT-S0 › Result)?** Since 2026-10-31 04:00 -0700. Readout: no significant difference (delta −0.34 pt, 95% CI [−5.05, +4.38], Holm p = 1.0). Coverage 297/308: 11 pairs excluded, likely the rerank-degraded first-segment records (machine load), not re-driven. #89 also exempts `-s0-`/`-s1-` run dirs in `test_journal.py`. After the merge: may the worktree D:/Repos/lancet-run-s01 and D:/s0-run-backup/ be deleted?
-- **D-257 wording vs #82 (from PR #90):** D-257 says "`is_byok` is true and the provider is Anthropic". #90 replaced that for the native Anthropic target with a target-specific rule (`is_byok` null, provider `api.anthropic.com`). Should a new D-ID in `experiments/v1.1/PLAN.md` record it? Recommendation: yes, a one-line D-ID added with S2's pre-registration work.
-- **#93 (opened 2026-10-31 05:20 -0700 under the follow-up permission): main's engine CI is red.** `graph_augmentation_attempted_and_failed_is_observable_end_to_end` fails deterministically (3/3) since #91 merged on top of #86. **Diagnosed by lane 59 (reports/59.md › #93):** it is not #86, and not tracing. The default 2424 ms `graph_operation_timeout_ms` sometimes times out on the 4-CPU CI runner, and then the `graph_augmentation` tag is never recorded. A 1 ms timeout reproduces it deterministically. Draft fix on branch `lane-93` @ 87434100, test-only: the three end-to-end tests lift the graph budgets and assert there is no `GRAPH_TIMEOUT`. The D-77 product default is unchanged. **Start lane 93 with that branch?** It blocks PR #71, and engine PRs fail at random. Recommendation: yes, in lane 59's session.
-- **#64** can start now, since #59 has merged, but it is outside the unattended scope and starts only on the user's yes.
-- **Close parent #49 (S2 code preparation)?** All its children are closed: #50, #51, #52, #53, #54, #80, #81 and #82. S2's code path is on main at cc10774e. Recommendation: close it.
-- **#74 to #78** (audit-s012 run-guide and tool gaps) are not in the unattended scope. #74, #75 and #76 were worked around in S0. Before S1, decide which of them get lanes.
+- **Delete D:/s0-run-backup/ by hand** (user: "直接合併 (Recommended)", which included deleting it). The coordinator's `Remove-Item` was blocked as a protected path. Its 33 files match the run dir committed by PR #89 (merged 2026-10-31 as b3fba1c5). The worktree D:/Repos/lancet-run-s01 was removed.
 
 S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
 - **S3 grill input (not yet a decision; for the S3 grill → spec → tickets session to read).** Relayed 2026-10-31 from the user's side session local_97b7d7f4-6748-4ee2-a8b6-9343471d99e4, with the user's words: "可以，把這點補進去到時候可以參考到的地方，並且我甚至覺得我們用的deepseek模型都太強，可能可以再多找一個更便宜的模型來測".
