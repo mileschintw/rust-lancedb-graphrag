@@ -8,9 +8,12 @@ import httpx
 import pytest
 
 from lancet_llamaindex.providers import (
+    EMBEDDING_ENDPOINT_ENV,
+    RERANK_ENDPOINT_ENV,
     OpenRouterEmbedding,
     OpenRouterReranker,
     ProviderError,
+    endpoints_from_env,
 )
 
 
@@ -153,3 +156,34 @@ def test_a_bare_model_name_in_the_reply_is_accepted():
     ranked = OpenRouterReranker(api_key="k", http=http).rerank("q", ["a", "b"])
 
     assert ranked == [(1, 0.4), (0, 0.2)]
+
+
+def test_the_endpoints_default_to_openrouter(monkeypatch):
+    monkeypatch.delenv(EMBEDDING_ENDPOINT_ENV, raising=False)
+    monkeypatch.delenv(RERANK_ENDPOINT_ENV, raising=False)
+
+    assert endpoints_from_env() == (
+        "https://openrouter.ai/api/v1/embeddings",
+        "https://openrouter.ai/api/v1/rerank",
+    )
+
+
+def test_the_engine_endpoint_variables_override_the_endpoints(monkeypatch):
+    # The same variables point the engine at provider_stub (scripts/oi02-replay.ps1).
+    monkeypatch.setenv(EMBEDDING_ENDPOINT_ENV, "http://127.0.0.1:8099/embeddings")
+    monkeypatch.setenv(RERANK_ENDPOINT_ENV, "http://127.0.0.1:8099/rerank")
+
+    assert endpoints_from_env() == (
+        "http://127.0.0.1:8099/embeddings",
+        "http://127.0.0.1:8099/rerank",
+    )
+
+
+def test_a_blank_override_keeps_openrouter(monkeypatch):
+    monkeypatch.setenv(EMBEDDING_ENDPOINT_ENV, "  ")
+    monkeypatch.setenv(RERANK_ENDPOINT_ENV, "")
+
+    assert endpoints_from_env() == (
+        "https://openrouter.ai/api/v1/embeddings",
+        "https://openrouter.ai/api/v1/rerank",
+    )

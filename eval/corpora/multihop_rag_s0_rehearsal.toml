@@ -1,0 +1,40 @@
+# v1.1 S0's free rehearsal (#76): `multihop_rag_s0_heldout`'s arms and pre-registration
+# on the three rehearsal questions, so no held-out question is read. Run it against
+# `lancet_eval.provider_stub` with the LANCET_OPENROUTER__*_ENDPOINT overrides set; the
+# stub serves `/rerank` for the Lancet arm and `lancet-llamaindex export` reads the same
+# overrides, so neither arm makes a paid call.
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.rehearsal.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 3
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[arms]
+# The pre-registration's arm set, reference first, as in multihop_rag_s0_heldout (D-73).
+arms = [
+  "hybrid+rerank+metadata",
+  "llamaindex",
+]
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "rehearsal"
+
+[preregistration]
+token = "PREREGISTRATION_S0"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"

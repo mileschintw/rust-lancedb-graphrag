@@ -6,7 +6,10 @@ corpus's `map_corpus` directory, the files `lancet-eval seed` reads and writes. 
 path can be overridden for a fixture run.
 
 A live run embeds every chunk and every question and reranks every question through
-OpenRouter: it is a paid call and needs `OPENROUTER_API_KEY`.
+OpenRouter: it is a paid call and needs `OPENROUTER_API_KEY`. Setting
+`LANCET_OPENROUTER__EMBEDDING_ENDPOINT` and `LANCET_OPENROUTER__RERANK_ENDPOINT` (the
+engine's overrides) sends both to another endpoint instead, such as the free
+`lancet_eval.provider_stub`; the key must still be set, to any value.
 """
 
 from __future__ import annotations
@@ -24,10 +27,13 @@ from llama_index.core.base.embeddings.base import BaseEmbedding
 from lancet_llamaindex.corpus import CorpusLoadError, load_documents
 from lancet_llamaindex.pipeline import ExportError, Pipeline, Reranker, write_outputs
 from lancet_llamaindex.providers import (
+    EMBEDDING_ENDPOINT,
+    RERANK_ENDPOINT,
     OpenRouterEmbedding,
     OpenRouterReranker,
     ProviderError,
     api_key_from_env,
+    endpoints_from_env,
 )
 
 
@@ -93,10 +99,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         key = api_key_from_env()
+        embedding_endpoint, rerank_endpoint = endpoints_from_env()
+        overridden = (embedding_endpoint, rerank_endpoint) != (
+            EMBEDDING_ENDPOINT,
+            RERANK_ENDPOINT,
+        )
+        if overridden:
+            # Never silent: a paid run left pointing at the stub would be wasted.
+            print(
+                "lancet-llamaindex: endpoint override: embeddings "
+                f"{embedding_endpoint}, rerank {rerank_endpoint}",
+                file=sys.stderr,
+            )
         paths = run_export(
             args,
-            embed_model=OpenRouterEmbedding(api_key=key),
-            reranker=OpenRouterReranker(api_key=key),
+            embed_model=OpenRouterEmbedding(api_key=key, endpoint=embedding_endpoint),
+            reranker=OpenRouterReranker(api_key=key, endpoint=rerank_endpoint),
         )
     except (CorpusLoadError, ExportError, ProviderError, OSError) as exc:
         print(f"lancet-llamaindex: {exc}", file=sys.stderr)
