@@ -57,11 +57,26 @@ GOLDENS = {
     "anthropic_opus_5_5": OPUS_ANTHROPIC,
 }
 OPENROUTER_READERS = [HAIKU_OPENROUTER, SONNET_OPENROUTER]
+OPENROUTER_FIELDS = {
+    HAIKU_OPENROUTER.slug: ("model", "temperature", "top_p", "reasoning", "provider"),
+    SONNET_OPENROUTER.slug: (
+        "model",
+        "temperature",
+        "top_p",
+        "reasoning",
+        "provider",
+        "thinking",
+    ),
+}
 ANTHROPIC_READERS = [SONNET_ANTHROPIC, OPUS_ANTHROPIC]
 
 
 def _pack() -> dict[str, Any]:
     return json.loads(PACK_BODY)
+
+
+def _compact(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _without(body: dict[str, Any], fields: tuple[str, ...]) -> dict[str, Any]:
@@ -88,11 +103,10 @@ def test_openrouter_rewrite_touches_only_the_reported_fields(
 ) -> None:
     request = rewrite_pack_body(PACK_BODY, reader)
     fields = request.rewritten_fields
-    assert set(fields) >= {"model", "provider", "temperature", "top_p"}
+    assert fields == OPENROUTER_FIELDS[reader.slug]
     assert _without(request.body, fields) == _without(_pack(), fields)
-    # Every reported field really differs between the two bodies.
-    for field in fields:
-        assert request.body.get(field) != _pack().get(field), field
+    for name in fields:
+        assert request.body.get(name) != _pack().get(name), name
 
 
 @pytest.mark.parametrize("reader", OPENROUTER_READERS, ids=lambda r: r.slug)
@@ -100,12 +114,8 @@ def test_openrouter_untouched_bytes_are_the_pack_bytes(
     reader: ReaderDeclaration,
 ) -> None:
     request = rewrite_pack_body(PACK_BODY, reader)
-    messages = json.dumps(
-        _pack()["messages"], ensure_ascii=False, separators=(",", ":")
-    )
-    schema = json.dumps(
-        _pack()["response_format"], ensure_ascii=False, separators=(",", ":")
-    )
+    messages = _compact(_pack()["messages"])
+    schema = _compact(_pack()["response_format"])
     assert messages in PACK_BODY
     assert messages in request.body_json
     assert schema in request.body_json
@@ -173,14 +183,14 @@ def test_unexpected_pack_field_is_refused() -> None:
     body = _pack()
     body["seed"] = 7
     with pytest.raises(ReaderRequestError, match="seed"):
-        rewrite_pack_body(json.dumps(body, separators=(",", ":")), HAIKU_OPENROUTER)
+        rewrite_pack_body(_compact(body), HAIKU_OPENROUTER)
 
 
 def test_missing_pack_field_is_refused() -> None:
     body = _pack()
     del body["response_format"]
     with pytest.raises(ReaderRequestError, match="response_format"):
-        rewrite_pack_body(json.dumps(body, separators=(",", ":")), HAIKU_OPENROUTER)
+        rewrite_pack_body(_compact(body), HAIKU_OPENROUTER)
 
 
 def test_non_compact_pack_body_is_refused() -> None:
@@ -205,7 +215,7 @@ def test_unreadable_pack_body_is_refused() -> None:
 def test_anthropic_refuses_messages_it_cannot_convert(messages: list[Any]) -> None:
     body = _pack()
     body["messages"] = messages
-    raw = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    raw = _compact(body)
     with pytest.raises(ReaderRequestError, match="messages"):
         rewrite_pack_body(raw, SONNET_ANTHROPIC)
 
@@ -213,7 +223,7 @@ def test_anthropic_refuses_messages_it_cannot_convert(messages: list[Any]) -> No
 def test_anthropic_refuses_a_non_strict_schema() -> None:
     body = _pack()
     body["response_format"]["json_schema"]["strict"] = False
-    raw = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    raw = _compact(body)
     with pytest.raises(ReaderRequestError, match="strict"):
         rewrite_pack_body(raw, SONNET_ANTHROPIC)
 
@@ -253,9 +263,17 @@ def test_effort_goes_with_thinking_on_only(thinking: str, effort: str | None) ->
         )
 
 
-def test_negative_price_is_refused() -> None:
+@pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf")])
+def test_bad_price_is_refused(value: float) -> None:
     with pytest.raises(ReaderRequestError, match="price"):
-        ReaderPrice(input_per_mtok=-1.0, output_per_mtok=1.0)
+        ReaderPrice(input_per_mtok=value, output_per_mtok=1.0)
+
+
+def test_requests_share_no_mutable_state() -> None:
+    first = rewrite_pack_body(PACK_BODY, HAIKU_OPENROUTER)
+    first.body["provider"]["only"].append("other")
+    second = rewrite_pack_body(PACK_BODY, HAIKU_OPENROUTER)
+    assert second.body["provider"] == {"only": ["anthropic"], "allow_fallbacks": False}
 
 
 def test_declaration_is_a_frozen_constant() -> None:
@@ -268,4 +286,12 @@ def test_declaration_is_a_frozen_constant() -> None:
             thinking="off",
             price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
         )
+    )
+
+
+def test_fixture_schema_has_the_engine_key_order() -> None:
+    # The engine's serde_json has no `preserve_order`: `json!` objects come out sorted.
+    schema = _pack()["response_format"]["json_schema"]["schema"]
+    assert _compact(schema) == json.dumps(
+        schema, ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )

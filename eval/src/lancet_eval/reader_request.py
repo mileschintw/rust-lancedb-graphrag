@@ -35,9 +35,10 @@ top-level field, or one this module could not reproduce byte for byte, is refuse
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, get_args
+from typing import Any, Literal, assert_never, get_args
 
 Target = Literal["openrouter", "anthropic"]
 Thinking = Literal["off", "between_tools", "on"]
@@ -55,8 +56,6 @@ PACK_FIELDS = frozenset({
     "provider",
 })
 
-ANTHROPIC_PROVIDER: dict[str, Any] = {"only": ["anthropic"], "allow_fallbacks": False}
-
 
 class ReaderRequestError(ValueError):
     """A reader declaration or a `pack` body this module refuses."""
@@ -70,8 +69,9 @@ class ReaderPrice:
     output_per_mtok: float
 
     def __post_init__(self) -> None:
-        if self.input_per_mtok < 0 or self.output_per_mtok < 0:
-            raise ReaderRequestError(f"a price cannot be negative: {self}")
+        for price in (self.input_per_mtok, self.output_per_mtok):
+            if not math.isfinite(price) or price < 0:
+                raise ReaderRequestError(f"a price must be finite and >= 0: {self}")
 
 
 @dataclass(frozen=True)
@@ -126,10 +126,13 @@ class ReaderRequest:
 def rewrite_pack_body(pack_body: str, reader: ReaderDeclaration) -> ReaderRequest:
     """The request sent to `reader` for one `pack` success line's `body` string."""
     pack = _read_pack_body(pack_body)
-    if reader.target == "openrouter":
-        body, fields = _openrouter_body(pack, reader)
-    else:
-        body, fields = _anthropic_body(pack, reader)
+    match reader.target:
+        case "openrouter":
+            body, fields = _openrouter_body(pack, reader)
+        case "anthropic":
+            body, fields = _anthropic_body(pack, reader)
+        case _:
+            assert_never(reader.target)
     return ReaderRequest(
         reader=reader,
         body=body,
@@ -173,6 +176,8 @@ def _openrouter_reasoning(reader: ReaderDeclaration) -> tuple[str, dict[str, Any
             return "thinking", {"type": "between_tools"}
         case "on":
             return "reasoning", {"effort": reader.effort}
+        case _:
+            assert_never(reader.thinking)
 
 
 def _openrouter_body(
@@ -180,6 +185,7 @@ def _openrouter_body(
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     reasoning_key, reasoning = _openrouter_reasoning(reader)
     body: dict[str, Any] = {}
+    fields: list[str] = []
     for key, value in pack.items():
         match key:
             case "model":
@@ -189,22 +195,23 @@ def _openrouter_body(
             case "reasoning":
                 body[reasoning_key] = reasoning
             case "provider":
-                body[key] = ANTHROPIC_PROVIDER
+                body[key] = {"only": ["anthropic"], "allow_fallbacks": False}
             case _:
                 body[key] = value
-    fields = tuple(
-        key for key in dict.fromkeys([*pack, *body]) if pack.get(key) != body.get(key)
-    )
-    return body, fields
+                continue
+        fields.append(key)
+    if reasoning_key not in pack:
+        fields.append(reasoning_key)
+    return body, tuple(fields)
 
 
 def _anthropic_body(
     pack: dict[str, Any], reader: ReaderDeclaration
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     system, user = _system_and_user(pack["messages"])
-    json_schema = _strict_json_schema(pack["response_format"])
+    schema = _strict_schema(pack["response_format"])
     output_config: dict[str, Any] = {
-        "format": {"type": "json_schema", "schema": json_schema["schema"]}
+        "format": {"type": "json_schema", "schema": schema}
     }
     body: dict[str, Any] = {
         "model": reader.slug,
@@ -219,6 +226,8 @@ def _anthropic_body(
             body["thinking"] = {"type": "between_tools"}
         case "on":
             output_config["effort"] = reader.effort
+        case _:
+            assert_never(reader.thinking)
     body["output_config"] = output_config
     fields = tuple(dict.fromkeys([*pack, *body]))
     return body, fields
@@ -240,7 +249,7 @@ def _system_and_user(messages: Any) -> tuple[str, str]:
     return messages[0]["content"], messages[1]["content"]
 
 
-def _strict_json_schema(response_format: Any) -> dict[str, Any]:
+def _strict_schema(response_format: Any) -> dict[str, Any]:
     json_schema = (
         response_format.get("json_schema")
         if isinstance(response_format, dict)
@@ -256,4 +265,4 @@ def _strict_json_schema(response_format: Any) -> dict[str, Any]:
         raise ReaderRequestError(
             "the pack body's response_format is not a strict json_schema"
         )
-    return json_schema
+    return json_schema["schema"]
