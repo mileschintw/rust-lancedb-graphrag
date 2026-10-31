@@ -591,9 +591,12 @@ def run_benchmark(
     field_gate_failures: tuple[str, ...] = ()
     context_export_error: str | None = None
     try:
+        from rich.markup import escape
+
         from lancet_eval.arms import arm_store
         from lancet_eval.config import V1_STORE, get_eval_store
         from lancet_eval.corpus import load_corpus_config
+        from lancet_eval.drive_estimate import drive_estimate
         from lancet_eval.run import (
             drive,
             refuse_legacy_labels_for_live_drive,
@@ -610,7 +613,8 @@ def run_benchmark(
             if not arms
             else [a.strip() for value in arms for a in value.split(",") if a.strip()]
         )
-        drive_arms = select_arms(load_corpus_config(corpus), selected_arms)
+        corpus_config = load_corpus_config(corpus)
+        drive_arms = select_arms(corpus_config, selected_arms)
         store_name = arm_store(drive_arms[0])
         drive_store = V1_STORE if store_name is None else get_eval_store(store_name)
 
@@ -625,6 +629,14 @@ def run_benchmark(
             f"gate_stage={gate_stage}, stage_cap=${stage_cap:.2f})...[/bold blue]"
         )
         console.print(msg)
+        # D-258: printed before the first request; it never refuses (#77).
+        questions = len(corpus_config.questions)
+        if limit is not None:
+            questions = min(questions, limit)
+        console.print(
+            escape(drive_estimate(questions, drive_arms, retries=retries)),
+            soft_wrap=True,
+        )
         settings = load_settings(store=drive_store)
         count = drive(
             corpus=corpus,
@@ -762,7 +774,10 @@ def run_external_command(
     from rich.markup import escape
 
     try:
-        from lancet_eval.external_run import run_external
+        from lancet_eval.arms import is_external_arm
+        from lancet_eval.corpus import load_corpus_config
+        from lancet_eval.drive_estimate import drive_estimate
+        from lancet_eval.external_run import EXTERNAL_RETRIES, run_external
 
         if out is None:
             out = resolve_run_dir(corpus=corpus, resume=resume) / "journal.jsonl"
@@ -770,6 +785,14 @@ def run_external_command(
             f"[bold blue]Driving external arm '{arm}' of corpus '{corpus}' into "
             f"{out}...[/bold blue]"
         )
+        # D-258: printed before the first read; it never refuses (#77). A label that
+        # is no external arm gets none: `run_external` refuses it before any read.
+        if is_external_arm(arm):
+            questions = len(load_corpus_config(corpus).questions)
+            console.print(
+                escape(drive_estimate(questions, [arm], retries=EXTERNAL_RETRIES)),
+                soft_wrap=True,
+            )
         result = run_external(
             corpus=corpus,
             arm=arm,

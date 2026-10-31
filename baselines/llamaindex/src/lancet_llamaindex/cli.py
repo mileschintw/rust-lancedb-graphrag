@@ -9,7 +9,10 @@ A live run embeds every chunk and every question and reranks every question thro
 OpenRouter: it is a paid call and needs `OPENROUTER_API_KEY`. Setting
 `LANCET_OPENROUTER__EMBEDDING_ENDPOINT` and `LANCET_OPENROUTER__RERANK_ENDPOINT` (the
 engine's overrides) sends both to another endpoint instead, such as the free
-`lancet_eval.provider_stub`; the key must still be set, to any value.
+`lancet_eval.provider_stub`; the key must still be set, to any value. Before the first
+request it runs the corpus's split gates (`lancet_eval.run.require_split_gates`: D-73,
+the split hash and the role) when the corpus has a `[split]` (#78), then prints a D-258
+cost estimate to stderr, which never refuses (#77).
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ from pathlib import Path
 
 from lancet_eval.config import repo_root
 from lancet_eval.corpus import LABEL_ADAPTERS, GoldQuestion, load_corpus
+from lancet_eval.drive_estimate import export_estimate
+from lancet_eval.run import require_split_gates
 from llama_index.core.base.embeddings.base import BaseEmbedding
 
 from lancet_llamaindex.corpus import CorpusLoadError, load_documents
@@ -71,16 +76,32 @@ def _read_questions(path: Path) -> list[GoldQuestion]:
 
 
 def run_export(
-    args: argparse.Namespace, *, embed_model: BaseEmbedding, reranker: Reranker
+    args: argparse.Namespace,
+    *,
+    embed_model: BaseEmbedding,
+    reranker: Reranker,
+    git_repo: Path | None = None,
 ) -> tuple[Path, Path]:
-    """Runs `export` with the given providers; the CLI passes the OpenRouter ones."""
+    """Runs `export` with the given providers; the CLI passes the OpenRouter ones.
+
+    `git_repo` is the repository the D-73 gate reads; the live one when None.
+    """
+    corpus_toml = repo_root() / "eval" / "corpora" / f"{args.corpus}.toml"
+    # No corpus config is a fixture run, which needs `--questions`; it has no gates.
+    config = load_corpus(args.corpus) if corpus_toml.is_file() else None
     if args.questions is not None:
         questions = _read_questions(args.questions)
         map_dir = None
+    elif config is None:
+        raise CorpusLoadError(f"Corpus config not found at {corpus_toml}")
     else:
-        config = load_corpus(args.corpus)
         questions = config.questions
         map_dir = repo_root() / "eval" / "corpora" / config.map_corpus
+    if config is not None:
+        # #78: the gates `run` and `run-external` pass, on the questions this export
+        # reads (an override included), before any request. A corpus with no
+        # `[split]` has none.
+        require_split_gates(config, questions, git_repo=git_repo)
     documents_path = args.documents or (
         map_dir / "documents.subset.jsonl" if map_dir else None
     )
@@ -90,6 +111,10 @@ def run_export(
             "--questions needs --documents and --document-map as well"
         )
     documents = load_documents(documents_path, map_path)
+    print(
+        export_estimate(len(questions), sum(len(d.text) for d in documents)),
+        file=sys.stderr,
+    )
     pipeline = Pipeline.build(documents, embed_model=embed_model, reranker=reranker)
     rows = pipeline.export_rows(args.corpus, args.arm, questions)
     return write_outputs(args.out, rows, pipeline.config_echo())
@@ -116,7 +141,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             embed_model=OpenRouterEmbedding(api_key=key, endpoint=embedding_endpoint),
             reranker=OpenRouterReranker(api_key=key, endpoint=rerank_endpoint),
         )
-    except (CorpusLoadError, ExportError, ProviderError, OSError) as exc:
+    # ValueError: a split gate's refusal (#78), `PreregistrationError` included.
+    except (CorpusLoadError, ExportError, ProviderError, OSError, ValueError) as exc:
         print(f"lancet-llamaindex: {exc}", file=sys.stderr)
         return 1
     for path in paths:
