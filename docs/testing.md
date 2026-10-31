@@ -76,7 +76,8 @@ this table:
   lane's time is editing and test runs, so two or three open lanes rarely all compile at once.
 - The higher rows are untested here: the figures below were measured at `CARGO_BUILD_JOBS=2` while other lanes
   built. If a lane runs out of memory at its row's count, drop one row.
-- The job count is not part of sccache's cache key, so lanes on different rows still share dependency builds.
+- `CARGO_BUILD_JOBS` is not in sccache's cache key (checked: a build at 5 jobs hit what a build at 2 had cached),
+  so lanes on different rows still share dependency builds.
 
 ### sccache
 
@@ -109,9 +110,10 @@ Setup, once per machine (Windows):
 
 Rules for lanes:
 
-- Don't set `CARGO_TARGET_DIR`, or any other `CARGO_*` variable that differs between lanes. sccache puts every
-  `CARGO_*` environment variable in the cache key, so such a lane gets no hits from other lanes: a measured second
-  worktree hit 0.5% with `CARGO_TARGET_DIR` set and 63% without it.
+- Leave `CARGO_TARGET_DIR` unset, so each lane builds in its own `engine/target`. sccache puts `CARGO_*`
+  environment variables in the cache key, `CARGO_BUILD_JOBS` excepted, so a lane that sets one the others don't gets
+  no hits from them: a measured second worktree hit 0.5% with `CARGO_TARGET_DIR` set and 63% without it. The same
+  holds for the `CARGO_PROFILE_RELEASE_*` variables below: lanes that set them identically share release builds.
 - Never run `sccache --stop-server` while another lane builds: its compiles fail.
 - `sccache --show-stats` shows the hit rate. Expect about 60% on a second worktree. These never come from the cache:
   the `engine` crate itself (built incrementally), binaries and proc-macro crates, build scripts, and C code that
@@ -128,9 +130,10 @@ Undo the setup: remove the `[build]` lines from `%USERPROFILE%\.cargo\config.tom
 - `engine/Cargo.toml` builds `dev` and `test` with `debug = "line-tables-only"` (file and line in backtraces) and
   dependencies with no debug info. A cold `engine/target` went from 45 GB to 9.7 GB. CI turns debug info off for the
   `engine` crate too (`CARGO_PROFILE_DEV_DEBUG=0`).
-- The repository's `.cargo/config.toml` links with `rust-lld` on Windows; it ships with the MSVC toolchain. Linux
-  toolchains already use lld. Cargo reads that file from the directory it runs in upward, so run cargo from inside the
-  repository (the commands in this file run from the root).
+- The repository's `.cargo/config.toml` links with `rust-lld` on Windows; it ships with Rust's
+  `x86_64-pc-windows-msvc` toolchain. CI's `x86_64-unknown-linux-gnu` toolchain already uses lld. Cargo reads that
+  file from the directory it runs in upward, so run cargo from inside the repository (the commands in this file run
+  from the root).
 
 ### Integration binary
 
@@ -158,15 +161,18 @@ every 30 s).
 | Build | Before #56 | After #56 | Other builds |
 |---|---|---|---|
 | Cold `cargo test` (build, then run) | 1,605 s (build 25 m 25 s) | 1,430 s (build 22 m 04 s), sccache filling an empty cache | 1 for all of before; 1, and 2 for a quarter of after |
-| `cargo test` in a second worktree, sccache warm | same as cold | 991 s (build 15 m 04 s), 63% hits | none for most of it, 1 for a fifth |
+| `cargo test` in a second worktree, sccache warm | same as cold (no shared cache; not re-run) | 991 s (build 15 m 04 s), 63% hits | none for most of it, 1 for a fifth |
 | `engine/target` after a cold `cargo test` | 45 GB | 9.7 GB | — |
 | Release `generate_from_context` | about 74 min (lanes 14 and 44, #56's issue) | 37 m 17 s at `opt-level = 1` | 0 to 2 |
 | Integration tier, bin built | — | 35 s, 45 passed | — |
 
 - The before row for the release build comes from earlier lanes on this machine and was not re-run here.
 - CI caches the dependency build with `Swatinem/rust-cache`. #56 changes no CI setting: CI already builds with no
-  debug info, which this profile also gives dependencies, so the cached `engine/target` does not grow. The
-  `Cargo.toml` change gives the cache a new key once; the old entry ages out after 7 days.
+  debug info, which this profile also gives dependencies, so the cached `engine/target` should not grow. Not yet
+  observed: no Rust cache had been saved when #56 was measured, because the first `main` run timed out on a test hang
+  (#59), so neither the cache size nor a warm CI engine time is known. The PR run of #57 built cold in 16.5 minutes
+  (clippy 5.5, `cargo test` build 8). The `Cargo.toml` change gives the cache a new key once; the old entry ages out
+  after 7 days.
 
 ## Slow tier
 
