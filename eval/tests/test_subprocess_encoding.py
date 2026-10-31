@@ -36,9 +36,7 @@ def cp950_child(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     real_run = subprocess.run
 
     def install(out: str) -> None:
-        script = (
-            "import sys; sys.stdout.buffer.write(bytes.fromhex(sys.argv[1]))"
-        )
+        script = "import sys; sys.stdout.buffer.write(bytes.fromhex(sys.argv[1]))"
 
         def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
             kwargs.pop("input", None)
