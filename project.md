@@ -10,4 +10,5 @@ What relay needs to know about this project. The coordinator and every worker re
 - **Ask the user first, with the exact scope:** creating accounts or VMs, installing into the user's real profile, large downloads, signing in to outside sites, spending money; paid LLM/rerank/embedding calls and eval runs (print a cost estimate first; D-258 amends D-246: no mid-run cap); any held-out read (D-237 allows two for all of v1.1: S0 and Confirm); rebuilding or re-embedding any store; push, merge, opening a PR.
 - **Unattended, never:** none beyond relay's default list.
 - **Release:** none.
-- **Deny list:** none. Records on `coord` must never contain API keys or environment variable values (the OpenRouter key); batch IDs and cost figures are fine.
+- **Deny list:** none.
+- **Secrets:** records on `coord` must never contain API keys or environment variable values (the OpenRouter key); batch IDs and cost figures are fine.
