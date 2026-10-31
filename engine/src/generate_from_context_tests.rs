@@ -550,27 +550,38 @@ async fn render_turns_each_rejected_output_into_an_error_line() {
     ungrounded["cited_evidence_ids"] = json!(["[7]"]);
     let mut unknown_field = stub_output();
     unknown_field["confidence"] = json!(0.9);
+    // Each case names a fragment of the reason it must fail for.
     let cases = [
-        ("invalid JSON", result_line("{not json", "stop")),
+        (
+            "invalid JSON",
+            result_line("{not json", "stop"),
+            "ModelOutput schema",
+        ),
         (
             "schema violation",
             result_line(&unknown_field.to_string(), "stop"),
+            "unknown field `confidence`",
         ),
         (
             "ungrounded citation",
             result_line(&ungrounded.to_string(), "stop"),
+            // Citation repair drops the unresolvable marker; with none left the answer falls
+            // back to model-only, which a grounded request refuses.
+            "ModelOnly answer basis is not supported",
         ),
         (
             "refusal",
             result_line(&stub_output().to_string(), "refusal"),
+            "finish_reason 'refusal'",
         ),
     ];
-    for (case, results) in cases {
+    for (case, results, reason) in cases {
         let line = render(&results).await;
         assert_eq!(line.outcome, "error", "{case}");
         assert_eq!(line.question_id, "q-1", "{case}");
         assert!(line.error_type.is_some(), "{case}");
-        assert!(line.error.is_some(), "{case}");
+        let error = line.error.expect("error");
+        assert!(error.contains(reason), "{case}: {error}");
         assert!(line.answer.is_none(), "{case}");
     }
 }

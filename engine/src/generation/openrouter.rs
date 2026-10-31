@@ -241,12 +241,17 @@ impl OpenRouterGenerationConfig {
         Ok(())
     }
 
-    /// Checks one provider choice for `request` and returns its model output, as a chat
-    /// completion's sole choice is checked: the finish reason must be `stop`, the content must
-    /// parse as `ModelOutput`, the usage must fit the grounding limits, and the output shape must
-    /// pass validation. Each rejection emits a `generation_output_rejected` event.
+    /// Checks a chat completion's sole choice and returns its model output.
     ///
-    /// `generate_from_context render` (#50) runs batch results through this same check.
+    /// The checks run in order: the finish reason must be `stop`, the content must parse as
+    /// `ModelOutput`, the usage must fit the grounding limits, and the output shape must pass
+    /// validation for `request`. `generate_from_context render` (#50) runs batch results through
+    /// this same check.
+    ///
+    /// # Errors
+    ///
+    /// A `SchemaValidation` error for the first check that fails. Each rejection also emits a
+    /// `generation_output_rejected` event.
     pub fn accept_choice(
         &self,
         request: &GenerationRequest,
@@ -384,8 +389,11 @@ impl OpenRouterGenerationConfig {
 
 /// One provider choice: its content, finish reason and token usage.
 pub struct ProviderChoice<'a> {
+    /// The message content: the JSON text of a `ModelOutput`.
     pub content: &'a str,
+    /// The chat-completions finish reason; `None` when the provider sent none.
     pub finish_reason: Option<&'a str>,
+    /// The provider's token usage; `None` when it sent none.
     pub usage: Option<ModelUsage>,
 }
 

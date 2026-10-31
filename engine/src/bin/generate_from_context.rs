@@ -395,10 +395,15 @@ impl Generator for RecordingGenerator {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResultLine {
+    /// The row's `question_id`.
     pub question_id: String,
+    /// The row's `arm`.
     pub arm: String,
+    /// The reader's raw message content.
     pub content: String,
+    /// The chat-completions finish reason; only `stop` is accepted.
     pub finish_reason: Option<String>,
+    /// The chat-completions token usage.
     pub usage: ModelUsage,
 }
 
@@ -628,9 +633,10 @@ impl Tail {
             Some(Err(err)) => return OutputLine::error(row, "INVALID_RESULT", err.clone()),
             Some(Ok(result)) => result.clone(),
         };
-        let Some(replay) = &self.replay else {
-            return OutputLine::error(row, "INVALID_MODE", "render_row needs a render tail");
-        };
+        let replay = self
+            .replay
+            .as_ref()
+            .expect("render_row needs a render tail");
         *replay.result.lock().expect("result lock") = Some(result);
         let line = self.run_row(row, levers).await;
         replay.result.lock().expect("result lock").take();
