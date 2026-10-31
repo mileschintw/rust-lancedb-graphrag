@@ -7,6 +7,7 @@ write them, and the run scores with the deepseek arm and the reader arm paired.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from lancet_eval.arms import (
 )
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, validate_row
 from lancet_eval.journal import RunRecord, read_journal_header
+from lancet_eval.parity import user_message
 from lancet_eval.provenance import provenance_failures, replay_run_failures
 from lancet_eval.replay import (
     REPLAY_SOURCE_KEY,
@@ -343,6 +345,7 @@ def _one_broken(qid: str, **changes):  # type: ignore[no-untyped-def]
 
 REPLAY_CLAUSES = (
     "row_hash",
+    "prompt",
     "body_hash",
     "rewritten_fields",
     "model",
@@ -388,6 +391,21 @@ def test_s_f_a_reader_row_that_differs_from_the_source_row_fails_row_hash(
     assert f"row_hash {rf.READER_ARM} lv-g005" in message
 
 
+def test_s_f_a_reader_prompt_that_differs_from_the_source_row_fails_prompt(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    # A pack with other levers, or after a config change, would assemble another
+    # prompt: here lv-g008's request carries lv-g009's.
+    message = _refusal(
+        tmp_path,
+        monkeypatch,
+        build=_one_broken("lv-g008", body=rf.pack_body("lv-g009")),
+    )
+    assert f"prompt {rf.READER_ARM} lv-g008" in message
+    for other in set(REPLAY_CLAUSES) - {"prompt"}:
+        assert f"{other} {rf.READER_ARM}" not in message
+
+
 def test_s_f_a_pack_body_the_rewrite_refuses_fails_body_hash(
     tmp_path, monkeypatch, preregistered_clean_tree
 ) -> None:
@@ -425,8 +443,10 @@ def test_s_f_a_reader_error_record_needs_no_replay_block(
 def _one_question():  # type: ignore[no-untyped-def]
     qs = fx.make_questions(1, 0)
     qid = qs.g_ids[0]
-    source = validate_row(fx.make_evidence_export_row(rf.BASE, qid, qs))
-    return qs, qid, source
+    row = fx.make_evidence_export_row(rf.BASE, qid, qs)
+    row["assembled_prompt"] = user_message(rf.pack_body(qid))
+    row["correlation_id"] = f"corr-{qid}"
+    return qs, qid, validate_row(row)
 
 
 def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> None:
@@ -454,6 +474,92 @@ def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> No
         failures = replay_run_failures([thinking(rec)], **kwargs)
         assert [f.code for f in failures] == ["reasoning_tokens"]
         assert replay_run_failures([rec], **kwargs) == []
+
+
+def _sonnet_failures(rec, reader=rf.SONNET_NATIVE):  # type: ignore[no-untyped-def]
+    qs, qid, source = _one_question()
+    del qs
+    arm = f"{rf.BASE}@sonnet-5.5"
+    return replay_run_failures(
+        [rec],
+        export_rows={
+            (qid, rf.BASE): source,
+            (qid, arm): source.model_copy(update={"arm": arm}),
+        },
+        source_row_sha256={(qid, rf.BASE): export_row_sha256(source)},
+        readers={"sonnet-5.5": reader},
+    )
+
+
+def _sonnet(reader=rf.SONNET_NATIVE, **changes):  # type: ignore[no-untyped-def]
+    qs, qid, source = _one_question()
+    arm = f"{rf.BASE}@sonnet-5.5"
+    return rf.make_replay_record(qid, qs, source, reader=reader, arm=arm, **changes)
+
+
+def test_a_native_anthropic_reader_record_passes_the_clauses() -> None:
+    # Q4, D-260: the fallback path reports no provider, no is_byok and no reasoning
+    # count, and passes without writing values its response does not hold.
+    rec = _sonnet()
+    assert rec.replay is not None
+    assert (rec.replay.provider, rec.replay.is_byok) == ("api.anthropic.com", None)
+    assert _sonnet_failures(rec) == []
+
+
+@pytest.mark.parametrize(
+    ("code", "changes"),
+    [
+        ("is_byok", {"is_byok": True}),
+        ("provider", {"provider": "Anthropic"}),
+        ("reasoning_tokens", {"content_block_types": ["thinking", "text"]}),
+        ("reasoning_tokens", {"content_block_types": ["redacted_thinking", "text"]}),
+        ("reasoning_tokens", {"content_block_types": None}),
+        ("reasoning_tokens", {"reasoning_tokens": 5}),
+    ],
+)
+def test_a_native_anthropic_reader_record_fails_on_what_its_target_contradicts(
+    code, changes
+) -> None:
+    failures = _sonnet_failures(_sonnet(**changes))
+    assert [f.code for f in failures] == [code]
+
+
+def test_an_openrouter_reader_record_still_must_show_is_byok() -> None:
+    for is_byok in (None, False):
+        rec = _sonnet(reader=rf.SONNET, is_byok=is_byok)
+        failures = _sonnet_failures(rec, reader=rf.SONNET)
+        assert [f.code for f in failures] == ["is_byok"]
+    # An OpenRouter record naming the native endpoint is off its target.
+    rec = _sonnet(reader=rf.SONNET, provider="api.anthropic.com")
+    assert [f.code for f in _sonnet_failures(rec, reader=rf.SONNET)] == ["provider"]
+
+
+def test_a_native_thinking_on_reader_is_exempt_from_the_thinking_check() -> None:
+    opus_native = dataclasses.replace(
+        rf.OPUS, slug="claude-opus-5-5", target="anthropic"
+    )
+    rec = _sonnet(reader=opus_native, content_block_types=["thinking", "text"])
+    assert _sonnet_failures(rec, reader=opus_native) == []
+
+
+def test_the_prompt_clause_needs_the_base_row_and_its_assembled_prompt() -> None:
+    qs, qid, source = _one_question()
+    rec = rf.make_replay_record(qid, qs, source)
+    reader_row = source.model_copy(update={"arm": rf.READER_ARM})
+    kwargs = {
+        "source_row_sha256": {(qid, rf.BASE): export_row_sha256(source)},
+        "readers": {rf.READER: rf.HAIKU},
+    }
+    good = replay_run_failures(
+        [rec],
+        export_rows={(qid, rf.BASE): source, (qid, rf.READER_ARM): reader_row},
+        **kwargs,
+    )
+    assert good == []
+    no_base = replay_run_failures(
+        [rec], export_rows={(qid, rf.READER_ARM): reader_row}, **kwargs
+    )
+    assert "prompt" in [f.code for f in no_base]
 
 
 def test_engine_and_external_records_carrying_a_replay_block_fail() -> None:

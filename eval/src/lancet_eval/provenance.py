@@ -79,22 +79,31 @@ notices. Every replay clause is zero tolerance.
 * **replay_record** (per record): a reader arm's record carries an engine snapshot or
   an ``external`` block, or its success record lacks its ``replay`` block; or an
   engine or external record carries a ``replay`` block;
-* **is_byok** (per record): the response does not report the owner's own key;
-* **provider** (per record): the response names a provider other than Anthropic;
 * **batch_id** (per record): no batch ID is recorded;
 * **row_hash**: the record's export-row hash differs from the carried base row's (the
   journal header's ``replay_source`` hash), or the run's export lacks the base row or
   the reader arm's row, or either row hashes otherwise;
+* **prompt** (#82): the ``pack`` body's user message is not, byte for byte, the
+  carried base row's ``assembled_prompt``, the prompt the deepseek reader saw (a
+  ``pack`` with the wrong levers or after a config change would differ);
 * **body_hash**: the sent body's hash is not that of the #51 rewrite of the record's
   ``pack`` body for its declared reader, or the rewrite refuses that body;
 * **rewritten_fields**: the recorded field list is not the rewrite's;
 * **model**: the response's model is not the declared reader's slug;
-* **reasoning_tokens**: a reader whose thinking is not ``on`` reports reasoning tokens
-  (D-260: ``off`` and ``between_tools`` must report 0; a thinking-on reader, Opus 5.5
-  at effort low, is exempt).
+* **is_byok**: per the reader's ``target`` (#82, Q4). OpenRouter: the response does
+  not report the owner's own key. Native Anthropic: the record carries an
+  ``is_byok`` value, which that response never reports;
+* **provider**: the record's provider is not ``REPLAY_PROVIDERS[target]``: the
+  provider OpenRouter routed to, or the native endpoint's host;
+* **reasoning_tokens**: a reader whose thinking is not ``on`` shows thinking (D-260:
+  ``off`` and ``between_tools`` must report 0 reasoning tokens; a thinking-on reader,
+  Opus 5.5 at effort low, is exempt). The native target's usage has no reasoning
+  count, so its record must also list the response's content block types, none of
+  them ``THINKING_BLOCK_TYPES``.
 
-The first four are per record (``provenance_failures``); ``replay_run_failures``
-checks all nine over every reader-arm record, from inputs its caller loads.
+The first two are per record (``provenance_failures``); ``replay_run_failures``
+checks all ten over every reader-arm record, from inputs its caller loads, since the
+target-dependent clauses need the reader's declaration.
 """
 
 from __future__ import annotations
@@ -116,6 +125,7 @@ from lancet_eval.arms import (
 from lancet_eval.reader_request import (
     ReaderDeclaration,
     ReaderRequestError,
+    Target,
     rewrite_pack_body,
 )
 from lancet_eval.usability import (
@@ -130,7 +140,7 @@ if TYPE_CHECKING:
     from lancet_eval.arms import ExternalPipeline
     from lancet_eval.client import RankedCandidate, StructuredCitation
     from lancet_eval.context_export import ContextExportRow
-    from lancet_eval.journal import RunRecord
+    from lancet_eval.journal import ReplayProvenance, RunRecord
 
 #: The external clause set (D-247), in the order a refusal lists it.
 EXTERNAL_CODES: tuple[str, ...] = (
@@ -145,6 +155,7 @@ EXTERNAL_CODES: tuple[str, ...] = (
 REPLAY_CODES: tuple[str, ...] = (
     "replay_record",
     "row_hash",
+    "prompt",
     "body_hash",
     "rewritten_fields",
     "model",
@@ -153,8 +164,15 @@ REPLAY_CODES: tuple[str, ...] = (
     "reasoning_tokens",
     "batch_id",
 )
-#: The provider a replay record's response must name (D-257).
-REPLAY_PROVIDER = "Anthropic"
+#: The provider a replay record must name, by its reader's target (D-257, #82): the
+#: provider OpenRouter's response names, or the native endpoint's host, since a native
+#: Message Batches result names no provider.
+REPLAY_PROVIDERS: Mapping[Target, str] = {
+    "openrouter": "Anthropic",
+    "anthropic": "api.anthropic.com",
+}
+#: Native content block types that show the reader thought (#82, D-260).
+THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
 #: Ranked evidence entries an external success record's export row must hold
 #: (fairness rule 3: k = 8 on every arm).
 EXTERNAL_K = 8
@@ -222,16 +240,8 @@ def _replay_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
     replay = record.replay
     if record.outcome == "success" and replay is None:
         fail("replay_record", "a replay success record lacks its replay block")
-    if replay is not None:
-        if replay.is_byok is not True:
-            fail("is_byok", f"is_byok is {replay.is_byok!r}, expected True")
-        if replay.provider != REPLAY_PROVIDER:
-            fail(
-                "provider",
-                f"provider {replay.provider!r}, expected {REPLAY_PROVIDER!r}",
-            )
-        if not replay.batch_id.strip():
-            fail("batch_id", "no batch ID recorded")
+    if replay is not None and not replay.batch_id.strip():
+        fail("batch_id", "no batch ID recorded")
     return [
         ProvenanceFailure(code=code, label=record.graph_arm, detail="; ".join(found))
         for code, found in sorted(
@@ -584,6 +594,73 @@ def _replay_row_failures(
     return details
 
 
+def _prompt_failure(pack_body: str, base_row: ContextExportRow | None) -> str | None:
+    """The ``prompt`` detail of one reader-arm record, or None when it holds (#82)."""
+    from lancet_eval.parity import first_difference, user_message
+
+    if base_row is None:
+        return "no base export row to compare the prompt with"
+    if base_row.assembled_prompt is None:
+        return "the base export row records no assembled_prompt"
+    try:
+        sent = user_message(pack_body)
+    except (KeyError, TypeError, ValueError) as exc:
+        return f"the pack body's user message is unreadable: {exc}"
+    if sent != base_row.assembled_prompt:
+        at = first_difference(sent, base_row.assembled_prompt)
+        return (
+            "the pack body's user message differs from the base row's "
+            f"assembled_prompt at character {at}"
+        )
+    return None
+
+
+def _target_failures(
+    replay: ReplayProvenance, declaration: ReaderDeclaration
+) -> list[tuple[str, str]]:
+    """The ``is_byok``, ``provider`` and ``reasoning_tokens`` details (D-257, #82)."""
+    found: list[tuple[str, str]] = []
+    native = declaration.target == "anthropic"
+    if native and replay.is_byok is not None:
+        found.append((
+            "is_byok",
+            f"is_byok is {replay.is_byok!r}, but a native Anthropic response reports "
+            "none; expected None",
+        ))
+    elif not native and replay.is_byok is not True:
+        found.append(("is_byok", f"is_byok is {replay.is_byok!r}, expected True"))
+    provider = REPLAY_PROVIDERS[declaration.target]
+    if replay.provider != provider:
+        found.append((
+            "provider",
+            f"provider {replay.provider!r}, expected {provider!r} for target "
+            f"{declaration.target!r}",
+        ))
+    if declaration.thinking == "on":
+        return found
+    thinking = f"thinking {declaration.thinking!r}"
+    if replay.reasoning_tokens != 0:
+        found.append((
+            "reasoning_tokens",
+            f"{replay.reasoning_tokens} reasoning tokens from a reader with "
+            f"{thinking}, expected 0 (D-260)",
+        ))
+    if native:
+        blocks = replay.content_block_types
+        if blocks is None:
+            found.append((
+                "reasoning_tokens",
+                "no content block types recorded; a native response's thinking is "
+                "checked from them",
+            ))
+        elif shown := sorted(THINKING_BLOCK_TYPES.intersection(blocks)):
+            found.append((
+                "reasoning_tokens",
+                f"{shown} content block(s) from a reader with {thinking} (D-260)",
+            ))
+    return found
+
+
 def replay_run_failures(
     records: Sequence[RunRecord],
     *,
@@ -635,6 +712,9 @@ def replay_run_failures(
         )
         if row_details:
             fail("row_hash", label, qid, "; ".join(row_details))
+        prompt = _prompt_failure(replay.pack_body, export_rows.get((qid, base)))
+        if prompt is not None:
+            fail("prompt", label, qid, prompt)
         reader = arm_reader(label)
         declaration = readers.get(reader) if reader is not None else None
         if declaration is None:
@@ -669,14 +749,11 @@ def replay_run_failures(
                 qid,
                 f"model {replay.model!r} != the declared reader {declaration.slug!r}",
             )
-        if declaration.thinking != "on" and replay.reasoning_tokens != 0:
-            fail(
-                "reasoning_tokens",
-                label,
-                qid,
-                f"{replay.reasoning_tokens} reasoning tokens from a reader with "
-                f"thinking {declaration.thinking!r}, expected 0 (D-260)",
-            )
+        details: dict[str, list[str]] = {}
+        for code, detail in _target_failures(replay, declaration):
+            details.setdefault(code, []).append(detail)
+        for code, listed in details.items():
+            fail(code, label, qid, "; ".join(listed))
     found.sort(key=lambda item: (item[0], item[1], item[2].label))
     return [failure for _, _, failure in found]
 

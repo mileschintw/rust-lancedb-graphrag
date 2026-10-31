@@ -24,6 +24,7 @@ import levers_fixture as fx
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, ContextExportRow
 from lancet_eval.journal import Journal, ReplayProvenance, RunRecord, WorkflowWireMeta
 from lancet_eval.parity import user_message
+from lancet_eval.provenance import REPLAY_PROVIDERS
 from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice, rewrite_pack_body
 from lancet_eval.replay import export_row_sha256
 from lancet_eval.thresholds import FamilySpec, StagePreRegistration
@@ -43,6 +44,13 @@ HAIKU = ReaderDeclaration(
 SONNET = ReaderDeclaration(
     slug="anthropic/claude-sonnet-5.5",
     target="openrouter",
+    thinking="between_tools",
+    price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+)
+#: Sonnet 5.5 on its fallback path: the native Message Batches API (D-255, D-260).
+SONNET_NATIVE = ReaderDeclaration(
+    slug="claude-sonnet-5-5",
+    target="anthropic",
     thinking="between_tools",
     price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
 )
@@ -71,14 +79,19 @@ def pack_body(qid: str) -> str:
 
 
 def write_corpora(
-    root: Path, qs: fx.Questions, *, s1_role: str = "dev", s2_role: str = "dev"
+    root: Path,
+    qs: fx.Questions,
+    reader_arms: Iterable[str] = (READER_ARM,),
+    *,
+    s1_role: str = "dev",
+    s2_role: str = "dev",
 ) -> Path:
-    """The S1 corpus (`BASE`, `OTHER`) and the S2 corpus (`BASE`, `READER_ARM`).
+    """The S1 corpus (`BASE`, `OTHER`) and the S2 corpus (`BASE`, `reader_arms`).
 
     Returns the gold the S2 corpus scores against.
     """
     fx.write_corpus(root, qs, (BASE, OTHER), token=None, name=S1_CORPUS, role=s1_role)
-    return fx.write_corpus(root, qs, (BASE, READER_ARM), role=s2_role)
+    return fx.write_corpus(root, qs, (BASE, *reader_arms), role=s2_role)
 
 
 def write_s1_run(
@@ -131,11 +144,15 @@ def make_replay_record(
     spec: fx.Spec = fx.Spec(),  # noqa: B008 - a frozen value
     reader: ReaderDeclaration = HAIKU,
     arm: str = READER_ARM,
+    body: str | None = None,
     **changes: Any,
 ) -> RunRecord:
     """One reader-arm record for `qid`, provenance-clean unless `changes` say otherwise.
 
-    `changes` replace fields of the replay block.
+    The replay block is what `reader`'s target reports: an OpenRouter response names
+    the provider and `is_byok`; a native one neither, so the record names the endpoint
+    and lists the content block types. `body` replaces the `pack` body (the sent body
+    hash and rewritten fields follow it); `changes` replace fields of the replay block.
     """
     if spec.errored:
         return RunRecord(
@@ -148,8 +165,9 @@ def make_replay_record(
         )
     kind = "abstain" if qid in qs.nulls and spec.kind == "ok" else spec.kind
     gold = "" if qid in qs.nulls else qs.gold[qid][1]
-    body = pack_body(qid)
+    body = pack_body(qid) if body is None else body
     request = rewrite_pack_body(body, reader)
+    native = reader.target == "anthropic"
     replay: dict[str, Any] = {
         "export_row_sha256": export_row_sha256(source_row),
         "pack_body": body,
@@ -158,10 +176,11 @@ def make_replay_record(
         ).hexdigest(),
         "rewritten_fields": list(request.rewritten_fields),
         "model": reader.slug,
-        "provider": "Anthropic",
-        "is_byok": True,
+        "provider": REPLAY_PROVIDERS[reader.target],
+        "is_byok": None if native else True,
         "reasoning_tokens": 0,
         "batch_id": BATCH_ID,
+        "content_block_types": ["text"] if native else None,
     }
     replay.update(changes)
     return RunRecord(
