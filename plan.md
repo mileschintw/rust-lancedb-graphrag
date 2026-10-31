@@ -31,8 +31,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 |---|---|---|---|---|
 | 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | started | — |
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
-| 52 | #52 | local_f927678d-e609-4878-ab6d-f5b300b78106 | started | — |
-| 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 | started | — |
+| 52 | #52 | local_f927678d-e609-4878-ab6d-f5b300b78106 (`claude/lane-52-f0a385`) | started | — |
+| 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 
 Lanes 52 and 59 started 2026-10-30 22:20 -0700 on the user's typed "Start 52 and 59". Lane 52 records ruling 7 as D-260. Lane 59 must not touch lane 56's files; any CI/doc timeout change it needs is applied after lane 56 merges. Three engine builders now (47, 56, 59), each at `CARGO_BUILD_JOBS=2` with `SCCACHE_DIR=D:\sccache`.
 
