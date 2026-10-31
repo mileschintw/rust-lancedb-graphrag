@@ -221,6 +221,7 @@ fn parse_args_reads_mode_input_and_levers() {
             mode: Mode::Pack,
             input: "x.jsonl".to_owned(),
             levers: Some(vec!["rerank".to_owned(), "evidence_metadata".to_owned()]),
+            results: None,
         })
     );
     assert_eq!(
@@ -465,4 +466,174 @@ async fn generate_turns_a_reader_failure_into_an_error_line() {
     );
     assert!(line.error.expect("error").contains("HTTP 400"));
     assert!(line.answer.is_none());
+}
+
+#[test]
+fn parse_args_reads_render_results() {
+    let args = |list: &[&str]| parse_args(list.iter().map(|s| (*s).to_owned()));
+    assert_eq!(
+        args(&["render", "--input", "x.jsonl", "--results", "r.jsonl"])
+            .map(|c| (c.mode, c.results)),
+        Ok((Mode::Render, Some("r.jsonl".to_owned())))
+    );
+    // #53 renders each row under the levers it was packed with, so render reads them as pack does.
+    let rendered = args(&[
+        "render",
+        "--input",
+        "x.jsonl",
+        "--results",
+        "r.jsonl",
+        "--levers",
+        "rerank,evidence_metadata",
+    ])
+    .map(|c| c.levers);
+    let packed = args(&[
+        "pack",
+        "--input",
+        "x.jsonl",
+        "--levers",
+        "rerank,evidence_metadata",
+    ])
+    .map(|c| c.levers);
+    assert_eq!(rendered, packed);
+    assert_eq!(
+        rendered,
+        Ok(Some(vec![
+            "rerank".to_owned(),
+            "evidence_metadata".to_owned()
+        ]))
+    );
+    assert!(
+        args(&["render", "--input", "x.jsonl"]).is_err(),
+        "render needs --results"
+    );
+    assert!(
+        args(&["generate", "--input", "x.jsonl", "--results", "r.jsonl"]).is_err(),
+        "only render reads --results"
+    );
+}
+
+/// The model output `provider_stub` sends in these tests.
+fn stub_output() -> serde_json::Value {
+    json!({
+        "answer": "The Verge reported it first [1].", "cited_evidence_ids": ["[1]"],
+        "answer_basis": "retrieval", "notices": [], "warnings": [], "final_answer": "The Verge"
+    })
+}
+
+/// A results-file line for the fixture row.
+fn result_line(content: &str, finish_reason: &str) -> String {
+    json!({
+        "question_id": "q-1", "arm": "graph_on", "content": content,
+        "finish_reason": finish_reason,
+        "usage": {"prompt_tokens": 900, "completion_tokens": 40, "total_tokens": 940}
+    })
+    .to_string()
+}
+
+async fn render(results: &str) -> OutputLine {
+    let settings = EffectiveRagSettings::default();
+    let config = config_for(&settings, "http://127.0.0.1:9");
+    let (blocks, facts) = engine_context();
+    let row = row_of(&export_row(&blocks, &facts));
+    let results = read_results(results.as_bytes()).expect("results");
+    let tail = Tail::new(Mode::Render, &settings, config, None);
+    tail.prepare()
+        .await
+        .expect("render makes no preflight call");
+    tail.render_row(&row, levers(), &results).await
+}
+
+/// #50 acceptance: `render` over the output `generate` received writes the line `generate` wrote.
+#[tokio::test]
+async fn render_writes_the_line_generate_wrote() {
+    let settings = EffectiveRagSettings::default();
+    let (base, server) = serve_once(200, chat_reply(stub_output()));
+    let config = config_for(&settings, &base);
+    let reader: Arc<dyn Generator> = Arc::new(
+        OpenRouterGenerator::new_with_config("test-key", config.clone()).expect("generator"),
+    );
+    let (blocks, facts) = engine_context();
+    let row = row_of(&export_row(&blocks, &facts));
+    let generated = Tail::new(Mode::Generate, &settings, config, Some(reader))
+        .run_row(&row, levers())
+        .await;
+    server.join().expect("server thread");
+    assert_eq!(generated.outcome, "success", "{:?}", generated.error);
+
+    let rendered = render(&result_line(&stub_output().to_string(), "stop")).await;
+    assert_eq!(
+        serde_json::to_string(&rendered).expect("rendered json"),
+        serde_json::to_string(&generated).expect("generated json")
+    );
+}
+
+/// #50 acceptance: invalid JSON, a schema violation, an ungrounded citation and a refusal each
+/// become an `error` line with an `error_type`.
+#[tokio::test]
+async fn render_turns_each_rejected_output_into_an_error_line() {
+    let mut ungrounded = stub_output();
+    ungrounded["answer"] = json!("The Verge reported it first [7].");
+    ungrounded["cited_evidence_ids"] = json!(["[7]"]);
+    let mut unknown_field = stub_output();
+    unknown_field["confidence"] = json!(0.9);
+    // Each case names a fragment of the reason it must fail for.
+    let cases = [
+        (
+            "invalid JSON",
+            result_line("{not json", "stop"),
+            "ModelOutput schema",
+        ),
+        (
+            "schema violation",
+            result_line(&unknown_field.to_string(), "stop"),
+            "unknown field `confidence`",
+        ),
+        (
+            "ungrounded citation",
+            result_line(&ungrounded.to_string(), "stop"),
+            // Citation repair drops the unresolvable marker; with none left the answer falls
+            // back to model-only, which a grounded request refuses.
+            "ModelOnly answer basis is not supported",
+        ),
+        (
+            "refusal",
+            result_line(&stub_output().to_string(), "refusal"),
+            "finish_reason 'refusal'",
+        ),
+    ];
+    for (case, results, reason) in cases {
+        let line = render(&results).await;
+        assert_eq!(line.outcome, "error", "{case}");
+        assert_eq!(line.question_id, "q-1", "{case}");
+        assert!(line.error_type.is_some(), "{case}");
+        let error = line.error.expect("error");
+        assert!(error.contains(reason), "{case}: {error}");
+        assert!(line.answer.is_none(), "{case}");
+    }
+}
+
+/// #50 acceptance: a row without a result line becomes an `error` line, never a missing line.
+#[tokio::test]
+async fn render_writes_an_error_line_for_a_row_without_a_result() {
+    let other = result_line(&stub_output().to_string(), "stop").replace("q-1", "q-2");
+    let line = render(&other).await;
+    assert_eq!(line.outcome, "error");
+    assert_eq!(line.error_type.as_deref(), Some("MISSING_RESULT"));
+}
+
+#[tokio::test]
+async fn render_reports_a_keyed_result_line_it_cannot_read() {
+    let line = render(r#"{"question_id": "q-1", "arm": "graph_on", "content": 3}"#).await;
+    assert_eq!(line.outcome, "error");
+    assert_eq!(line.error_type.as_deref(), Some("INVALID_RESULT"));
+}
+
+#[test]
+fn read_results_refuses_an_unkeyed_or_repeated_line() {
+    let err = read_results(r#"{"content": "x"}"#.as_bytes()).expect_err("no key");
+    assert!(err.contains("line 1"), "{err}");
+    let line = result_line("{}", "stop");
+    let err = read_results(format!("{line}\n\n{line}\n").as_bytes()).expect_err("repeated");
+    assert!(err.contains("line 3"), "{err}");
 }

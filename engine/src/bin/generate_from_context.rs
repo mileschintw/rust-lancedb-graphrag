@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! generate_from_context <pack|generate> --input <context_export.jsonl> [--levers <names>]
+//! generate_from_context render --input <context_export.jsonl> --results <results.jsonl> [--levers <names>]
 //! ```
 //!
 //! Each input line is one context-export row, the contract `eval/src/lancet_eval/context_export.py`
@@ -16,6 +17,24 @@
 //! - `generate` calls the configured reader through `OpenRouterGenerator` (`OPENROUTER_API_KEY`).
 //!   A success line carries the rendered `answer` (ending in the engine's `Answer:` line),
 //!   `final_answer`, `citations`, `structured_citations`, `notices`, `answer_basis` and `usage`.
+//! - `render` makes no network call either. It takes each row's reader output from the results
+//!   file and runs it through the same checks and tail as `generate`, so a success line is the
+//!   line `generate` would write for that output (#50, D-254).
+//!
+//! A results-file line (`render`) holds one reader output for one row:
+//!
+//! ```text
+//! {"question_id": "...", "arm": "...", "content": "<the reader's message content>",
+//!  "finish_reason": "stop", "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+//! ```
+//!
+//! `question_id` and `arm` match the row. `content` is the raw message content, the JSON text of
+//! the engine's `ModelOutput`. `finish_reason` takes the chat-completions values: `stop` is the
+//! only one accepted, and any other (`refusal`, `length`, ...) or `null` rejects the output.
+//! `usage` is the chat-completions token usage. A row with no result line becomes a
+//! `MISSING_RESULT` error line; a result line whose key reads but whose other fields do not
+//! becomes an `INVALID_RESULT` error line for its row. A line with no readable key, or a second
+//! line for one key, fails the whole input.
 //!
 //! `--levers` names the levers the row ran with, comma-separated wire names; an empty value is no
 //! lever. Without it the configured `[engine.levers] defaults` apply, as for a request that names
@@ -29,6 +48,7 @@
 //! LlamaIndex-export one, `<document_id>#<n>`, the index is `n`; any other chunk ID shape renders
 //! `chunk_index=0` in the evidence provenance.
 
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,7 +56,7 @@ use std::time::Duration;
 use engine::config::{load_settings, EffectiveRagSettings};
 use engine::doc_meta::DocMeta;
 use engine::generation::openrouter::{
-    chat_request_body, OpenRouterGenerationConfig, OpenRouterGenerator,
+    chat_request_body, OpenRouterGenerationConfig, OpenRouterGenerator, ProviderChoice,
 };
 use engine::generation::{
     BoxFuture, GenerationError, GenerationErrorKind, GenerationRequest, Generator, ModelOutput,
@@ -52,8 +72,8 @@ use engine::workflow::{LeverSet, Node, WorkflowContext};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-const USAGE: &str =
-    "usage: generate_from_context <pack|generate> --input <context_export.jsonl> [--levers <names>]";
+const USAGE: &str = "usage: generate_from_context <pack|generate> --input <context_export.jsonl> [--levers <names>]
+       generate_from_context render --input <context_export.jsonl> --results <results.jsonl> [--levers <names>]";
 
 /// The session ID every rebuilt workflow context carries.
 const SESSION_ID: &str = "generate_from_context";
@@ -65,6 +85,8 @@ pub enum Mode {
     Pack,
     /// Call the configured reader and emit its validated answer.
     Generate,
+    /// Validate and emit the reader output a results file gives; no network call.
+    Render,
 }
 
 /// The parsed command line.
@@ -74,6 +96,8 @@ pub struct Command {
     pub input: String,
     /// The `--levers` names; `None` when the flag is absent.
     pub levers: Option<Vec<String>>,
+    /// The `--results` file; `render` only.
+    pub results: Option<String>,
 }
 
 pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Command, String> {
@@ -81,11 +105,13 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Command, St
     let mode = match iter.next().as_deref() {
         Some("pack") => Mode::Pack,
         Some("generate") => Mode::Generate,
+        Some("render") => Mode::Render,
         Some(other) => return Err(format!("unknown mode '{other}'\n{USAGE}")),
         None => return Err(USAGE.to_owned()),
     };
     let mut input = None;
     let mut levers = None;
+    let mut results = None;
     while let Some(arg) = iter.next() {
         let mut value = || {
             iter.next()
@@ -93,6 +119,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Command, St
         };
         match arg.as_str() {
             "--input" => input = Some(value()?),
+            "--results" => results = Some(value()?),
             "--levers" => {
                 let names = value()?;
                 levers = Some(
@@ -108,10 +135,18 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Command, St
         }
     }
     let input = input.ok_or_else(|| format!("--input is required\n{USAGE}"))?;
+    match (mode, &results) {
+        (Mode::Render, None) => return Err(format!("render needs --results\n{USAGE}")),
+        (Mode::Pack | Mode::Generate, Some(_)) => {
+            return Err(format!("only render reads --results\n{USAGE}"))
+        }
+        _ => {}
+    }
     Ok(Command {
         mode,
         input,
         levers,
+        results,
     })
 }
 
@@ -356,6 +391,106 @@ impl Generator for RecordingGenerator {
     }
 }
 
+/// One results-file line: a reader's output for one row.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResultLine {
+    /// The row's `question_id`.
+    pub question_id: String,
+    /// The row's `arm`.
+    pub arm: String,
+    /// The reader's raw message content.
+    pub content: String,
+    /// The chat-completions finish reason; only `stop` is accepted.
+    pub finish_reason: Option<String>,
+    /// The chat-completions token usage.
+    pub usage: ModelUsage,
+}
+
+#[derive(Deserialize)]
+struct ResultKey {
+    question_id: String,
+    arm: String,
+}
+
+/// A results file, keyed by `(question_id, arm)`. A line whose key reads but whose other fields
+/// do not holds the read error for its row.
+#[derive(Debug, Default)]
+pub struct Results(HashMap<(String, String), Result<ResultLine, String>>);
+
+impl Results {
+    fn get(&self, row: &ExportRow) -> Option<&Result<ResultLine, String>> {
+        self.0.get(&(row.question_id.clone(), row.arm.clone()))
+    }
+}
+
+/// Reads a results file. A line without a readable key, or a second line for one key, fails the
+/// whole input.
+pub fn read_results(reader: impl BufRead) -> Result<Results, String> {
+    let mut results = HashMap::new();
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|err| format!("results line {}: {err}", index + 1))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let key: ResultKey = serde_json::from_str(&line)
+            .map_err(|err| format!("results line {}: {err}", index + 1))?;
+        let result = serde_json::from_str::<ResultLine>(&line)
+            .map_err(|err| format!("results line {}: {err}", index + 1));
+        let key = (key.question_id, key.arm);
+        if results.contains_key(&key) {
+            return Err(format!(
+                "results line {}: a second result for question {} arm {}",
+                index + 1,
+                key.0,
+                key.1
+            ));
+        }
+        results.insert(key, result);
+    }
+    Ok(Results(results))
+}
+
+/// A `Generator` that returns a given reader output instead of calling the network, checked by
+/// `OpenRouterGenerationConfig::accept_choice` as the OpenRouter adapter checks a live one.
+struct ReplayGenerator {
+    config: OpenRouterGenerationConfig,
+    result: Mutex<Option<ResultLine>>,
+}
+
+impl Generator for ReplayGenerator {
+    fn model_id(&self) -> &str {
+        self.config.model()
+    }
+
+    fn prepare<'a>(&'a self) -> BoxFuture<'a, Result<(), GenerationError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn generate<'a>(
+        &'a self,
+        request: GenerationRequest,
+    ) -> BoxFuture<'a, Result<ModelOutput, GenerationError>> {
+        Box::pin(async move {
+            let result = self.result.lock().expect("result lock").clone();
+            let Some(result) = result else {
+                return Err(GenerationError::new(
+                    GenerationErrorKind::InvalidRequest,
+                    "render has no result for this row",
+                ));
+            };
+            self.config.accept_choice(
+                &request,
+                ProviderChoice {
+                    content: &result.content,
+                    finish_reason: result.finish_reason.as_deref(),
+                    usage: Some(result.usage),
+                },
+            )
+        })
+    }
+}
+
 /// One output line.
 #[derive(Debug, Serialize)]
 pub struct OutputLine {
@@ -421,20 +556,29 @@ pub struct Tail {
     assemble: AssemblePromptNode,
     generate: GenerateAnswerNode,
     recorder: Arc<RecordingGenerator>,
+    replay: Option<Arc<ReplayGenerator>>,
 }
 
 impl Tail {
-    /// A tail for `mode`. `reader` is the generator `generate` calls; `pack` ignores it.
+    /// A tail for `mode`. `reader` is the generator `generate` calls; `pack` and `render`
+    /// ignore it.
     pub fn new(
         mode: Mode,
         settings: &EffectiveRagSettings,
         config: OpenRouterGenerationConfig,
         reader: Option<Arc<dyn Generator>>,
     ) -> Self {
+        let replay = (mode == Mode::Render).then(|| {
+            Arc::new(ReplayGenerator {
+                config: config.clone(),
+                result: Mutex::new(None),
+            })
+        });
         let recorder = Arc::new(RecordingGenerator {
             inner: match mode {
                 Mode::Pack => None,
                 Mode::Generate => reader,
+                Mode::Render => replay.clone().map(|replay| replay as Arc<dyn Generator>),
             },
             request: Mutex::new(None),
             output: Mutex::new(None),
@@ -459,6 +603,7 @@ impl Tail {
             assemble,
             generate,
             recorder,
+            replay,
         }
     }
 
@@ -470,7 +615,36 @@ impl Tail {
             .map_err(|err| format!("reader preflight failed: {}", err.message))
     }
 
-    /// The output line for one row.
+    /// The `render` output line for one row, from its line in `results`.
+    pub async fn render_row(
+        &self,
+        row: &ExportRow,
+        levers: LeverSet,
+        results: &Results,
+    ) -> OutputLine {
+        let result = match results.get(row) {
+            None => {
+                return OutputLine::error(
+                    row,
+                    "MISSING_RESULT",
+                    "the results file has no line for this row",
+                )
+            }
+            Some(Err(err)) => return OutputLine::error(row, "INVALID_RESULT", err.clone()),
+            Some(Ok(result)) => result.clone(),
+        };
+        let replay = self
+            .replay
+            .as_ref()
+            .expect("render_row needs a render tail");
+        *replay.result.lock().expect("result lock") = Some(result);
+        let line = self.run_row(row, levers).await;
+        replay.result.lock().expect("result lock").take();
+        line
+    }
+
+    /// The output line for one row. In `render` mode the row's result is the one `render_row`
+    /// set.
     pub async fn run_row(&self, row: &ExportRow, levers: LeverSet) -> OutputLine {
         let mut ctx = match context_for(row, levers, self.allow_model_only) {
             Ok(ctx) => ctx,
@@ -504,7 +678,7 @@ impl Tail {
                     Err(err) => OutputLine::error(row, "PACK_FAILED", err.message()),
                 }
             }
-            Mode::Generate => {
+            Mode::Generate | Mode::Render => {
                 if let Err(err) = result {
                     return OutputLine::error(row, err.kind.as_str_name(), err.message);
                 }
@@ -569,8 +743,15 @@ async fn main() -> Result<(), String> {
         .map_err(|err| format!("opening {}: {err}", command.input))?;
     let rows = read_rows(std::io::BufReader::new(file))?;
     let config = generation_config(&effective)?;
+    let results = match &command.results {
+        Some(path) => {
+            let file = std::fs::File::open(path).map_err(|err| format!("opening {path}: {err}"))?;
+            Some(read_results(std::io::BufReader::new(file))?)
+        }
+        None => None,
+    };
     let reader: Option<Arc<dyn Generator>> = match command.mode {
-        Mode::Pack => None,
+        Mode::Pack | Mode::Render => None,
         Mode::Generate => {
             let api_key = std::env::var("OPENROUTER_API_KEY")
                 .map_err(|_| "OPENROUTER_API_KEY is not set".to_owned())?;
@@ -585,7 +766,10 @@ async fn main() -> Result<(), String> {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     for row in &rows {
-        let line = tail.run_row(row, levers).await;
+        let line = match &results {
+            Some(results) => tail.render_row(row, levers, results).await,
+            None => tail.run_row(row, levers).await,
+        };
         let json = serde_json::to_string(&line).map_err(|err| err.to_string())?;
         writeln!(out, "{json}").map_err(|err| err.to_string())?;
     }
