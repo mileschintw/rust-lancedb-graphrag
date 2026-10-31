@@ -1,8 +1,8 @@
 # audit-s012 status
 
-- state: working
+- state: done
 - branch: claude/lane-audit-s012-ce867a
 - head: c69d4868
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\audit-s012.md
-- time: 2026-10-31 01:01 -0700
-- doing: S0 (#74-78) and S1 (#79) reported; S2 in progress
+- time: 2026-10-31 01:05 -0700
+- doing: audit done: issues #74-#82 + comments on #49 #53 #78; report reports/audit-s012.md; no PR (read-only)

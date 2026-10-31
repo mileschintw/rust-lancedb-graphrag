@@ -1,6 +1,6 @@
 # audit-s012 報告：S0／S1／S2 管線紙上稽核
 
-- 分支：`claude/lane-audit-s012-ce867a`，head 與 `origin/main` 相同（`5aedae9f`，PR #70 已合併）。本 lane 唯讀：無程式變更、無 PR、無付費呼叫、未啟動 live stack、未讀 held-out 題目內容（只數了行數）。
+- 分支：`claude/lane-audit-s012-ce867a`，head 與 `origin/main` 相同（`c69d4868`；S0 段對照 `5aedae9f`，兩者在 S0 路徑無差異）。本 lane 唯讀：無程式變更、無 PR、無付費呼叫、未啟動 live stack、未讀 held-out 題目內容（只數了行數）。
 - 稽核對象：`main` @ `5aedae9f`（PR #70 合併後；與 `claude/lane-prereg-s01-73d291` @ `5e7f0232` 在 `eval/src`、`baselines`、`engine/src`、`config` 上無差異）。
 
 ## S0（RUN 步驟 2 與 3）——先報
@@ -30,7 +30,7 @@ S0 的程式路徑在紙上走得通：沒有找到會讓步驟 2、3 的指令�
 - `run-external`：跑 `require_split_gates`、arm 屬於 corpus、export 每列 k=8、pipeline echo 必需鍵；bin 讀 `config/config.toml`（`config.eval.toml` 只改 `lancedb_path`），生成模型、provider 順序、溫度與 Lancet arm 相同；`--stage-cap 100` 不會觸發。
 - `score` / `compare-levers`：外部 arm 跳過 chunk-ID 檢索指標（D-250）、外部條款在兩處都檢查；S0 是 held-out role，#68 不影響。
 - 步驟 2.1、2.2：不讀 held-out；2.2 的 `multihop_rag_s1_dev` 用 `questions.diag.jsonl`（100 題，dev role）。
-- 不依賴 #65、#67、#68、#69（指南所述正確）。
+- 不依賴 #65、#67、#68、#69（指南所述正確；#65、#67、#69 在稽核期間已關閉）。
 
 ### 給 coordinator 的問題（S0）
 
@@ -63,13 +63,54 @@ S0 的程式路徑在紙上走得通：沒有找到會讓步驟 2、3 的指令�
 
 Atlas env `eval-s1` 與其 schema 檔；engine overlay `./data/lancedb-eval-s1`；gateway schema 由 env URL 決定，未設時 fail closed；`load_settings(store=...)` 與分 store 的 document map；`small/`、`merged/` 標籤在解析、子集、journal key、raw-events 目錄、score 的分 store map、兩個 prereg arm 集、null guard、分 store preflight canary 都接受；兩次 drive 寫同一 journal 的 header 與 resume key 不衝突；`.gitignore` 例外涵蓋 S1 run 目錄；4.5、4.7 的 Python snippet 函式名稱與簽名都存在；S1 不讀 held-out 題目內容（D-237）。
 
-## S2
+## S2（`replay-init` → rewrite → batch → `render` → `score` / `compare-levers`）
 
-稽核中（subagent 進行中），完成後補上。
+對照 `main` @ `c69d4868`。#51、#52、#54 已合併；#50（render）與 #53（batch）未建，只稽核它們必須接上的介面。subagent 追蹤；F1、F4、F5、F6 與 `correlation_id` 檢查我已讀碼確認。
+
+### 發現（S2）
+
+| # | 檔案:行 | 破壞的步驟 | 擋住 | 內容 |
+|---|---|---|---|---|
+| #80 | `eval/src/lancet_eval/replay.py:214-224`；`cli.py`（`replay_init_command`，無 `--corpus`） | replay-init → score | S2 | 新 journal 的 header 與每筆搬來的紀錄都寫 S1 的 corpus；`PREREGISTRATION_S1` 沒宣告 reader，reader 紀錄全被拒；手改 header 也會因 corpus 不一致使報告 partial、不寫 `report.json`。測試用同一 corpus 所以沒抓到。同 issue 附：replay-init 不檢查來源 run 的 role，可把 S0 held-out run 送進 Claude（D-237）。 |
+| #53 留言 | `context_export.py:349-360` | batch fetch → score | S2（#53 介面） | reader 的 export 列等於 base 列，帶 base 的 `correlation_id`，所以 reader 紀錄也必須帶同一個，否則 `require_export_rows` 拒收。base 為 error 的題目須寫 error 紀錄，否則 run 不完整。另列 levers、usage、render 失敗仍計費等要求。 |
+| #81 | `lever_comparison.py:1359-1367`；`measure.py:60-72` | compare-levers（成本） | 結果錯誤 | deepseek 以預算上限 $0.14/M input 計價，列價為 $0.0137（約 10 倍）；prereg 也無法登錄 deepseek 價格。以 v1.0 dev 平均 token 算，Haiku 看似便宜 45%，用列價則 deepseek 稍便宜：D-245 的成本條件會反過來。另：per-reader `answer_usable` 列的題目集合不同（deepseek 排除 rerank degrade，reader 不排除），差距與 D-252 的 2 點門檻同量級；成對列正確。 |
+| #82 | `provenance.py:157,222-234` | batch fetch → score | Sonnet fallback | D-255/D-260 的原生 Anthropic fallback 沒有 `provider`、`is_byok`，`reasoning_tokens == 0` 檢查形同虛設；另沒有任何條款比對 reader 收到的 prompt 與 deepseek 的 `assembled_prompt`。 |
+| #49 留言 | `replay.py:88-92`；`gitcheck._assigned_value` | Opus 條件 arm | 條件步驟 | D-252 的 Opus 條件 arm 沒有可行路徑（先登錄不跑 → 不完整；後加 → D-73 拒；新 run 不能搬 reader arm），只能重買 Haiku/Sonnet（約 $0.5）。D-73 只比對常數本身的賦值，reader 表要寫在常數內。 |
+
+### 查過、沒問題的（S2）
+
+`small/`、`merged/` 加 `@reader` 的標籤在各層解析正確；#51 的 request rewrite 與 engine body 一致、只動宣告欄位；九條 replay 條款皆 zero tolerance；reader arm 不進 Hits@4、MRR 與 judge；raw-events 目錄名處理新標籤；S2 路徑不碰 Postgres 或 store；D-73 的時間與乾淨樹檢查有效；S2 路徑沒有中途停的 cap（D-258）。
+
+### 與已知 issue 的依賴（S2）
+
+#68 未合併前 S2 完全無法評分；#65（已由 #72 修）影響 replay-init 需要的 S1 export；#50、#53 未建。
+
+## 提案（不實作）：S1/S2 離線端到端 fixture 測試
+
+目的：在付費前用一個 pytest 走完整條管線，抓到本次這類「各段單測都過、串起來才壞」的問題（#80、#53 介面、#75）。
+
+- **位置**：`eval/tests/test_pipeline_e2e.py`，放 slow tier（`@pytest.mark.slow`），不碰網路。
+- **Fixture**：一個小的假 corpus 組（例如 6 題 dev：5 G、1 null），兩個 corpus config：`s1_fixture`（四個 `small/`、`merged/` arm，role dev，token 指向測試用 prereg）與 `s2_fixture`（carried arm 加兩個 `@reader` arm）。gateway 用 `httpx.MockTransport` 回放固定 SSE（沿用 `levers_fixture` 的做法），`CheckpointSource` 用記憶體實作，含兩個 store 的 checkpoint，`correlation_id` 為真值；bin 用假 `BinRunner`；batch 與 render 用假 runner，回傳帶 `replay` 區塊的結果。
+- **步驟**：`seed`（假 gateway，檢查 `merged` store 收到 `chunk_strategy=structure-merge, 256, 25`）→ `drive --arms small/...` 與 `--arms merged/...` 進同一 journal → `export-context`（兩 store）→ `score` → `compare-levers`（S1 兩個讀數）→ `replay-init --source-run`（新 S2 corpus）→ 假 batch 寫 reader 紀錄 → `score` → `compare-levers`（reader 比較、成本）。
+- **斷言**：每一步 exit 與檔案存在；`report.json` 非 partial；reader 列與成對列數量；base error 題目在 reader arm 有 error 紀錄；identity 讀到對的 schema。
+- **xfail**：#65、#67、#68 已在測試中以 `pytest.mark.xfail(strict=True, reason="#68")` 標註對應步驟。#65、#67 已合併，這兩步應直接要求通過；#68 合併前，score/compare-levers 步驟 xfail。另外 #80、#53 未修前，S2 段也 xfail（strict），修好後 xfail 轉 XPASS 會提醒拿掉標記。
+- **S0 版**：同一檔案可加 S0 形狀（`hybrid+rerank+metadata` + `llamaindex`，held-out role 的假 split），涵蓋 `run` → `run-external` → `score` → `compare-levers`，並斷言 tripwire 停下時 CLI 的 exit 行為（#75）。
 
 ## 已開 issue
 
-#74、#75、#76、#77、#78（S0）。
+- S0：#74（release build 逾時）、#75（半套 arm 卻 exit 0）、#76（免費 stub 彩排無法執行）、#77（D-258 未印估算）、#78（D-237 未計數，export 無 split gate）。
+- S1：#79（seed 失敗列擋住 identity、S1 document map 未提交、指南措辭）。
+- S2：#80（replay-init 寫入 S1 corpus）、#81（reader 價格與母體）、#82（replay 條款）。
+- 留言：#53（batch 介面要求）、#49（Opus 條件 arm、D-73 寫法）、#78（replay-init 的 held-out 路徑）。
+
+## 其他
+
+- 每項變更：無（唯讀 lane；repo 未改動、無 commit、無 PR body）。
+- Checks 與 lane tests：本 lane 無 lane test；未執行 `project.md` 的 checks（沒有程式變更）。
+- 衝突：無。
+- Review：唯讀稽核，未跑 code-review；subagent 的每個 blocker 我都親自讀碼確認，未能確認的未開 issue（gold-chunk 表是否涵蓋 dev 題目，未開檔驗證）。
+- repo 與 scratchpad 外建立的東西：GitHub issue #74-#82 與三則留言；無安裝。
+- 稽核期間 `main` 前進：PR #70、#72、#73 已合併；#65、#67、#69 已關閉，#68 仍開。
 
 ## 使用者在本 session 的決定
 

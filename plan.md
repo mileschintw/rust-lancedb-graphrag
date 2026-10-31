@@ -69,6 +69,10 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #76 | 2 | — | none set | `provider_stub` /rerank, LlamaIndex endpoint override, S0 rehearsal corpus (audit-s012) | free; tonight replaced by a paid 3-question rehearsal |
 | #77 | 2 | — | none set | drive commands print no D-258 cost estimate (audit-s012) | free; blocks nothing |
 | #78 | 2 | — | none set | D-237 held-out reads not counted; export skips split gates (audit-s012) | free; blocks nothing |
+| #79 | 1 | — | none set | `experiments/v1.1/RUN-S0-S1.md` steps 1.4/1.5 (`status = 'completed'` filter, `identity pg-delete-extras --store eval-s1`), After-the-run commit list (`document_map.eval-s1.json`) (audit-s012) | free; blocks S1 step 1 checks |
+| #80 | 1 | — | none set | `replay.py` (corpus written into S2 journal; source role check), `cli.py` › `replay-init` (`--corpus`) (audit-s012) | free; blocks S2 scoring; same file as #82 → one lane |
+| #81 | 1 | — | none set | `lever_comparison.py`/`measure.py` reader rows: deepseek priced at budget ceiling, per-reader rows unpaired (audit-s012) | free; S2 report |
+| #82 | 1 | — | none set | `replay.py`/`provenance.py` replay clauses: native Anthropic fallback cannot pass; reader prompt never compared (audit-s012) | free; blocks the Q4 fallback; pair with #80 |
 | #50 | 1 | #44, #47 (both merged) | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free (lane 50 running) |
 | #53 | 4 | #50 (open), #51 (merged), #52 (merged) | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free. Brief note from lane 54: `measure.compute_spend` refuses reader-arm records unless called with `readers=preregistration.readers_of(prereg)` (prices = declared sync × `BATCH_PRICE_FACTOR` 0.5; an error record with no replay block costs 0); existing callers pass no readers, so #53's spend accounting over an S2 journal must; `replay.reasoning_tokens <= workflow_meta.completion_tokens` (completion includes reasoning) |
 
