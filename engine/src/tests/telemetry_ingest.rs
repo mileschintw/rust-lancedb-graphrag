@@ -147,7 +147,7 @@ async fn ingest_span_hierarchy_covers_document_stages() {
     let tracer = tracer_provider.tracer("test_ingest_hierarchy");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-ingest-hierarchy");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -217,7 +217,7 @@ async fn ingest_graph_extraction_is_inside_the_document_trace() {
     let tracer = tracer_provider.tracer("test_ingest_graph");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-ingest-graph");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -276,7 +276,7 @@ async fn ingest_admission_context_crosses_the_queue() {
     let tracer = tracer_provider.tracer("test_admission_queue");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-admission-queue");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -333,7 +333,7 @@ async fn ingest_recovered_job_starts_a_new_root() {
     let tracer = tracer_provider.tracer("test_recovered_root");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-recovered-root");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -389,7 +389,7 @@ async fn ingest_failure_branch_records_error_status() {
     let tracer = tracer_provider.tracer("test_failure_status");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-failure-status");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -446,7 +446,7 @@ async fn ingest_spans_carry_no_document_content() {
     let tracer = tracer_provider.tracer("test_no_content");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-no-content");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -538,7 +538,7 @@ async fn index_rebuild_span_records_generation_transition() {
     let tracer = tracer_provider.tracer("test_rebuild_transition");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-rebuild-trans");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -603,7 +603,7 @@ async fn index_rebuild_span_records_degraded_outcome() {
     let tracer = tracer_provider.tracer("test_rebuild_degraded");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-rebuild-degraded");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -667,7 +667,7 @@ async fn index_rebuild_span_links_all_triggering_documents() {
     let tracer = tracer_provider.tracer("test_rebuild_links");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-rebuild-links");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -763,7 +763,7 @@ async fn index_rebuild_span_is_not_parented_to_a_document() {
     let tracer = tracer_provider.tracer("test_rebuild_root");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-rebuild-root");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -820,7 +820,7 @@ async fn index_rebuild_trigger_buffer_is_drained_per_rebuild() {
     let tracer = tracer_provider.tracer("test_rebuild_drain");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-rebuild-drain");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -930,7 +930,7 @@ async fn extraction_attempt_span_per_llm_attempt() {
     let tracer = tracer_provider.tracer("test_extraction_attempt");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let attempts = Arc::new(AtomicUsize::new(0));
     let generator = RetryFailingExtractionGenerator {
@@ -989,7 +989,7 @@ async fn extraction_leaf_spans_nest_under_graph_extraction() {
     let tracer = tracer_provider.tracer("test_extraction_leaves");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-extraction-leaves");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -1060,7 +1060,7 @@ async fn graph_io_leaf_spans_wrap_real_lancedb_calls() {
     let tracer = tracer_provider.tracer("test_graph_io");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-graph-io");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -1128,7 +1128,7 @@ async fn extraction_leaf_spans_carry_no_content() {
     let tracer = tracer_provider.tracer("test_extraction_no_content");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-extraction-no-content");
     let database = DatabaseManager::initialize(&path).await.unwrap();
@@ -1201,7 +1201,7 @@ async fn extraction_leaf_spans_absent_when_extraction_is_skipped() {
     let tracer = tracer_provider.tracer("test_extraction_skipped");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let path = database_path("telem-extraction-skipped");
     let database = DatabaseManager::initialize(&path).await.unwrap();

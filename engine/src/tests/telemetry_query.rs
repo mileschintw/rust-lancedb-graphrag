@@ -30,6 +30,7 @@ use crate::service::{
 use crate::telemetry::metrics::{record_query_duration_ms, OUTCOME_COMPLETED, OUTCOME_FAILED};
 use crate::telemetry::propagation::extract_parent_context;
 use crate::telemetry::TelemetryHandle;
+use crate::testkit::ScopedSubscriber;
 use crate::workflow::node::QueryEmbeddingPort;
 use crate::workflow::nodes::{
     AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
@@ -45,60 +46,6 @@ use crate::workflow::{EventSequence, WorkflowContext, WorkflowEventSink, Workflo
 const PINNED_TRACEPARENT: &str = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 const PINNED_TRACE_ID_HEX: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
 const PINNED_SPAN_ID_HEX: &str = "00f067aa0ba902b7";
-
-/// How long [`ScopedSubscriber`]'s drop waits for other threads to release the subscriber.
-const SUBSCRIBER_RELEASE_DEADLINE: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// This thread's default subscriber for one test, released before the test's providers drop.
-///
-/// tracing-core briefly upgrades every live subscriber while it rebuilds callsite interest,
-/// holding its global dispatcher lock. A plain `set_default` guard can therefore leave another
-/// test's thread holding the last reference, so the OpenTelemetry provider inside the layer
-/// shuts down on that thread, under that lock. The shutdown emits internal `tracing` events,
-/// and registering a new callsite there takes the same lock again: the lib tests deadlock
-/// (issue #59). Dropping this guard waits until the subscriber itself is gone, so the
-/// provider locals declared before it hold the last reference and shut down here.
-struct ScopedSubscriber {
-    guard: Option<tracing::dispatcher::DefaultGuard>,
-    subscriber: tracing::dispatcher::WeakDispatch,
-    deadline: std::time::Duration,
-}
-
-impl ScopedSubscriber {
-    fn install(subscriber: impl tracing::Subscriber + Send + Sync + 'static) -> Self {
-        Self::install_with_deadline(subscriber, SUBSCRIBER_RELEASE_DEADLINE)
-    }
-
-    fn install_with_deadline(
-        subscriber: impl tracing::Subscriber + Send + Sync + 'static,
-        deadline: std::time::Duration,
-    ) -> Self {
-        let dispatch = tracing::Dispatch::new(subscriber);
-        Self {
-            guard: Some(tracing::dispatcher::set_default(&dispatch)),
-            subscriber: dispatch.downgrade(),
-            deadline,
-        }
-    }
-}
-
-impl Drop for ScopedSubscriber {
-    /// Panics if another thread still holds the subscriber after the deadline, so a stuck
-    /// thread fails the test instead of hanging it.
-    fn drop(&mut self) {
-        drop(self.guard.take());
-        let started = std::time::Instant::now();
-        while self.subscriber.upgrade().is_some() {
-            if started.elapsed() > self.deadline {
-                if !std::thread::panicking() {
-                    panic!("another thread still holds this test's subscriber after {:?}", self.deadline);
-                }
-                return;
-            }
-            std::thread::yield_now();
-        }
-    }
-}
 
 fn make_candidate(doc_id: &str, chunk_id: &str, score: f64) -> Candidate {
     Candidate {
@@ -1680,56 +1627,4 @@ async fn d227_no_rerank_request_span_without_the_lever() {
             .is_empty(),
         "no lever reranker and no lever named"
     );
-}
-
-/// Records whether the subscriber it is layered into has been dropped.
-struct DropProbe(Arc<std::sync::atomic::AtomicBool>);
-
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DropProbe {}
-
-impl Drop for DropProbe {
-    fn drop(&mut self) {
-        self.0.store(true, Ordering::SeqCst);
-    }
-}
-
-/// Issue #59: a subscriber another thread still holds must be gone before the guard's drop
-/// returns, so the test's provider locals drop last, on the test thread.
-#[test]
-fn scoped_subscriber_drop_waits_for_another_threads_reference() {
-    let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let scoped = ScopedSubscriber::install(
-        tracing_subscriber::Registry::default().with(DropProbe(dropped.clone())),
-    );
-    let foreign = tracing::dispatcher::get_default(|dispatch| dispatch.clone());
-    let holder = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        drop(foreign);
-    });
-
-    drop(scoped);
-
-    assert!(dropped.load(Ordering::SeqCst), "the subscriber outlived its guard");
-    holder.join().unwrap();
-}
-
-/// Issue #59: a thread that never lets go fails the test instead of hanging it.
-#[test]
-fn scoped_subscriber_drop_panics_when_another_thread_never_lets_go() {
-    let scoped = ScopedSubscriber::install_with_deadline(
-        tracing_subscriber::Registry::default(),
-        std::time::Duration::from_millis(50),
-    );
-    let foreign = tracing::dispatcher::get_default(|dispatch| dispatch.clone());
-    let (release, released) = std::sync::mpsc::channel::<()>();
-    let holder = std::thread::spawn(move || {
-        let _ = released.recv();
-        drop(foreign);
-    });
-
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(scoped)));
-
-    release.send(()).unwrap();
-    holder.join().unwrap();
-    assert!(outcome.is_err(), "the guard returned while another thread held the subscriber");
 }
