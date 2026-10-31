@@ -2,6 +2,16 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lanes 65 and 67 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- **Lane 65**, #65 (two-store S1 context export):
+  - Session local_b7cfc571-373e-4470-bddf-1aab4c6c0242, branch `claude/lane-65-53b502` @ 679e1fb2.
+  - PR #72 merged 2026-10-31, opened and merged under the standing auto-PR rule after `ci` passed (eval 2m40s). #65 closed.
+- **Lane 67**, #67 + #69 (S1 seed chunking; S1 identity schema):
+  - Session local_dd601ae8-4af5-4751-8aa3-86e68c29b59f, branch `claude/lane-67-ddf8d3` @ 3f37a770.
+  - PR #73 merged 2026-10-31 as c69d4868 (auto-PR rule, `ci` passed, eval 1m36s). #67 and #69 closed.
+  - The S1 chunking check is `lancet-eval preflight --corpus multihop_rag_s1_dev --store eval-s1` (check `store_chunking`).
+
 ## Lane prereg-s01 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane prereg-s01, the S0/S1 pre-registration and run guide (no issue): session local_d5df8b19-d4ed-4c18-b9b6-7e7ff2b0372e, branch `claude/lane-prereg-s01-73d291` @ 5e7f0232. PR #70 was merged 2026-10-31 as 5aedae9f on the user's "開 PR，CI 過了就 merge (Recommended)", after `ci` passed (eval 2m37s).
