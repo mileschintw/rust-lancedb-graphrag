@@ -29,7 +29,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | started | — |
+| 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | done @ a596c66a; PR #62 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-30; rerun once on a #59/#61 flake, then ask) | — |
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 | 52 | #52 | local_f927678d-e609-4878-ab6d-f5b300b78106 (`claude/lane-52-f0a385`) | started | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
@@ -59,6 +59,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #56 | 1 (next to #47 and #51) | — (after #44; files overlap) | none set | `engine/Cargo.toml` › `[profile.*]`, new `.cargo/config.toml` if needed, `docs/testing.md` (job-count rule, timings), CI cache check in #44's workflow (opened 2026-10-30 from a forked side session on the user's "把這件事規劃成issue，然後交給coordinator安排如何？") | limited: item 1 (sccache machine setup) needs the user's yes; the rest is free |
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #59 | 1 | — | none set | `engine/` telemetry_query tests (`engine_logs_carry_no_user_content`, two `graph_augmentation_record_*`, `graph_spans_survive_a_dropped_parent_*`) and any shared tracing/OTel test setup; per-test timeout in `.github/workflows/ci.yml` or `docs/testing.md` only after lane 56 merges (opened 2026-10-30 by lane 56: main run 41156665462 cancelled at 45 min, 4 tests hung; PR run of the same commit passed) | free (lane 59 running) |
+| #61 | 1 | — | none set | `engine/src/tests.rs` › rebuild-failure tests, `engine/src/ingest.rs` › `REBUILD_*_FAIL_NEXT` test hooks (opened 2026-10-30 by lane 47: lib tests race on process-wide hooks) | free; folded into lane 59 on the user's "併進 lane 59 (Recommended)" (2026-10-30) |
 | #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
 | #52 | 1 | #44, #51 (both merged; lane 51 → `plan-history.md`) | none set | `arms.py` reader suffix, `provenance.py`, `journal.py`, new `replay.py`, `preregistration.py`, `thresholds.py`, `cli.py` › `replay-init`, `test_replay.py` | free |
 | #53 | 4 | #50, #51, #52 | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free |
