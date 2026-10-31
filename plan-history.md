@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 52 merged (moved 2026-10-30, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 52, #52 Reader arms and the replay record kind: session local_f927678d-e609-4878-ab6d-f5b300b78106, branch `claude/lane-52-f0a385` @ ffa05c99. PR #63 merged 2026-10-30 as 72c6d2c8 on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 1m42s; engine and gateway skipped). #52 closed. Adds reader-arm labels, the replay record kind (9 zero-tolerance clauses), `replay-init`, and D-260 (ruling 7). Eval fast tier 2716 passed; v1.0 re-score slow checks byte-identical. Coordinator calls: the ruff bar is "no new errors" on files with pre-existing errors; GLOSSARY terms wait until S2 settles. For #53/#54: replay record fields and journal header keys are in PR #63's "For #53 and #54" section; each batch success record needs an export row (the carried base row with `arm` set to the reader-arm label).
+
 ## Lane 51 merged (moved 2026-10-30 22:11 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 51, #51 Request rewrite for Claude readers: session local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f, branch `claude/lane-51-ff04eb` @ 3d46e6b1. PR #60 merged 2026-10-30 as 107d92cb on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 1m27s; engine and gateway skipped by path filter). #51 closed. New `reader_request.py`, 43 tests, 4 golden bodies; eval fast tier 2676 passed. Its open question became ruling 7 (between_tools encoding). Note for #52: `pack_body.json` is hand-built from `OpenRouterChatPayload` (schema keys sorted); the real `pack` end-to-end check is #52's integration test (Q14).
