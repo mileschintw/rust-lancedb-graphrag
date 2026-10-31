@@ -121,6 +121,14 @@ docs no test reads runs only `changes` and `ci`.
   can read it, so saving it would only evict `main`'s. Debug info is off in CI to keep `engine/target` inside the
   runner's 14 GB disk and the repository's 10 GB cache.
 - Job time limits: `engine` 45 minutes (a cold build after a cache eviction), every other job 10.
+- CI environment settings the tests need, found on the first CI run (PR #57):
+  - `engine` installs Ubuntu's `protobuf-compiler`: lance's build scripts run `protoc`. A local build needs `protoc` on
+    `PATH` too.
+  - The eval pytest step sets `_TYPER_FORCE_DISABLE_TERMINAL=1`. Typer forces a Rich terminal when `GITHUB_ACTIONS`,
+    `FORCE_COLOR` or `PY_COLORS` is set, and the ANSI codes break the CLI-help assertions. Set it locally too if your
+    shell sets `FORCE_COLOR`.
+  - The uv jobs set `UV_LINK_MODE=copy`. On Linux uv hardlinks installed files from its cache, and nltk refuses a
+    multiply-linked data file.
 - No job needs a secret, and no job runs under `pull_request_target`.
 - The `eval` job runs the same fast tier as the lanes, including the tests that read committed held-out files offline
   (`eval/corpora/multihop_rag/questions.heldout.jsonl`, the `eval/runs/*heldout*` runs of record, and the v1.0

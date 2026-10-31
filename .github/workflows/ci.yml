@@ -102,6 +102,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
         with:
           components: clippy
+      - name: protoc
+        # lance's build scripts compile proto3 files with protoc; Ubuntu's package is enough
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends protobuf-compiler
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: engine
@@ -137,6 +140,9 @@ jobs:
     if: needs.changes.outputs.eval == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # uv hardlinks from its cache on Linux; copies keep package data files single-linked
+      UV_LINK_MODE: copy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -173,6 +179,10 @@ jobs:
           done
           exit $status
       - name: fast-tier tests
+        env:
+          # Typer forces a Rich terminal when GITHUB_ACTIONS is set, which puts ANSI codes in
+          # the CLI help the tests read; this is Typer's switch to turn that off
+          _TYPER_FORCE_DISABLE_TERMINAL: "1"
         run: uv run --project eval pytest -n auto --dist loadfile
 
   llamaindex:
@@ -180,6 +190,9 @@ jobs:
     if: needs.changes.outputs.llamaindex == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      # nltk refuses a multiply-linked data file, and uv hardlinks from its cache on Linux
+      UV_LINK_MODE: copy
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
