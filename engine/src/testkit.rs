@@ -38,10 +38,45 @@ const SUBSCRIBER_RELEASE_DEADLINE: Duration = Duration::from_secs(10);
 /// With this one always registered, tracing-core asks every live subscriber instead.
 static ALWAYS_REGISTERED: OnceLock<Dispatch> = OnceLock::new();
 
+/// The subscriber behind [`ALWAYS_REGISTERED`]: enables nothing and reports `OFF` as its max
+/// level, so it never raises tracing's global level filter.
+struct Disabled;
+
+impl tracing::Subscriber for Disabled {
+    fn register_callsite(
+        &self,
+        _: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::never()
+    }
+
+    fn max_level_hint(&self) -> Option<tracing::level_filters::LevelFilter> {
+        Some(tracing::level_filters::LevelFilter::OFF)
+    }
+
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        false
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, _: &tracing::Event<'_>) {}
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
 /// This thread's default `tracing` subscriber for one test, gone before the test's providers drop.
 ///
-/// Use it in place of `tracing::subscriber::set_default` whenever the subscriber holds an
-/// OpenTelemetry layer, and declare the provider locals before it so they drop after it.
+/// Use it in place of `tracing::subscriber::set_default` for every test subscriber, and declare
+/// any OpenTelemetry provider locals before it so they drop after it.
 ///
 /// tracing-core briefly upgrades every live subscriber while it rebuilds callsite interest,
 /// holding its global dispatcher lock. With a plain `set_default` guard another test's thread can
@@ -73,7 +108,7 @@ impl ScopedSubscriber {
         subscriber: impl tracing::Subscriber + Send + Sync + 'static,
         deadline: Duration,
     ) -> Self {
-        ALWAYS_REGISTERED.get_or_init(|| Dispatch::new(tracing::subscriber::NoSubscriber::default()));
+        ALWAYS_REGISTERED.get_or_init(|| Dispatch::new(Disabled));
         let dispatch = Dispatch::new(subscriber);
         Self {
             guard: Some(dispatcher::set_default(&dispatch)),
@@ -138,7 +173,10 @@ mod tests {
 
         drop(scoped);
 
-        assert!(dropped.load(Ordering::SeqCst), "the subscriber outlived its guard");
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "the subscriber outlived its guard"
+        );
         holder.join().unwrap();
     }
 
@@ -160,9 +198,15 @@ mod tests {
 
         release.send(()).unwrap();
         holder.join().unwrap();
-        let message = outcome.expect_err("the guard returned while another thread held the subscriber");
-        let message = message.downcast_ref::<String>().expect("a formatted panic message");
-        assert!(message.starts_with("ScopedSubscriber:"), "the panic names the guard: {message}");
+        let message =
+            outcome.expect_err("the guard returned while another thread held the subscriber");
+        let message = message
+            .downcast_ref::<String>()
+            .expect("a formatted panic message");
+        assert!(
+            message.starts_with("ScopedSubscriber:"),
+            "the panic names the guard: {message}"
+        );
     }
 
     /// Counts the events it sees.
@@ -187,9 +231,15 @@ mod tests {
             tracing_subscriber::Registry::default().with(EventCount(seen.clone())),
         );
 
-        std::thread::spawn(event_only_this_test_emits).join().unwrap();
+        std::thread::spawn(event_only_this_test_emits)
+            .join()
+            .unwrap();
         event_only_this_test_emits();
 
-        assert_eq!(seen.load(Ordering::SeqCst), 1, "the subscriber missed its own event");
+        assert_eq!(
+            seen.load(Ordering::SeqCst),
+            1,
+            "the subscriber missed its own event"
+        );
     }
 }
