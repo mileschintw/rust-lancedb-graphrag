@@ -33,8 +33,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | done @ d5543f44; PR #71 open, merge once `ci` passes (user: "開 PR，CI 過 merge，並刪殘留 (Recommended)", 2026-10-31; then delete `D:/lane56-targets`) | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
-| 65 | #65 | local_b7cfc571-373e-4470-bddf-1aab4c6c0242 (`claude/lane-65-53b502`) | started 2026-10-31 00:04 -0700 on the user's typed "Start 65" (S1 critical path) | — |
-| 67 | #67 | local_dd601ae8-4af5-4751-8aa3-86e68c29b59f (`claude/lane-67-ddf8d3`) | started 2026-10-31 00:10 -0700 on the user's typed "Start 67" (blocks the paid S1 store build) | — |
+| 65 | #65 | local_b7cfc571-373e-4470-bddf-1aab4c6c0242 (`claude/lane-65-53b502`) | done @ 679e1fb2; PR #72 open, merge once `ci` passes (standing auto-PR rule, 2026-10-31) | — |
+| 67 | #67 | local_dd601ae8-4af5-4751-8aa3-86e68c29b59f (`claude/lane-67-ddf8d3`) | done @ 3f37a770; PR #73 open (closes #67, #69), merge once `ci` passes (standing auto-PR rule) | — |
 | 68 | #68 | local_698777e7-e8f4-479a-8181-1d7d2e5cab68 (`claude/lane-68-db7b79`) | started 2026-10-31 00:16 -0700 on the user's typed "Start 68" (blocks scoring of S1 and S2) | — |
 | audit-s012 | none (opens issues) | local_0b05ece6-b691-41ff-ab64-1658bbffdae1 (`claude/lane-audit-s012-ce867a`) | started 2026-10-31 on the user's typed "Start audit"; read-only, no PR; S0 section first (user decides S0 tonight); if clean, ask to start a free provider_stub S0 rehearsal in the main checkout | — |
 
