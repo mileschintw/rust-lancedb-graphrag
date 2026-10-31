@@ -20,7 +20,11 @@ What it computes (06.3.6 AI-SPEC section 5):
   lines, which decide nothing;
 * one `default_decision` row per lever (D-150, O16);
 * with a context export beside the journal (D-249), evidence Hits@4 and o200k context
-  tokens per arm, and `evidence_hits_at_4` as a primary a family may name (D-250).
+  tokens per arm, and `evidence_hits_at_4` as a primary a family may name (D-250);
+* with reader arms (#54, D-257), the reader comparison: per reader, `answer_usable` on
+  G, the paired differences and the null guard against every other reader, the cost
+  per answered question at the sync list price, and the actual batch spend apart.
+  A reader arm replays another arm's retrieval, so it has no Hits@4 of either kind.
 
 No judge runs here and no judged result exists in this phase (D-153): this module never
 opens one. Bootstrap CIs and Wilson intervals are estimation only and are labelled so.
@@ -41,7 +45,15 @@ from typing import Any
 
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
-from lancet_eval.arms import canonical_arm, is_external_arm, resolve_arm
+from lancet_eval.arms import (
+    arm_reader,
+    canonical_arm,
+    in_registry_order,
+    is_external_arm,
+    is_reader_arm,
+    reader_base_arm,
+    resolve_arm,
+)
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
@@ -50,6 +62,15 @@ from lancet_eval.context_export import (
 )
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
+from lancet_eval.measure import (
+    BATCH_PRICE_FACTOR,
+    GENERATION_INPUT_PRICE_PER_1M,
+    GENERATION_OUTPUT_PRICE_PER_1M,
+    ReaderPriceError,
+    compute_spend,
+    reader_declaration,
+    reader_record_usd,
+)
 from lancet_eval.metrics import (
     answer_usable,
     context_tokens,
@@ -64,6 +85,7 @@ from lancet_eval.metrics import (
     recall_at_k,
 )
 from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice
 from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval.report import CorpusReport
 from lancet_eval.score import (
@@ -539,6 +561,7 @@ class _Ctx:
     chunk_size: int
     pops: dict[tuple[str, bool], p4_mod.P4Population]
     export: dict[tuple[str, str], ContextExportRow] | None = None
+    readers: dict[str, ReaderDeclaration] | None = None
 
     @property
     def g_ids(self) -> list[str]:
@@ -607,8 +630,9 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
 
 def _chunk_id_scorable(rec: RunRecord) -> bool:
     """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
-    not Lancet chunks, so its records have no value and leave every such pairing."""
-    return not is_external_arm(rec.graph_arm)
+    not Lancet chunks, so its records have no value and leave every such pairing. A
+    reader arm (D-257) replays another arm's retrieval and has none either."""
+    return not (is_external_arm(rec.graph_arm) or is_reader_arm(rec.graph_arm))
 
 
 def _values(
@@ -681,9 +705,14 @@ def _evidence_texts(ctx: _Ctx, rec: RunRecord) -> list[str]:
 
 
 def _evidence_hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
-    return lambda r: float(
-        evidence_hit_at_4(
-            _evidence_texts(ctx, r), ctx.gold_map[r.question_id].gold_facts
+    """Evidence Hits@4; None on a reader arm, which saw its base arm's evidence."""
+    return lambda r: (
+        None
+        if is_reader_arm(r.graph_arm)
+        else float(
+            evidence_hit_at_4(
+                _evidence_texts(ctx, r), ctx.gold_map[r.question_id].gold_facts
+            )
         )
     )
 
@@ -1206,7 +1235,7 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
         "prompt_tokens_mean": _prompt_tokens_value,
         "latency_total_ms_mean": lambda r: float(r.duration_ms),
         "retrieve_node_ms_mean": retrieve_ms,
-        "spend_usd_mean": _record_spend_usd,
+        "spend_usd_mean": lambda r: _priced(lambda: _record_spend_usd(r, ctx.readers)),
         # Evidence Hits@4 is a primary candidate like paper_hits_at_4, so it is
         # never a secondary; context tokens are.
         **(
@@ -1267,7 +1296,9 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
         rows.append({
             "arm": arm,
             "n": len(recs),
-            "evidence_hits_at_4": _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
+            "evidence_hits_at_4": None
+            if is_reader_arm(arm)
+            else _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
             "context_tokens_mean": _mean(
                 {r.question_id: tokens(r) or 0.0 for r in recs}
             ),
@@ -1277,6 +1308,214 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
             "label": LABEL_DESCRIPTIVE,
         })
     return rows
+
+
+# ---- readers (#54, D-245, D-252, D-257) ----------------------------------------------
+
+LABEL_READER_P = (
+    "exact paired sign-flip p, reported, not used (direction-finding, D-252)"
+)
+#: The carried engine arm's sync list price: the deepseek price `measure` charges.
+ENGINE_PRICE_SOURCE = "measure.GENERATION_*_PRICE_PER_1M"
+COST_BASIS = (
+    "cost per answered question = sync list price x the reader's tokens over its ok G "
+    "records, divided by its answer_usable G answers; the retrieval every reader "
+    "shares is left out. The batch spend is the reader's actual usage at the batch "
+    f"rate ({BATCH_PRICE_FACTOR} x the sync price), apart from the comparison."
+)
+
+
+def _priced(fn: Callable[[], float]) -> float:
+    """Calls a pricing function; a reader record it cannot price stops the report."""
+    try:
+        return fn()
+    except ReaderPriceError as exc:
+        raise LeverComparisonError(f"D-257: {exc}") from exc
+
+
+def _reader_declarations(
+    prereg: Any, arms: Sequence[str]
+) -> dict[str, ReaderDeclaration] | None:
+    """The declaration of every reader the run's reader arms name; None without any.
+
+    Raises:
+        LeverComparisonError: If a reader arm's reader has no declared price, or the
+            pre-registration's reader table is bad.
+    """
+    reader_arms = [a for a in arms if is_reader_arm(a)]
+    if not reader_arms:
+        return None
+    declared = dict(getattr(prereg, "readers", ()))
+    for arm in reader_arms:
+        try:
+            reader_declaration(arm, declared)
+        except ReaderPriceError as exc:
+            raise LeverComparisonError(f"D-257: {exc}") from exc
+    try:
+        return preregistration.readers_of(prereg)
+    except preregistration.PreregistrationError as exc:
+        raise LeverComparisonError(f"D-257: {exc}") from exc
+
+
+def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
+    """The sync list price of an arm's reader, and where it is declared."""
+    if not is_reader_arm(arm):
+        return (
+            ReaderPrice(GENERATION_INPUT_PRICE_PER_1M, GENERATION_OUTPUT_PRICE_PER_1M),
+            ENGINE_PRICE_SOURCE,
+        )
+    try:
+        return reader_declaration(arm, ctx.readers).price, "preregistration"
+    except ReaderPriceError as exc:
+        raise LeverComparisonError(f"D-257: {exc}") from exc
+
+
+def _ok_g_records(ctx: _Ctx, arm: str) -> list[RunRecord]:
+    label = canonical_arm(arm)
+    return [
+        rec
+        for qid in ctx.g_ids
+        if (rec := ctx.by_key.get((qid, label))) is not None
+        and _record_state(rec) == "ok"
+    ]
+
+
+def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
+    """A record's generation tokens at a sync list price (a reader record checked)."""
+    if is_reader_arm(rec.graph_arm):
+        return _priced(lambda: reader_record_usd(rec, price))
+    meta = rec.workflow_meta
+    if meta is None:
+        return 0.0
+    return (meta.prompt_tokens / 1_000_000.0) * price.input_per_mtok + (
+        meta.completion_tokens / 1_000_000.0
+    ) * price.output_per_mtok
+
+
+def _reader_row(ctx: _Ctx, arm: str) -> dict[str, Any]:
+    price, source = _reader_price(ctx, arm)
+    recs = _ok_g_records(ctx, arm)
+    usable = _usable_value(ctx)
+    n_usable = sum(int(usable(r) or 0) for r in recs)
+    sync = sum(_sync_usd(r, price) for r in recs)
+    label = canonical_arm(arm)
+    batch = [
+        r
+        for r in ctx.records
+        if canonical_arm(r.graph_arm) == label and r.replay is not None
+    ]
+    return {
+        "arm": arm,
+        "reader": arm_reader(arm),
+        "price": {
+            "input_per_mtok": price.input_per_mtok,
+            "output_per_mtok": price.output_per_mtok,
+            "source": source,
+        },
+        "answer_usable": {
+            "n": len(recs),
+            "n_usable": n_usable,
+            "mean": n_usable / len(recs) if recs else None,
+        },
+        "cost": {
+            "sync_usd": sync,
+            "reasoning_tokens": sum(
+                r.replay.reasoning_tokens for r in recs if r.replay
+            ),
+            "n_answered": n_usable,
+            "per_answered_usd": sync / n_usable if n_usable else None,
+        },
+        # #53 may land after this: an arm with no batch record yet reports "none".
+        "batch_spend": {
+            "usd": _priced(lambda: compute_spend(batch, readers=ctx.readers)[0]),
+            "n_records": len(batch),
+            "note": None,
+        }
+        if batch
+        else {"usd": None, "n_records": 0, "note": "none"},
+    }
+
+
+def _reader_pair(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
+    pop = _pairwise(ctx.records, ctx.split, against, arm)
+    vx, vr = _paired(ctx, pop, arm, _usable_value(ctx), reference=against)
+    n_pos, n_neg, p = sign_flip(vx, vr) if vx else (0, 0, 1.0)
+    pd = ctx.delta(vx, vr)
+    return {
+        "arm": arm,
+        "against": against,
+        "n_pairs": len(vx),
+        "mean_arm": _mean(vx),
+        "mean_against": _mean(vr),
+        "delta": None if pd is None else pd.delta,
+        "ci_lo": None if pd is None else pd.ci_lower,
+        "ci_hi": None if pd is None else pd.ci_upper,
+        "ci_label": LABEL_UNADJUSTED,
+        "n_pos": n_pos,
+        "n_neg": n_neg,
+        "raw_p": p,
+        "p_label": LABEL_READER_P,
+    }
+
+
+def _reader_guard(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
+    pop = _pairwise(ctx.records, ctx.split, against, arm, null=True)
+    b = c = 0
+    for qid in pop.question_ids:
+        h = is_abstention(ctx.rec(qid, against))
+        x = is_abstention(ctx.rec(qid, arm))
+        if h and not x:
+            b += 1
+        elif x and not h:
+            c += 1
+    prereg = ctx.prereg
+    guard = evaluate_null_guard(
+        b,
+        c,
+        len(pop.question_ids),
+        ctx.n_null,
+        margin=float(prereg.null_guard_margin),
+        min_pair_fraction=float(prereg.null_guard_min_pair_fraction),
+        arm=arm,
+        predicate=str(prereg.null_guard_predicate),
+    )
+    return {**asdict(guard), "against": against}
+
+
+def reader_comparison(ctx: _Ctx, arms: Sequence[str]) -> dict[str, Any] | None:
+    """The reader comparison of a run whose arms differ only by reader (#54, D-257).
+
+    One group per replayed base arm: the base (the carried engine reader) and its
+    reader arms. Within a group every reader is paired with every other one on G
+    (`answer_usable`, exact p reported but not used) and guarded against every other
+    one on the null questions. D-252's S2 rule and D-245 are applied by hand.
+
+    Returns:
+        None for a run with no reader arm, so its payload is unchanged.
+    """
+    reader_arms = [a for a in arms if is_reader_arm(a)]
+    if not reader_arms:
+        return None
+    groups: list[dict[str, Any]] = []
+    for base in dict.fromkeys(reader_base_arm(a) for a in reader_arms):
+        members = [
+            base,
+            *in_registry_order([a for a in reader_arms if reader_base_arm(a) == base]),
+        ]
+        groups.append({
+            "base": base,
+            "readers": [_reader_row(ctx, a) for a in members],
+            "pairs": [
+                _reader_pair(ctx, members[j], members[i])
+                for i in range(len(members))
+                for j in range(i + 1, len(members))
+            ],
+            "null_guards": [
+                _reader_guard(ctx, a, b) for a in members for b in members if a != b
+            ],
+            "p_label": LABEL_READER_P,
+        })
+    return {"cost_basis": COST_BASIS, "groups": groups}
 
 
 def _load_export(run: Path) -> dict[tuple[str, str], ContextExportRow] | None:
@@ -1511,6 +1750,7 @@ def build_lever_comparison(
         chunk_size=int(config.chunk_size),
         pops={},
         export=_load_export(run),
+        readers=_reader_declarations(prereg, sorted(arm_set)),
     )
 
     families = [_family_block(ctx, f) for f in prereg.families]
@@ -1613,6 +1853,9 @@ def build_lever_comparison(
     }
     if ctx.export is not None:
         payload["context"] = _context_rows(ctx)
+    readers = reader_comparison(ctx, preregistration.arms_of(prereg))
+    if readers is not None:
+        payload["reader_comparison"] = readers
     return payload
 
 
@@ -1640,6 +1883,78 @@ def _table(header: Sequence[str], rows: Sequence[Sequence[object]]) -> list[str]
         *(_row(*r) for r in rows),
         "",
     ]
+
+
+def _render_readers(rc: Mapping[str, Any]) -> list[str]:
+    """The reader comparison (#54): per group, readers, pairs and null guards."""
+    out: list[str] = []
+    for group in rc["groups"]:
+        out += [
+            f"## Readers of `{group['base']}` (D-257; direction-finding, D-252)",
+            "",
+            rc["cost_basis"],
+            "",
+        ]
+        out += _table(
+            [
+                "arm",
+                "reader",
+                "answer_usable (G)",
+                "n",
+                "price in/out per MTok",
+                "sync USD",
+                "answered",
+                "USD per answered question",
+                "batch spend USD",
+            ],
+            [
+                (
+                    r["arm"],
+                    r["reader"] or "engine (carried)",
+                    _fmt(r["answer_usable"]["mean"]),
+                    r["answer_usable"]["n"],
+                    f"{_fmt(r['price']['input_per_mtok'])} / "
+                    f"{_fmt(r['price']['output_per_mtok'])} ({r['price']['source']})",
+                    _fmt(r["cost"]["sync_usd"], 6),
+                    r["cost"]["n_answered"],
+                    _fmt(r["cost"]["per_answered_usd"], 6),
+                    r["batch_spend"]["note"] or _fmt(r["batch_spend"]["usd"], 6),
+                )
+                for r in group["readers"]
+            ],
+        )
+        out += [f"Paired `answer_usable` differences on G; {group['p_label']}.", ""]
+        out += _table(
+            ["arm - against", "n_pairs", "delta", "95% CI", "n_pos/n_neg", "raw p"],
+            [
+                (
+                    f"{p['arm']} - {p['against']}",
+                    p["n_pairs"],
+                    _fmt(p["delta"]),
+                    f"[{_fmt(p['ci_lo'])}, {_fmt(p['ci_hi'])}]",
+                    f"{p['n_pos']}/{p['n_neg']}",
+                    _fmt(p["raw_p"]),
+                )
+                for p in group["pairs"]
+            ],
+        )
+        out += ["Null guard of each reader against every other reader.", ""]
+        out += _table(
+            ["arm", "against", "N pairs", "b", "c", "net loss", "status"],
+            [
+                (
+                    g["arm"],
+                    g["against"],
+                    g["n_pairs"],
+                    g["b"],
+                    g["c"],
+                    _fmt(g["net_loss_rate"]),
+                    g["status"],
+                )
+                for g in group["null_guards"]
+            ],
+        )
+    return out
 
 
 def render_markdown(payload: Mapping[str, Any]) -> str:
@@ -2006,6 +2321,8 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
             for p in payload["provenance_counts"]
         ],
     )
+    if payload.get("reader_comparison") is not None:
+        out += _render_readers(payload["reader_comparison"])
     out += ["## Default decisions (D-150, O16)", ""]
     out += _table(
         ["lever", "decision", "answer_usable", "delta", "Hits@4 support", "reasons"],
