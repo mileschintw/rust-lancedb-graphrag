@@ -1,11 +1,28 @@
-# run-s01 報告：S0 完成（held-out read 1/2）
+# run-s01 報告：S0 完成（held-out read 1/2），分支 `lane-run-s01` @ `97eaa82e`
 
-- 狀態：**步驟 3.1–3.7 全部完成**，exit 全為 0，兩個 arm 各 351 筆。stack 已停（8080、50051 無 listener）。等 coordinator 決定是否寫 `EXPERIMENT-S0.md › Result` 與 commit run dir（兩者都動追蹤檔，我未動）。
+- 狀態：**done**。步驟 3.1–3.7 全部完成，exit 全為 0，兩個 arm 各 351 筆。stack 已停。依 coordinator 指示（使用者不在時決定），run dir 與 `EXPERIMENT-S0.md › Result` 已 commit 並 push 到 `lane-run-s01`。coordinator 開 PR，等使用者讀過判讀與排除說明再合併。
+- 分支與 head：`lane-run-s01` @ `97eaa82e`（已 push；從 `origin/main` `9e74c0c5` 切出），worktree `D:/Repos/lancet-run-s01`。
 - **S0 判讀：no significant difference**。`llamaindex` − `hybrid+rerank+metadata` 的 `answer_usable` Δ = **−0.34 點**，95% CI [−5.05, +4.38]（unadjusted, estimation only），raw p = 1.0、Holm p = 1.0，未 reject。
-- run dir：`D:/Repos/lancet/eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/`（目前 untracked）。
-- 本 lane 總花費約 **$1.21**（observed：3.2 $0.0461 + $0.3190、3.5 $0.6417；3.4 與 2.2 工具未印，估各 ~$0.15–0.25；其餘 < $0.02），在上限 $3.5 內。
-- checkout：主 checkout `D:\Repos\lancet`，`main` @ `c69d4868`（= `origin/main`，未 pull）；`git status` 只有新 run dir 與不屬於本 lane 的 `scratch_new.txt`。無分支、無 commit、無 PR。
+- run dir：已 commit 在 `lane-run-s01` 的 `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/`（33 個檔，約 23 MB）。主 checkout 裡的 untracked 原件已移到 `D:/s0-run-backup/2026-10-31-s0-multihop_rag_s0_heldout/`。
+- 本 lane 總花費約 **$1.4**（observed：3.2 $0.0461 + $0.3190、3.5 $0.6417；3.4 與 2.2 工具未印，估約 $0.25 與 $0.15，請以 OpenRouter activity 為準；其餘 < $0.02），在上限 $3.5 內。
+- 主 checkout `D:\Repos\lancet`：跑 S0 時在 `main` @ `c69d4868`；之後 coordinator 把它 fast-forward 到 `9e74c0c5`。現在 `git status` 只剩不屬於本 lane 的 `scratch_new.txt`。
 - 注意：app 把本 session 開在 coordinator 的 worktree（`vigorous-elgamal-87e693`），但每個指令都以 `cd D:/Repos/lancet` 開頭，在主 checkout 執行；worktree 內沒有寫入任何東西。
+
+## 改了哪些檔（`lane-run-s01`）
+
+- `feb51ac2` `docs(v1.1): record S0 held-out run and its result`
+  - `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/`（新增，33 個檔）：journal、兩份 context export、`llamaindex/pipeline_config.json`、`report.json`、`lever-comparison.{json,md}`、`raw_events/`。
+  - `experiments/v1.1/EXPERIMENT-S0.md`：只填 `## Result`（取代 "Not run yet."），上面的內容與 D-ID 都沒動。內容包含判讀、coverage 297/308、11 對排除與推測原因（第一段 rerank degraded、機器負載、未重跑）、null guard、分層、計數、花費、#84 繞道。
+- `97eaa82e` `test(eval): let committed v1.1 S0/S1 journals carry lever metadata`
+  - `eval/tests/test_journal.py`：`test_every_committed_journal_parses_with_the_new_defaulted_fields` 原本只豁免 `-levers-` 目錄，所以 commit S0 run 後會失敗（`assert rec.snapshot.levers == []`，S0 的 Lancet arm 帶 `rerank`、`evidence_metadata`）。改為也豁免 `-s0-`、`-s1-`（S1 run 之後也會遇到）。
+
+## 檢查
+
+- `PYTHONUTF8=1 uv run --project eval pytest -n auto --dist loadfile`（在 `lane-run-s01` head）：`2786 passed, 8 skipped, 42 subtests passed`。修 test 之前：`1 failed, 2785 passed`（上面那個 test）。
+- cargo／Go 的測試沒跑：本 lane 沒動 engine 或 gateway（`project.md`：只動 `eval/` 的 lane 可以跳過）。`baselines/llamaindex` 的 pytest 也沒跑（沒改）。
+- push 後的驗證：`origin/lane-run-s01` 和原件的檔案清單相同（33 個）。用 sha256 比對，31 個 byte 完全相同；`journal.jsonl` 與 `report.json` 的原件是 CRLF，`core.autocrlf=true` 把它們存成 LF，CRLF→LF 之後完全相同。
+- 掃過 run dir，沒有 `sk-or-`、`OPENROUTER_API_KEY`、`Bearer `。
+- review：只看 diff，自己 review，沒有跑 `code-review` skill（變更只有文件、run data 和 3 行 test 豁免）。Result 的每個數字都對過 `lever-comparison.json`。
 
 ## 各步驟
 
@@ -35,7 +52,7 @@
 | 3.7 | 讀 `lever-comparison.json` | — | 見下方「S0 判讀」 | 0 |
 | 收尾 | 停 engine 與 gateway | — | 8080、50051 無 listener；`lancet-postgres` 保留 | 0 |
 
-目前總花費：約 $0.20-0.21（含 3.2 的 $0.0461；先前約 $0.15-0.16，2.2 為估計值）。
+總花費見最上方（約 $1.4）。
 
 ## 重要發現：#84（cp950）— S0 前必須處理
 
@@ -94,6 +111,8 @@ uns6-10-31-s0-multihop_rag_s0_heldout\`（`journal.jsonl`、`context_export.js
 
 ## repo 與 scratchpad 以外建立的東西
 
+- `D:/Repos/lancet-run-s01`（`lane-run-s01` 的 worktree）與 `D:/s0-run-backup/`（S0 run dir 原件）— 保留。
+
 - `D:\Repos\lancet\baselines\llamaindex\.venv`（`uv run` 建立，78 個套件；gitignored）— 保留，S0 要用。
 - `D:\Repos\lancet\eval\runs\llamaindex-check\`、`eval\runs\rehearsal-s0-2026-10-31\`（gitignored，非 run of record）— 保留供查。
 - `engine/target` 新產物（debug + 兩個 release bin）— 保留。
@@ -128,9 +147,9 @@ uns6-10-31-s0-multihop_rag_s0_heldout\`（`journal.jsonl`、`context_export.js
 
 ## 給 coordinator 的問題
 
-1. 可以把上面的判讀寫進 `experiments/v1.1/EXPERIMENT-S0.md › Result` 嗎？（追蹤檔，要寫在哪個分支？）
-2. 指南說 run dir 要 commit 在 lane 自己的分支，不能 commit 到 main。要我開分支 commit `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout/` 嗎？分支名稱？
-3. 3.2 tripwire 之後接續的事，要不要寫進 Result？
+- （已答，使用者不在時由 coordinator 決定）在新 worktree `D:/Repos/lancet-run-s01` 開 `lane-run-s01` 分支，commit 並 push run dir；比對無誤後把原件移到 `D:/s0-run-backup/`；把判讀寫進 Result，並寫明 11 對排除與 297/308 coverage。以上都完成了。
+- 新的：`test_journal.py` 的豁免是我加的（commit 這個 run 必須改）。如果你希望用別的方式處理（例如另開 issue 或換別的 lane 做），請告訴我。
+- `D:/s0-run-backup/` 和 `D:/Repos/lancet-run-s01` worktree 都在 repo 外。PR 合併後要不要刪掉，請你決定。
 
 ## （已處理）tripwire 後的選項（使用者選了 1）
 
