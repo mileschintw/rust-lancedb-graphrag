@@ -310,6 +310,7 @@ def test_replay_init_into_a_run_of_record_refuses_before_d73_holds(
         {
             "tokens": (fx.TOKEN,),
             "require_clean_tree": True,
+            "created_at": None,
             "unchanged_since_introduction": True,
         }
     ]
@@ -420,6 +421,17 @@ def test_replay_init_refuses_a_source_arm_missing_a_question(
     assert "incomplete" in str(excinfo.value)
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
     _init(s1, tmp_path / "pilot", pilot=True)
+
+
+def test_a_pilot_run_with_reader_records_is_never_scored(tmp_path, monkeypatch) -> None:
+    from lancet_eval.score import ScoreError
+
+    s1, gold, qs = _s1(tmp_path, monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2, pilot=True)
+    rf.append_reader_arm(s2, qs)
+    with pytest.raises(ScoreError, match="pilot run"):
+        _score(s2, gold)
 
 
 def test_the_replay_init_command_writes_a_pilot_run(tmp_path, monkeypatch) -> None:

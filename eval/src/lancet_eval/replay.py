@@ -29,11 +29,12 @@ another target (D-260), so it gets its own run directory, made with ``pilot=True
   ``compare-levers`` apply after the spend; ``batch submit`` repeats it against the
   header's ``created_at``);
 - the carried arms are exactly the constant's ``replay_source_arm``, a known arm label
-  that is not a reader arm, so a placeholder left before S1's Result is refused (H-1);
+  that is not a reader arm, so a placeholder left before S1's Result is refused;
 - the source run is not partial and its arm holds a record of every question of the
-  source corpus (H-3).
+  source corpus.
 
-A pilot run skips these three checks.
+A pilot run skips these three checks, and ``require_replay_provenance`` refuses to
+score or compare it.
 
 The reader arms' records (``<arm>@<reader>``, ``journal.ReplayProvenance``) are
 appended later by ``batch fetch`` (#53), each with an export row that is the carried
@@ -190,6 +191,11 @@ def require_d73(token: str | None, *, created_at: float | None = None) -> None:
     ancestor of HEAD, the tree clean, the value unchanged since its commit and, with
     ``created_at``, that commit older than the data.
 
+    Args:
+        token: The S2 corpus's pre-registration token.
+        created_at: The journal header's epoch seconds; None skips the time check
+            (``replay-init`` checks before it stamps the header).
+
     Raises:
         ReplayError: Naming each problem, or the git failure that hides them.
     """
@@ -199,8 +205,8 @@ def require_d73(token: str | None, *, created_at: float | None = None) -> None:
         problems = gitcheck.preregistration_problems(
             (token,),
             require_clean_tree=True,
+            created_at=created_at,
             unchanged_since_introduction=True,
-            **({} if created_at is None else {"created_at": created_at}),
         )
     except gitcheck.GitCheckError as exc:
         raise ReplayError(f"D-73: cannot prove {token} is committed: {exc}") from exc
@@ -213,7 +219,7 @@ def require_d73(token: str | None, *, created_at: float | None = None) -> None:
 
 
 def _declared_source_arm(token: str) -> str:
-    """The S1 arm the S2 constant ``token`` says a run of record replays (H-1)."""
+    """The S1 arm the S2 constant ``token`` says a run of record replays."""
     try:
         prereg = preregistration.resolve(token)
     except preregistration.PreregistrationError as exc:
@@ -241,7 +247,7 @@ def _declared_source_arm(token: str) -> str:
 def _require_complete(
     records: Sequence[RunRecord], arm: str, header: Mapping[str, Any], corpus: str
 ) -> None:
-    """Refuses a partial source run, or a source arm missing a question (H-3)."""
+    """Refuses a partial source run, or a source arm missing a question."""
     if header.get("partial", False):
         raise ReplayError(
             "the source run's journal header is partial: a run of record replays a "
@@ -330,7 +336,9 @@ def replay_init(
         )
     if not pilot:
         token = s2_config.preregistration_token
-        declared = _declared_source_arm(token) if token else None
+        if not token:
+            raise ReplayError("D-73: the S2 corpus names no pre-registration")
+        declared = _declared_source_arm(token)
         if wanted != [declared]:
             raise ReplayError(
                 f"the S2 pre-registration's replay_source_arm is {declared!r}, but "
@@ -413,7 +421,8 @@ def require_replay_provenance(
 ) -> None:
     """Refuses a run whose reader-arm records break a replay clause (D-257).
 
-    A run with no reader-arm record passes untouched. Otherwise the pre-registration
+    A run with no reader-arm record passes untouched. A pilot run with one is refused:
+    its reader records are never the S2 result (#109). Otherwise the pre-registration
     ``token`` names must declare each reader, and every reader-arm record is checked
     against the run's context export, the header's carried row hashes and its
     reader's declaration (``provenance.replay_run_failures``).
@@ -424,12 +433,20 @@ def require_replay_provenance(
         token: The corpus's pre-registration token.
 
     Raises:
-        ReplayError: Naming the clause, the arm and the question of each failure.
+        ReplayError: If the run is a pilot run, or naming the clause, the arm and the
+            question of each failure.
     """
-    from lancet_eval import preregistration, provenance
+    from lancet_eval import provenance
 
     if not any(is_reader_arm(r.graph_arm) for r in records):
         return
+    journal = Path(journal_path)
+    header = read_journal_header(journal)
+    if is_pilot_run(header):
+        raise ReplayError(
+            "#109: a pilot run (replay-init --pilot) is never scored or compared; "
+            "report the run of record"
+        )
     if not token:
         raise ReplayError(
             "D-257: model: the corpus names no pre-registration, so a reader arm has "
@@ -439,7 +456,6 @@ def require_replay_provenance(
         readers = preregistration.readers_of(preregistration.resolve(token))
     except preregistration.PreregistrationError as exc:
         raise ReplayError(f"D-257: model: {exc}") from exc
-    journal = Path(journal_path)
     export = journal.parent / CONTEXT_EXPORT_FILE
     try:
         rows = read_export(export) if export.is_file() else []
@@ -448,7 +464,7 @@ def require_replay_provenance(
     failures = provenance.replay_run_failures(
         records,
         export_rows={(row.question_id, row.arm): row for row in rows},
-        source_row_sha256=source_row_hashes(read_journal_header(journal)),
+        source_row_sha256=source_row_hashes(header),
         readers=readers,
     )
     if failures:

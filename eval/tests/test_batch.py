@@ -806,8 +806,8 @@ def test_a_run_of_record_refuses_a_submit_before_d73_holds(s2, monkeypatch) -> N
         {
             "tokens": (fx.TOKEN,),
             "require_clean_tree": True,
-            "unchanged_since_introduction": True,
             "created_at": header["created_at"],
+            "unchanged_since_introduction": True,
         }
     ]
 

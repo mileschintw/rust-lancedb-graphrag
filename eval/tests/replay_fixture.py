@@ -33,10 +33,10 @@ if "replay_source_arm" in {f.name for f in dataclasses.fields(StagePreRegistrati
     S2PreRegistration = StagePreRegistration
 else:
     # Lane 110 adds `replay_source_arm: str` to the S2 constant's type (#110); until
-    # it lands, the fixture constant carries the field itself.
+    # it lands, the fixture constant carries the field itself (drop this branch then).
     @dataclasses.dataclass(frozen=True)
     class S2PreRegistration(StagePreRegistration):  # type: ignore[no-redef]
-        """`StagePreRegistration` plus the S1 arm an S2 run replays (#109, H-1)."""
+        """`StagePreRegistration` plus the S1 arm an S2 run replays (#109, #110)."""
 
         replay_source_arm: str = ""
 
@@ -256,7 +256,7 @@ def s2_prereg(
     """A synthetic S2 stage constant: the deepseek arm against its reader arms.
 
     `arms` names several reader arms (#54's three readers); by default it is `arm`.
-    `replay_source_arm` is the S1 arm `replay-init` must carry (#109, H-1).
+    `replay_source_arm` is the S1 arm `replay-init` must carry (#109, #110).
     """
     base = fx.make_prereg()
     fields = {f.name: getattr(base, f.name) for f in dataclasses.fields(base)}
