@@ -273,8 +273,8 @@ documents no `between_tools`; Anthropic rejects `temperature` and `top_p` since 
 
 Decided by the owner on 2026-10-30, answering the S0/S1 pre-registration questions (lane prereg-s01). The stage files
 are [EXPERIMENT-S0.md](EXPERIMENT-S0.md) and [EXPERIMENT-S1.md](EXPERIMENT-S1.md); the constants are
-`PREREGISTRATION_S0`, `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` in `eval/src/lancet_eval/thresholds.py`;
-the run order is [RUN-S0-S1.md](RUN-S0-S1.md).
+`PREREGISTRATION_S0`, `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` in
+`eval/src/lancet_eval/thresholds.py`; the run order is [RUN-S0-S1.md](RUN-S0-S1.md).
 
 - **D-261 S0 null guard in both directions** (owner: "雙向讀，勝方須過"). D-252's "null guard on both arms" is read
   as one guard per direction over the same null pairs: `llamaindex` against the Lancet default as the lever
@@ -290,7 +290,8 @@ the run order is [RUN-S0-S1.md](RUN-S0-S1.md).
   comparison has its own constant, `PREREGISTRATION_S1_MERGED_GRAPH`, equal to `PREREGISTRATION_S1` except for the
   arm roles.
 - **D-264 S1 null guard vetoes both choices** (owner: "沿用 0.10/0.80，兩個選擇都否決"). On the 10 dev nulls the guard
-  keeps margin 0.10 (a net abstention drop of 2 or more fails) and pair fraction 0.80 (at least 8 null pairs). It is
+  keeps margin 0.10 (a net abstention drop above 0.10 of the null pairs fails: 2 or more with 10 pairs, 1 or more with
+  8 or 9) and pair fraction 0.80 (at least 8 null pairs). It is
   read for the chunking choice and for the graph choice; a failed or not-evaluable guard vetoes the choice it guards.
 
 ## Model access

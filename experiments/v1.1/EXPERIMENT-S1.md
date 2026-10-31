@@ -65,10 +65,12 @@ hand in the **Result** section. p-values are reported and not used.
      (`PREREGISTRATION_S1_MERGED_GRAPH`).
    - On 90 fully paired questions, +5 points means a net gain of at least 5 questions (4 of 90 is 4.4 points).
 3. **Null guard (D-264).** Margin 0.10 and pair fraction 0.80 on the 10 dev nulls: a guard fails when the net
-   abstention drop exceeds 0.10 of the null pairs (2 or more of 10), and is not evaluable with fewer than 8 null pairs.
-   A failed or not-evaluable guard vetoes the choice it guards.
+   abstention drop exceeds 0.10 of the null pairs (2 or more with 10 pairs; 1 or more with 8 or 9), and is not
+   evaluable with fewer than 8 null pairs. A failed or not-evaluable guard vetoes the choice it guards.
 4. The other numbers are the v1.0 lever reading's (D-262): complete-case floor 0.80, bootstrap 10,000 with seed 42,
-   SC-2 timeout floor 0.025, rerank tripwire 0.20 after 50 attempts or 5 consecutive degrades.
+   SC-2 timeout floor 0.025. The constants also carry the rerank tripwire (0.20 after 50 attempts or 5 consecutive
+   degrades), but the drive applies no tripwire to a dev-role corpus (`run.rerank_tripwire_for`), so it does not act
+   in S1.
 
 S1's result is the configuration S2 replays: the chosen store and graph state of the `hybrid+rerank+metadata` arm
 (D-254, D-257). The final configuration is confirmed on held-out only in Confirm (D-237).
@@ -87,6 +89,9 @@ rule uses point estimates, not p-values.
 - The merged store is built only after #67 merges: until then `seed --store eval-s1` uploads without the store's
   chunking and the gateway falls back to `structure-aware`, so the "merged" store would repeat the v1.0 chunking.
 - The two-store context export needs #65 or the stopgap in RUN-S0-S1.md step 4.
+- Scoring needs #68: until it lands, `score` and `compare-levers` read only held-out IDs and refuse a dev-role run.
+- `PREREGISTRATION_S1_MERGED_GRAPH` is not the corpus token, so `compare-levers` does not check it; the RUN-S0-S1.md
+  recipe runs the same D-73 check on it before reading it.
 - D-258: no mid-run cap; `--stage-cap` is set to an unreachable 100 USD.
 
 ## Result
