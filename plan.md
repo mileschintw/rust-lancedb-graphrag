@@ -34,7 +34,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 52 | #52 | local_f927678d-e609-4878-ab6d-f5b300b78106 (`claude/lane-52-f0a385`) | started | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 
-Lanes 52 and 59 started 2026-10-30 22:20 -0700 on the user's typed "Start 52 and 59". Lane 52 records ruling 7 as D-260. Lane 59 must not touch lane 56's files; any CI/doc timeout change it needs is applied after lane 56 merges. Three engine builders now (47, 56, 59), each at `CARGO_BUILD_JOBS=2` with `SCCACHE_DIR=D:\sccache`.
+Lanes 52 and 59 started 2026-10-30 22:20 -0700 on the user's typed "Start 52 and 59". Lane 52 records ruling 7 as D-260. Lane 59 must not touch lane 56's files; any CI/doc timeout change it needs is applied after lane 56 merges. Three engine builders now (47, 56, 59), each at `CARGO_BUILD_JOBS=2`. The sccache cache location is pinned by `%APPDATA%\Mozilla\sccache\config\config` (`[cache.disk]` dir `D:\sccache`, 40 GiB). It was set in a side session on the user's "可以，就這麼做" (2026-10-30). Lane 56 documents it in `docs/testing.md`. The `SCCACHE_DIR` prefix is no longer needed, and lanes 47, 56 and 59 have been told.
 
 Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); the app refused the start over Remote Control, so started 2026-10-30 21:39 -0700 on the user's typed "開始". Each has its own worktree. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`; lane 56's sccache install approved 2026-10-30 on the user's "照提案安裝 (Recommended)": winget Mozilla.sccache, `SCCACHE_DIR=D:\sccache`, `SCCACHE_CACHE_SIZE=40G`, `rustc-wrapper = "sccache"` in the user's global `~/.cargo/config.toml` (all cargo builds on this machine).
 
