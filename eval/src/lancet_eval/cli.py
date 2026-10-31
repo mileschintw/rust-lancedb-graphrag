@@ -799,6 +799,48 @@ def run_external_command(
     )
 
 
+@app.command("replay-init")
+def replay_init_command(
+    source_run: Annotated[
+        Path,
+        typer.Option("--source-run", help="The S1 run directory to carry arms from"),
+    ],
+    arms: Annotated[
+        list[str],
+        typer.Option(
+            "--arms",
+            help=(
+                "The S1 arm(s) to carry (repeat the option or separate labels with "
+                "commas)"
+            ),
+        ),
+    ],
+    run: Annotated[
+        Path,
+        typer.Option("--run", help="The new S2 run directory"),
+    ],
+) -> None:
+    """Carry S1 arms' records and export rows into a new S2 journal (D-257).
+
+    Copies every record of each arm and the export row of each success record, and
+    records the source run and the row hashes in the journal header. No paid call.
+    """
+    from rich.markup import escape
+
+    from lancet_eval.replay import ReplayError, replay_init
+
+    labels = [a.strip() for value in arms for a in value.split(",") if a.strip()]
+    try:
+        result = replay_init(source_run=source_run, arms=labels, run=run)
+    except ReplayError as exc:
+        console.print(f"[bold red]Replay init refused:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"[green]Carried {result.records} record(s) and {result.rows} export row(s) "
+        f"of {escape(', '.join(labels))} into {result.journal_path}[/green]"
+    )
+
+
 @app.command("staged-gate")
 def staged_gate(
     run: Annotated[

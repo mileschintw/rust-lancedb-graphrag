@@ -24,6 +24,15 @@ declares the store the arm runs on (``STORE_PREFIXES``). The prefix is part of t
 ``resolve_arm`` and ``request_fields`` read the base row. A legacy alias or an external
 arm is never prefixed, and an unknown prefix fails closed. An unprefixed label declares
 no store and behaves exactly as before.
+
+v1.1 S2 (D-257) adds reader arms. ``<base>@<reader>``
+(``merged/hybrid+rerank+metadata@haiku-5.5``) is the base arm's context replayed to
+another reader. The base is any canonical label above, store-prefixed or not, but never
+a legacy alias; the reader is one of ``READERS``, and anything else fails closed.
+``canonical_arm`` keeps the suffix, so each reader is its own arm, and ``resolve_arm``
+returns the base row. A reader arm's records are replay records (``journal.
+ReplayProvenance``): they carry no engine snapshot, send no gateway request
+(``request_fields`` refuses one) and are never judged.
 """
 
 from __future__ import annotations
@@ -238,6 +247,61 @@ _ALIAS: dict[str, str] = {
 #: (``config.EVAL_STORES``). ``small`` is the v1.0 store, ``merged`` the S1 store.
 STORE_PREFIXES: dict[str, str] = {"small": "eval", "merged": "eval-s1"}
 
+#: D-257 reader names: ``<base>@<reader>`` replays the base arm's context to this
+#: reader. A pre-registration declares each reader it uses
+#: (``preregistration.readers_of``).
+READERS: tuple[str, ...] = ("haiku-5.5", "sonnet-5.5", "opus-5.5")
+
+
+def _split_reader(label: str) -> tuple[str, str | None]:
+    """Splits a label into its base label and its reader (None when it has none).
+
+    Raises:
+        ValueError: If the reader is unknown (a second ``@`` included), or the base
+            is not a canonical label (a legacy alias or an unknown label), naming the
+            label.
+    """
+    base, sep, reader = label.partition("@")
+    if not sep:
+        return label, None
+    if reader not in READERS:
+        raise ValueError(
+            f"unknown reader in arm label {label!r}; known readers: {list(READERS)} "
+            "(D-257)"
+        )
+    if base in _ALIAS or canonical_arm(base) != base:
+        raise ValueError(
+            f"arm label {label!r}: a reader suffix takes a canonical arm label, not a "
+            "legacy alias (D-257)"
+        )
+    return base, reader
+
+
+def arm_reader(label: str) -> str | None:
+    """The reader a label's suffix names; None for a label without one.
+
+    Raises:
+        ValueError: If the label carries a bad reader suffix (``_split_reader``).
+    """
+    return _split_reader(label)[1]
+
+
+def reader_base_arm(label: str) -> str:
+    """The base arm a reader arm replays; the label itself when it names no reader.
+
+    Raises:
+        ValueError: If the label carries a bad reader suffix (``_split_reader``).
+    """
+    return _split_reader(label)[0]
+
+
+def is_reader_arm(label: str) -> bool:
+    """Whether a label names a reader arm (D-257); an unknown label is not one."""
+    try:
+        return _split_reader(label)[1] is not None
+    except ValueError:
+        return False
+
 
 def _split_store(label: str) -> tuple[str | None, str]:
     """Splits a label into its store prefix (None when unprefixed) and its base label.
@@ -265,10 +329,13 @@ def _split_store(label: str) -> tuple[str | None, str]:
 def arm_store(label: str) -> str | None:
     """The eval store name a label's prefix declares; None for an unprefixed label.
 
+    A reader arm runs on its base arm's store (D-257).
+
     Raises:
-        ValueError: If the label carries a bad store prefix (``_split_store``).
+        ValueError: If the label carries a bad store prefix (``_split_store``) or a
+            bad reader suffix (``_split_reader``).
     """
-    prefix, _ = _split_store(label)
+    prefix, _ = _split_store(_split_reader(label)[0])
     return None if prefix is None else STORE_PREFIXES[prefix]
 
 
@@ -305,7 +372,7 @@ def canonical_arm(stored_label: str) -> str:
     """Resolves a stored label or alias to its canonical registry label.
 
     Lookup only: never write the result back to ``RunRecord.graph_arm``. A
-    store-prefixed label keeps its prefix (D-251).
+    store-prefixed label keeps its prefix (D-251), and a reader arm its suffix (D-257).
 
     Args:
         stored_label: A canonical label or a legacy alias.
@@ -316,6 +383,8 @@ def canonical_arm(stored_label: str) -> str:
     Raises:
         ValueError: If the label is neither canonical nor an alias.
     """
+    if _split_reader(stored_label)[1] is not None:
+        return stored_label
     if _split_store(stored_label)[0] is not None:
         return stored_label
     if stored_label in ARM_REGISTRY or stored_label in EXTERNAL_ARMS:
@@ -328,7 +397,9 @@ def canonical_arm(stored_label: str) -> str:
 def resolve_arm(label: str) -> ArmSpec:
     """Returns the registry row for a canonical label or an alias.
 
-    A store-prefixed label returns its base row (D-251).
+    A store-prefixed label returns its base row (D-251), and so does a reader arm
+    (D-257): a caller that reads a record's snapshot or notices checks
+    ``is_reader_arm`` first.
 
     Args:
         label: A canonical label or a legacy alias.
@@ -337,8 +408,10 @@ def resolve_arm(label: str) -> ArmSpec:
         The matching ``ArmSpec``.
 
     Raises:
-        ValueError: With the ``Unknown arm '...'. Expected one of:`` prefix.
+        ValueError: With the ``Unknown arm '...'. Expected one of:`` prefix, or from a
+            bad reader suffix.
     """
+    label = _split_reader(label)[0]
     prefix, base = _split_store(label)
     if prefix is not None:
         return ARM_REGISTRY[base]
@@ -354,7 +427,8 @@ def resolve_arm(label: str) -> ArmSpec:
 
 def in_registry_order(labels: Iterable[str]) -> list[str]:
     """Canonical labels in report order: registry rows, then external arms, unprefixed
-    first, then each store's prefixed arms in ``STORE_PREFIXES`` order (D-251).
+    first, then each store's prefixed arms in ``STORE_PREFIXES`` order (D-251). Each
+    reader arm follows its base arm, readers in ``READERS`` order (D-257).
 
     Args:
         labels: Canonical labels (``canonical_arm`` output).
@@ -365,16 +439,22 @@ def in_registry_order(labels: Iterable[str]) -> list[str]:
     position = {label: i for i, label in enumerate((*ARM_REGISTRY, *EXTERNAL_ARMS))}
     stores = list(STORE_PREFIXES)
 
-    def key(label: str) -> tuple[int, int]:
-        prefix, base = _split_store(label)
-        return (0 if prefix is None else 1 + stores.index(prefix), position[base])
+    def key(label: str) -> tuple[int, int, int]:
+        arm, reader = _split_reader(label)
+        prefix, base = _split_store(arm)
+        return (
+            0 if prefix is None else 1 + stores.index(prefix),
+            position[base],
+            0 if reader is None else 1 + READERS.index(reader),
+        )
 
     return sorted(labels, key=key)
 
 
 def judged_arms(labels: Iterable[str]) -> list[str]:
     """The labels the judged pass covers, in report order: every label but an external
-    arm (D-247 arms are never judged), store-prefixed ones included (D-251, #30).
+    arm (D-247 arms are never judged) or a reader arm (D-257: its records carry no
+    evidence of their own), store-prefixed ones included (D-251, #30).
 
     Args:
         labels: Canonical labels.
@@ -382,7 +462,11 @@ def judged_arms(labels: Iterable[str]) -> list[str]:
     Returns:
         The judged labels, in ``in_registry_order``.
     """
-    return [a for a in in_registry_order(labels) if not is_external_arm(a)]
+    return [
+        a
+        for a in in_registry_order(labels)
+        if not is_external_arm(a) and not is_reader_arm(a)
+    ]
 
 
 def judged_report_arms(labels: Iterable[str]) -> list[str]:
@@ -414,7 +498,8 @@ def is_legacy_label(label: str) -> bool:
 
 
 def arm_slug(label: str) -> str:
-    """Filesystem-safe slug: the canonical label with ``+``, ``-`` and ``/`` as ``_``.
+    """Filesystem-safe slug: the canonical label with ``+``, ``-``, ``/``, ``@`` and
+    ``.`` as ``_`` (only a reader arm, D-257, carries the last two).
 
     Args:
         label: A canonical label or an alias.
@@ -422,7 +507,10 @@ def arm_slug(label: str) -> str:
     Returns:
         The slug of the canonical label.
     """
-    return canonical_arm(label).replace("+", "_").replace("-", "_").replace("/", "_")
+    slug = canonical_arm(label)
+    for char in "+-/@.":
+        slug = slug.replace(char, "_")
+    return slug
 
 
 def request_fields(label: str) -> dict[str, object]:
@@ -444,9 +532,14 @@ def request_fields(label: str) -> dict[str, object]:
         Keyword fields for ``client.run_query``.
 
     Raises:
-        ValueError: If the label is unknown, or names an external arm, which sends no
-            gateway request (D-247).
+        ValueError: If the label is unknown, or names an external arm (D-247) or a
+            reader arm (D-257), neither of which sends a gateway request.
     """
+    if is_reader_arm(label):
+        raise ValueError(
+            f"arm {label!r} is a reader arm: it replays its base arm's context and "
+            "sends no gateway request (D-257)"
+        )
     spec = resolve_arm(label)
     if spec.kind == "external":
         raise ValueError(

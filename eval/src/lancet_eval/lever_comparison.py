@@ -64,6 +64,7 @@ from lancet_eval.metrics import (
     recall_at_k,
 )
 from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval.report import CorpusReport
 from lancet_eval.score import (
     ScoreError,
@@ -1490,7 +1491,9 @@ def build_lever_comparison(
             require_external_provenance(
                 records, journal, config, {*doc_map.entries, *doc_map.aliases}
             )
-    except ScoreError as exc:
+        # D-257: the replay clauses too, for the same reason.
+        require_replay_provenance(records, journal, config.preregistration_token)
+    except (ScoreError, ReplayError) as exc:
         raise LeverComparisonError(str(exc)) from exc
     if gates is None:
         gates = load_gates(run)

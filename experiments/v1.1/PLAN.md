@@ -262,6 +262,12 @@ documents no `between_tools`; Anthropic rejects `temperature` and `top_p` since 
   (rerank is retrieval-side); S0's pre-registration states this and requires nothing more. The external record's
   generation model and provider order are taken from the `pack` body. S1's pre-registration constant is named
   `PREREGISTRATION_S1`, and S1 reads the levers-dev question set (the D-237 dev pool of 100).
+- **D-260 Sonnet 5.5 thinking over OpenRouter** (owner ruling, 2026-10-30: "照 lane 51 的做法"). The OpenRouter body for
+  a `between_tools` reader keeps #51's encoding: `reasoning` is dropped and a top-level `thinking: {type:
+  "between_tools"}` is added. The paid S2 pilot checks `reasoning_tokens`; if OpenRouter drops the field, the arm goes
+  through the native Anthropic Message Batches API (D-255). The replay clause on `reasoning_tokens` follows this: a
+  reader declared `off` or `between_tools` must report 0, and a thinking-on reader (Opus 5.5 at effort low, D-252) is
+  exempt.
 
 ## Model access
 
