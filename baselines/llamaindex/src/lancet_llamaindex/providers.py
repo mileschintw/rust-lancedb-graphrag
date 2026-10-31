@@ -11,7 +11,9 @@ Both mirror the engine's clients so the comparison isolates retrieval design
   `provider.allow_fallbacks = false`. A reply naming another model, or with indices
   that are missing, repeated or out of range, is refused, as the engine refuses it.
 
-Both read the key from `OPENROUTER_API_KEY` and take an injectable `httpx.Client`, so
+`endpoints_from_env` reads the engine's endpoint overrides, so a rehearsal can point
+both clients at the loopback provider stub. Both read the key from
+`OPENROUTER_API_KEY` and take an injectable `httpx.Client`, so
 the tests run against `httpx.MockTransport` with no network.
 """
 
@@ -31,6 +33,12 @@ EMBEDDING_DIMENSIONS = 2048
 RERANK_ENDPOINT = "https://openrouter.ai/api/v1/rerank"
 RERANK_MODEL = "voyageai/rerank-2.5-lite"
 
+# The variables the engine reads its endpoints from (`engine/src/config.rs`), so one
+# set points both the Lancet arm and this export at `lancet_eval.provider_stub` (#76).
+# Unlike the engine, a blank value here means OpenRouter rather than an error.
+EMBEDDING_ENDPOINT_ENV = "LANCET_OPENROUTER__EMBEDDING_ENDPOINT"
+RERANK_ENDPOINT_ENV = "LANCET_OPENROUTER__RERANK_ENDPOINT"
+
 _MAX_RETRIES = 6
 _INITIAL_BACKOFF_S = 2.0
 _MAX_BACKOFF_S = 30.0
@@ -46,6 +54,14 @@ def api_key_from_env() -> str:
     if not key:
         raise ProviderError("OPENROUTER_API_KEY is not configured")
     return key
+
+
+def endpoints_from_env() -> tuple[str, str]:
+    """The `(embedding, rerank)` endpoints: each variable's value when set and not
+    blank, else OpenRouter's."""
+    embedding = os.environ.get(EMBEDDING_ENDPOINT_ENV, "").strip()
+    rerank = os.environ.get(RERANK_ENDPOINT_ENV, "").strip()
+    return embedding or EMBEDDING_ENDPOINT, rerank or RERANK_ENDPOINT
 
 
 def _post(
