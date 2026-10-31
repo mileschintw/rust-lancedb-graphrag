@@ -248,6 +248,30 @@ fn chunk_index_comes_from_an_engine_chunk_id_and_is_zero_otherwise() {
 }
 
 #[test]
+fn chunk_index_parses_both_separators_after_the_document_id() {
+    let (blocks, facts) = engine_context();
+    let row = row_of(&export_row(&blocks, &facts));
+    let index_of = |document_id: &str, chunk_id: &str| {
+        let mut entry = row.evidence[0].clone();
+        entry.document_id = document_id.to_owned();
+        entry.chunk_id = chunk_id.to_owned();
+        chunk_index_of(&entry)
+    };
+    assert_eq!(index_of("doc", "doc#3"), 3, "LlamaIndex export shape");
+    assert_eq!(index_of("doc", "doc:3"), 3, "engine shape");
+    assert_eq!(index_of("a#b", "a#b#7"), 7, "a document ID with # takes the last separator");
+    assert_eq!(index_of("a:b", "a:b:7"), 7, "a document ID with : takes the last separator");
+    assert_eq!(index_of("a:b", "a:b#7"), 7);
+    for chunk_id in [
+        "doc#x", "doc#", "doc#-3", "doc#+3", "doc#2147483648", "doc:-1", "doc3", "other#3",
+        "doc#1#3",
+    ] {
+        assert_eq!(index_of("doc", chunk_id), 0, "{chunk_id}");
+    }
+    assert_eq!(index_of("doc", "doc#2147483647"), i32::MAX);
+}
+
+#[test]
 fn rebuilt_evidence_and_facts_equal_the_engine_built_ones() {
     let (blocks, facts) = engine_context();
     let row = row_of(&export_row(&blocks, &facts));
