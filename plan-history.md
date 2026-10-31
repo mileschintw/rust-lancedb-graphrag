@@ -145,3 +145,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **Lane 107 (#107):** PR #112 merged 2026-10-31 (ci green). The OpenRouter batch payload sends endpoint, model and provider ahead of requests.
 - **Lane 105 (#105, #106, #113):** PR #111 merged 2026-10-31 at 9e80334c (ci green). D-266 is in, and the S1 step 4 guide fixes and paste-safe snippets are on main.
 - **Lane 109 (#109):** PR #115 merged 2026-10-31 at b48149e6 (ci green). It adds the D-73 check before spend, `replay-init --pilot`, and the replay_source_arm and completeness checks.
+- **Lane 110 (#110):** PR #116 merged 2026-10-31 at cf9adf3f (ci green). It adds the S2 type, a draft constant in EXPERIMENT-S2.md (kept out of thresholds.py, D-73), RUN-S2.md, the S2 dev corpus, a .gitignore line, and D-267 to D-270. The old branch `claude/peaceful-robinson-2e31dd` must never be merged.
