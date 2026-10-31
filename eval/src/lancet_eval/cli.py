@@ -853,6 +853,103 @@ def replay_init_command(
     )
 
 
+batch_app = typer.Typer(
+    name="batch",
+    help="S2 reader arms over a batch API: submit and fetch (D-254).",
+    no_args_is_help=True,
+)
+app.add_typer(batch_app, name="batch")
+
+
+@batch_app.command("submit")
+def batch_submit_command(
+    run: Annotated[
+        Path,
+        typer.Option("--run", help="The S2 run directory replay-init wrote"),
+    ],
+    arm: Annotated[
+        str,
+        typer.Option("--arm", help="The reader arm (<arm>@<reader>)"),
+    ],
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Submit only the first N questions (the pilot)"),
+    ] = None,
+    retry_errors: Annotated[
+        bool,
+        typer.Option(
+            "--retry-errors",
+            help="Resubmit only the questions whose request errored or expired",
+        ),
+    ] = False,
+) -> None:
+    """Pack, rewrite and submit one batch of a reader arm (D-254, D-255).
+
+    Prints a cost estimate first (D-258: it never refuses) and writes the manifest
+    under <run>/batches before the submit. A paid call.
+    """
+    from rich.markup import escape
+
+    from lancet_eval.batch import BatchError, submit
+    from lancet_eval.batch_client import BatchClientError
+
+    try:
+        result = submit(
+            run=run,
+            arm=arm,
+            limit=limit,
+            retry_errors=retry_errors,
+            echo=lambda line: console.print(escape(line)),
+        )
+    except (BatchError, BatchClientError) as exc:
+        console.print(f"[bold red]Batch submit refused:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"[green]Submitted batch {escape(result.batch_id)}: {result.requests} "
+        f"request(s) of {escape(arm)}; manifest {result.manifest_path}"
+        + (
+            f"; {result.base_errors} base error record(s) journalled"
+            if result.base_errors
+            else ""
+        )
+        + "[/green]"
+    )
+
+
+@batch_app.command("fetch")
+def batch_fetch_command(
+    run: Annotated[
+        Path,
+        typer.Option("--run", help="The S2 run directory"),
+    ],
+    arms: Annotated[
+        list[str] | None,
+        typer.Option("--arm", help="Fetch only this reader arm (repeatable)"),
+    ] = None,
+) -> None:
+    """Journal every finished batch through generate_from_context render (D-254).
+
+    Re-runnable: a batch still processing is left for a later run, and a result
+    already journalled is not journalled again. No paid call.
+    """
+    from rich.markup import escape
+
+    from lancet_eval.batch import BatchError, fetch
+    from lancet_eval.batch_client import BatchClientError
+
+    try:
+        result = fetch(
+            run=run, arms=arms, echo=lambda line: console.print(escape(line))
+        )
+    except (BatchError, BatchClientError) as exc:
+        console.print(f"[bold red]Batch fetch refused:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"[green]Journalled {result.successes} success and {result.errors} error "
+        f"record(s); {len(result.pending)} batch(es) still pending[/green]"
+    )
+
+
 @app.command("staged-gate")
 def staged_gate(
     run: Annotated[
