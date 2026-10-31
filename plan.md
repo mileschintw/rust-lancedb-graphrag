@@ -109,7 +109,9 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
 
 - **Merge PR #89 (S0 run of record + EXPERIMENT-S0 › Result)?** Since 2026-10-31 04:00 -0700. Readout: no significant difference (delta −0.34 pt, 95% CI [−5.05, +4.38], Holm p = 1.0). Coverage 297/308: 11 pairs excluded, likely the rerank-degraded first-segment records (machine load), not re-driven. #89 also exempts `-s0-`/`-s1-` run dirs in `test_journal.py`. After the merge: may the worktree D:/Repos/lancet-run-s01 and D:/s0-run-backup/ be deleted?
 - **D-257 wording vs #82 (from PR #90):** D-257 says "`is_byok` is true and the provider is Anthropic". #90 replaced that for the native Anthropic target with a target-specific rule (`is_byok` null, provider `api.anthropic.com`). Should a new D-ID in `experiments/v1.1/PLAN.md` record it? Recommendation: yes, a one-line D-ID added with S2's pre-registration work.
-- **#64 (after #59 merges)** stays outside the unattended scope; it starts only on the user's yes.
+- **#64** can start now, since #59 has merged, but it is outside the unattended scope and starts only on the user's yes.
+- **Close parent #49 (S2 code preparation)?** All its children are closed: #50, #51, #52, #53, #54, #80, #81 and #82. S2's code path is on main at cc10774e. Recommendation: close it.
+- **#74 to #78** (audit-s012 run-guide and tool gaps) are not in the unattended scope. #74, #75 and #76 were worked around in S0. Before S1, decide which of them get lanes.
 
 S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
 - **S3 grill input (not yet a decision; for the S3 grill → spec → tickets session to read).** Relayed 2026-10-31 from the user's side session local_97b7d7f4-6748-4ee2-a8b6-9343471d99e4, with the user's words: "可以，把這點補進去到時候可以參考到的地方，並且我甚至覺得我們用的deepseek模型都太強，可能可以再多找一個更便宜的模型來測".
