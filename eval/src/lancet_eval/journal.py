@@ -142,11 +142,18 @@ class ReplayProvenance(BaseModel):
         sent_body_sha256: SHA-256 of the request body sent, as UTF-8 JSON text.
         rewritten_fields: The fields the rewrite reported, in its order.
         model: The model the response names.
-        provider: The provider the response names.
+        provider: The provider the response names (OpenRouter target); for the
+            native Anthropic target, whose response names none, the endpoint host the
+            request was sent to (``provenance.REPLAY_PROVIDERS``).
         is_byok: Whether the response reports the request as billed to the
-            owner's own key.
-        reasoning_tokens: The reasoning tokens the response reports.
+            owner's own key (OpenRouter target); ``None`` for the native target,
+            whose response reports no such flag.
+        reasoning_tokens: The reasoning tokens the response reports; 0 for the
+            native target, whose usage has no separate reasoning count.
         batch_id: The batch the request was sent in.
+        content_block_types: The ``type`` of each content block of the response, in
+            order (native target, #82); ``None`` for the OpenRouter target. The
+            ``reasoning_tokens`` clause reads it for thinking blocks.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -157,9 +164,10 @@ class ReplayProvenance(BaseModel):
     rewritten_fields: list[str]
     model: str
     provider: str
-    is_byok: bool
+    is_byok: bool | None
     reasoning_tokens: int
     batch_id: str
+    content_block_types: list[str] | None = None
 
 
 class RunRecord(BaseModel):
@@ -466,8 +474,8 @@ class Journal:
         and `score` refuses it unless `context_export.jsonl` holds a row for every
         success record (D-249).
 
-        ``replay_source`` adds ``"replay_source"``: the S1 run, arms and row hashes an
-        S2 journal was carried from (``replay.replay_init``, D-257).
+        ``replay_source`` adds ``"replay_source"``: the S1 run, its corpus, arms and row
+        hashes an S2 journal was carried from (``replay.replay_init``, D-257, #80).
         """
         if gate_stage is not None and max_retries is None:
             raise ValueError("gate_stage requires max_retries (D-67)")

@@ -7,6 +7,7 @@ write them, and the run scores with the deepseek arm and the reader arm paired.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -31,7 +32,8 @@ from lancet_eval.arms import (
     resolve_arm,
 )
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, validate_row
-from lancet_eval.journal import read_journal_header
+from lancet_eval.journal import RunRecord, read_journal_header
+from lancet_eval.parity import user_message
 from lancet_eval.provenance import provenance_failures, replay_run_failures
 from lancet_eval.replay import (
     REPLAY_SOURCE_KEY,
@@ -108,11 +110,14 @@ def test_a_reader_arm_slug_is_filesystem_safe() -> None:
 # ---- seam S-F: carry, replay, score -----------------------------------------------
 
 
-def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs):  # type: ignore[no-untyped-def]
-    """A corpus of the deepseek arm and the reader arm, and an S1 run of two arms."""
+def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, roles=None, **kwargs):  # type: ignore[no-untyped-def]
+    """The S1 and S2 corpora, and an S1 run of two arms on the S1 corpus.
+
+    `roles` passes the corpora's `[split]` roles to `replay_fixture.write_corpora`.
+    """
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = fx.write_corpus(root, qs, (rf.BASE, rf.READER_ARM))
+    gold = rf.write_corpora(root, qs, **(roles or {}))
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     monkeypatch.setattr(thresholds, fx.TOKEN, rf.s2_prereg(), raising=False)
     s1 = tmp_path / "s1"
@@ -120,10 +125,14 @@ def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs):  # type: ign
     return s1, gold, qs
 
 
+def _init(s1: Path, s2: Path, arms=(rf.BASE,), corpus: str = fx.CORPUS):  # type: ignore[no-untyped-def]
+    return replay_init(source_run=s1, arms=list(arms), run=s2, corpus=corpus)
+
+
 def _s2(tmp_path, monkeypatch, *, build=None, row_fn=None):  # type: ignore[no-untyped-def]
     s1, gold, qs = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    _init(s1, s2)
     rf.append_reader_arm(s2, qs, build=build, row_fn=row_fn)
     return s2, gold, qs
 
@@ -134,34 +143,75 @@ def _score(run: Path, gold: Path):  # type: ignore[no-untyped-def]
     return score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
 
 
-def test_replay_init_carries_the_arm_records_and_rows_with_their_hashes(
+def test_replay_init_carries_the_arm_records_and_rows_under_the_s2_corpus(
     tmp_path, monkeypatch
 ) -> None:
     s1, _, qs = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    result = replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    result = _init(s1, s2)
     n = len(qs.g_ids) + len(qs.nulls)
     assert (result.records, result.rows) == (n, n)
 
     source_lines = (s1 / "journal.jsonl").read_text(encoding="utf-8").splitlines()
     carried_lines = (s2 / "journal.jsonl").read_text(encoding="utf-8").splitlines()
     base_lines = [line for line in source_lines[1:] if f'"{rf.BASE}"' in line]
-    assert carried_lines[1:] == base_lines
+    carried = [RunRecord.model_validate_json(line) for line in carried_lines[1:]]
+    assert carried == [
+        RunRecord.model_validate_json(line).model_copy(update={"corpus": fx.CORPUS})
+        for line in base_lines
+    ]
 
     header = read_journal_header(s2 / "journal.jsonl")
     assert header is not None
     assert header["corpus"] == fx.CORPUS and header["context_export"] is True
     source = header[REPLAY_SOURCE_KEY]
     assert source["run"] == str(s1)
+    assert source["corpus"] == rf.S1_CORPUS
     assert source["arms"] == [rf.BASE]
-    rows = rf.read_rows(s1)
+    s1_rows = rf.read_rows(s1)
+    s2_rows = rf.read_rows(s2)
+    assert set(s2_rows) == {(q, rf.BASE) for q in [*qs.g_ids, *qs.nulls]}
+    for key, row in s2_rows.items():
+        assert row == s1_rows[key].model_copy(update={"corpus": fx.CORPUS})
+    # The hash covers the row as carried; the S1 row is that row with the source corpus.
     assert source["row_sha256"] == {
         rf.BASE: {
-            qid: export_row_sha256(rows[(qid, rf.BASE)])
+            qid: export_row_sha256(s2_rows[(qid, rf.BASE)])
             for qid in [*qs.g_ids, *qs.nulls]
         }
     }
-    assert set(rf.read_rows(s2)) == {(q, rf.BASE) for q in [*qs.g_ids, *qs.nulls]}
+
+
+def test_replay_init_refuses_a_source_run_whose_corpus_is_not_dev(
+    tmp_path, monkeypatch
+) -> None:
+    # An S0 run reads the held-out split: carrying it would spend a third read (D-237).
+    s1, _, _ = _s1(tmp_path, monkeypatch, roles={"s1_role": "heldout"})
+    with pytest.raises(ReplayError, match="D-237") as excinfo:
+        _init(s1, tmp_path / "s2")
+    assert rf.S1_CORPUS in str(excinfo.value) and "'heldout'" in str(excinfo.value)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_replay_init_refuses_an_s2_corpus_that_is_not_dev(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch, roles={"s2_role": "heldout"})
+    with pytest.raises(ReplayError, match="D-237"):
+        _init(s1, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_replay_init_refuses_an_unknown_s2_corpus_or_one_without_the_arms(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    with pytest.raises(ReplayError, match="no-such-corpus"):
+        _init(s1, tmp_path / "s2", corpus="no-such-corpus")
+    # The S2 corpus lists BASE and its reader arm, not OTHER.
+    with pytest.raises(ReplayError, match="does not list"):
+        _init(s1, tmp_path / "s2", arms=(rf.BASE, rf.OTHER))
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
 
 def test_replay_init_refuses_a_source_arm_with_a_missing_export_row(
@@ -176,7 +226,7 @@ def test_replay_init_refuses_a_source_arm_with_a_missing_export_row(
     ]
     export.write_text("".join(kept), encoding="utf-8")
     with pytest.raises(ReplayError, match="lv-g002") as excinfo:
-        replay_init(source_run=s1, arms=[rf.BASE], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2")
     assert "export row" in str(excinfo.value)
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
@@ -186,10 +236,10 @@ def test_replay_init_refuses_a_second_init_into_a_populated_journal(
 ) -> None:
     s1, _, _ = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    _init(s1, s2)
     before = (s2 / "journal.jsonl").read_bytes()
     with pytest.raises(ReplayError, match="already holds"):
-        replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+        _init(s1, s2)
     assert (s2 / "journal.jsonl").read_bytes() == before
 
 
@@ -198,9 +248,9 @@ def test_replay_init_refuses_an_arm_the_source_run_does_not_hold(
 ) -> None:
     s1, _, _ = _s1(tmp_path, monkeypatch)
     with pytest.raises(ReplayError, match="hybrid\\+graph"):
-        replay_init(source_run=s1, arms=["hybrid+graph"], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2", arms=["hybrid+graph"])
     with pytest.raises(ReplayError, match="reader arm"):
-        replay_init(source_run=s1, arms=[rf.READER_ARM], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2", arms=[rf.READER_ARM])
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
 
@@ -213,7 +263,7 @@ def test_replay_init_refuses_a_source_record_it_cannot_read_naming_the_line(
         f.write('{"corpus": "c", "question_id": "q", "graph_arm": "no-such-arm",')
         f.write(' "outcome": "success"}\n')
     with pytest.raises(ReplayError, match="line 32: unknown arm label"):
-        replay_init(source_run=s1, arms=[rf.BASE], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2")
 
 
 def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> None:
@@ -222,9 +272,15 @@ def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> N
     s1, _, _ = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
     args = ["replay-init", "--source-run", str(s1), "--arms", rf.BASE, "--run", str(s2)]
+    no_corpus = CliRunner().invoke(app, args)
+    assert no_corpus.exit_code == 2
+    assert not (s2 / "journal.jsonl").exists()
+    args += ["--corpus", fx.CORPUS]
     ok = CliRunner().invoke(app, args)
     assert ok.exit_code == 0, ok.output
     assert "15 record(s)" in ok.output
+    header = read_journal_header(s2 / "journal.jsonl")
+    assert header is not None and header["corpus"] == fx.CORPUS
     again = CliRunner().invoke(app, args)
     assert again.exit_code == 1
     assert "already holds" in again.output
@@ -242,6 +298,8 @@ def test_s_f_a_carried_deepseek_arm_and_a_reader_arm_score_and_pair(
 
     s2, gold, qs = _s2(tmp_path, monkeypatch, build=build)
     _score(s2, gold)
+    # score writes report.json for a complete run only: the carried records name
+    # the S2 corpus, so no corpus disagreement forces the report partial.
     assert (s2 / "report.json").is_file()
     payload = build_lever_comparison(s2, gold_chunks_path=gold)
     family = next(f for f in payload["families"] if f["primary"] == "answer_usable")
@@ -287,6 +345,7 @@ def _one_broken(qid: str, **changes):  # type: ignore[no-untyped-def]
 
 REPLAY_CLAUSES = (
     "row_hash",
+    "prompt",
     "body_hash",
     "rewritten_fields",
     "model",
@@ -332,6 +391,21 @@ def test_s_f_a_reader_row_that_differs_from_the_source_row_fails_row_hash(
     assert f"row_hash {rf.READER_ARM} lv-g005" in message
 
 
+def test_s_f_a_reader_prompt_that_differs_from_the_source_row_fails_prompt(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    # A pack with other levers, or after a config change, would assemble another
+    # prompt: here lv-g008's request carries lv-g009's.
+    message = _refusal(
+        tmp_path,
+        monkeypatch,
+        build=_one_broken("lv-g008", body=rf.pack_body("lv-g009")),
+    )
+    assert f"prompt {rf.READER_ARM} lv-g008" in message
+    for other in set(REPLAY_CLAUSES) - {"prompt"}:
+        assert f"{other} {rf.READER_ARM}" not in message
+
+
 def test_s_f_a_pack_body_the_rewrite_refuses_fails_body_hash(
     tmp_path, monkeypatch, preregistered_clean_tree
 ) -> None:
@@ -369,8 +443,10 @@ def test_s_f_a_reader_error_record_needs_no_replay_block(
 def _one_question():  # type: ignore[no-untyped-def]
     qs = fx.make_questions(1, 0)
     qid = qs.g_ids[0]
-    source = validate_row(fx.make_evidence_export_row(rf.BASE, qid, qs))
-    return qs, qid, source
+    row = fx.make_evidence_export_row(rf.BASE, qid, qs)
+    row["assembled_prompt"] = user_message(rf.pack_body(qid))
+    row["correlation_id"] = f"corr-{qid}"
+    return qs, qid, validate_row(row)
 
 
 def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> None:
@@ -398,6 +474,92 @@ def test_a_thinking_on_reader_is_exempt_from_the_reasoning_tokens_clause() -> No
         failures = replay_run_failures([thinking(rec)], **kwargs)
         assert [f.code for f in failures] == ["reasoning_tokens"]
         assert replay_run_failures([rec], **kwargs) == []
+
+
+def _sonnet_failures(rec, reader=rf.SONNET_NATIVE):  # type: ignore[no-untyped-def]
+    qs, qid, source = _one_question()
+    del qs
+    arm = f"{rf.BASE}@sonnet-5.5"
+    return replay_run_failures(
+        [rec],
+        export_rows={
+            (qid, rf.BASE): source,
+            (qid, arm): source.model_copy(update={"arm": arm}),
+        },
+        source_row_sha256={(qid, rf.BASE): export_row_sha256(source)},
+        readers={"sonnet-5.5": reader},
+    )
+
+
+def _sonnet(reader=rf.SONNET_NATIVE, **changes):  # type: ignore[no-untyped-def]
+    qs, qid, source = _one_question()
+    arm = f"{rf.BASE}@sonnet-5.5"
+    return rf.make_replay_record(qid, qs, source, reader=reader, arm=arm, **changes)
+
+
+def test_a_native_anthropic_reader_record_passes_the_clauses() -> None:
+    # Q4, D-260: the fallback path reports no provider, no is_byok and no reasoning
+    # count, and passes without writing values its response does not hold.
+    rec = _sonnet()
+    assert rec.replay is not None
+    assert (rec.replay.provider, rec.replay.is_byok) == ("api.anthropic.com", None)
+    assert _sonnet_failures(rec) == []
+
+
+@pytest.mark.parametrize(
+    ("code", "changes"),
+    [
+        ("is_byok", {"is_byok": True}),
+        ("provider", {"provider": "Anthropic"}),
+        ("reasoning_tokens", {"content_block_types": ["thinking", "text"]}),
+        ("reasoning_tokens", {"content_block_types": ["redacted_thinking", "text"]}),
+        ("reasoning_tokens", {"content_block_types": None}),
+        ("reasoning_tokens", {"reasoning_tokens": 5}),
+    ],
+)
+def test_a_native_anthropic_reader_record_fails_on_what_its_target_contradicts(
+    code, changes
+) -> None:
+    failures = _sonnet_failures(_sonnet(**changes))
+    assert [f.code for f in failures] == [code]
+
+
+def test_an_openrouter_reader_record_still_must_show_is_byok() -> None:
+    for is_byok in (None, False):
+        rec = _sonnet(reader=rf.SONNET, is_byok=is_byok)
+        failures = _sonnet_failures(rec, reader=rf.SONNET)
+        assert [f.code for f in failures] == ["is_byok"]
+    # An OpenRouter record naming the native endpoint is off its target.
+    rec = _sonnet(reader=rf.SONNET, provider="api.anthropic.com")
+    assert [f.code for f in _sonnet_failures(rec, reader=rf.SONNET)] == ["provider"]
+
+
+def test_a_native_thinking_on_reader_is_exempt_from_the_thinking_check() -> None:
+    opus_native = dataclasses.replace(
+        rf.OPUS, slug="claude-opus-5-5", target="anthropic"
+    )
+    rec = _sonnet(reader=opus_native, content_block_types=["thinking", "text"])
+    assert _sonnet_failures(rec, reader=opus_native) == []
+
+
+def test_the_prompt_clause_needs_the_base_row_and_its_assembled_prompt() -> None:
+    qs, qid, source = _one_question()
+    rec = rf.make_replay_record(qid, qs, source)
+    reader_row = source.model_copy(update={"arm": rf.READER_ARM})
+    kwargs = {
+        "source_row_sha256": {(qid, rf.BASE): export_row_sha256(source)},
+        "readers": {rf.READER: rf.HAIKU},
+    }
+    good = replay_run_failures(
+        [rec],
+        export_rows={(qid, rf.BASE): source, (qid, rf.READER_ARM): reader_row},
+        **kwargs,
+    )
+    assert good == []
+    no_base = replay_run_failures(
+        [rec], export_rows={(qid, rf.READER_ARM): reader_row}, **kwargs
+    )
+    assert "prompt" in [f.code for f in no_base]
 
 
 def test_engine_and_external_records_carrying_a_replay_block_fail() -> None:

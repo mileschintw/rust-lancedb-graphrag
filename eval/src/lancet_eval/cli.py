@@ -819,11 +819,23 @@ def replay_init_command(
         Path,
         typer.Option("--run", help="The new S2 run directory"),
     ],
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            help=(
+                "The S2 corpus: it lists the carried arms and their reader arms, and "
+                "names the S2 pre-registration"
+            ),
+        ),
+    ],
 ) -> None:
     """Carry S1 arms' records and export rows into a new S2 journal (D-257).
 
-    Copies every record of each arm and the export row of each success record, and
-    records the source run and the row hashes in the journal header. No paid call.
+    Copies every record of each arm and the export row of each success record under
+    the S2 corpus, and records the source run, its corpus and the row hashes in the
+    journal header. Refuses a source run or S2 corpus that is not dev (D-237). No paid
+    call.
     """
     from rich.markup import escape
 
@@ -831,7 +843,7 @@ def replay_init_command(
 
     labels = [a.strip() for value in arms for a in value.split(",") if a.strip()]
     try:
-        result = replay_init(source_run=source_run, arms=labels, run=run)
+        result = replay_init(source_run=source_run, arms=labels, run=run, corpus=corpus)
     except ReplayError as exc:
         console.print(f"[bold red]Replay init refused:[/bold red] {escape(str(exc))}")
         raise typer.Exit(code=1) from exc
