@@ -229,7 +229,8 @@ class Pipeline:
             "dense_top_k": DENSE_TOP_K,
             "embedding": {
                 "model": EMBEDDING_MODEL,
-                "endpoint": EMBEDDING_ENDPOINT,
+                # The endpoint the provider sent to, which an override (#76) changes.
+                "endpoint": getattr(self._embed_model, "endpoint", EMBEDDING_ENDPOINT),
                 "dimensions": EMBEDDING_DIMENSIONS,
                 "input_type": None,
                 "class": self._embed_model.class_name(),
@@ -237,7 +238,7 @@ class Pipeline:
             "embedded_metadata_keys": list(EMBEDDED_METADATA_KEYS),
             "rerank": {
                 "model": RERANK_MODEL,
-                "endpoint": RERANK_ENDPOINT,
+                "endpoint": getattr(self._reranker, "endpoint", RERANK_ENDPOINT),
                 "document_text": "chunk text only (MetadataMode.NONE), as Lancet sends",
                 "class": type(self._reranker).__name__,
             },

@@ -45,6 +45,22 @@ def test_echo_names_every_value_and_the_installed_version(
     assert len(echo["index_fingerprint"]) == 64
 
 
+def test_echo_names_the_endpoints_the_providers_sent_to(
+    corpus_dir, tmp_path, embedding, reranker
+):
+    # A stub rehearsal (#76) must not echo OpenRouter endpoints it never called.
+    class _StubEmbedding(type(embedding)):
+        endpoint: str = "http://127.0.0.1:8099/embeddings"
+
+    reranker.endpoint = "http://127.0.0.1:8099/rerank"
+    pipeline = _pipeline(corpus_dir, _StubEmbedding(), reranker)
+
+    echo = pipeline.config_echo()
+
+    assert echo["embedding"]["endpoint"] == "http://127.0.0.1:8099/embeddings"
+    assert echo["rerank"]["endpoint"] == "http://127.0.0.1:8099/rerank"
+
+
 class _GuardLLM(CustomLLM):
     """An LLM that fails the test if anything asks it for a completion."""
 
