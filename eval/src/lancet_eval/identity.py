@@ -1,6 +1,6 @@
 """Index identity comparison between PostgreSQL, LanceDB, and the document map.
 
-Compares the document-ID sets recorded in PostgreSQL (`lancet_eval.documents`),
+Compares the document-ID sets recorded in PostgreSQL (the store schema's `documents`),
 LanceDB (`documents`, distinct `nodes.document_id`, and `edges`/
 `entity_edges.document_id` as subsets), and the committed `document_map.json`
 for a corpus. The gate exists to prevent a drive or measurement pass from
@@ -115,8 +115,13 @@ def list_lancedb_document_ids(lancedb_path: str) -> dict[str, Any]:
 
 
 def list_pg_documents(settings: EvalSettings) -> dict[str, str]:
-    """List PostgreSQL `lancet_eval.documents` IDs and statuses via `run_psql`."""
-    sql = "SELECT id, status FROM lancet_eval.documents ORDER BY id;"
+    """List the settings schema's `documents` IDs and statuses via `run_psql` (#69).
+
+    The schema is validated as an isolated plain identifier, so the v1.0 query is
+    still `lancet_eval.documents` and the S1 store's is `lancet_eval_s1.documents`.
+    """
+    schema = assert_schema_isolated(settings)
+    sql = f"SELECT id, status FROM {schema}.documents ORDER BY id;"
     output = run_psql(settings, sql)
     result: dict[str, str] = {}
     for raw_line in output.splitlines():
@@ -261,7 +266,9 @@ def delete_pg_extras(
 ) -> list[str]:
     """Delete PostgreSQL documents not present in `allow_ids`.
 
-    Refuses to run against anything but the isolated `lancet_eval` schema, refuses
+    Refuses to run against any schema but the selected store's own (#69: the store
+    whose LanceDB path `settings` use, so `public`, the dev schema and another
+    store's schema are refused), refuses
     an empty `allow_ids` (which would otherwise delete every document), and refuses
     any non-UUID allow_id before any SQL is built. In apply mode, refuses to run
     without an existing non-empty `pg_dump_path` snapshot, executes the delete as a
@@ -269,9 +276,11 @@ def delete_pg_extras(
     the set. Dry-run (the default) returns the extra IDs and executes no DELETE.
     """
     schema_name = assert_schema_isolated(settings)
-    if schema_name != "lancet_eval":
+    store = store_for_settings(settings)
+    if schema_name != store.pg_schema:
         raise SeedError(
-            f"delete_pg_extras refuses non-'lancet_eval' schema, got {schema_name!r}"
+            f"delete_pg_extras refuses schema {schema_name!r}: store {store.name!r} "
+            f"uses schema {store.pg_schema!r}"
         )
     if not allow_ids:
         raise SeedError(
@@ -304,7 +313,7 @@ def delete_pg_extras(
 
     quoted_ids = ", ".join(f"'{doc_id}'" for doc_id in sorted(allow_ids))
     sql = (
-        f"BEGIN; DELETE FROM lancet_eval.documents WHERE id NOT IN ({quoted_ids}); "
+        f"BEGIN; DELETE FROM {schema_name}.documents WHERE id NOT IN ({quoted_ids}); "
         "COMMIT;"
     )
     run_psql(settings, sql)
