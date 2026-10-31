@@ -13,7 +13,7 @@ use tokio::time::timeout;
 use crate::{
     generation::{
         emit_generation_output_rejected, BoxFuture, GenerationError, GenerationErrorKind,
-        GenerationRequest, Generator, GroundingLimits, ModelOutput, RejectedOutput,
+        GenerationRequest, Generator, GroundingLimits, ModelOutput, ModelUsage, RejectedOutput,
     },
     prompt::{pack_evidence_and_graph_prompt_with, PromptOptions},
 };
@@ -240,6 +240,152 @@ impl OpenRouterGenerationConfig {
         }
         Ok(())
     }
+
+    /// Checks one provider choice for `request` and returns its model output, as a chat
+    /// completion's sole choice is checked: the finish reason must be `stop`, the content must
+    /// parse as `ModelOutput`, the usage must fit the grounding limits, and the output shape must
+    /// pass validation. Each rejection emits a `generation_output_rejected` event.
+    ///
+    /// `generate_from_context render` (#50) runs batch results through this same check.
+    pub fn accept_choice(
+        &self,
+        request: &GenerationRequest,
+        choice: ProviderChoice<'_>,
+    ) -> Result<ModelOutput, GenerationError> {
+        let rejection = RejectionContext {
+            content: choice.content,
+            finish_reason: choice.finish_reason,
+            prompt_tokens: choice.usage.as_ref().map(|usage| usage.prompt_tokens),
+            completion_tokens: choice.usage.as_ref().map(|usage| usage.completion_tokens),
+            correlation_id: request.correlation_id.as_deref(),
+        };
+
+        match choice.finish_reason {
+            Some("stop") => {}
+            Some(other) => {
+                return Err(rejection.reject(
+                    "finish_reason",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!("OpenRouter completion incomplete: finish_reason '{other}'"),
+                    ),
+                    None,
+                ));
+            }
+            None => {
+                return Err(rejection.reject(
+                    "finish_reason",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        "OpenRouter choice missing finish_reason",
+                    ),
+                    None,
+                ));
+            }
+        }
+
+        let mut model_output: ModelOutput = serde_json::from_str(choice.content).map_err(|err| {
+            rejection.reject(
+                "parse",
+                GenerationError::new(
+                    GenerationErrorKind::SchemaValidation,
+                    format!("failed to deserialize ModelOutput schema: {err}"),
+                ),
+                None,
+            )
+        })?;
+
+        if let Some(usage) = choice.usage {
+            let limits = &self.grounding_limits;
+            if usage.prompt_tokens > limits.evidence_token_budget() {
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter prompt_tokens {} exceeds budget {}",
+                            usage.prompt_tokens,
+                            limits.evidence_token_budget()
+                        ),
+                    ),
+                    Some(&model_output),
+                ));
+            }
+            if usage.completion_tokens > limits.max_output_tokens() {
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter completion_tokens {} exceeds budget {}",
+                            usage.completion_tokens,
+                            limits.max_output_tokens()
+                        ),
+                    ),
+                    Some(&model_output),
+                ));
+            }
+            let checked_total = usage
+                .prompt_tokens
+                .checked_add(usage.completion_tokens)
+                .ok_or_else(|| {
+                    rejection.reject(
+                        "usage",
+                        GenerationError::new(
+                            GenerationErrorKind::SchemaValidation,
+                            "OpenRouter token usage addition overflowed",
+                        ),
+                        Some(&model_output),
+                    )
+                })?;
+            if usage.total_tokens > limits.total_tokens_ceiling()
+                || usage.total_tokens < checked_total
+            {
+                return Err(rejection.reject(
+                    "usage",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!(
+                            "OpenRouter total_tokens {} exceeds budget limit {}",
+                            usage.total_tokens,
+                            limits.total_tokens_ceiling()
+                        ),
+                    ),
+                    Some(&model_output),
+                ));
+            }
+
+            model_output.usage = Some(usage);
+        }
+
+        // Validate semantic grounding shape against limits per D-17, D-22, D-28
+        let limits = self
+            .grounding_limits
+            .with_allow_model_only(request.allow_model_only);
+        // 06.3.5-18: a cited grounded abstention the model labelled `model_only` is shape-checked
+        // as the `retrieval` abstention it is. The adapter still returns the provider output
+        // unchanged and emits no event: `GenerateAnswerNode` owns the one normalisation seam, so
+        // the `generation_basis_normalised` event and the notice occur once per record.
+        let validation_view = if request.evidence.is_empty() && request.allow_model_only {
+            model_output.into_model_only()
+        } else if let Some(normalised) = model_output.grounded_abstention_view(limits) {
+            normalised
+        } else {
+            model_output.clone()
+        };
+        validation_view
+            .validate_output_shape_with_limits(limits)
+            .map_err(|err| rejection.reject("validate", err, Some(&model_output)))?;
+
+        Ok(model_output)
+    }
+}
+
+/// One provider choice: its content, finish reason and token usage.
+pub struct ProviderChoice<'a> {
+    pub content: &'a str,
+    pub finish_reason: Option<&'a str>,
+    pub usage: Option<ModelUsage>,
 }
 
 #[derive(Clone)]
@@ -777,141 +923,18 @@ impl OpenRouterGenerator {
         }
 
         let choice = &chat_resp.choices[0];
-        let rejection = RejectionContext {
-            content: &choice.message.content,
-            finish_reason: choice.finish_reason.as_deref(),
-            prompt_tokens: chat_resp.usage.as_ref().map(|usage| usage.prompt_tokens),
-            completion_tokens: chat_resp
-                .usage
-                .as_ref()
-                .map(|usage| usage.completion_tokens),
-            correlation_id: request.correlation_id.as_deref(),
-        };
-
-        match choice.finish_reason.as_deref() {
-            Some("stop") => {}
-            Some(other) => {
-                return Err(rejection.reject(
-                    "finish_reason",
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        format!("OpenRouter completion incomplete: finish_reason '{other}'"),
-                    ),
-                    None,
-                ));
-            }
-            None => {
-                return Err(rejection.reject(
-                    "finish_reason",
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        "OpenRouter choice missing finish_reason",
-                    ),
-                    None,
-                ));
-            }
-        }
-
-        let content_str = &choice.message.content;
-        let mut model_output: ModelOutput = serde_json::from_str(content_str).map_err(|err| {
-            rejection.reject(
-                "parse",
-                GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!("failed to deserialize ModelOutput schema: {err}"),
-                ),
-                None,
-            )
-        })?;
-
-        if let Some(usage) = chat_resp.usage {
-            let limits = &self.config.grounding_limits;
-            if usage.prompt_tokens > limits.evidence_token_budget() {
-                return Err(rejection.reject(
-                    "usage",
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        format!(
-                            "OpenRouter prompt_tokens {} exceeds budget {}",
-                            usage.prompt_tokens,
-                            limits.evidence_token_budget()
-                        ),
-                    ),
-                    Some(&model_output),
-                ));
-            }
-            if usage.completion_tokens > limits.max_output_tokens() {
-                return Err(rejection.reject(
-                    "usage",
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        format!(
-                            "OpenRouter completion_tokens {} exceeds budget {}",
-                            usage.completion_tokens,
-                            limits.max_output_tokens()
-                        ),
-                    ),
-                    Some(&model_output),
-                ));
-            }
-            let checked_total = usage
-                .prompt_tokens
-                .checked_add(usage.completion_tokens)
-                .ok_or_else(|| {
-                    rejection.reject(
-                        "usage",
-                        GenerationError::new(
-                            GenerationErrorKind::SchemaValidation,
-                            "OpenRouter token usage addition overflowed",
-                        ),
-                        Some(&model_output),
-                    )
-                })?;
-            if usage.total_tokens > limits.total_tokens_ceiling()
-                || usage.total_tokens < checked_total
-            {
-                return Err(rejection.reject(
-                    "usage",
-                    GenerationError::new(
-                        GenerationErrorKind::SchemaValidation,
-                        format!(
-                            "OpenRouter total_tokens {} exceeds budget limit {}",
-                            usage.total_tokens,
-                            limits.total_tokens_ceiling()
-                        ),
-                    ),
-                    Some(&model_output),
-                ));
-            }
-
-            model_output.usage = Some(crate::generation::ModelUsage {
-                prompt_tokens: usage.prompt_tokens,
-                completion_tokens: usage.completion_tokens,
-                total_tokens: usage.total_tokens,
-            });
-        }
-
-        // Validate semantic grounding shape against limits per D-17, D-22, D-28
-        let limits = self
-            .config
-            .grounding_limits
-            .with_allow_model_only(request.allow_model_only);
-        // 06.3.5-18: a cited grounded abstention the model labelled `model_only` is shape-checked
-        // as the `retrieval` abstention it is. The adapter still returns the provider output
-        // unchanged and emits no event: `GenerateAnswerNode` owns the one normalisation seam, so
-        // the `generation_basis_normalised` event and the notice occur once per record.
-        let validation_view = if request.evidence.is_empty() && request.allow_model_only {
-            model_output.into_model_only()
-        } else if let Some(normalised) = model_output.grounded_abstention_view(limits) {
-            normalised
-        } else {
-            model_output.clone()
-        };
-        validation_view
-            .validate_output_shape_with_limits(limits)
-            .map_err(|err| rejection.reject("validate", err, Some(&model_output)))?;
-
-        Ok(model_output)
+        self.config.accept_choice(
+            &request,
+            ProviderChoice {
+                content: &choice.message.content,
+                finish_reason: choice.finish_reason.as_deref(),
+                usage: chat_resp.usage.map(|usage| ModelUsage {
+                    prompt_tokens: usage.prompt_tokens,
+                    completion_tokens: usage.completion_tokens,
+                    total_tokens: usage.total_tokens,
+                }),
+            },
+        )
     }
 }
 
