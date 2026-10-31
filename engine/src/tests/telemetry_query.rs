@@ -30,6 +30,7 @@ use crate::service::{
 use crate::telemetry::metrics::{record_query_duration_ms, OUTCOME_COMPLETED, OUTCOME_FAILED};
 use crate::telemetry::propagation::extract_parent_context;
 use crate::telemetry::TelemetryHandle;
+use crate::testkit::ScopedSubscriber;
 use crate::workflow::node::QueryEmbeddingPort;
 use crate::workflow::nodes::{
     AssemblePromptNode, ExtractGraphContextNode, GenerateAnswerNode, ReformulateQueryNode,
@@ -203,7 +204,7 @@ async fn test_query_rag_propagates_w3c_traceparent() {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
 
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let mut metadata = MetadataMap::new();
     metadata.insert("traceparent", PINNED_TRACEPARENT.parse().unwrap());
@@ -240,7 +241,7 @@ async fn test_query_rag_untraced_request_generates_new_root_span() {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
 
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let metadata = MetadataMap::new();
     let parent_cx = extract_parent_context(&metadata);
@@ -274,7 +275,7 @@ async fn test_query_rag_malformed_traceparent_fails_open() {
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
 
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let mut metadata = MetadataMap::new();
     metadata.insert("traceparent", "invalid-traceparent-format".parse().unwrap());
@@ -325,7 +326,7 @@ async fn query_span_hierarchy_emits_exactly_five_node_spans() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(Some(Arc::new(SingleSuccessGenerator)));
     let cancel = CancellationToken::new();
@@ -369,7 +370,7 @@ async fn node_spans_nest_under_the_installed_parent() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let mut metadata = MetadataMap::new();
     metadata.insert("traceparent", PINNED_TRACEPARENT.parse().unwrap());
@@ -421,7 +422,7 @@ async fn node_span_records_duration_and_outcome() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(Some(Arc::new(SingleSuccessGenerator)));
     let cancel = CancellationToken::new();
@@ -463,7 +464,7 @@ async fn node_span_cancellation_does_not_leak() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(Some(Arc::new(SingleSuccessGenerator)));
     let cancel = CancellationToken::new();
@@ -504,7 +505,7 @@ async fn graph_augmentation_record_still_resolves_under_node_span() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(Some(Arc::new(SingleSuccessGenerator)));
     let cancel = CancellationToken::new();
@@ -532,7 +533,7 @@ async fn leaf_span_dense_search_wraps_real_lancedb_call() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let temp_dir = std::env::temp_dir().join(format!("lancet-telem-dense-{}", uuid::Uuid::new_v4()));
     let path = temp_dir.to_str().unwrap().replace('\\', "/");
@@ -573,7 +574,7 @@ async fn leaf_span_bm25_search_wraps_real_index_call() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let bm25 = Arc::new(Bm25Index::from_candidates(vec![], Bm25Config::default()).unwrap());
     let bm25_port = ProductionBm25RetrievalPort {
@@ -607,7 +608,7 @@ async fn leaf_span_embedding_request_wraps_real_http_call() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let embed_port = ProductionEmbeddingPort {
         embedder: Arc::new(TestEmbeddingProvider),
@@ -640,7 +641,7 @@ async fn leaf_span_graph_traversal_wraps_real_traversal() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let temp_dir = std::env::temp_dir().join(format!("lancet-telem-graph-{}", uuid::Uuid::new_v4()));
     let path = temp_dir.to_str().unwrap().replace('\\', "/");
@@ -686,7 +687,7 @@ async fn graph_traversal_span_records_seed_count_and_path_found_and_no_question_
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let fixture = crate::tests::graph_cutover::Fixture::new("span-seed-count").await;
     let graph_port = ProductionGraphQueryPort {
@@ -744,7 +745,7 @@ async fn llm_attempt_spans_are_two_siblings_on_retry() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let attempts = Arc::new(AtomicUsize::new(0));
     let generator: Arc<dyn Generator> = Arc::new(RetryableGenerator {
@@ -791,7 +792,7 @@ async fn llm_attempt_span_is_single_without_retry() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let generator: Arc<dyn Generator> = Arc::new(SingleSuccessGenerator);
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(Some(generator));
@@ -824,7 +825,7 @@ async fn leaf_spans_absent_for_fake_ports() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx_events) = build_runner_with_fakes(None);
     let cancel = CancellationToken::new();
@@ -862,7 +863,7 @@ async fn graph_augmentation_record_lands_on_graph_traversal_leaf() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let temp_dir = std::env::temp_dir().join(format!("lancet-telem-gt-{}", uuid::Uuid::new_v4()));
     let path = temp_dir.to_str().unwrap().replace('\\', "/");
@@ -921,7 +922,7 @@ async fn engine_log_inside_node_span_carries_trace_context() {
     let subscriber = tracing_subscriber::Registry::default()
         .with(otel_trace_layer)
         .with(otel_log_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let span = tracing::info_span!("retrieve_hybrid");
     {
@@ -962,7 +963,7 @@ async fn engine_log_inside_leaf_span_carries_leaf_span_context() {
     let subscriber = tracing_subscriber::Registry::default()
         .with(otel_trace_layer)
         .with(otel_log_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let node_span = tracing::info_span!("retrieve_hybrid");
     {
@@ -1004,7 +1005,7 @@ async fn engine_log_outside_any_span_has_no_trace_context() {
     let otel_log_layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&logger_provider);
 
     let subscriber = tracing_subscriber::Registry::default().with(otel_log_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     tracing::info!("background startup event without active span");
 
@@ -1025,7 +1026,7 @@ async fn engine_log_reaches_fmt_layer_regardless_of_provider() {
     };
 
     let (handle, subscriber) = crate::telemetry::build_providers_and_layers(&settings);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     // Emitting inside console-only mode must succeed without errors
     tracing::info!("console event with no OTLP logger provider");
@@ -1062,8 +1063,11 @@ async fn engine_log_records_survive_bounded_shutdown() {
         .build();
     let otel_log_layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&logger_provider);
 
+    // The handle below takes `logger_provider` and drops it on another thread, so keep a clone
+    // that outlives the guard: the subscriber must never hold the provider's last reference.
+    let _provider_outlives_guard = logger_provider.clone();
     let subscriber = tracing_subscriber::Registry::default().with(otel_log_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let handle = TelemetryHandle {
         tracer_provider: None,
@@ -1105,7 +1109,7 @@ async fn engine_logs_carry_no_user_content() {
     let subscriber = tracing_subscriber::Registry::default()
         .with(otel_trace_layer)
         .with(otel_log_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let sensitive_query = "CLASSIFIED_USER_QUERY_TEXT";
     let sensitive_evidence = "CLASSIFIED_USER_EVIDENCE_TEXT";
@@ -1302,7 +1306,7 @@ async fn test_workflow_span_carries_workflow_metadata_attributes() {
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     let (runner, ctx, sink, _rx) = build_runner_with_fakes(Some(Arc::new(SingleSuccessGenerator)));
 
@@ -1438,7 +1442,7 @@ fn graph_spans_survive_a_dropped_parent_through_the_tracing_layer() {
     let tracer = tracer_provider.tracer("test_retention_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     // Open a parent query_rag span (which will be dropped by AlwaysOff inner sampler)
     let parent_span = tracing::info_span!("query_rag");
@@ -1503,7 +1507,7 @@ async fn rerank_request_spans(
     let tracer = tracer_provider.tracer("test_tracer");
     let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
     let subscriber = tracing_subscriber::Registry::default().with(otel_layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = ScopedSubscriber::install(subscriber);
 
     // Only the context and the sink are borrowed from the shared builder; the runner is rebuilt
     // below so the retrieve node carries the lever.

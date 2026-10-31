@@ -602,7 +602,7 @@ async fn the_key_never_appears_in_an_error_a_log_event_or_a_debug_rendering() {
     // subscriber rebuilds that cache. Two warm-up subscribers, each with one real call, settle it
     // before the calls that are asserted on.
     for _ in 0..2 {
-        let _warm_up = tracing::subscriber::set_default(subscriber());
+        let _warm_up = crate::testkit::ScopedSubscriber::install(subscriber());
         let (url, server) = serve_once(Reply::status(500, "warm-up"));
         let _ = call(
             &reranker(&url, Duration::from_secs(5)),
@@ -612,7 +612,7 @@ async fn the_key_never_appears_in_an_error_a_log_event_or_a_debug_rendering() {
         server.join().unwrap();
     }
     logs.0.lock().unwrap().clear();
-    let _guard = tracing::subscriber::set_default(subscriber());
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber());
 
     let mut renderings = Vec::new();
     // A provider refusal that echoes the key in its body, a malformed reply that does the same

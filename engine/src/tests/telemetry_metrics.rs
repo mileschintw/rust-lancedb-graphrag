@@ -1101,7 +1101,7 @@ fn otel_internal_diagnostics_are_bounded() {
         .with(fmt_layer)
         .with(bridge_layer);
 
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     // Emit application event
     tracing::info!(target: "lancet_engine::test", "app event");
