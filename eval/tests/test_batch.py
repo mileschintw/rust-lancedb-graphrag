@@ -16,16 +16,19 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import httpx
 import levers_fixture as fx
 import pytest
 import replay_fixture as rf
 from typer.testing import CliRunner
 
-from lancet_eval import batch, gitcheck, parity, thresholds
+from lancet_eval import batch, batch_client, gitcheck, parity, thresholds
 from lancet_eval.batch_client import (
     MISSING_REASONING_TOKENS,
+    BatchClientError,
     BatchRequest,
     BatchResult,
+    OpenRouterBatchClient,
     ReaderOutput,
     _payload,
     anthropic_output,
@@ -598,6 +601,67 @@ def test_the_payload_embeds_each_body_byte_for_byte() -> None:
     assert json.loads(payload) == {
         "requests": [{"custom_id": "q-1", "body": json.loads(body)}]
     }
+
+
+def _openrouter_submit(
+    monkeypatch: pytest.MonkeyPatch, requests: Sequence[BatchRequest]
+) -> bytes:
+    """The bytes `OpenRouterBatchClient.submit` posts, through a fake `httpx.post`."""
+    sent: list[bytes] = []
+
+    def post(url: str, *, content: bytes, **_: Any) -> httpx.Response:
+        sent.append(content)
+        return httpx.Response(202, json={"id": "batch-1"})
+
+    monkeypatch.setattr(batch_client.httpx, "post", post)
+    assert OpenRouterBatchClient("key").submit(requests) == "batch-1"
+    return sent[0]
+
+
+def test_the_openrouter_payload_leads_with_endpoint_model_and_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #107: the Batch API's batch-level fields come before `requests`.
+    bodies = [
+        rewrite_pack_body(rf.pack_body(qid), rf.HAIKU).body_json
+        for qid in ("q-1", "q-2")
+    ]
+    payload = _openrouter_submit(
+        monkeypatch, [BatchRequest(f"q-{i}", b) for i, b in enumerate(bodies, 1)]
+    )
+    parsed = json.loads(payload)
+    assert list(parsed) == ["endpoint", "model", "provider", "requests"]
+    assert parsed["endpoint"] == "/v1/chat/completions"
+    assert parsed["model"] == rf.HAIKU.slug
+    assert parsed["provider"] == {"only": ["anthropic"], "allow_fallbacks": False}
+    # Each body is still the exact text whose hash the manifest records.
+    for body in bodies:
+        assert f'"body":{body}}}'.encode() in payload
+
+
+def _with(body_json: str, **fields: Any) -> str:
+    body = json.loads(body_json)
+    body.update(fields)
+    return json.dumps(body)
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        {"model": "anthropic/claude-sonnet-5.5"},
+        {"model": ""},
+        {"provider": {"only": ["openai"], "allow_fallbacks": False}},
+        {"provider": None},
+    ],
+    ids=["two-models", "no-model", "two-providers", "no-provider"],
+)
+def test_an_openrouter_batch_without_one_model_and_provider_pin_is_not_sent(
+    monkeypatch: pytest.MonkeyPatch, second: dict[str, Any]
+) -> None:
+    body = rewrite_pack_body(rf.pack_body("q-1"), rf.HAIKU).body_json
+    requests = [BatchRequest("q-1", body), BatchRequest("q-2", _with(body, **second))]
+    with pytest.raises(BatchClientError):
+        _openrouter_submit(monkeypatch, requests)
 
 
 def test_an_openrouter_response_with_null_content_keeps_its_usage() -> None:
