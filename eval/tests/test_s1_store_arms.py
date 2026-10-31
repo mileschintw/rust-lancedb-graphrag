@@ -114,10 +114,12 @@ def _build(
     spec_fn=default_spec,  # type: ignore[no-untyped-def]
     *,
     doc_of=None,  # type: ignore[no-untyped-def]
+    role: str = "heldout",
+    header: dict[str, object] | None = None,
 ) -> tuple[Path, Path, list[str]]:
     qs = make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = write_corpus(root, qs, S1_ARMS)
+    gold = write_corpus(root, qs, S1_ARMS, role=role)
     toml = root / "eval" / "corpora" / "levers_split.toml"
     toml.write_text(toml.read_text(encoding="utf-8") + STORES, encoding="utf-8")
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
@@ -126,7 +128,9 @@ def _build(
     monkeypatch.setattr("lancet_eval.score.load_document_map", _maps(seen))
     run = tmp_path / "run"
     journal = Journal(run / "journal.jsonl")
-    journal.write_header(corpus="levers_split", partial=False, context_export=True)
+    journal.write_header(
+        corpus="levers_split", partial=False, context_export=True, **(header or {})
+    )
     records: list[RunRecord] = []
     doc_of = doc_of or (
         lambda a: SMALL_DOC if a.startswith("small/") else MERGED_DOC

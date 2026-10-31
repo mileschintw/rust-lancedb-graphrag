@@ -82,11 +82,12 @@ def _s2(  # type: ignore[no-untyped-def]
     prereg: Any = None,
     usage: dict[str, tuple[int, int, int]] | None = None,
     reader_arms: tuple[str, ...] = READER_ARMS,
+    role: str = "heldout",
 ):
     """An S2 run of the carried deepseek arm and `reader_arms`, plus its gold table."""
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = fx.write_corpus(root, qs, (rf.BASE, *reader_arms))
+    gold = fx.write_corpus(root, qs, (rf.BASE, *reader_arms), role=role)
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     declared = tuple(
         (name, decl) for name, decl in DECLARED if f"{rf.BASE}@{name}" in reader_arms

@@ -563,12 +563,43 @@ def _default_gold_chunks_path() -> Path:
     )
 
 
+def population_label(role: str | None) -> str:
+    """The name of the population a `[split]` corpus of `role` is scored on (#68)."""
+    return "dev" if role == "dev" else "held-out"
+
+
+def scope_split(
+    split: HeldOutSplit, role: str | None, gold_map: Mapping[str, Any]
+) -> HeldOutSplit:
+    """The split whose G and null lists are the population a `role` corpus reads (#68).
+
+    A dev-role corpus (S1, S2) is scored on the dev IDs, scoped the way `dev_reads.py`
+    does: G = the dev IDs with gold evidence, null = the dev null IDs. A dev ID missing
+    from the question file stays in G, so the caller's G check refuses it. Any other
+    role reads the split as written.
+    """
+    if role != "dev":
+        return split
+    dev_null = [q for q in split.dev_ids if q in gold_map and gold_map[q].is_null]
+    nulls = set(dev_null)
+    dev_g = [q for q in split.dev_ids if q not in nulls]
+    return split.model_copy(
+        update={"heldout_g_ids": dev_g, "heldout_null_ids": dev_null}
+    )
+
+
 @dataclass(frozen=True)
 class _SplitInputs:
-    """What a `[split]` corpus's four-arm report reads besides the journal."""
+    """What a `[split]` corpus's four-arm report reads besides the journal.
+
+    `split` is scoped to the population the corpus's role reads (`scope_split`);
+    `on_disk` is the split as written, which the journal's split marker hashes.
+    """
 
     split: HeldOutSplit
     gold_sets: dict[str, list[frozenset[str]]]
+    on_disk: HeldOutSplit
+    population: str
 
 
 def _load_split_inputs(
@@ -576,19 +607,25 @@ def _load_split_inputs(
     gold_map: Mapping[str, Any],
     gold_chunks_path: Path | str | None,
 ) -> _SplitInputs:
-    """Loads the held-out split and the gold chunk sets; fails closed on any gap.
+    """Loads the split and the gold chunk sets; fails closed on any gap.
+
+    A dev-role corpus reads the dev population (`scope_split`); every other role reads
+    the held-out lists.
 
     Raises:
-        ScoreError: If the split or the gold-chunk table cannot be read, or a held-out
-            G question has no gold question, is a null question, is not one of the
-            three G question types, or has no gold set.
+        ScoreError: If the split or the gold-chunk table cannot be read, or a G
+            question of the population has no gold question, is a null question, is
+            not one of the three G question types, or has no gold set.
     """
     try:
-        split = load_split(config.split_path)
+        on_disk = load_split(config.split_path)
     except (OSError, ValueError) as exc:
         raise ScoreError(
-            f"Could not load the held-out split {config.split_path}: {exc}"
+            f"Could not load the split {config.split_path}: {exc}"
         ) from exc
+    role = getattr(config, "split_role", None)
+    population = population_label(role)
+    split = scope_split(on_disk, role, gold_map)
     path = (
         Path(gold_chunks_path)
         if gold_chunks_path is not None
@@ -608,7 +645,7 @@ def _load_split_inputs(
         if gold is None:
             problems.append(f"{qid}: not in the corpus's question file")
         elif gold.is_null:
-            problems.append(f"{qid}: a held-out G question with no gold evidence")
+            problems.append(f"{qid}: a {population} G question with no gold evidence")
         elif gold.question_type not in strata.STRATUM_TYPES:
             problems.append(
                 f"{qid}: question_type {gold.question_type!r} is not a G stratum"
@@ -617,10 +654,12 @@ def _load_split_inputs(
             problems.append(f"{qid}: no row in the gold-chunk table")
     if problems:
         raise ScoreError(
-            f"{len(problems)} held-out G question(s) cannot be scored: "
+            f"{len(problems)} {population} G question(s) cannot be scored: "
             + "; ".join(problems[:20])
         )
-    return _SplitInputs(split=split, gold_sets=gold_sets)
+    return _SplitInputs(
+        split=split, gold_sets=gold_sets, on_disk=on_disk, population=population
+    )
 
 
 def _interval(
@@ -1078,7 +1117,9 @@ def _four_arm_dimensions(
         )
 
     dims: list[DimensionResult] = []
-    empty = "P4 is empty: no held-out G question has an ok record on every arm"
+    empty = (
+        f"P4 is empty: no {inputs.population} G question has an ok record on every arm"
+    )
 
     # p4_size: |P4|, the coverage and the per-arm exclusions (D-122).
     size_detail: dict[str, float] = {
@@ -1231,7 +1272,7 @@ def _four_arm_dimensions(
                         "n_excluded": 0.0,
                         "n_no_valid_ranking": float(no_ranking),
                     },
-                    empty_reason="the split has no held-out G question",
+                    empty_reason=f"the split has no {inputs.population} G question",
                 )
             )
 
@@ -1249,7 +1290,9 @@ def _four_arm_dimensions(
             kind="wilson",
             qtype_of=qtype_of,
             detail={"n_excluded": float(n_g - len(values))},
-            empty_reason="no usable held-out G record carries a scorable payload",
+            empty_reason=(
+                f"no usable {inputs.population} G record carries a scorable payload"
+            ),
         )
         if dim.status == "ok":
             dim.detail.update(strata.constant_yes_baselines(list(values), gold_map))
@@ -1270,7 +1313,10 @@ def _four_arm_dimensions(
                 DimensionResult(
                     name=name,
                     status="skipped",
-                    reason="no ok record of this arm on a held-out null question",
+                    reason=(
+                        f"no ok record of this arm on a {inputs.population} null "
+                        "question"
+                    ),
                     detail={"n_excluded": float(len(null_ids))},
                     n=0,
                 )
@@ -2165,7 +2211,7 @@ def score_run(
                 f"{listed}{tail}"
             )
         split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
-        _require_split_marker_matches(header_split_marker, split_inputs.split)
+        _require_split_marker_matches(header_split_marker, split_inputs.on_disk)
 
     # D-113 / D-120 step 7: nothing judged exists before the order is proven.
     verified: Any = None
@@ -3500,7 +3546,8 @@ def score_run(
             size = next(d for d in four_arm if d.name == "p4_size")
             p_all_note = (
                 f"{P_ALL_LABEL}: |P_all| = {size.n} of "
-                f"{int(size.detail['n_heldout_g'])} held-out G questions (coverage "
+                f"{int(size.detail['n_heldout_g'])} {split_inputs.population} G "
+                "questions (coverage "
                 f"{size.detail['coverage']:.3f}). The per-arm cells are on this "
                 "population; below any coverage floor they are labelled, never "
                 "refused, and compare-levers reads one pairwise population per "
