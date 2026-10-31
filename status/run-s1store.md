@@ -1,8 +1,8 @@
 # run-s1store status
 
-- state: working
+- state: parked
 - branch: main
 - head: d943d558
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\run-s1store.md
-- time: 2026-10-31 15:14 -0700
-- doing: still running step 1.3 seed (S1 stack up; 1.1 done; A2 BM25 check passed)
+- time: 2026-10-31 16:01 -0700
+- doing: waits for #118 (seed stopped at 118/346 per user; stack down; report written)
