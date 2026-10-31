@@ -22,7 +22,9 @@ question ID. Questions are taken in the base arm's journal order:
 It refuses while the arm has a pending batch, and when nothing is left to submit
 (every question already has a record). Each base error record gets one reader error
 record (``BASE_ERROR``), since there is no row to pack and completeness needs every
-question under every arm.
+question under every arm. They are journalled once the endpoint accepts the batch,
+so a refused submit writes nothing to the journal; the one exception is a submit
+with nothing to send, which journals them and then refuses.
 
 The manifest (``<run>/batches/<arm slug>-<n>.json``) is written before the submit,
 with ``batch_id`` null and state ``submitting``, then updated to ``submitted`` with
@@ -537,8 +539,6 @@ def submit(
             ) from exc
         raise
     packed = _pack(qids, base_arm, base, state, declaration, bin_runner)
-    for rec in base_errors:
-        journal.append(rec)
 
     spent, _ = compute_spend(
         list(held.values()), include_embeddings=False, readers=state.readers
@@ -580,6 +580,8 @@ def submit(
         raise
     manifest.update(batch_id=batch_id, state="submitted", submitted_at=time.time())
     _write_manifest(path, manifest)
+    for rec in base_errors:
+        journal.append(rec)
     return SubmitResult(path, batch_id, len(packed), len(base_errors))
 
 
@@ -655,13 +657,18 @@ def fetch(
         if status != "submitted":
             continue
         _, declaration = _reader_arm(label, state)
-        batch_id = str(manifest["batch_id"])
+        batch_id = manifest.get("batch_id")
+        if not isinstance(batch_id, str) or not batch_id:
+            raise BatchError(f"manifest {path} is submitted but names no batch ID")
         results = client_factory(declaration.target).results(batch_id)
         if results is None:
             echo(f"{label}: batch {batch_id} is still processing")
             pending.append(batch_id)
             continue
-        ok, failed = _journal_batch(run_dir, state, label, manifest, results)
+        try:
+            ok, failed = _journal_batch(run_dir, state, label, manifest, results)
+        except (KeyError, TypeError) as exc:
+            raise BatchError(f"manifest {path} is malformed: {exc!r}") from exc
         successes += ok
         errors += failed
         manifest.update(state="fetched", fetched_at=time.time())

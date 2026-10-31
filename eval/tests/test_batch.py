@@ -649,6 +649,65 @@ def test_a_refused_submit_journals_nothing(tmp_path, monkeypatch) -> None:
     assert (run / "journal.jsonl").read_text(encoding="utf-8") == journal
 
 
+def test_a_submit_the_endpoint_rejects_journals_no_base_error(
+    tmp_path, monkeypatch
+) -> None:
+    from lancet_eval.batch_client import BatchClientError
+
+    def spec_fn(arm: str, qid: str) -> fx.Spec:
+        return fx.Spec(errored=qid == "lv-g002")
+
+    run, _, _, client, _ = _make_s2(tmp_path, monkeypatch, spec_fn=spec_fn)
+    journal = (run / "journal.jsonl").read_text(encoding="utf-8")
+
+    def refuse(requests):  # type: ignore[no-untyped-def]
+        raise BatchClientError("HTTP 400")
+
+    client.submit = refuse  # type: ignore[method-assign]
+    with pytest.raises(BatchClientError):
+        batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    assert (run / "journal.jsonl").read_text(encoding="utf-8") == journal
+
+
+def test_a_malformed_manifest_is_a_refusal_naming_it(s2) -> None:
+    run, _, _, _, _ = s2
+    sent = batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    manifest = batch.read_manifest(sent.manifest_path)
+    for request in manifest["requests"].values():
+        del request["levers"]
+    sent.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(batch.BatchError, match="malformed"):
+        batch.fetch(run=run, echo=lambda _: None)
+
+
+def test_a_failed_openrouter_batch_is_finished_and_a_bad_results_line_refuses(
+    monkeypatch,
+) -> None:
+    import httpx
+
+    from lancet_eval.batch_client import (
+        AnthropicBatchClient,
+        BatchClientError,
+        OpenRouterBatchClient,
+    )
+
+    def get(url, **kwargs):  # type: ignore[no-untyped-def]
+        request = httpx.Request("GET", url)
+        if url.endswith("/results"):
+            return httpx.Response(200, text="not json\n", request=request)
+        body = {
+            "status": "failed",
+            "processing_status": "ended",
+            "results_url": "https://fake.test/results",
+        }
+        return httpx.Response(200, json=body, request=request)
+
+    monkeypatch.setattr(httpx, "get", get)
+    assert OpenRouterBatchClient("k", url="https://fake.test/b").results("b1") == []
+    with pytest.raises(BatchClientError, match="not JSON"):
+        AnthropicBatchClient("k", url="https://fake.test/b").results("b1")
+
+
 # ---- integration: the real bin ----------------------------------------------------
 
 integration = pytest.mark.skipif(
