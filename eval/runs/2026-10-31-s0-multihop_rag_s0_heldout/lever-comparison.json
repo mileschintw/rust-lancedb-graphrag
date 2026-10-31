@@ -1,0 +1,533 @@
+{
+  "answer_mix": [
+    {
+      "arm": "llamaindex",
+      "label": "reported only, never decisional; beating constant-Yes is not a default condition",
+      "mix": [
+        {
+          "arm": {
+            "insufficient_information": 0.21666666666666667,
+            "no": 0.25,
+            "other": 0.13333333333333333,
+            "yes": 0.4
+          },
+          "constant_no_answer_usable": 0.325,
+          "constant_yes_answer_usable": 0.65,
+          "gold": {
+            "no": 0.325,
+            "other": 0.025,
+            "yes": 0.65
+          },
+          "n": 120,
+          "reference": {
+            "insufficient_information": 0.19166666666666668,
+            "no": 0.23333333333333334,
+            "other": 0.14166666666666666,
+            "yes": 0.43333333333333335
+          },
+          "subset": "comparison_query"
+        },
+        {
+          "arm": {
+            "insufficient_information": 0.25668449197860965,
+            "no": 0.21390374331550802,
+            "other": 0.10695187165775401,
+            "yes": 0.42245989304812837
+          },
+          "constant_no_answer_usable": 0.39572192513368987,
+          "constant_yes_answer_usable": 0.6042780748663101,
+          "gold": {
+            "no": 0.39572192513368987,
+            "other": 0.0,
+            "yes": 0.6042780748663101
+          },
+          "n": 187,
+          "reference": {
+            "insufficient_information": 0.24598930481283424,
+            "no": 0.20320855614973263,
+            "other": 0.13903743315508021,
+            "yes": 0.4117647058823529
+          },
+          "subset": "binary_gold"
+        }
+      ],
+      "non_binary_gold": {
+        "ci_hi": -0.00909090909090909,
+        "ci_label": "unadjusted, estimation only",
+        "ci_lo": -0.09090909090909091,
+        "delta": -0.045454545454545525,
+        "mean_arm": 0.9272727272727272,
+        "mean_reference": 0.9727272727272728,
+        "n": 110
+      },
+      "transitions": {
+        "all": {
+          "abstain_to_correct": 16,
+          "answer_to_abstain": 26,
+          "correct_to_abstain": 18,
+          "correct_to_wrong": 8,
+          "n": 297,
+          "other_transitions": 11,
+          "unchanged": 235,
+          "wrong_to_correct": 9
+        },
+        "comparison_query": {
+          "abstain_to_correct": 7,
+          "answer_to_abstain": 12,
+          "correct_to_abstain": 8,
+          "correct_to_wrong": 6,
+          "n": 120,
+          "other_transitions": 6,
+          "unchanged": 87,
+          "wrong_to_correct": 6
+        },
+        "inference_query": {
+          "abstain_to_correct": 0,
+          "answer_to_abstain": 4,
+          "correct_to_abstain": 4,
+          "correct_to_wrong": 1,
+          "n": 102,
+          "other_transitions": 0,
+          "unchanged": 97,
+          "wrong_to_correct": 0
+        },
+        "temporal_query": {
+          "abstain_to_correct": 9,
+          "answer_to_abstain": 10,
+          "correct_to_abstain": 6,
+          "correct_to_wrong": 1,
+          "n": 75,
+          "other_transitions": 5,
+          "unchanged": 51,
+          "wrong_to_correct": 3
+        }
+      }
+    }
+  ],
+  "ci_statement": "Bootstrap CIs are 95% percentile intervals, labelled 'unadjusted, estimation only'. A CI that excludes 0 without a Holm rejection is not significant.",
+  "context": [
+    {
+      "arm": "hybrid+rerank+metadata",
+      "context_tokens_mean": 563.6599326599327,
+      "evidence_hits_at_4": 0.8552188552188552,
+      "label": "descriptive, decides nothing",
+      "n": 297,
+      "prompt_tokens_mean": 2793.10101010101
+    },
+    {
+      "arm": "llamaindex",
+      "context_tokens_mean": 1493.3766233766235,
+      "evidence_hits_at_4": 0.8603896103896104,
+      "label": "descriptive, decides nothing",
+      "n": 308,
+      "prompt_tokens_mean": 3721.6136363636365
+    }
+  ],
+  "default_decisions": [
+    {
+      "answer_usable_decision": "not significant",
+      "decision": "stays off: not significant",
+      "delta": -0.0033670033670033517,
+      "gate_reads": null,
+      "hits_at_4_note": null,
+      "hits_at_4_support": null,
+      "interaction_caveat": "If two levers win, D-157 flips both. The combination is never tested decisionally; hybrid+all is its only, descriptive, evidence.",
+      "kind": "default_decision",
+      "lever": "llamaindex",
+      "reasons": [
+        "no Holm rejection"
+      ]
+    }
+  ],
+  "descriptive_rows": [],
+  "families": [
+    {
+      "alpha": 0.05,
+      "comparisons": [
+        {
+          "adjusted_p": 1.0,
+          "arm": "llamaindex",
+          "ci_hi": 0.04377104377104377,
+          "ci_label": "unadjusted, estimation only",
+          "ci_lo": -0.050505050505050504,
+          "ci_note": null,
+          "coverage": 0.9642857142857143,
+          "decision": "not significant",
+          "delta": -0.0033670033670033517,
+          "evaluable": true,
+          "exclusions": {
+            "of_which_reference_own_failure": 0,
+            "of_which_reference_provenance": 11,
+            "of_which_rerank_degrade": 0,
+            "own_failure": 0,
+            "own_provenance": 0,
+            "reference_only_failure": 11
+          },
+          "mean_arm": 0.7306397306397306,
+          "mean_reference": 0.734006734006734,
+          "n_neg": 26,
+          "n_pairs": 297,
+          "n_pos": 25,
+          "raw_p": 1.0,
+          "reference": "hybrid+rerank+metadata",
+          "rejected": false,
+          "strata": [
+            {
+              "ci_hi": 0.075,
+              "ci_lo": -0.09166666666666666,
+              "delta": -0.008333333333333304,
+              "n": 120,
+              "stratum": "comparison_query"
+            },
+            {
+              "ci_hi": -0.00980392156862745,
+              "ci_lo": -0.08823529411764706,
+              "delta": -0.0490196078431373,
+              "n": 102,
+              "stratum": "inference_query"
+            },
+            {
+              "ci_hi": 0.18666666666666668,
+              "ci_lo": -0.04,
+              "delta": 0.06666666666666671,
+              "n": 75,
+              "stratum": "temporal_query"
+            }
+          ]
+        }
+      ],
+      "m": 1,
+      "matching_rule": null,
+      "primary": "answer_usable",
+      "role": "decisional"
+    }
+  ],
+  "fwer_statement": "Two Holm families, one per primary, each at its family-wise error rate (m fixed at the registered arm count). Across both families the family-wise error rate can reach 0.10 (the Bonferroni bound over two families), and this report states it. Defaults read only the decisional family (at most 0.05). The guards can only veto a rejection, so they never raise the error rate.",
+  "gate_readings": null,
+  "graph_state": [],
+  "null_guards": [
+    {
+      "arm": "llamaindex",
+      "b": 0,
+      "c": 1,
+      "decisional": true,
+      "evaluable": true,
+      "margin": 0.1,
+      "min_pairs": 35,
+      "n_heldout_null": 43,
+      "n_pairs": 42,
+      "net_loss_rate": -0.023809523809523808,
+      "ni_label": null,
+      "note": "net loss -1 of 42, at most the margin 0.1",
+      "passes": true,
+      "predicate": "metrics.is_abstention",
+      "status": "PASS",
+      "upper_bound_95": 0.021428571428571425
+    }
+  ],
+  "populations": {
+    "floor": 0.8,
+    "n_heldout_g": 308,
+    "n_heldout_null": 43,
+    "p_all_label": "all-arm P_all, not the decisional population",
+    "provenance_block_passed": true
+  },
+  "preregistration": {
+    "answer_mix_strata": [
+      "comparison_query",
+      "binary_gold"
+    ],
+    "bootstrap_b": 10000,
+    "bootstrap_seed": 42,
+    "complete_case_floor": 0.8,
+    "default_rule": "S0 changes no default; it is the published starting point and does not gate S1 (D-252). One Holm family, m = 1: answer_usable of llamaindex against hybrid+rerank+metadata on the held-out G population, exact paired sign-flip, alpha 0.05. If the comparison is evaluable (|P| / |H_G| >= complete_case_floor) and Holm rejects, the arm with the higher answer_usable leads, but only if the null guard read in its direction passes (D-261): for llamaindex the guard as computed (net abstention drop b - c against the reference); for hybrid+rerank+metadata the same null pairs with b and c swapped (c - b). Each direction passes iff at least ceil(0.80 x |H_N|) null pairs exist and the net drop / pairs <= 0.10. A leader whose guard fails or is not evaluable is reported as a difference with a failed guard, and no lead is claimed. Without a rejection the reading is 'no significant difference'. Evidence Hits@4, context tokens and latency are supporting and never tested; chunk-ID Hits@4 is a Lancet-only secondary (D-250)",
+    "descriptive_arms": [],
+    "external_pipelines": [
+      [
+        "llamaindex",
+        {
+          "chunk_overlap": 25,
+          "chunk_size": 256,
+          "dense_top_k": 20,
+          "framework": "llama-index-core",
+          "framework_version": "0.14.25",
+          "keep": 8,
+          "rerank_model": "voyageai/rerank-2.5-lite"
+        }
+      ]
+    ],
+    "families": [
+      {
+        "alpha": 0.05,
+        "arms": [
+          "llamaindex"
+        ],
+        "primary": "answer_usable",
+        "role": "decisional"
+      }
+    ],
+    "matching_rule": "chunk_id_via_gold_chunks",
+    "non_evaluable_rule": "p=1_m_unchanged",
+    "null_guard_arms": [
+      "llamaindex"
+    ],
+    "null_guard_margin": 0.1,
+    "null_guard_min_pair_fraction": 0.8,
+    "null_guard_predicate": "metrics.is_abstention",
+    "population": "pairwise_per_comparison",
+    "provenance": "v1.1 S0. D-238 (two arms, one each), D-239 and D-252 (Holm m = 1, exact paired sign-flip, null guard on both arms), D-261 (the guard read in both directions, the leader's direction vetoes; owner 2026-10-30: '\u96d9\u5411\u8b80\uff0c\u52dd\u65b9\u9808\u904e'), D-262 (every number reused from PREREGISTRATION_06_3_6: alpha 0.05, guard margin 0.10 and pair fraction 0.80, complete-case floor 0.80, bootstrap 10,000 seed 42, SC-2 timeout floor 0.025, rerank tripwire 0.20 after 50 attempts or 5 consecutive; owner 2026-10-30: '\u5168\u90e8\u6cbf\u7528 v1.0'), D-247 and D-248 (the external arm and its pipeline), D-259 (the external reader runs with evidence_metadata only, which matches the shipped default's reader-side levers; rerank is retrieval-side), D-237 (this is held-out read 1 of 2; Confirm is read 2). Written 2026-10-30, before any S0 data.",
+    "readers": [],
+    "reference_arm": "hybrid+rerank+metadata",
+    "rerank_consecutive_degrade_halt": 5,
+    "rerank_degrade_tripwire_min_calls": 50,
+    "rerank_degrade_tripwire_rate": 0.2,
+    "sc2_timeout_rate_floor": 0.025,
+    "test": "paired_sign_flip_exact_two_sided"
+  },
+  "provenance_counts": [
+    {
+      "arm": "hybrid+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 12,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 351
+    },
+    {
+      "arm": "llamaindex",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 351
+    }
+  ],
+  "rerank_operation": [
+    {
+      "arm": "hybrid+rerank+metadata",
+      "attempts": 351,
+      "calls_without_reported_cost": 12,
+      "cost_credits_reported_sum": 0.04398052,
+      "degrade_rate": 0.03418803418803419,
+      "degrades": 12,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 12,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 1812.0,
+      "latency_ms_p50": 287.0,
+      "latency_ms_p95": 451.0,
+      "records": 351
+    }
+  ],
+  "run": {
+    "arms": [
+      "hybrid+rerank+metadata",
+      "llamaindex"
+    ],
+    "corpus": "multihop_rag_s0_heldout",
+    "index_generation": "lance-703",
+    "journal_created_at": 1793438100.7046564,
+    "judged": false,
+    "preregistration_token": "PREREGISTRATION_S0",
+    "reference_arm": "hybrid+rerank+metadata",
+    "run": "2026-10-31-s0-multihop_rag_s0_heldout"
+  },
+  "schema_version": 1,
+  "secondaries": [
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_hits_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_mrr_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_map_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "coverage_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "all_gold_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 0.05387205387205387,
+      "ci_lo": -0.04713804713804714,
+      "delta": 0.0033670033670033517,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.6801346801346801,
+      "mean_reference": 0.6767676767676768,
+      "metric": "final_answer_em",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 0.06734006734006734,
+      "ci_lo": -0.026936026936026935,
+      "delta": 0.02020202020202022,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.8215488215488216,
+      "mean_reference": 0.8013468013468014,
+      "metric": "gold_containment",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "final_answer_missing_rate",
+      "n_pairs": 297,
+      "n_unscorable": 0,
+      "parser_parity_review": false
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 0.06734006734006734,
+      "ci_lo": -0.020202020202020204,
+      "delta": 0.023569023569023573,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.17845117845117844,
+      "mean_reference": 0.15488215488215487,
+      "metric": "abstention_rate_g",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 944.4814814814815,
+      "ci_lo": 908.8552188552188,
+      "delta": 926.993265993266,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 3720.094276094276,
+      "mean_reference": 2793.10101010101,
+      "metric": "prompt_tokens_mean",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": -5905.784511784512,
+      "ci_lo": -6282.956228956229,
+      "delta": -6091.404040404041,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 6091.404040404041,
+      "metric": "latency_total_ms_mean",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "retrieve_node_ms_mean",
+      "n_pairs": 0,
+      "n_unscorable": 297
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 4.394094276094276e-05,
+      "ci_lo": -1.7017171717171718e-05,
+      "delta": 1.850202020202017e-05,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0009341034343434344,
+      "mean_reference": 0.0009156014141414142,
+      "metric": "spend_usd_mean",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "llamaindex",
+      "ci_hi": 944.5791245791246,
+      "ci_lo": 916.4208754208754,
+      "delta": 930.7542087542087,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 1494.4141414141413,
+      "mean_reference": 563.6599326599327,
+      "metric": "context_tokens_mean",
+      "n_pairs": 297,
+      "n_unscorable": 0
+    }
+  ],
+  "sensitivity": {
+    "p_dec": {
+      "comparisons": [
+        {
+          "adjusted_p": 1.0,
+          "arm": "llamaindex",
+          "decision": "not significant",
+          "delta": -0.0033670033670033517,
+          "n_neg": 26,
+          "n_pairs": 297,
+          "n_pos": 25,
+          "raw_p": 1.0
+        }
+      ],
+      "coverage": 0.9642857142857143,
+      "evaluable": true,
+      "label": "sensitivity line, decides nothing",
+      "n_pdec": 297,
+      "population": "P_dec: ok on the reference and on every decisional lever arm"
+    },
+    "rerank_itt": null
+  }
+}

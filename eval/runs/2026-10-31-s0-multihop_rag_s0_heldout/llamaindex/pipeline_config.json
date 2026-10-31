@@ -1,0 +1,36 @@
+{
+  "framework": "llama-index-core",
+  "framework_version": "0.14.25",
+  "chunk_size": 256,
+  "chunk_overlap": 25,
+  "rerank_model": "voyageai/rerank-2.5-lite",
+  "splitter": {
+    "type": "SentenceSplitter",
+    "chunk_size": 256,
+    "chunk_overlap": 25,
+    "tokenizer": "tiktoken gpt-3.5-turbo (LlamaIndex default)"
+  },
+  "dense_top_k": 20,
+  "embedding": {
+    "model": "voyageai/voyage-4-large",
+    "endpoint": "https://openrouter.ai/api/v1/embeddings",
+    "dimensions": 2048,
+    "input_type": null,
+    "class": "OpenRouterEmbedding"
+  },
+  "embedded_metadata_keys": [
+    "title",
+    "source",
+    "published_at"
+  ],
+  "rerank": {
+    "model": "voyageai/rerank-2.5-lite",
+    "endpoint": "https://openrouter.ai/api/v1/rerank",
+    "document_text": "chunk text only (MetadataMode.NONE), as Lancet sends",
+    "class": "OpenRouterReranker"
+  },
+  "keep": 8,
+  "documents": 346,
+  "chunks": 4701,
+  "index_fingerprint": "d8e70d8e7472138537c651d4eca98d06c253d96b75ca1358fe7a942babf719d8"
+}
