@@ -739,8 +739,7 @@ async fn main() -> Result<(), String> {
     let config = generation_config(&effective)?;
     let results = match &command.results {
         Some(path) => {
-            let file =
-                std::fs::File::open(path).map_err(|err| format!("opening {path}: {err}"))?;
+            let file = std::fs::File::open(path).map_err(|err| format!("opening {path}: {err}"))?;
             Some(read_results(std::io::BufReader::new(file))?)
         }
         None => None,

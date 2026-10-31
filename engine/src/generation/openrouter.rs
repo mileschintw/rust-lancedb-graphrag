@@ -284,16 +284,17 @@ impl OpenRouterGenerationConfig {
             }
         }
 
-        let mut model_output: ModelOutput = serde_json::from_str(choice.content).map_err(|err| {
-            rejection.reject(
-                "parse",
-                GenerationError::new(
-                    GenerationErrorKind::SchemaValidation,
-                    format!("failed to deserialize ModelOutput schema: {err}"),
-                ),
-                None,
-            )
-        })?;
+        let mut model_output: ModelOutput =
+            serde_json::from_str(choice.content).map_err(|err| {
+                rejection.reject(
+                    "parse",
+                    GenerationError::new(
+                        GenerationErrorKind::SchemaValidation,
+                        format!("failed to deserialize ModelOutput schema: {err}"),
+                    ),
+                    None,
+                )
+            })?;
 
         if let Some(usage) = choice.usage {
             let limits = &self.grounding_limits;

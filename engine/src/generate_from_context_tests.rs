@@ -511,7 +511,9 @@ async fn render(results: &str) -> OutputLine {
     let row = row_of(&export_row(&blocks, &facts));
     let results = read_results(results.as_bytes()).expect("results");
     let tail = Tail::new(Mode::Render, &settings, config, None);
-    tail.prepare().await.expect("render makes no preflight call");
+    tail.prepare()
+        .await
+        .expect("render makes no preflight call");
     tail.render_row(&row, levers(), &results).await
 }
 
@@ -550,9 +552,18 @@ async fn render_turns_each_rejected_output_into_an_error_line() {
     unknown_field["confidence"] = json!(0.9);
     let cases = [
         ("invalid JSON", result_line("{not json", "stop")),
-        ("schema violation", result_line(&unknown_field.to_string(), "stop")),
-        ("ungrounded citation", result_line(&ungrounded.to_string(), "stop")),
-        ("refusal", result_line(&stub_output().to_string(), "refusal")),
+        (
+            "schema violation",
+            result_line(&unknown_field.to_string(), "stop"),
+        ),
+        (
+            "ungrounded citation",
+            result_line(&ungrounded.to_string(), "stop"),
+        ),
+        (
+            "refusal",
+            result_line(&stub_output().to_string(), "refusal"),
+        ),
     ];
     for (case, results) in cases {
         let line = render(&results).await;
@@ -585,9 +596,6 @@ fn read_results_refuses_an_unkeyed_or_repeated_line() {
     let err = read_results(r#"{"content": "x"}"#.as_bytes()).expect_err("no key");
     assert!(err.contains("line 1"), "{err}");
     let line = result_line("{}", "stop");
-    let err = read_results(format!("{line}
-
-{line}
-").as_bytes()).expect_err("repeated");
+    let err = read_results(format!("{line}\n\n{line}\n").as_bytes()).expect_err("repeated");
     assert!(err.contains("line 3"), "{err}");
 }
