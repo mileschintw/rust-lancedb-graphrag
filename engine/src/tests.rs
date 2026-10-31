@@ -7483,7 +7483,7 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,
@@ -7518,7 +7518,7 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,
@@ -7563,7 +7563,7 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,

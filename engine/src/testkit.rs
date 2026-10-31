@@ -4,6 +4,7 @@
 //! grow additively, so an additive contract change does not churn the test tree,
 //! and [`ScopedSubscriber`], the guard for a test's default `tracing` subscriber.
 
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use tracing::dispatcher::{self, DefaultGuard, Dispatch, WeakDispatch};
@@ -29,6 +30,14 @@ pub fn test_notice(code: NoticeCode, message: &str, severity: NoticeSeverity) ->
 /// microseconds; 10 s is far past that on a loaded CI runner and far below the job limit.
 const SUBSCRIBER_RELEASE_DEADLINE: Duration = Duration::from_secs(10);
 
+/// A do-nothing dispatcher registered for the whole test run.
+///
+/// While at most one dispatcher is registered, tracing-core computes a new callsite's interest
+/// from the hitting thread's default subscriber alone. A test thread with no subscriber then
+/// caches `Interest::never`, and another test's scoped subscriber never sees that callsite.
+/// With this one always registered, tracing-core asks every live subscriber instead.
+static ALWAYS_REGISTERED: OnceLock<Dispatch> = OnceLock::new();
+
 /// This thread's default `tracing` subscriber for one test, gone before the test's providers drop.
 ///
 /// Use it in place of `tracing::subscriber::set_default` whenever the subscriber holds an
@@ -40,7 +49,9 @@ const SUBSCRIBER_RELEASE_DEADLINE: Duration = Duration::from_secs(10);
 /// that lock. The shutdown emits internal `tracing` events, and registering a new callsite there
 /// takes the same lock again behind any waiting writer: the lib tests deadlock (#59). Dropping
 /// this guard waits until the subscriber itself is gone, so the provider locals hold the last
-/// reference and shut down on the test thread.
+/// reference and shut down on the test thread. Installing it also keeps a second dispatcher
+/// registered for the rest of the run, so a callsite another thread hits first stays visible to
+/// this subscriber.
 ///
 /// # Panics
 ///
@@ -62,6 +73,7 @@ impl ScopedSubscriber {
         subscriber: impl tracing::Subscriber + Send + Sync + 'static,
         deadline: Duration,
     ) -> Self {
+        ALWAYS_REGISTERED.get_or_init(|| Dispatch::new(tracing::subscriber::NoSubscriber::default()));
         let dispatch = Dispatch::new(subscriber);
         Self {
             guard: Some(dispatcher::set_default(&dispatch)),
@@ -91,7 +103,7 @@ impl Drop for ScopedSubscriber {
 }
 
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -151,5 +163,33 @@ mod tests {
         let message = outcome.expect_err("the guard returned while another thread held the subscriber");
         let message = message.downcast_ref::<String>().expect("a formatted panic message");
         assert!(message.starts_with("ScopedSubscriber:"), "the panic names the guard: {message}");
+    }
+
+    /// Counts the events it sees.
+    struct EventCount(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for EventCount {
+        fn on_event(&self, _: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn event_only_this_test_emits() {
+        tracing::info!("scoped_subscriber_sees_a_callsite_another_thread_hit_first");
+    }
+
+    /// PR #62's flake: a callsite first hit on a thread with no subscriber must not hide it from
+    /// the test thread's subscriber.
+    #[test]
+    fn scoped_subscriber_sees_a_callsite_another_thread_hit_first() {
+        let seen = Arc::new(AtomicUsize::new(0));
+        let _guard = ScopedSubscriber::install(
+            tracing_subscriber::Registry::default().with(EventCount(seen.clone())),
+        );
+
+        std::thread::spawn(event_only_this_test_emits).join().unwrap();
+        event_only_this_test_emits();
+
+        assert_eq!(seen.load(Ordering::SeqCst), 1, "the subscriber missed its own event");
     }
 }
