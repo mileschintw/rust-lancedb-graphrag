@@ -85,4 +85,30 @@ two Lancet levers did, which moves both figures toward the upper end.
 
 ## Result
 
-Not run yet.
+**No significant difference.** `llamaindex` minus `hybrid+rerank+metadata` on `answer_usable` is **-0.34 points**,
+95% CI [-5.05, +4.38] (unadjusted, estimation only), exact paired sign-flip raw p = 1.0, Holm p = 1.0 (m = 1), not
+rejected. Neither arm leads.
+
+- Run: `eval/runs/2026-10-31-s0-multihop_rag_s0_heldout`, pre-registration `PREREGISTRATION_S0`, driven on `main` at
+  `c69d4868` on 2026-10-31. This is held-out read 1 of 2 (D-237).
+- Coverage: **297 of 308** G questions pair (0.964), above the 0.80 complete-case floor, so the comparison is
+  evaluable. The 11 unpaired questions are all `reference_only_failure` with reference provenance: the
+  `hybrid+rerank+metadata` record is excluded, and `llamaindex` has no exclusion of its own. Their likely cause is the
+  rerank-degraded records of the drive's first segment. The rerank tripwire (D-262) stopped that segment after 50
+  attempts, with 12 rerank degrades (0.24), all `timeout`. The cause was local search latency under machine load
+  from concurrent builds, which ran past the retrieve deadline before the rerank call. The OpenRouter rerank calls that
+  ran took about 290 ms. With other work paused, the drive was resumed into the same journal (`resume=True`), and
+  the remaining 301 questions ran with 0 rerank degrades. The degraded records were not re-driven.
+- Means on the 297 pairs: `llamaindex` 0.7306, `hybrid+rerank+metadata` 0.7340; 25 pairs favour `llamaindex`, 26
+  favour the reference.
+- Null guard (D-261), reported but not decisional without a rejection: 42 null pairs (at least 35 needed), b = 0,
+  c = 1. The guard passes in both directions: the `llamaindex` direction nets -1 of 42 (`compare-levers` status PASS),
+  and the `hybrid+rerank+metadata` direction nets 1 of 42 = 0.024, at most 0.10.
+- Strata (estimation only, no Holm): comparison -0.8 points (n 120), inference -4.9 points [-8.8, -1.0] (n 102),
+  temporal +6.7 points [-4.0, +18.7] (n 75). Non-binary gold (n 110): -4.5 points [-9.1, -0.9].
+- Counts: 351 of 351 records per arm, all `success`; `llamaindex` recorded 0 error records. Prompt parity holds for all
+  351 Lancet rows. The LlamaIndex `pipeline_config.json` matches the pre-registration (llama-index-core 0.14.25,
+  chunk 256/25, dense top-k 20, `voyageai/rerank-2.5-lite`, keep 8, 346 documents, 4,701 chunks).
+- Spend: observed $1.01 (Lancet drive $0.0461 + $0.3190, `run-external` $0.6417). The LlamaIndex export prints no
+  cost; about $0.25 is estimated for it.
+- Every `lancet-eval` command ran with `PYTHONUTF8=1` to work around #84 (cp950 decoding of `psql` output).
