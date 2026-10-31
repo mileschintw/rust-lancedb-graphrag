@@ -39,7 +39,29 @@ S0 的程式路徑在紙上走得通：沒有找到會讓步驟 2、3 的指令�
 
 ## S1（RUN 步驟 1 與 4）
 
-稽核中（subagent 進行中），完成後補上。
+對照 `main` @ `c69d4868`（#72 修 #65、#73 修 #67 與 #69，兩者稽核期間已合併）。由 subagent 逐步追蹤，兩個 blocker 我已親自讀碼確認。
+
+### 發現（S1）
+
+| # | 檔案:行 | 破壞的 RUN 步驟 | 擋住 | 內容 |
+|---|---|---|---|---|
+| #79-1 | `eval/src/lancet_eval/seed.py:486-549`；`gateway/main.go`（`compensateFailedIngest`）；`identity.py:198-205` | 1.4、1.5、4.3、4.4 | S1 | seed 某篇 ingestion 失敗時以新 ID 重傳，gateway 留下 `failed` 列。1.4 的查詢不過濾 status，會印 347 以上，指南叫人停；`index_identity` 也因 `extra_in_pg` 與 "rows not completed" 失敗。約 4,000 次 extraction 中只要一次暫時性失敗就會發生。修法：1.4 加 `status = 'completed'`，並加一步 `lancet-eval identity pg-delete-extras --store eval-s1`。 |
+| #79-2 | `RUN-S0-S1.md:342-346` | After the run | 不擋（可重現性） | `document_map.eval-s1.json` 不在 gitignore，卻不在提交清單；`score` 讀它來評 `merged/` 紀錄，換 checkout 就無法重評。 |
+| #79-3 | `run.py`（`require_split_gates`，dev role 跳過 D-73）；指南 Rules | 4.2、4.4 | 不擋 | dev role 的 drive 不檢查乾淨樹（D-170），與指南「drive 拒絕髒 `eval/src/`」不符；只有 score 會擋，那時已付費。建議 4 前先看 `git status`；harness shell 也 export `LANCET_ENV`；D-263 snippet 的 JSON 寫法（NaN、CRLF）與 `compare-levers` 不一致。 |
+| （已修） | `seed.py:416-424`（舊） | 1.3 | — | seed 到 `corpora/multihop_rag_s1_dev/` 找文件而該目錄不存在；PR #73（已合併）改走 `map_corpus`。不另開 issue。 |
+| 併入 #77 | `run.py`、`external_run.py` | 1.3、4.x | 不擋 | seed 與 drive 都不印 D-258 成本估算。cap 程式仍在但 `--stage-cap 100` 不會觸發，符合 D-258 的「stays built」。 |
+
+未開 issue（外觀）：`lever-comparison.md` 參考 arm 仍寫 "hybrid"；`merged/` arm 印 chunk-ID Hits@4 而沒標「不讀」；report.json 的 graph 維度不認得 S1 的 graph arm（決策不讀它們）。
+
+### 與已知 issue 的依賴（S1）
+
+- #67、#69：PR #73 已合併，步驟 0 的表可更新為已解除；步驟 1.5 的 `store_chunking` 檢查已存在。
+- #65：PR #72 已合併；4.5 可直接用 `export-context`，stopgap 不再需要，4.4 的「預期非零 exit」也應不再出現（請 run lane 依新 main 確認）。
+- #68：仍開著，4.6、4.7 等它。合併後 gold-chunk 表也要涵蓋 dev 題目（subagent 未開該檔，未驗證）。
+
+### 查過、沒問題的（S1）
+
+Atlas env `eval-s1` 與其 schema 檔；engine overlay `./data/lancedb-eval-s1`；gateway schema 由 env URL 決定，未設時 fail closed；`load_settings(store=...)` 與分 store 的 document map；`small/`、`merged/` 標籤在解析、子集、journal key、raw-events 目錄、score 的分 store map、兩個 prereg arm 集、null guard、分 store preflight canary 都接受；兩次 drive 寫同一 journal 的 header 與 resume key 不衝突；`.gitignore` 例外涵蓋 S1 run 目錄；4.5、4.7 的 Python snippet 函式名稱與簽名都存在；S1 不讀 held-out 題目內容（D-237）。
 
 ## S2
 

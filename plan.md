@@ -30,7 +30,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | done @ d5543f44; PR #71 open, merge once `ci` passes (user: "開 PR，CI 過 merge，並刪殘留 (Recommended)", 2026-10-31; then delete `D:/lane56-targets`) | — |
+| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | done @ d5543f44; PR #71 open; engine job failed twice on the known tracing flake. User: "等 lane 59 merge 後再跑 (Recommended)" (2026-10-31). After #59 merges, ask lane 56 to merge main into its branch and push; merge on green; then delete `D:/lane56-targets` | — |
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
 | 68 | #68 | local_698777e7-e8f4-479a-8181-1d7d2e5cab68 (`claude/lane-68-db7b79`) | started 2026-10-31 00:16 -0700 on the user's typed "Start 68" (blocks scoring of S1 and S2) | — |
