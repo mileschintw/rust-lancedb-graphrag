@@ -29,6 +29,18 @@ from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice, rewrite_p
 from lancet_eval.replay import export_row_sha256
 from lancet_eval.thresholds import FamilySpec, StagePreRegistration
 
+if "replay_source_arm" in {f.name for f in dataclasses.fields(StagePreRegistration)}:
+    S2PreRegistration = StagePreRegistration
+else:
+    # Lane 110 adds `replay_source_arm: str` to the S2 constant's type (#110); until
+    # it lands, the fixture constant carries the field itself (drop this branch then).
+    @dataclasses.dataclass(frozen=True)
+    class S2PreRegistration(StagePreRegistration):  # type: ignore[no-redef]
+        """`StagePreRegistration` plus the S1 arm an S2 run replays (#109, #110)."""
+
+        replay_source_arm: str = ""
+
+
 S1_CORPUS = "levers_s1"
 BASE = "hybrid+rerank+metadata"
 OTHER = "hybrid"
@@ -239,10 +251,12 @@ def s2_prereg(
     readers: tuple[tuple[str, ReaderDeclaration], ...] = ((READER, HAIKU),),
     arm: str = READER_ARM,
     arms: tuple[str, ...] | None = None,
+    replay_source_arm: str = BASE,
 ) -> StagePreRegistration:
     """A synthetic S2 stage constant: the deepseek arm against its reader arms.
 
     `arms` names several reader arms (#54's three readers); by default it is `arm`.
+    `replay_source_arm` is the S1 arm `replay-init` must carry (#109, #110).
     """
     base = fx.make_prereg()
     fields = {f.name: getattr(base, f.name) for f in dataclasses.fields(base)}
@@ -253,4 +267,6 @@ def s2_prereg(
         descriptive_arms=(),
         null_guard_arms=reader_arms,
     )
-    return StagePreRegistration(**fields, readers=readers)
+    return S2PreRegistration(
+        **fields, readers=readers, replay_source_arm=replay_source_arm
+    )
