@@ -1,10 +1,11 @@
 """Seam S-F (#52, D-257): a fixture S1 run and the S2 run replayed from it.
 
-The S1 run holds the deepseek arm `BASE` (and a second engine arm that is not
-replayed) with a context export. `replay-init` carries `BASE` into an S2 run; the
-reader arm's records are then appended the way `batch fetch` (#53) will write them:
-one replay record and one export row (the base row under the reader arm's label) per
-question. Every record is provenance-clean unless a test changes it.
+The S1 run, on its own dev corpus `S1_CORPUS`, holds the deepseek arm `BASE` (and a
+second engine arm that is not replayed) with a context export. `replay-init` carries
+`BASE` into an S2 run on the S2 corpus (`levers_fixture.CORPUS`); the reader arm's
+records are then appended the way `batch fetch` (#53) will write them: one replay
+record and one export row (the base row under the reader arm's label) per question.
+Every record is provenance-clean unless a test changes it.
 
 Built on `levers_fixture`, whose corpus, questions and engine records it reuses.
 """
@@ -22,10 +23,12 @@ import levers_fixture as fx
 
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, ContextExportRow
 from lancet_eval.journal import Journal, ReplayProvenance, RunRecord, WorkflowWireMeta
+from lancet_eval.parity import user_message
 from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice, rewrite_pack_body
 from lancet_eval.replay import export_row_sha256
 from lancet_eval.thresholds import FamilySpec, StagePreRegistration
 
+S1_CORPUS = "levers_s1"
 BASE = "hybrid+rerank+metadata"
 OTHER = "hybrid"
 READER = "haiku-5.5"
@@ -67,26 +70,45 @@ def pack_body(qid: str) -> str:
     return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 
 
+def write_corpora(
+    root: Path, qs: fx.Questions, *, s1_role: str = "dev", s2_role: str = "dev"
+) -> Path:
+    """The S1 corpus (`BASE`, `OTHER`) and the S2 corpus (`BASE`, `READER_ARM`).
+
+    Returns the gold the S2 corpus scores against.
+    """
+    fx.write_corpus(root, qs, (BASE, OTHER), token=None, name=S1_CORPUS, role=s1_role)
+    return fx.write_corpus(root, qs, (BASE, READER_ARM), role=s2_role)
+
+
 def write_s1_run(
     run_dir: Path,
     qs: fx.Questions,
     arms: Iterable[str] = (BASE, OTHER),
     *,
     spec_fn: fx.SpecFn = fx.default_spec,
+    corpus: str = S1_CORPUS,
 ) -> list[RunRecord]:
-    """An S1 run: a context-export journal and one export row per success record."""
+    """An S1 run: a context-export journal and one export row per success record.
+
+    Each row's `assembled_prompt` is the user message of `pack_body(qid)`.
+    """
     journal = Journal(run_dir / "journal.jsonl")
-    journal.write_header(corpus=fx.CORPUS, partial=False, context_export=True)
+    journal.write_header(corpus=corpus, partial=False, context_export=True)
     records: list[RunRecord] = []
     rows: list[str] = []
     for qid in [*qs.g_ids, *qs.nulls]:
         for arm in arms:
             spec = spec_fn(arm, qid)
-            rec = fx.make_record(arm, qid, spec, qs)
+            rec = fx.make_record(arm, qid, spec, qs, corpus=corpus)
             journal.append(rec)
             records.append(rec)
             if not spec.errored:
-                row = fx.make_evidence_export_row(arm, qid, qs, ranks=spec.ranks)
+                row = fx.make_evidence_export_row(
+                    arm, qid, qs, ranks=spec.ranks, corpus=corpus
+                )
+                row["assembled_prompt"] = user_message(pack_body(qid))
+                row["correlation_id"] = rec.correlation_id
                 rows.append(json.dumps(row) + fx.NL)
     (run_dir / CONTEXT_EXPORT_FILE).write_text("".join(rows), encoding="utf-8")
     return records

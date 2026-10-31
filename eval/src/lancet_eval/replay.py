@@ -2,13 +2,20 @@
 
 An S2 run replays an S1 arm's context to Claude readers. Its run directory scores by
 itself (Q9), so ``replay_init`` first copies the S1 arm's records (the deepseek
-reader's) and their context-export rows into a new S2 journal, byte for byte. The
-journal header records where they came from under ``REPLAY_SOURCE_KEY``:
+reader's) and their context-export rows into a new S2 journal on the S2 corpus. Only
+``corpus`` changes, in the header, every carried record and every carried row: ``score``
+reads the corpus's arms and pre-registration from the header and refuses records that
+name another corpus. Both corpora must have ``[split] role = "dev"``: an S0 run read
+the held-out split, and replaying it would spend a held-out read D-237 does not have.
+The journal header records where the carried lines came from under
+``REPLAY_SOURCE_KEY``:
 
 - ``run``: the S1 run directory, as given;
+- ``corpus``: the S1 run's corpus;
 - ``arms``: the carried arm labels, in the order given;
 - ``row_sha256``: ``{arm: {question_id: export_row_sha256(row)}}`` for every carried
-  row.
+  row, as carried (under the S2 corpus). The S1 row is that row with ``corpus`` set
+  back to the S1 corpus.
 
 The reader arms' records (``<arm>@<reader>``, ``journal.ReplayProvenance``) are
 appended later by ``batch fetch`` (#53), each with an export row that is the carried
@@ -32,6 +39,7 @@ from lancet_eval.context_export import (
     ContextExportRow,
     read_export,
 )
+from lancet_eval.corpus import CorpusConfig, CorpusError, load_corpus
 from lancet_eval.journal import (
     Journal,
     RunRecord,
@@ -104,14 +112,13 @@ def _refuse_populated(path: Path) -> None:
         )
 
 
-def _record_lines(journal: Path, arms: set[str]) -> list[tuple[str, RunRecord]]:
-    """The journal's record lines whose arm is one of ``arms``, as written."""
-    lines: list[tuple[str, RunRecord]] = []
+def _source_records(journal: Path, arms: set[str]) -> list[RunRecord]:
+    """The journal's records whose arm is one of ``arms``, in journal order."""
+    records: list[RunRecord] = []
     with open(journal, encoding="utf-8") as f:
         for line_num, raw in enumerate(f, 1):
-            text = raw.rstrip("\r\n")
             try:
-                data = json.loads(text)
+                data = json.loads(raw)
             except ValueError:
                 continue
             if not isinstance(data, dict) or "graph_arm" not in data:
@@ -122,51 +129,60 @@ def _record_lines(journal: Path, arms: set[str]) -> list[tuple[str, RunRecord]]:
             except ValueError as exc:
                 raise ReplayError(f"{journal} line {line_num}: {exc}") from exc
             if arm in arms:
-                lines.append((text, record))
-    return lines
+                records.append(record)
+    return records
 
 
-def _export_lines(export: Path) -> dict[tuple[str, str], tuple[str, ContextExportRow]]:
-    """The export's rows by ``(question_id, arm)``, each with its line as written."""
+def _export_rows(export: Path) -> dict[tuple[str, str], ContextExportRow]:
+    """The export's rows by ``(question_id, arm)``."""
     if not export.is_file():
         return {}
     try:
         rows = read_export(export)
     except ContextExportError as exc:
         raise ReplayError(str(exc)) from exc
-    texts = [
-        line.rstrip("\r\n")
-        for line in export.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    return {
-        (row.question_id, row.arm): (text, row)
-        for text, row in zip(texts, rows, strict=True)
-    }
+    return {(row.question_id, row.arm): row for row in rows}
+
+
+def _dev_corpus(name: str, which: str) -> CorpusConfig:
+    """Loads corpus ``name``; refuses one whose ``[split]`` role is not dev (D-237)."""
+    try:
+        config = load_corpus(name)
+    except CorpusError as exc:
+        raise ReplayError(f"the {which} {name!r} does not load: {exc}") from exc
+    if config.split_role != "dev":
+        raise ReplayError(
+            f"D-237: the {which} {name!r} has [split] role {config.split_role!r}, not "
+            "'dev'; replaying it to the readers would be a held-out read"
+        )
+    return config
 
 
 def replay_init(
-    *, source_run: Path | str, arms: Sequence[str], run: Path | str
+    *, source_run: Path | str, arms: Sequence[str], run: Path | str, corpus: str
 ) -> ReplayInitResult:
     """Carries S1 arms' records and export rows into a new S2 journal (D-257, Q9).
 
-    Every record of each arm is copied as written, error records included, and the
-    export row of each success record with it. Nothing is written unless every check
-    passes.
+    Every record of each arm is carried, error records included, and the export row of
+    each success record with it, each with ``corpus`` set to the S2 corpus and nothing
+    else changed. Nothing is written unless every check passes.
 
     Args:
         source_run: The S1 run directory (``journal.jsonl`` and
             ``context_export.jsonl``).
         arms: The S1 arm labels to carry.
         run: The S2 run directory.
+        corpus: The S2 corpus, which lists the carried arms and their reader arms.
 
     Returns:
         The paths written and the counts carried.
 
     Raises:
         ReplayError: If an arm is unknown, repeated, a reader arm, or holds no record
-            in the source run; a success record of a carried arm has no export row; or
-            the S2 journal or export already holds data.
+            in the source run; the source run's corpus or the S2 corpus does not load
+            or is not a dev corpus (D-237); the S2 corpus does not list a carried arm;
+            a success record of a carried arm has no export row; or the S2 journal or
+            export already holds data.
     """
     source = Path(source_run)
     target = Path(run)
@@ -179,8 +195,8 @@ def replay_init(
     source_journal = source / JOURNAL_FILE
     if not source_journal.is_file():
         raise ReplayError(f"the source run has no journal: {source_journal}")
-    records = _record_lines(source_journal, set(wanted))
-    held = {canonical_arm(rec.graph_arm) for _, rec in records}
+    records = _source_records(source_journal, set(wanted))
+    held = {canonical_arm(rec.graph_arm) for rec in records}
     absent = [arm for arm in wanted if arm not in held]
     if absent:
         in_run = sorted({
@@ -190,10 +206,20 @@ def replay_init(
             f"arm(s) {absent} hold no record in the source run {source}; its arms are "
             f"{in_run}"
         )
-    rows = _export_lines(source / CONTEXT_EXPORT_FILE)
+    header = read_journal_header(source_journal) or {}
+    source_corpus = str(header.get("corpus") or records[0].corpus)
+    _dev_corpus(source_corpus, "source run's corpus")
+    listed = {canonical_arm(label) for label in _dev_corpus(corpus, "S2 corpus").arms}
+    unlisted = [arm for arm in wanted if arm not in listed]
+    if unlisted:
+        raise ReplayError(
+            f"the S2 corpus {corpus!r} does not list the carried arm(s) {unlisted}; "
+            "score would refuse their records"
+        )
+    rows = _export_rows(source / CONTEXT_EXPORT_FILE)
     missing = [
         f"{rec.question_id}/{rec.graph_arm}"
-        for _, rec in records
+        for rec in records
         if rec.outcome == "success" and (rec.question_id, rec.graph_arm) not in rows
     ]
     if missing:
@@ -202,28 +228,36 @@ def replay_init(
             f"row in {source / CONTEXT_EXPORT_FILE}: {_listed(missing)}"
         )
 
-    carried_rows: dict[tuple[str, str], tuple[str, ContextExportRow]] = {}
-    for _, rec in records:
+    carried_rows: dict[tuple[str, str], ContextExportRow] = {}
+    for rec in records:
         key = (rec.question_id, rec.graph_arm)
         if key in rows:
-            carried_rows[key] = rows[key]
+            carried_rows[key] = rows[key].model_copy(update={"corpus": corpus})
     hashes: dict[str, dict[str, str]] = {}
-    for (qid, arm), (_, row) in carried_rows.items():
+    for (qid, arm), row in carried_rows.items():
         hashes.setdefault(canonical_arm(arm), {})[qid] = export_row_sha256(row)
 
-    header = read_journal_header(source_journal) or {}
-    Journal(journal_path).write_header(
-        corpus=str(header.get("corpus") or records[0][1].corpus),
+    journal = Journal(journal_path)
+    journal.write_header(
+        corpus=corpus,
         partial=bool(header.get("partial", False)),
         order_seed=header.get("order_seed"),
         split_sha256=header.get("split_sha256"),
         context_export=True,
-        replay_source={"run": str(source), "arms": wanted, "row_sha256": hashes},
+        replay_source={
+            "run": str(source),
+            "corpus": source_corpus,
+            "arms": wanted,
+            "row_sha256": hashes,
+        },
     )
-    with open(journal_path, "a", encoding="utf-8") as f:
-        f.writelines(text + "\n" for text, _ in records)
+    for rec in records:
+        journal.append(rec.model_copy(update={"corpus": corpus}))
     with open(export_path, "w", encoding="utf-8") as f:
-        f.writelines(text + "\n" for text, _ in carried_rows.values())
+        f.writelines(
+            json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n"
+            for row in carried_rows.values()
+        )
     return ReplayInitResult(
         journal_path=journal_path,
         export_path=export_path,

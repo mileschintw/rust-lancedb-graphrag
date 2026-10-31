@@ -31,7 +31,7 @@ from lancet_eval.arms import (
     resolve_arm,
 )
 from lancet_eval.context_export import CONTEXT_EXPORT_FILE, validate_row
-from lancet_eval.journal import read_journal_header
+from lancet_eval.journal import RunRecord, read_journal_header
 from lancet_eval.provenance import provenance_failures, replay_run_failures
 from lancet_eval.replay import (
     REPLAY_SOURCE_KEY,
@@ -108,11 +108,14 @@ def test_a_reader_arm_slug_is_filesystem_safe() -> None:
 # ---- seam S-F: carry, replay, score -----------------------------------------------
 
 
-def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs):  # type: ignore[no-untyped-def]
-    """A corpus of the deepseek arm and the reader arm, and an S1 run of two arms."""
+def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, roles=None, **kwargs):  # type: ignore[no-untyped-def]
+    """The S1 and S2 corpora, and an S1 run of two arms on the S1 corpus.
+
+    `roles` passes the corpora's `[split]` roles to `replay_fixture.write_corpora`.
+    """
     qs = fx.make_questions(10, 5)
     root = tmp_path / "repo"
-    gold = fx.write_corpus(root, qs, (rf.BASE, rf.READER_ARM))
+    gold = rf.write_corpora(root, qs, **(roles or {}))
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
     monkeypatch.setattr(thresholds, fx.TOKEN, rf.s2_prereg(), raising=False)
     s1 = tmp_path / "s1"
@@ -120,10 +123,14 @@ def _s1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **kwargs):  # type: ign
     return s1, gold, qs
 
 
+def _init(s1: Path, s2: Path, arms=(rf.BASE,), corpus: str = fx.CORPUS):  # type: ignore[no-untyped-def]
+    return replay_init(source_run=s1, arms=list(arms), run=s2, corpus=corpus)
+
+
 def _s2(tmp_path, monkeypatch, *, build=None, row_fn=None):  # type: ignore[no-untyped-def]
     s1, gold, qs = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    _init(s1, s2)
     rf.append_reader_arm(s2, qs, build=build, row_fn=row_fn)
     return s2, gold, qs
 
@@ -134,34 +141,75 @@ def _score(run: Path, gold: Path):  # type: ignore[no-untyped-def]
     return score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
 
 
-def test_replay_init_carries_the_arm_records_and_rows_with_their_hashes(
+def test_replay_init_carries_the_arm_records_and_rows_under_the_s2_corpus(
     tmp_path, monkeypatch
 ) -> None:
     s1, _, qs = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    result = replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    result = _init(s1, s2)
     n = len(qs.g_ids) + len(qs.nulls)
     assert (result.records, result.rows) == (n, n)
 
     source_lines = (s1 / "journal.jsonl").read_text(encoding="utf-8").splitlines()
     carried_lines = (s2 / "journal.jsonl").read_text(encoding="utf-8").splitlines()
     base_lines = [line for line in source_lines[1:] if f'"{rf.BASE}"' in line]
-    assert carried_lines[1:] == base_lines
+    carried = [RunRecord.model_validate_json(line) for line in carried_lines[1:]]
+    assert carried == [
+        RunRecord.model_validate_json(line).model_copy(update={"corpus": fx.CORPUS})
+        for line in base_lines
+    ]
 
     header = read_journal_header(s2 / "journal.jsonl")
     assert header is not None
     assert header["corpus"] == fx.CORPUS and header["context_export"] is True
     source = header[REPLAY_SOURCE_KEY]
     assert source["run"] == str(s1)
+    assert source["corpus"] == rf.S1_CORPUS
     assert source["arms"] == [rf.BASE]
-    rows = rf.read_rows(s1)
+    s1_rows = rf.read_rows(s1)
+    s2_rows = rf.read_rows(s2)
+    assert set(s2_rows) == {(q, rf.BASE) for q in [*qs.g_ids, *qs.nulls]}
+    for key, row in s2_rows.items():
+        assert row == s1_rows[key].model_copy(update={"corpus": fx.CORPUS})
+    # The hash covers the row as carried; the S1 row is that row with the source corpus.
     assert source["row_sha256"] == {
         rf.BASE: {
-            qid: export_row_sha256(rows[(qid, rf.BASE)])
+            qid: export_row_sha256(s2_rows[(qid, rf.BASE)])
             for qid in [*qs.g_ids, *qs.nulls]
         }
     }
-    assert set(rf.read_rows(s2)) == {(q, rf.BASE) for q in [*qs.g_ids, *qs.nulls]}
+
+
+def test_replay_init_refuses_a_source_run_whose_corpus_is_not_dev(
+    tmp_path, monkeypatch
+) -> None:
+    # An S0 run reads the held-out split: carrying it would spend a third read (D-237).
+    s1, _, _ = _s1(tmp_path, monkeypatch, roles={"s1_role": "heldout"})
+    with pytest.raises(ReplayError, match="D-237") as excinfo:
+        _init(s1, tmp_path / "s2")
+    assert rf.S1_CORPUS in str(excinfo.value) and "'heldout'" in str(excinfo.value)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_replay_init_refuses_an_s2_corpus_that_is_not_dev(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch, roles={"s2_role": "heldout"})
+    with pytest.raises(ReplayError, match="D-237"):
+        _init(s1, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_replay_init_refuses_an_unknown_s2_corpus_or_one_without_the_arms(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    with pytest.raises(ReplayError, match="no-such-corpus"):
+        _init(s1, tmp_path / "s2", corpus="no-such-corpus")
+    # The S2 corpus lists BASE and its reader arm, not OTHER.
+    with pytest.raises(ReplayError, match="does not list"):
+        _init(s1, tmp_path / "s2", arms=(rf.BASE, rf.OTHER))
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
 
 def test_replay_init_refuses_a_source_arm_with_a_missing_export_row(
@@ -176,7 +224,7 @@ def test_replay_init_refuses_a_source_arm_with_a_missing_export_row(
     ]
     export.write_text("".join(kept), encoding="utf-8")
     with pytest.raises(ReplayError, match="lv-g002") as excinfo:
-        replay_init(source_run=s1, arms=[rf.BASE], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2")
     assert "export row" in str(excinfo.value)
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
@@ -186,10 +234,10 @@ def test_replay_init_refuses_a_second_init_into_a_populated_journal(
 ) -> None:
     s1, _, _ = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
-    replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+    _init(s1, s2)
     before = (s2 / "journal.jsonl").read_bytes()
     with pytest.raises(ReplayError, match="already holds"):
-        replay_init(source_run=s1, arms=[rf.BASE], run=s2)
+        _init(s1, s2)
     assert (s2 / "journal.jsonl").read_bytes() == before
 
 
@@ -198,9 +246,9 @@ def test_replay_init_refuses_an_arm_the_source_run_does_not_hold(
 ) -> None:
     s1, _, _ = _s1(tmp_path, monkeypatch)
     with pytest.raises(ReplayError, match="hybrid\\+graph"):
-        replay_init(source_run=s1, arms=["hybrid+graph"], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2", arms=["hybrid+graph"])
     with pytest.raises(ReplayError, match="reader arm"):
-        replay_init(source_run=s1, arms=[rf.READER_ARM], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2", arms=[rf.READER_ARM])
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
 
 
@@ -213,7 +261,7 @@ def test_replay_init_refuses_a_source_record_it_cannot_read_naming_the_line(
         f.write('{"corpus": "c", "question_id": "q", "graph_arm": "no-such-arm",')
         f.write(' "outcome": "success"}\n')
     with pytest.raises(ReplayError, match="line 32: unknown arm label"):
-        replay_init(source_run=s1, arms=[rf.BASE], run=tmp_path / "s2")
+        _init(s1, tmp_path / "s2")
 
 
 def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> None:
@@ -222,9 +270,15 @@ def test_the_replay_init_command_carries_and_refuses(tmp_path, monkeypatch) -> N
     s1, _, _ = _s1(tmp_path, monkeypatch)
     s2 = tmp_path / "s2"
     args = ["replay-init", "--source-run", str(s1), "--arms", rf.BASE, "--run", str(s2)]
+    no_corpus = CliRunner().invoke(app, args)
+    assert no_corpus.exit_code == 2
+    assert not (s2 / "journal.jsonl").exists()
+    args += ["--corpus", fx.CORPUS]
     ok = CliRunner().invoke(app, args)
     assert ok.exit_code == 0, ok.output
     assert "15 record(s)" in ok.output
+    header = read_journal_header(s2 / "journal.jsonl")
+    assert header is not None and header["corpus"] == fx.CORPUS
     again = CliRunner().invoke(app, args)
     assert again.exit_code == 1
     assert "already holds" in again.output
@@ -242,6 +296,8 @@ def test_s_f_a_carried_deepseek_arm_and_a_reader_arm_score_and_pair(
 
     s2, gold, qs = _s2(tmp_path, monkeypatch, build=build)
     _score(s2, gold)
+    # score writes report.json for a complete run only: the carried records name
+    # the S2 corpus, so no corpus disagreement forces the report partial.
     assert (s2 / "report.json").is_file()
     payload = build_lever_comparison(s2, gold_chunks_path=gold)
     family = next(f for f in payload["families"] if f["primary"] == "answer_usable")
