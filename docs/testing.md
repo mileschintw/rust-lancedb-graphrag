@@ -122,8 +122,9 @@ docs no test reads runs only `changes` and `ci`.
   runner's 14 GB disk and the repository's 10 GB cache.
 - Job time limits: `engine` 45 minutes (a cold build after a cache eviction), every other job 10.
 - CI environment settings the tests need, found on the first CI run (PR #57):
-  - `engine` installs Ubuntu's `protobuf-compiler`: lance's build scripts run `protoc`. A local build needs `protoc` on
-    `PATH` too.
+  - `engine` installs Ubuntu's `protobuf-compiler` and `libprotobuf-dev`. lance's build scripts run `protoc`, and their
+    protos import the well-known types (`google/protobuf/empty.proto`), which only `libprotobuf-dev` ships. A local
+    build needs both, or a protoc release that bundles its `include/` directory.
   - The eval pytest step sets `_TYPER_FORCE_DISABLE_TERMINAL=1`. Typer forces a Rich terminal when `GITHUB_ACTIONS`,
     `FORCE_COLOR` or `PY_COLORS` is set, and the ANSI codes break the CLI-help assertions. Set it locally too if your
     shell sets `FORCE_COLOR`.

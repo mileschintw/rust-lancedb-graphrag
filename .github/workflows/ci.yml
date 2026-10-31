@@ -103,8 +103,9 @@ jobs:
         with:
           components: clippy
       - name: protoc
-        # lance's build scripts compile proto3 files with protoc; Ubuntu's package is enough
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends protobuf-compiler
+        # lance's build scripts compile proto3 files with protoc. protobuf-compiler ships no
+        # .proto files; libprotobuf-dev adds the well-known types (google/protobuf/empty.proto)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends protobuf-compiler libprotobuf-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: engine
