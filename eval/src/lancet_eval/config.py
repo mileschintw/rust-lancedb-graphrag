@@ -30,6 +30,7 @@ def get_commit_sha() -> str:
             cwd=repo_root(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=True,
         )
         return res.stdout.strip()

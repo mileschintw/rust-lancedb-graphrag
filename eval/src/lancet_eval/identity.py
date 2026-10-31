@@ -85,6 +85,7 @@ def list_lancedb_document_ids(lancedb_path: str) -> dict[str, Any]:
             cwd=repo_root(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=1800,
         )
     except subprocess.TimeoutExpired as exc:
