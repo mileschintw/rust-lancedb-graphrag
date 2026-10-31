@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 51 merged (moved 2026-10-30 22:11 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 51, #51 Request rewrite for Claude readers: session local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f, branch `claude/lane-51-ff04eb` @ 3d46e6b1. PR #60 merged 2026-10-30 as 107d92cb on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 1m27s; engine and gateway skipped by path filter). #51 closed. New `reader_request.py`, 43 tests, 4 golden bodies; eval fast tier 2676 passed. Its open question became ruling 7 (between_tools encoding). Note for #52: `pack_body.json` is hand-built from `OpenRouterChatPayload` (schema keys sorted); the real `pack` end-to-end check is #52's integration test (Q14).
+
 ## Lane 44 merged (moved 2026-10-30 18:42 -0700, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 44, #44 test-suite tiering, time budget and CI: session local_926e074a-57c2-4ee7-8614-c320ca44dced, branch `claude/lane-44-fc59e2` @ dbab8f18. Fast/slow/live tiers in `docs/testing.md`; per-target floors replace hardcoded Rust/Go counts; `.github/workflows/ci.yml` path-filtered per module, single required check `ci`; 15 low-value tests deleted and 6 rewritten or trimmed per the user's review of `reports/44-deletion-candidates.md`. User rulings: "列清單給我審", "全照建議 (Recommended)", "照做 (Recommended)", "加進 lane 44 (Recommended)", "允許 (Recommended)" (CI reads committed held-out files offline). The first CI run took four pushes to fix environment gaps: protoc plus `libprotobuf-dev`, `_TYPER_FORCE_DISABLE_TERMINAL=1`, `UV_LINK_MODE=copy`, and ANSI-safe floor parsing. PR #57 merged 2026-10-30 as 44744ee2 on the user's "開 PR，CI 過了就 merge (Recommended)" once `ci` passed (engine job 16m31s, cold cache). #44 closed. `engine/target` deleted. project.md checks updated to the fast tier on the user's "更新 (Recommended)". Branch protection requiring `ci` is the user's repo setting, not yet set.

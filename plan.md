@@ -30,7 +30,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | started | — |
-| 51 | #51 | local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f (`claude/lane-51-ff04eb`) | done @ 3d46e6b1; PR #60 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-30) | — |
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 
 Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); the app refused the start over Remote Control, so started 2026-10-30 21:39 -0700 on the user's typed "開始". Each has its own worktree. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`; lane 56's sccache install approved 2026-10-30 on the user's "照提案安裝 (Recommended)": winget Mozilla.sccache, `SCCACHE_DIR=D:\sccache`, `SCCACHE_CACHE_SIZE=40G`, `rustc-wrapper = "sccache"` in the user's global `~/.cargo/config.toml` (all cargo builds on this machine).
@@ -39,7 +38,7 @@ Lane 44 started 2026-10-30 15:25 -0700 on the user's typed "Start 44"; runs alon
 
 Lane 39 started 2026-10-30 13:35 -0700 on the user's typed "Start 39". Lanes 14, 25, 34, 36 started 2026-10-30 13:03 -0700 on the user's typed "Start all four". No same-section overlap: #14 owns `cli.py` › `run-external`, `run.py` helpers, `external_run.py`; #25 owns `engine/`; #34 `comparison.py`; #36 `score.py` › `_judged_dimensions` detail keys (`comparison.py` does not read them). Brief 14 carries lane 11's open `chunk_index` question (`<doc>#<n>` vs `<doc>:<n>`) for the worker to decide or escalate.
 
-Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 14, 25, 29, 30, 34, 36, 39, 44 and 46 merged (#6 closed with #14, PR #45) → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
+Started 2026-10-29 18:52 -0700 on the user's "Start 7, 8, 9". The app's branch names are `claude/lane-<key>-<suffix>`, not `lane-<key>`. Lanes 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 23, 14, 25, 29, 30, 34, 36, 39, 44, 46 and 51 merged (#6 closed with #14, PR #45) → `plan-history.md`. Lanes 15 and 23 started 2026-10-29 21:40 -0700 on the user's "Start 15 and 23". Lanes 29 and 30 started 2026-10-29 23:03 -0700 on the user's typed "Start 29 and 30". Contract lane 12 ↔ 13 (external `pipeline` echo keys, label `llamaindex`) is in briefs 12 and 13; #14's brief must copy it.
 
 Lanes 10, 11, 12, 13, 16, 20 approved on the user's "六個都開 (Recommended)" (2026-10-29 20:12 -0700); the app refused the start from an event turn, so started 2026-10-29 20:15 -0700 on the user's typed "Start the six lanes".
 
@@ -53,12 +52,11 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 |---|---|---|---|---|---|
 | #49 | — | — | — | S2 spec only (D-254 to D-259, PR #55) | limited: parent spec |
 | #47 | 1 | #44 (merged) | none set | `engine/src/bin/generate_from_context.rs` › chunk-ID parsing: also parse `<document_id>#<n>` (D-259; decided "都照建議", 15:17) | free |
-| #51 | 1 | #44 (merged) | none set | new `eval/src/lancet_eval/reader_request.py`, `test_reader_request.py` | free |
 | #56 | 1 (next to #47 and #51) | — (after #44; files overlap) | none set | `engine/Cargo.toml` › `[profile.*]`, new `.cargo/config.toml` if needed, `docs/testing.md` (job-count rule, timings), CI cache check in #44's workflow (opened 2026-10-30 from a forked side session on the user's "把這件事規劃成issue，然後交給coordinator安排如何？") | limited: item 1 (sccache machine setup) needs the user's yes; the rest is free |
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #59 | 1 | — | none set | `engine/` telemetry_query tests (`engine_logs_carry_no_user_content`, two `graph_augmentation_record_*`, `graph_spans_survive_a_dropped_parent_*`) and any shared tracing/OTel test setup; per-test timeout in `.github/workflows/ci.yml` or `docs/testing.md` only after lane 56 merges (opened 2026-10-30 by lane 56: main run 41156665462 cancelled at 45 min, 4 tests hung; PR run of the same commit passed) | free; waits for the user's start |
 | #50 | 3 | #44, #47 | none set | `engine/src/bin/generate_from_context.rs` › new `render` mode (same file as #47) | free |
-| #52 | 3 | #44, #51 | none set | `arms.py` reader suffix, `provenance.py`, `journal.py`, new `replay.py`, `preregistration.py`, `thresholds.py`, `cli.py` › `replay-init`, `test_replay.py` | free |
+| #52 | 1 | #44, #51 (both merged; lane 51 → `plan-history.md`) | none set | `arms.py` reader suffix, `provenance.py`, `journal.py`, new `replay.py`, `preregistration.py`, `thresholds.py`, `cli.py` › `replay-init`, `test_replay.py` | free |
 | #53 | 4 | #50, #51, #52 | none set | new `batch.py`, `batch_client.py`, `cli.py` › `batch`, `parity.py` (if needed), `test_batch.py` | free |
 | #54 | 4 | #52 | none set | `lever_comparison.py`/`comparison.py`, `score.py` (reader-arm Hits@4 skip), `measure.py` › `compute_spend`, `test_reader_comparison.py` | free |
 
