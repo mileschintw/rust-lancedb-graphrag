@@ -140,3 +140,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
   - D:/lane56-targets: the coordinator's delete was blocked as a protected path; left for the user to delete by hand.
 - **Lane 74 (#74, #75):** PR #96 merged 2026-10-31 at c566a7cc (ci green). **Lane 95 (#95):** PR #97 merged 2026-10-31 at 266600d4 (ci green); D-265 is on main.
 - **Lane 98 (#98, #99):** PR #101 merged 2026-10-31 (ci green). #98 is clean. #99: neither S0 arm sent input_type, and the step 2.1 live check showed it is forwarded.
+- **Lane 76 (#76):** PR #102 merged 2026-10-31 (ci green). The stub serves /rerank, the export takes an endpoint override, and the S0 rehearsal corpus was added.

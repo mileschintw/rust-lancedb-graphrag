@@ -56,7 +56,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | review | — |
-| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | done; PR #102, merge on green. The LlamaIndex arm rehearsed free; the Lancet arm's rehearsal needs the live store (main checkout only) | — |
 | audit-s1b | none (read-only audit) | local_4cf636bb-f778-4b7e-b41a-a891d0b6b7fc | started on the user's "Start audit part 2" | — |
 | 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | done; PR #103, merge on green (mechanical overlap with #102 on llamaindex `cli.py`; the second to merge may need main merged in) | — |
 | audit-s1a | none (read-only audit) | local_484d4a13-5af3-4296-9c4d-deb975f8e6ec | done: **passed**, no blocker (reports/audit-s1a.md). Cost about $1.9-2.9, ceiling about $10.8 excluding retries (A3). Before the build: redo step 0's builds after pulling (A1) and remove the untracked `scratch_new.txt` from the main checkout (A5). Optional: check `document_count=0` after 1.2 (A2); seed prints no D-258 estimate (A4) | — |
@@ -86,7 +85,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #64 | 1 (lane 64 running) | — | none | `engine/src/ingest.rs` › `REBUILD_COUNTER`, `engine/src/tests.rs` › `debounce_coalesces_burst` | free |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
-| #76 | 1 (lane 76 running) | — | none | `provider_stub.py`, llamaindex `providers.py`, `cli.py` › `export` client construction, new `multihop_rag_s0_rehearsal.toml` | free |
 | #77 | 1 (lane 77 running, with #78) | — | none (mechanical overlap with #76 on `export`) | `eval/src/lancet_eval/cli.py` › `run_benchmark`, `run_external_command`; llamaindex `cli.py` › `export` | free |
 | #78 | 1 (lane 77 running) | — | none | llamaindex `cli.py` › `export` (split gates); `run.py` › `require_split_gates` | free |
 
