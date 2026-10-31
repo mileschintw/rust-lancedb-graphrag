@@ -141,3 +141,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **Lane 74 (#74, #75):** PR #96 merged 2026-10-31 at c566a7cc (ci green). **Lane 95 (#95):** PR #97 merged 2026-10-31 at 266600d4 (ci green); D-265 is on main.
 - **Lane 98 (#98, #99):** PR #101 merged 2026-10-31 (ci green). #98 is clean. #99: neither S0 arm sent input_type, and the step 2.1 live check showed it is forwarded.
 - **Lane 76 (#76):** PR #102 merged 2026-10-31 (ci green). The stub serves /rerank, the export takes an endpoint override, and the S0 rehearsal corpus was added.
+- **Lane 77 (#77, #78):** PR #103 merged 2026-10-31 at d03eae08 (ci green). **Lane 64 (#64):** PR #104 merged 2026-10-31 at d839f7b5 (ci green). Every S1 prerequisite in the approved path is now on main.
