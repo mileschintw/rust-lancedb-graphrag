@@ -252,7 +252,8 @@ documents no `between_tools`; Anthropic rejects `temperature` and `top_p` since 
   Anthropic; `reasoning_tokens` per D-255; the batch ID recorded. The carried deepseek records keep their export rows,
   source run and hash, so the S2 run directory scores alone. The report gives `answer_usable` on G, paired
   differences and the null guard per reader, and cost per answered question at sync list price × tokens for every
-  reader (price table in the pre-registration; actual batch spend reported apart). No evidence Hits@4 for S2.
+  reader (price table in the pre-registration; actual batch spend reported apart). No evidence Hits@4 for S2. Native
+  target: see D-265.
 - **D-258 Spend caps without truncation** (amends D-246). No stage stops halfway: a half-run arm is unusable and its
   spend sunk. A cost estimate is printed before a submit or a drive and never refuses. `run-external --stage-cap`
   stays built, but stage files set no cap or an unreachable one. D-246's figures remain the budget, not hard stops.
@@ -293,6 +294,16 @@ are [EXPERIMENT-S0.md](EXPERIMENT-S0.md) and [EXPERIMENT-S1.md](EXPERIMENT-S1.md
   keeps margin 0.10 (a net abstention drop above 0.10 of the null pairs fails: 2 or more with 10 pairs, 1 or more with
   8 or 9) and pair fraction 0.80 (at least 8 null pairs). It is
   read for the chunking choice and for the graph choice; a failed or not-evaluable guard vetoes the choice it guards.
+- **D-265 Replay clauses by reader target** (owner: "新增 D-ID", 2026-10-31; built in #90 for #82). The `is_byok`,
+  `provider` and `reasoning_tokens` clauses depend on the reader's `target`. OpenRouter target: unchanged, `is_byok`
+  is true and the provider is `"Anthropic"`. Native Anthropic target (D-255, D-260): `is_byok` is null, since that
+  response reports none, and the provider is the endpoint host `"api.anthropic.com"` (`REPLAY_PROVIDERS` in
+  `eval/src/lancet_eval/provenance.py`), since a native Message Batches result names no provider; a reader whose
+  thinking is not `on` must record `content_block_types`, none of them `thinking` or `redacted_thinking`, and
+  `reasoning_tokens` must still be 0. A thinking-on reader (Opus 5.5 at effort low) stays exempt. A new `prompt`
+  clause: the `pack` body's user message (`parity.user_message`) equals the carried base row's `assembled_prompt` byte
+  for byte, so the reader saw the prompt deepseek saw. Supersedes D-257's `is_byok`/provider wording for the native
+  target.
 
 ## Model access
 
