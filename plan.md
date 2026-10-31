@@ -28,9 +28,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| — | — | none running | — | — |
+| 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | started | — |
+| 51 | #51 | local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f (`claude/lane-51-ff04eb`) | started | — |
+| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 
-Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); briefs written. The app refused the start because the user was on Remote Control (sessions start only on a message typed in the desktop app); start them on the user's next typed desktop message. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`.
+Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); the app refused the start over Remote Control, so started 2026-10-30 21:39 -0700 on the user's typed "開始". Each has its own worktree. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`; lane 56's sccache install waits for the user's yes.
 
 Lane 44 started 2026-10-30 15:25 -0700 on the user's typed "Start 44"; runs alone (S2's first ticket; scope includes the CI owner comments on #44). Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
 
