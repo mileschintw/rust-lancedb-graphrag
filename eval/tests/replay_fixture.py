@@ -197,14 +197,19 @@ def s2_prereg(
     *,
     readers: tuple[tuple[str, ReaderDeclaration], ...] = ((READER, HAIKU),),
     arm: str = READER_ARM,
+    arms: tuple[str, ...] | None = None,
 ) -> StagePreRegistration:
-    """A synthetic S2 stage constant: the deepseek arm against one reader arm."""
+    """A synthetic S2 stage constant: the deepseek arm against its reader arms.
+
+    `arms` names several reader arms (#54's three readers); by default it is `arm`.
+    """
     base = fx.make_prereg()
     fields = {f.name: getattr(base, f.name) for f in dataclasses.fields(base)}
+    reader_arms = arms if arms is not None else (arm,)
     fields.update(
         reference_arm=BASE,
-        families=(FamilySpec("answer_usable", "decisional", (arm,), 0.05),),
+        families=(FamilySpec("answer_usable", "decisional", reader_arms, 0.05),),
         descriptive_arms=(),
-        null_guard_arms=(arm,),
+        null_guard_arms=reader_arms,
     )
     return StagePreRegistration(**fields, readers=readers)
