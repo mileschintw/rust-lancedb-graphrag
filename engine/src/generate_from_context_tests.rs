@@ -476,6 +476,33 @@ fn parse_args_reads_render_results() {
             .map(|c| (c.mode, c.results)),
         Ok((Mode::Render, Some("r.jsonl".to_owned())))
     );
+    // #53 renders each row under the levers it was packed with, so render reads them as pack does.
+    let rendered = args(&[
+        "render",
+        "--input",
+        "x.jsonl",
+        "--results",
+        "r.jsonl",
+        "--levers",
+        "rerank,evidence_metadata",
+    ])
+    .map(|c| c.levers);
+    let packed = args(&[
+        "pack",
+        "--input",
+        "x.jsonl",
+        "--levers",
+        "rerank,evidence_metadata",
+    ])
+    .map(|c| c.levers);
+    assert_eq!(rendered, packed);
+    assert_eq!(
+        rendered,
+        Ok(Some(vec![
+            "rerank".to_owned(),
+            "evidence_metadata".to_owned()
+        ]))
+    );
     assert!(
         args(&["render", "--input", "x.jsonl"]).is_err(),
         "render needs --results"
