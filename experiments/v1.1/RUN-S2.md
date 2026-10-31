@@ -171,26 +171,26 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
    ```
 
 5. Run the replay clauses `score` runs (D-257, D-265). `score` itself refuses the pilot, because the constant is not
-   committed (D-73):
+   committed (D-73). The snippet starts at column 0 so it can be pasted as it is:
 
-   ```bash
-   uv run --project eval python -c "
-   from lancet_eval import preregistration
-   from lancet_eval.context_export import read_export
-   from lancet_eval.journal import load_records, read_journal_header
-   from lancet_eval.pairing import deduplicate_by_arm
-   from lancet_eval.provenance import replay_run_failures
-   from lancet_eval.replay import source_row_hashes
-   run = '<PILOT_RUN>'
-   records, _ = deduplicate_by_arm(load_records(run + '/journal.jsonl'))
-   rows = {(r.question_id, r.arm): r for r in read_export(run + '/context_export.jsonl')}
-   hashes = source_row_hashes(read_journal_header(run + '/journal.jsonl'))
-   readers = preregistration.readers_of(preregistration.resolve('PREREGISTRATION_S2'))
-   failures = replay_run_failures(records, export_rows=rows, source_row_sha256=hashes, readers=readers)
-   [print(f.code, f.label, f.detail) for f in failures]
-   print(len(failures), 'replay clause failure(s)')
-   "
-   ```
+```bash
+uv run --project eval python -c "
+from lancet_eval import preregistration
+from lancet_eval.context_export import read_export
+from lancet_eval.journal import load_records, read_journal_header
+from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.provenance import replay_run_failures
+from lancet_eval.replay import source_row_hashes
+run = '<PILOT_RUN>'
+records, _ = deduplicate_by_arm(load_records(run + '/journal.jsonl'))
+rows = {(r.question_id, r.arm): r for r in read_export(run + '/context_export.jsonl')}
+hashes = source_row_hashes(read_journal_header(run + '/journal.jsonl'))
+readers = preregistration.readers_of(preregistration.resolve('PREREGISTRATION_S2'))
+failures = replay_run_failures(records, export_rows=rows, source_row_sha256=hashes, readers=readers)
+[print(f.code, f.label, f.detail) for f in failures]
+print(len(failures), 'replay clause failure(s)')
+"
+```
 
 ## Step 3: read the pilot and settle Sonnet's target
 

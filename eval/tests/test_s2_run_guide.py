@@ -12,7 +12,6 @@ import re
 import shlex
 import subprocess
 import sys
-import textwrap
 from dataclasses import asdict
 from pathlib import Path
 
@@ -34,10 +33,8 @@ S2_TOML = Path("eval") / "corpora" / "multihop_rag_s2_dev.toml"
 
 def _snippets() -> list[str]:
     text = GUIDE.read_text(encoding="utf-8")
-    return [
-        textwrap.dedent(s)
-        for s in re.findall(r'python -c "(.*?)"\n', text, flags=re.DOTALL)
-    ]
+    # Not dedented: a runner pastes each snippet as the file holds it.
+    return re.findall(r'python -c "(.*?)"\n', text, flags=re.DOTALL)
 
 
 def _commands() -> list[list[str]]:

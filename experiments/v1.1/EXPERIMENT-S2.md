@@ -1,8 +1,9 @@
 # S2 Reader: pre-registration
 
-Status: **draft, not yet pre-registered.** It becomes the pre-registration when RUN-S2.md step 4 adds the constant
-below to `thresholds.py` with S1's winner and the readers' targets filled in and every TODO settled, and commits it with
-this file on a clean tree before the run of record's `replay-init` (D-73, D-240, D-253). The **Result** section is filled in after the run and nothing above it changes.
+Status: **draft, not yet pre-registered.** RUN-S2.md step 1 pastes the constant below into `thresholds.py` with S1's
+winner filled in. It becomes the pre-registration when step 4, with the readers' targets settled by the pilot and every
+TODO settled, commits it with this file on a clean tree before the run of record's `replay-init` (D-73, D-240, D-253).
+The **Result** section is filled in after the run and nothing above it changes.
 
 How to run it: [RUN-S2.md](RUN-S2.md).
 
@@ -158,6 +159,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         ),
         (
             "opus-5.5",
+            # TODO 3: slug, target and price are not settled (Q13 fixes thinking only).
             ReaderDeclaration(
                 slug="anthropic/claude-opus-5.5",
                 target="openrouter",

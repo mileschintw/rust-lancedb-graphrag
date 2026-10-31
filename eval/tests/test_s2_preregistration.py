@@ -1,12 +1,12 @@
 """The v1.1 S2 pre-registration draft and its corpus (D-252, D-254 to D-265, #110).
 
 D-73 dates a constant by the first commit that adds its name to `thresholds.py`, so
-`PREREGISTRATION_S2` is not defined there until RUN-S2.md step 4 pastes in its draft,
+`PREREGISTRATION_S2` is not defined there until RUN-S2.md step 1 pastes in its draft,
 the code block in EXPERIMENT-S2.md, with S1's winner in place of
 `S1_WINNER_UNSET`. Until then the token names nothing and `resolve` refuses it. These
 tests build the draft with each of S1's four arms and check that it resolves, matches
 the S2 corpus and keeps S1's numbers, and that a constant pasted in later still equals
-its draft.
+its draft. Step 4 commits it.
 """
 
 from __future__ import annotations
