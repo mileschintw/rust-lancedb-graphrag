@@ -1,0 +1,825 @@
+"""S2 reader arms over a batch API: `batch submit` and `batch fetch` (#53, D-254).
+
+An S2 run directory starts as `replay-init` leaves it (``lancet_eval.replay``): the
+carried deepseek arm's records and export rows on the S2 corpus. Each reader arm
+(``<arm>@<reader>``, D-257) is then read in batches:
+
+``submit`` packs the base arm's export rows with ``generate_from_context pack``, under
+the levers each base record echoes (``snapshot.levers``), and refuses a row whose
+packed user message is not its ``assembled_prompt`` or whose hash is not the one the
+journal header carried. It rewrites each body for the arm's declared reader
+(``reader_request.rewrite_pack_body``, #51), prints a cost estimate (D-258: it never
+refuses), writes the manifest, then submits one batch whose ``custom_id`` is the
+question ID. Questions are taken in the base arm's journal order:
+
+- by default, every base success question the arm holds no record of; ``--limit N``
+  takes the first N, so a pilot and a later submit read disjoint questions;
+- with ``retry_errors``, only the questions whose latest record is a request that
+  produced no answer (``RETRYABLE``: errored, expired, canceled, or missing from the
+  results); never a ``base_error``, an answer ``render`` rejected, or a response that
+  arrived unreadable, since those were billed.
+
+It refuses while the arm has a pending batch, and when nothing is left to submit
+(every question already has a record). Each base error record gets one reader error
+record (``BASE_ERROR``), since there is no row to pack and completeness needs every
+question under every arm. They are journalled once the endpoint accepts the batch,
+so a refused submit writes nothing to the journal; the one exception is a submit
+with nothing to send, which journals them and then refuses.
+
+The manifest (``<run>/batches/<arm slug>-<n>.json``) is written before the submit,
+with ``batch_id`` null and state ``submitting``, then updated to ``submitted`` with
+the batch ID. A crash or network failure between the two leaves it ``submitting``,
+which counts as pending: check the endpoint for a batch, then edit or delete the
+manifest by hand. A submit the endpoint answered with an error marks it ``rejected``.
+Per request it records the body hash (SHA-256 of the exact JSON text sent, the hash
+the ``body_hash`` replay clause recomputes), the ``pack`` body, the rewritten fields,
+the base row's hash and the levers.
+
+``fetch`` reads each ``submitted`` batch's results; a batch still processing is left
+for a later run. Succeeded requests are rendered by ``generate_from_context render``
+under the request's levers (#50), the Anthropic stop reason already mapped. Each
+result becomes one record under the resume key, with the base record's
+``correlation_id`` and ``index_generation``, and ``session_id`` set to the batch ID:
+
+- a rendered answer: a success record, its ``replay`` block (``ReplayProvenance``)
+  and usage, and its export row (the base row under the reader label) appended before
+  the record;
+- an answer ``render`` rejects: an error record that keeps the ``replay`` block and
+  usage, because the request was billed (``measure.reader_record_usd``);
+- an errored, expired or canceled request, or one the batch returned no result for:
+  an error record with no ``replay`` block, since nothing was billed;
+- a response that arrived but cannot be read (``batch_unreadable_response``): an
+  error record with no ``replay`` block, since it has no usage to price; it was
+  probably billed, so ``--retry-errors`` leaves it.
+
+A fetch skips a request the journal already holds a record of from the same batch,
+then marks the manifest ``fetched``, so a re-run adds nothing.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from lancet_eval import batch_client, parity, preregistration
+from lancet_eval.arms import (
+    arm_reader,
+    arm_slug,
+    canonical_arm,
+    is_reader_arm,
+    reader_base_arm,
+)
+from lancet_eval.batch_client import (
+    BatchClient,
+    BatchClientError,
+    BatchRequest,
+    BatchResult,
+    ReaderOutput,
+)
+from lancet_eval.context_export import (
+    CONTEXT_EXPORT_FILE,
+    ContextExportError,
+    ContextExportRow,
+    read_export,
+)
+from lancet_eval.corpus import CorpusError, load_corpus
+from lancet_eval.journal import (
+    Journal,
+    ReplayProvenance,
+    RunRecord,
+    WorkflowWireMeta,
+    load_records,
+    read_journal_header,
+)
+from lancet_eval.measure import BATCH_PRICE_FACTOR, compute_spend
+from lancet_eval.reader_request import (
+    ReaderDeclaration,
+    ReaderRequest,
+    ReaderRequestError,
+    Target,
+    rewrite_pack_body,
+)
+from lancet_eval.replay import (
+    JOURNAL_FILE,
+    REPLAY_SOURCE_KEY,
+    export_row_sha256,
+    source_row_hashes,
+)
+
+MANIFEST_DIR = "batches"
+#: The error type of a reader record whose base record is an error (nothing packed).
+BASE_ERROR = "base_error"
+#: The error type of a request by its batch status.
+RESULT_ERRORS: Mapping[str, str] = {
+    "errored": "batch_errored",
+    "expired": "batch_expired",
+    "canceled": "batch_canceled",
+    "unreadable": "batch_unreadable_response",
+}
+#: The error type of a request the finished batch returned no result for.
+NO_RESULT = "batch_no_result"
+#: The error types `--retry-errors` resubmits: requests that produced no answer. An
+#: answer `render` rejected, or a response that arrived but could not be read, was
+#: billed and is the reader's result; resubmitting it would buy a second answer.
+RETRYABLE = frozenset({
+    RESULT_ERRORS["errored"],
+    RESULT_ERRORS["expired"],
+    RESULT_ERRORS["canceled"],
+    NO_RESULT,
+})
+#: The error type of a rendered request `render` wrote no line for.
+NO_RENDER_LINE = "render_no_line"
+PENDING_STATES = frozenset({"submitting", "submitted"})
+#: Anthropic's `custom_id` pattern.
+_ANTHROPIC_CUSTOM_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_LISTED = 10
+
+#: `parity.run_bin`'s signature: mode, rows, levers and, for `render`, the results.
+BinRunner = Callable[..., list[dict[str, Any]]]
+ClientFactory = Callable[[Target], BatchClient]
+
+#: The seams the tests replace: the bin and the batch endpoint.
+bin_runner: BinRunner = parity.run_bin
+client_factory: ClientFactory = batch_client.client_for
+
+
+class BatchError(ValueError):
+    """A batch submit or fetch was refused."""
+
+
+@dataclass(frozen=True)
+class SubmitResult:
+    """What `submit` sent."""
+
+    manifest_path: Path
+    batch_id: str
+    requests: int
+    base_errors: int
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """What `fetch` journalled, and which batches are still processing."""
+
+    successes: int
+    errors: int
+    pending: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _Run:
+    journal: Path
+    corpus: str
+    header: dict[str, Any]
+    readers: dict[str, ReaderDeclaration]
+    records: list[RunRecord]
+    arms: set[str]
+
+
+def _listed(problems: Sequence[str]) -> str:
+    more = len(problems) - _LISTED
+    return "; ".join(problems[:_LISTED]) + (f" (and {more} more)" if more > 0 else "")
+
+
+def _load_run(run: Path) -> _Run:
+    journal = run / JOURNAL_FILE
+    header = read_journal_header(journal)
+    if header is None or REPLAY_SOURCE_KEY not in header:
+        raise BatchError(
+            f"{journal} is not an S2 replay journal (no {REPLAY_SOURCE_KEY!r} header); "
+            "run replay-init first"
+        )
+    corpus = str(header.get("corpus") or "")
+    try:
+        config = load_corpus(corpus)
+    except CorpusError as exc:
+        raise BatchError(f"the run's corpus {corpus!r} does not load: {exc}") from exc
+    try:
+        prereg = preregistration.resolve(config.preregistration_token)
+        readers = preregistration.readers_of(prereg)
+    except preregistration.PreregistrationError as exc:
+        raise BatchError(f"the S2 pre-registration: {exc}") from exc
+    run_arms = {canonical_arm(a) for a in config.arms}
+    return _Run(journal, corpus, header, readers, load_records(journal), run_arms)
+
+
+def _reader_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration]:
+    try:
+        arm = canonical_arm(label)
+    except ValueError as exc:
+        raise BatchError(str(exc)) from exc
+    if not is_reader_arm(arm):
+        raise BatchError(f"{label!r} is not a reader arm (<arm>@<reader>, D-257)")
+    if arm not in run.arms:
+        raise BatchError(f"the corpus {run.corpus!r} does not list the arm {arm!r}")
+    declaration = run.readers.get(arm_reader(arm) or "")
+    if declaration is None:
+        raise BatchError(f"the pre-registration declares no reader for {arm!r}")
+    return arm, declaration
+
+
+def _export_rows(run_dir: Path) -> dict[tuple[str, str], ContextExportRow]:
+    """The run's export rows by ``(question_id, arm)``."""
+    try:
+        return {
+            (r.question_id, r.arm): r
+            for r in read_export(run_dir / CONTEXT_EXPORT_FILE)
+        }
+    except ContextExportError as exc:
+        raise BatchError(str(exc)) from exc
+
+
+def _run_bin(
+    runner: BinRunner,
+    mode: str,
+    rows: Sequence[ContextExportRow],
+    levers: Sequence[str],
+    results: Sequence[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Runs the bin; a bin failure is a refusal (``BatchError``)."""
+    args: list[Any] = [mode, rows, list(levers)]
+    if results is not None:
+        args.append(results)
+    try:
+        return runner(*args)
+    except parity.PromptParityError as exc:
+        raise BatchError(str(exc)) from exc
+
+
+def _latest(records: Iterable[RunRecord], arm: str) -> dict[str, RunRecord]:
+    """The latest record of each question under `arm`, in first-seen order."""
+    latest: dict[str, RunRecord] = {}
+    for rec in records:
+        if rec.graph_arm == arm:
+            latest[rec.question_id] = rec
+    return latest
+
+
+# ---- manifests --------------------------------------------------------------------
+
+
+def manifest_paths(run: Path, arm: str | None = None) -> list[Path]:
+    """The run's batch manifests, oldest first; only `arm`'s when given."""
+    folder = run / MANIFEST_DIR
+    if not folder.is_dir():
+        return []
+    prefix = f"{arm_slug(arm)}-" if arm is not None else ""
+    paths = [p for p in folder.glob(f"{prefix}*.json") if p.is_file()]
+    return sorted(paths, key=lambda p: (p.stem.rsplit("-", 1)[0], _seq(p)))
+
+
+def _seq(path: Path) -> int:
+    tail = path.stem.rsplit("-", 1)[-1]
+    return int(tail) if tail.isdigit() else 0
+
+
+def read_manifest(path: Path) -> dict[str, Any]:
+    """A manifest's JSON object.
+
+    Raises:
+        BatchError: If the file is unreadable or not a JSON object.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise BatchError(f"unreadable manifest {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise BatchError(f"manifest {path} is not a JSON object")
+    return data
+
+
+def _write_manifest(path: Path, manifest: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    tmp.replace(path)
+
+
+def _new_manifest_path(run: Path, arm: str) -> Path:
+    existing = [_seq(p) for p in manifest_paths(run, arm)]
+    return run / MANIFEST_DIR / f"{arm_slug(arm)}-{max(existing, default=0) + 1}.json"
+
+
+def _pending(run: Path, arm: str) -> list[str]:
+    found = []
+    for path in manifest_paths(run, arm):
+        manifest = read_manifest(path)
+        if manifest.get("arm") == arm and manifest.get("state") in PENDING_STATES:
+            found.append(
+                f"{path.name} ({manifest.get('state')}, batch "
+                f"{manifest.get('batch_id')})"
+            )
+    return found
+
+
+# ---- submit -----------------------------------------------------------------------
+
+
+def _base_error_records(
+    run: _Run, arm: str, base: Mapping[str, RunRecord], held: Mapping[str, RunRecord]
+) -> list[RunRecord]:
+    return [
+        RunRecord(
+            corpus=run.corpus,
+            question_id=qid,
+            graph_arm=arm,
+            outcome="error",
+            error_type=BASE_ERROR,
+            error=f"the base arm's record is an error ({rec.error_type}): nothing "
+            "to replay",
+            correlation_id=rec.correlation_id,
+            index_generation=rec.index_generation,
+        )
+        for qid, rec in base.items()
+        if rec.outcome == "error" and qid not in held
+    ]
+
+
+def _select(
+    arm: str,
+    base: Mapping[str, RunRecord],
+    held: Mapping[str, RunRecord],
+    *,
+    retry_errors: bool,
+    limit: int | None,
+) -> list[str]:
+    if retry_errors:
+        chosen = [
+            qid
+            for qid in base
+            if (rec := held.get(qid)) is not None
+            and rec.outcome == "error"
+            and rec.error_type in RETRYABLE
+        ]
+    else:
+        chosen = [
+            qid
+            for qid, rec in base.items()
+            if rec.outcome == "success" and qid not in held
+        ]
+    if not chosen:
+        successes = sum(r.outcome == "success" for r in held.values())
+        retryable = sum(
+            r.outcome == "error" and r.error_type in RETRYABLE for r in held.values()
+        )
+        final = len(held) - successes - retryable
+        hint = " (use --retry-errors)" if retryable and not retry_errors else ""
+        raise BatchError(
+            f"nothing to submit for {arm}: {successes} question(s) already have a "
+            f"success record, {retryable} a retryable error record{hint} and "
+            f"{final} a final error record (base error, or a billed answer that "
+            "failed render)"
+        )
+    return chosen[:limit] if limit is not None else chosen
+
+
+@dataclass(frozen=True)
+class _Packed:
+    qid: str
+    row: ContextExportRow
+    levers: tuple[str, ...]
+    pack_body: str
+    request: ReaderRequest
+    row_sha256: str
+
+
+def _pack(
+    qids: Sequence[str],
+    base_arm: str,
+    base: Mapping[str, RunRecord],
+    run: _Run,
+    declaration: ReaderDeclaration,
+    runner: BinRunner,
+) -> list[_Packed]:
+    rows = _export_rows(run.journal.parent)
+    carried = source_row_hashes(run.header)
+    problems: list[str] = []
+    groups: dict[tuple[str, ...], list[ContextExportRow]] = {}
+    for qid in qids:
+        row = rows.get((qid, base_arm))
+        snapshot = base[qid].snapshot
+        if row is None:
+            problems.append(f"{qid}: no {base_arm!r} export row")
+        elif snapshot is None:
+            problems.append(f"{qid}: the base record has no snapshot to read levers")
+        elif export_row_sha256(row) != carried.get((qid, base_arm)):
+            problems.append(f"{qid}: the base row differs from the carried row's hash")
+        else:
+            groups.setdefault(tuple(snapshot.levers), []).append(row)
+    packed: dict[str, _Packed] = {}
+    for levers, group in groups.items():
+        lines = {
+            (str(line.get("question_id")), str(line.get("arm"))): line
+            for line in _run_bin(runner, "pack", group, levers)
+        }
+        for row in group:
+            qid = row.question_id
+            line = lines.get((qid, base_arm))
+            if line is None or line.get("outcome") != "success":
+                why = "no line" if line is None else line.get("error")
+                problems.append(f"{qid}: pack failed: {why}")
+                continue
+            try:
+                body = str(line["body"])
+                if parity.user_message(body) != row.assembled_prompt:
+                    problems.append(
+                        f"{qid}: the packed user message is not the row's "
+                        "assembled_prompt (engine config or levers changed)"
+                    )
+                    continue
+                request = rewrite_pack_body(body, declaration)
+            except (KeyError, TypeError, ValueError, ReaderRequestError) as exc:
+                problems.append(f"{qid}: {exc}")
+                continue
+            packed[qid] = _Packed(
+                qid, row, levers, body, request, export_row_sha256(row)
+            )
+    if declaration.target == "anthropic":
+        problems += [
+            f"{qid}: not a valid Anthropic custom_id"
+            for qid in qids
+            if not _ANTHROPIC_CUSTOM_ID.match(qid)
+        ]
+    if problems:
+        raise BatchError(
+            f"submit refused before any request: {len(problems)} problem(s): "
+            f"{_listed(problems)}"
+        )
+    return [packed[qid] for qid in qids]
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def cost_estimate(
+    packed: Sequence[_Packed],
+    base: Mapping[str, RunRecord],
+    declaration: ReaderDeclaration,
+    spent: float,
+) -> str:
+    """The D-258 estimate printed before a submit; it never refuses.
+
+    Each request is priced at the reader's sync list price times
+    `BATCH_PRICE_FACTOR`, with the deepseek record's token counts as the expected
+    usage and the body's `max_completion_tokens` as the output bound.
+    """
+    price = declaration.price
+    expected = bound = 0.0
+    for item in packed:
+        meta = base[item.qid].workflow_meta
+        prompt = meta.prompt_tokens if meta else 0
+        completion = meta.completion_tokens if meta else 0
+        body = item.request.body
+        max_out = int(body.get("max_completion_tokens", body.get("max_tokens", 0)))
+        expected += prompt * price.input_per_mtok + completion * price.output_per_mtok
+        bound += prompt * price.input_per_mtok + max_out * price.output_per_mtok
+    factor = BATCH_PRICE_FACTOR / 1_000_000.0
+    return (
+        f"Cost estimate (D-258, never refuses): {len(packed)} request(s) to "
+        f"{declaration.slug} at {BATCH_PRICE_FACTOR} x ${price.input_per_mtok}/"
+        f"${price.output_per_mtok} per MTok: about ${expected * factor:.4f} at the "
+        f"deepseek arm's token counts, at most ${bound * factor:.4f} if every answer "
+        f"reached its output limit. Spent on this arm so far: ${spent:.4f}."
+    )
+
+
+def submit(
+    *,
+    run: Path | str,
+    arm: str,
+    limit: int | None = None,
+    retry_errors: bool = False,
+    echo: Callable[[str], None] = print,
+) -> SubmitResult:
+    """Packs, rewrites and submits one batch of a reader arm (module docstring).
+
+    Raises:
+        BatchError: If the run is not an S2 replay run, the arm is not a declared
+            reader arm of its corpus, a batch of the arm is pending, nothing is left
+            to submit, the bin fails, or a row fails to pack, match its prompt or
+            rewrite.
+        BatchClientError: If the endpoint refuses the batch, or its API key is not
+            set.
+    """
+    if limit is not None and limit < 1:
+        raise BatchError("--limit must be at least 1")
+    run_dir = Path(run)
+    state = _load_run(run_dir)
+    label, declaration = _reader_arm(arm, state)
+    pending = _pending(run_dir, label)
+    if pending:
+        raise BatchError(
+            f"{label} has a pending batch: {'; '.join(pending)}; fetch it first"
+        )
+    base_arm = reader_base_arm(label)
+    base = _latest(state.records, base_arm)
+    held = _latest(state.records, label)
+    journal = Journal(state.journal)
+    base_errors = _base_error_records(state, label, base, held)
+    for rec in base_errors:
+        held[rec.question_id] = rec
+    try:
+        qids = _select(label, base, held, retry_errors=retry_errors, limit=limit)
+    except BatchError as exc:
+        # Nothing to send, but the base errors still complete the arm.
+        for rec in base_errors:
+            journal.append(rec)
+        if base_errors:
+            raise BatchError(
+                f"{exc}; journalled {len(base_errors)} base error record(s)"
+            ) from exc
+        raise
+    packed = _pack(qids, base_arm, base, state, declaration, bin_runner)
+
+    spent, _ = compute_spend(
+        list(held.values()), include_embeddings=False, readers=state.readers
+    )
+    echo(cost_estimate(packed, base, declaration, spent))
+
+    client = client_factory(declaration.target)
+    path = _new_manifest_path(run_dir, label)
+    manifest: dict[str, Any] = {
+        "arm": label,
+        "reader": arm_reader(label),
+        "target": declaration.target,
+        "endpoint": client.endpoint,
+        "model": declaration.slug,
+        "batch_id": None,
+        "state": "submitting",
+        "retry_errors": retry_errors,
+        "partial": limit is not None,
+        "created_at": time.time(),
+        "requests": {
+            item.qid: {
+                "levers": list(item.levers),
+                "body_sha256": _sha256(item.request.body_json),
+                "export_row_sha256": item.row_sha256,
+                "rewritten_fields": list(item.request.rewritten_fields),
+                "pack_body": item.pack_body,
+            }
+            for item in packed
+        },
+    }
+    _write_manifest(path, manifest)
+    try:
+        batch_id = client.submit([
+            BatchRequest(item.qid, item.request.body_json) for item in packed
+        ])
+    except BatchClientError:
+        manifest["state"] = "rejected"
+        _write_manifest(path, manifest)
+        raise
+    manifest.update(batch_id=batch_id, state="submitted", submitted_at=time.time())
+    _write_manifest(path, manifest)
+    for rec in base_errors:
+        journal.append(rec)
+    return SubmitResult(path, batch_id, len(packed), len(base_errors))
+
+
+# ---- fetch ------------------------------------------------------------------------
+
+
+def render_line(qid: str, arm: str, output: ReaderOutput) -> dict[str, Any]:
+    """One line of `render`'s results file (#50's schema)."""
+    return {
+        "question_id": qid,
+        "arm": arm,
+        "content": output.content,
+        "finish_reason": output.finish_reason,
+        "usage": {
+            "prompt_tokens": output.prompt_tokens,
+            "completion_tokens": output.completion_tokens,
+            "total_tokens": output.total_tokens,
+        },
+    }
+
+
+def _replay(
+    request: Mapping[str, Any], batch_id: str, out: ReaderOutput
+) -> ReplayProvenance:
+    return ReplayProvenance(
+        export_row_sha256=request["export_row_sha256"],
+        pack_body=request["pack_body"],
+        sent_body_sha256=request["body_sha256"],
+        rewritten_fields=list(request["rewritten_fields"]),
+        model=out.model,
+        provider=out.provider,
+        is_byok=out.is_byok,
+        reasoning_tokens=out.reasoning_tokens,
+        batch_id=batch_id,
+        content_block_types=(
+            None if out.content_block_types is None else list(out.content_block_types)
+        ),
+    )
+
+
+def fetch(
+    *,
+    run: Path | str,
+    arms: Sequence[str] | None = None,
+    echo: Callable[[str], None] = print,
+) -> FetchResult:
+    """Journals every finished batch of the run, or of `arms` (module docstring).
+
+    Raises:
+        BatchError: If the run is not an S2 replay run, an arm is not a declared
+            reader arm, a manifest is unreadable or names a question the run has no
+            base record or row of, or the bin fails.
+        BatchClientError: If an endpoint cannot be read, or its API key is not set.
+    """
+    run_dir = Path(run)
+    state = _load_run(run_dir)
+    wanted = {_reader_arm(a, state)[0] for a in arms or ()}
+    successes = errors = 0
+    pending: list[str] = []
+    for path in manifest_paths(run_dir):
+        manifest = read_manifest(path)
+        label = str(manifest.get("arm"))
+        if wanted and label not in wanted:
+            continue
+        status = manifest.get("state")
+        if status == "submitting":
+            echo(
+                f"{path.name}: the submit did not record a batch ID; check the "
+                "endpoint, then fix or delete the manifest"
+            )
+            pending.append(path.name)
+            continue
+        if status != "submitted":
+            continue
+        _, declaration = _reader_arm(label, state)
+        batch_id = manifest.get("batch_id")
+        if not isinstance(batch_id, str) or not batch_id:
+            raise BatchError(f"manifest {path} is submitted but names no batch ID")
+        results = client_factory(declaration.target).results(batch_id)
+        if results is None:
+            echo(f"{label}: batch {batch_id} is still processing")
+            pending.append(batch_id)
+            continue
+        try:
+            ok, failed = _journal_batch(run_dir, state, label, manifest, results)
+        except (KeyError, TypeError) as exc:
+            raise BatchError(f"manifest {path} is malformed: {exc!r}") from exc
+        successes += ok
+        errors += failed
+        manifest.update(state="fetched", fetched_at=time.time())
+        _write_manifest(path, manifest)
+        state = _load_run(run_dir)
+    return FetchResult(successes, errors, tuple(pending))
+
+
+def _journal_batch(
+    run_dir: Path,
+    state: _Run,
+    label: str,
+    manifest: Mapping[str, Any],
+    results: Sequence[BatchResult],
+) -> tuple[int, int]:
+    batch_id = str(manifest["batch_id"])
+    requests: Mapping[str, Mapping[str, Any]] = manifest["requests"]
+    done = {
+        r.question_id
+        for r in state.records
+        if r.graph_arm == label and r.session_id == batch_id
+    }
+    base_arm = reader_base_arm(label)
+    base = _latest(state.records, base_arm)
+    rows = _export_rows(run_dir)
+    unknown = [
+        qid
+        for qid in requests
+        if qid not in done and (qid not in base or (qid, base_arm) not in rows)
+    ]
+    if unknown:
+        raise BatchError(
+            f"batch {batch_id} of {label}: no {base_arm!r} record or export row for "
+            f"{_listed(unknown)}; the run no longer matches the manifest"
+        )
+    by_id = {r.custom_id: r for r in results if r.custom_id in requests}
+    records: dict[str, RunRecord] = {}
+    to_render: dict[tuple[str, ...], list[tuple[str, ReaderOutput]]] = {}
+
+    def record_fields(qid: str) -> dict[str, Any]:
+        rec = base[qid]
+        return {
+            "corpus": state.corpus,
+            "question_id": qid,
+            "graph_arm": label,
+            "correlation_id": rec.correlation_id,
+            "index_generation": rec.index_generation,
+            "session_id": batch_id,
+            "partial": bool(manifest.get("partial")),
+        }
+
+    for qid in requests:
+        if qid in done:
+            continue
+        result = by_id.get(qid)
+        if result is None:
+            records[qid] = RunRecord(
+                **record_fields(qid),
+                outcome="error",
+                error_type=NO_RESULT,
+                error=f"batch {batch_id} returned no result for this request",
+            )
+        elif result.output is None or result.status != "succeeded":
+            records[qid] = RunRecord(
+                **record_fields(qid),
+                outcome="error",
+                error_type=RESULT_ERRORS.get(result.status, "batch_errored"),
+                error=result.error or f"the request {result.status}",
+            )
+        else:
+            levers = tuple(requests[qid]["levers"])
+            to_render.setdefault(levers, []).append((qid, result.output))
+
+    new_rows: list[ContextExportRow] = []
+    for levers, group in to_render.items():
+        reader_rows = [
+            rows[(qid, base_arm)].model_copy(update={"arm": label}) for qid, _ in group
+        ]
+        lines = {
+            str(line.get("question_id")): line
+            for line in _run_bin(
+                bin_runner,
+                "render",
+                reader_rows,
+                levers,
+                [render_line(qid, label, out) for qid, out in group],
+            )
+            if line.get("arm") == label
+        }
+        for (qid, out), row in zip(group, reader_rows, strict=True):
+            replay = _replay(requests[qid], batch_id, out)
+            meta = WorkflowWireMeta(
+                prompt_tokens=out.prompt_tokens, completion_tokens=out.completion_tokens
+            )
+            line = lines.get(qid)
+            if line is not None and line.get("outcome") == "success":
+                records[qid] = _success(record_fields(qid), line, replay, meta)
+                if (qid, label) not in rows:
+                    new_rows.append(row)
+            else:
+                records[qid] = RunRecord(
+                    **record_fields(qid),
+                    outcome="error",
+                    error_type=(
+                        str(line.get("error_type")) if line else NO_RENDER_LINE
+                    ),
+                    error=(
+                        str(line.get("error"))
+                        if line
+                        else "generate_from_context render wrote no line"
+                    ),
+                    workflow_meta=meta,
+                    replay=replay,
+                )
+
+    if new_rows:
+        with open(
+            run_dir / CONTEXT_EXPORT_FILE, "a", encoding="utf-8", newline="\n"
+        ) as f:
+            f.writelines(
+                json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n"
+                for row in new_rows
+            )
+    journal = Journal(state.journal)
+    for qid in requests:
+        if qid in records:
+            journal.append(records[qid])
+    written = list(records.values())
+    return (
+        sum(r.outcome == "success" for r in written),
+        sum(r.outcome == "error" for r in written),
+    )
+
+
+def _success(
+    fields: Mapping[str, Any],
+    line: Mapping[str, Any],
+    replay: ReplayProvenance,
+    meta: WorkflowWireMeta,
+) -> RunRecord:
+    from lancet_eval.client import Notice, StructuredCitation
+
+    return RunRecord(
+        **fields,
+        outcome="success",
+        answer=line.get("answer") or "",
+        structured_citations=[
+            StructuredCitation.model_validate(c)
+            for c in line.get("structured_citations") or []
+        ],
+        notices=[Notice.model_validate(n) for n in line.get("notices") or []],
+        workflow_meta=meta,
+        replay=replay,
+    )
