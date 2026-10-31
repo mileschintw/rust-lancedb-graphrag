@@ -143,3 +143,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **Lane 76 (#76):** PR #102 merged 2026-10-31 (ci green). The stub serves /rerank, the export takes an endpoint override, and the S0 rehearsal corpus was added.
 - **Lane 77 (#77, #78):** PR #103 merged 2026-10-31 at d03eae08 (ci green). **Lane 64 (#64):** PR #104 merged 2026-10-31 at d839f7b5 (ci green). Every S1 prerequisite in the approved path is now on main.
 - **Lane 107 (#107):** PR #112 merged 2026-10-31 (ci green). The OpenRouter batch payload sends endpoint, model and provider ahead of requests.
+- **Lane 105 (#105, #106, #113):** PR #111 merged 2026-10-31 at 9e80334c (ci green). D-266 is in, and the S1 step 4 guide fixes and paste-safe snippets are on main.
