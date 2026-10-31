@@ -93,7 +93,9 @@ from lancet_eval.score import (
     ScoreError,
     _default_gold_chunks_path,
     _record_spend_usd,
+    population_label,
     require_external_provenance,
+    scope_split,
 )
 from lancet_eval.seed import load_document_map
 from lancet_eval.split import HeldOutSplit, load_split
@@ -1616,7 +1618,7 @@ def _load_inputs(
             f"corpus {config.name!r} declares no [split]; the populations need one"
         )
     try:
-        split = load_split(config.split_path)
+        on_disk = load_split(config.split_path)
         gold_map = {q.question_id: q for q in load_sample_questions(config.name)}
     except Exception as exc:
         raise LeverComparisonError(
@@ -1633,21 +1635,26 @@ def _load_inputs(
         gold_sets = load_gold_chunk_sets(gold_path)
     except (OSError, ValueError, KeyError) as exc:
         raise LeverComparisonError(f"cannot read the gold-chunk table: {exc}") from exc
+    # #68: a dev-role corpus (S1, S2) reads the dev population, as `score` does.
+    split = scope_split(on_disk, config.split_role, gold_map)
+    population = population_label(config.split_role)
     problems = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
         if gold is None or gold.is_null:
-            problems.append(f"{qid}: not a held-out G question of the corpus")
+            problems.append(f"{qid}: not a {population} G question of the corpus")
         elif gold.question_type not in STRATUM_TYPES:
             problems.append(f"{qid}: question_type {gold.question_type!r}")
         elif not gold_sets.get(qid):
             problems.append(f"{qid}: no gold-chunk row")
     for qid in split.heldout_null_ids:
         if qid not in gold_map:
-            problems.append(f"{qid}: held-out null question missing from the corpus")
+            problems.append(
+                f"{qid}: {population} null question missing from the corpus"
+            )
     if problems:
         raise LeverComparisonError(
-            f"{len(problems)} held-out question(s) cannot be scored: "
+            f"{len(problems)} {population} question(s) cannot be scored: "
             + "; ".join(problems[:10])
         )
     return records, split, gold_map, gold_sets
@@ -1821,6 +1828,12 @@ def build_lever_comparison(
             "floor": float(prereg.complete_case_floor),
             "p_all_label": LABEL_ALL_ARM,
             "provenance_block_passed": prov_ok,
+            # #68: named only off held-out, so a held-out payload stays byte-identical.
+            **(
+                {"population": population_label(config.split_role)}
+                if config.split_role == "dev"
+                else {}
+            ),
         },
         "fwer_statement": FWER_STATEMENT,
         "ci_statement": CROSS_FAMILY_NOTE,
@@ -1951,6 +1964,11 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
     return out
 
 
+def _population_prefix(pops: Mapping[str, Any]) -> str:
+    """`dev population: ` on a dev-role payload; empty on a held-out one (#68)."""
+    return f"{pops['population']} population: " if "population" in pops else ""
+
+
 def render_markdown(payload: Mapping[str, Any]) -> str:
     """Renders the payload as `lever-comparison.md`."""
     run = payload["run"]
@@ -1961,7 +1979,8 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
         f"- Run: `{run['run']}`; pre-registration `{run['preregistration_token']}`; "
         f"reference arm `{run['reference_arm']}`.",
         "- No judge ran and no judged figure exists in this phase (D-153).",
-        f"- |H_G| = {pops['n_heldout_g']}, |H_N| = {pops['n_heldout_null']}; "
+        f"- {_population_prefix(pops)}|H_G| = {pops['n_heldout_g']}, "
+        f"|H_N| = {pops['n_heldout_null']}; "
         f"coverage floor {pops['floor']} per comparison (exact).",
         f"- `report.json` cells are on the {pops['p_all_label']}.",
         "",
