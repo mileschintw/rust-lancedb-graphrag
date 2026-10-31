@@ -90,4 +90,4 @@ none (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words
 
 ## Deadlines
 
-none
+- **Claude API credit expires 2026-11-03.** All S2 paid runs must be submitted by the morning of 2026-11-02, because a batch can take up to 24 h. This came from the user's forked side session local_244b32c4-288f-4944-bd22-5a71f3d65265 (2026-10-30). It is relayed and not yet confirmed by the user here. Suggested order: #50 now → #53 the moment #50 merges (target: merged Sunday 2026-11-01). In parallel, the user runs the S1 store build, the S0 LlamaIndex live checks, and S0/S1 in the main checkout (paid; ask with a cost estimate). Sunday: the S2 pilot (`batch submit --limit N`); if Sonnet `between_tools` fails over OpenRouter, use the native Anthropic batch API (Q4, D-260). By Monday morning: the real S2 arms. #54 merges before the report. Critical path: #50 → #53; it takes priority over other work.
