@@ -6,6 +6,11 @@ LanceDB (`documents`, distinct `nodes.document_id`, and `edges`/
 for a corpus. The gate exists to prevent a drive or measurement pass from
 running against a store whose contents have drifted from what the harness
 believes it seeded (D-61).
+
+On a store other than v1.0, a `failed` PostgreSQL row outside the map is a
+superseded upload: `seed` retried that document under a new ID and the gateway
+kept the first row (#79). Such rows are reported and skipped; the v1.0 gate
+still fails on them.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, repo_root, store_for_settings
+from lancet_eval.config import V1_STORE, EvalSettings, repo_root, store_for_settings
 from lancet_eval.seed import (
     SeedError,
     assert_schema_isolated,
@@ -46,6 +51,7 @@ class IdentityReport(BaseModel):
     lance_edges: list[str] = Field(default_factory=list)
     lance_entity_edges: list[str] = Field(default_factory=list)
     pg_status: dict[str, str] = Field(default_factory=dict)
+    superseded_failed: list[str] = Field(default_factory=list)
     staged_rows: int = 0
     alias_ids: list[str] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
@@ -143,7 +149,8 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     `map_corpus` (e.g. a diagnostic corpus) resolves to the one shared map, and
     reads the map of the store whose LanceDB path `settings` use (#18).
     """
-    doc_map = load_document_map(corpus_name, store_for_settings(settings))
+    store = store_for_settings(settings)
+    doc_map = load_document_map(corpus_name, store)
     map_ids = set(doc_map.entries.keys())
     # Only the alias *keys* (stale IDs that resolve elsewhere via aliasing) must be
     # absent from the stores. Alias *values* are the canonical current document_id
@@ -159,7 +166,20 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     lance_entity_edges = set(lance_data.get("entity_edges", []))
     staged_rows = int(lance_data.get("staged_documents_v2_rows", 0))
 
-    pg_ids = set(pg_status.keys())
+    # Superseded uploads (#79): skipped on a non-v1.0 store, reported either way.
+    superseded_failed: set[str] = set()
+    if store != V1_STORE:
+        superseded_failed = {
+            doc_id
+            for doc_id, status in pg_status.items()
+            if status == "failed" and doc_id not in map_ids | alias_ids
+        }
+    checked_pg = {
+        doc_id: status
+        for doc_id, status in pg_status.items()
+        if doc_id not in superseded_failed
+    }
+    pg_ids = set(checked_pg.keys())
 
     failures: list[str] = []
 
@@ -201,7 +221,7 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
         )
 
     non_completed = {
-        doc_id: status for doc_id, status in pg_status.items() if status != "completed"
+        doc_id: status for doc_id, status in checked_pg.items() if status != "completed"
     }
     if non_completed:
         failures.append(
@@ -230,6 +250,7 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
         lance_edges=sorted(lance_edges),
         lance_entity_edges=sorted(lance_entity_edges),
         pg_status=pg_status,
+        superseded_failed=sorted(superseded_failed),
         staged_rows=staged_rows,
         alias_ids=sorted(alias_ids),
         failures=failures,

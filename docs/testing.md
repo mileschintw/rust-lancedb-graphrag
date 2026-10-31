@@ -106,7 +106,7 @@ branch without a pull request runs nothing. A `changes` job decides which module
 |---|---|---|
 | `engine` | `cargo clippy --all-targets -- -D warnings`, `cargo test`, `scripts/engine-test-targets.sh` | `engine/**`, `config/**`, `deploy/**`, `scripts/engine-test-targets.sh` |
 | `gateway` | `go test -count=1 -short ./...`, `scripts/gateway-test-targets.sh` | `gateway/**`, `config/**`, `scripts/gateway-test-targets.sh` |
-| `eval` | ruff on the changed `eval/**/*.py` files, `pytest -n auto --dist loadfile` | `eval/**`, `scripts/**`, `config/**`, `proto/**`, `gateway/atlas.hcl`, `gateway/db/schema*.hcl`, `engine/src/{config,ingest,prompt}.rs`, `engine/src/generation/mod.rs`, `engine/src/workflow/mod.rs`, `docs/api-contract.md`, `docs/observability.md`, `docs/assets/**`, `.planning/**`, `.env.example`, `verify-ingestion.sh`, `verify-live-evidence.sh` |
+| `eval` | ruff on the changed `eval/**/*.py` files, `pytest -n auto --dist loadfile` | `eval/**`, `scripts/**`, `config/**`, `proto/**`, `gateway/atlas.hcl`, `gateway/db/schema*.hcl`, `engine/src/{config,ingest,prompt}.rs`, `engine/src/generation/mod.rs`, `engine/src/workflow/mod.rs`, `docs/api-contract.md`, `docs/observability.md`, `docs/assets/**`, `experiments/v1.1/RUN-S0-S1.md`, `.planning/**`, `.env.example`, `verify-ingestion.sh`, `verify-live-evidence.sh` |
 | `llamaindex` | `pytest baselines/llamaindex` | `baselines/llamaindex/**`, `eval/src/**`, `eval/corpora/**`, `eval/pyproject.toml`, `eval/uv.lock`, `config/**` |
 | `ci` | passes when every triggered job passed | always |
 
