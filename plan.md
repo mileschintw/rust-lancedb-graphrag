@@ -56,9 +56,9 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | audit-s1b | none (read-only audit) | local_4cf636bb-f778-4b7e-b41a-a891d0b6b7fc | done (reports/audit-s1b.md). S1 step 4: no code blocker, but #105 needs settling before 4.2; #106 for the stale text. S2: blockers opened as #107 (batch payload missing endpoint/model/provider), #108 (schema maxLength/maxItems vs Anthropic; check in the pilot), #109 (pilot records cannot be replaced; D-73 checked only after the spend), #110 (no S2 prereg, stage toml, run guide or .gitignore entry; handoff unchecked) | — |
-| run-s1store | none (S1 store build, steps 0-1) | local_51a319aa-e1e9-489f-b5d9-9bc448cd73a9 | step 0 builds done (exit 0, 15:12); asking the user for step 1 (paid seed); scratch_new.txt deleted on the user's yes; started on the user's "Start the S1 build"; runs in the main checkout; **HOLD other lanes off engine builds and LLM traffic while it runs**; the coordinator does not move the main checkout | — |
-| 105 | #105 #106 | local_ca46dd76-e6a3-4f2c-911e-13825e19e398 | review at 2c40daaf; running the fast tier | — |
-| 107 | #107 | local_b6b60624-dbf9-47d4-ac5e-440de1040908 | review at b21a4640; running the fast tier | — |
+| run-s1store | none (S1 store build, steps 0-1) | local_51a319aa-e1e9-489f-b5d9-9bc448cd73a9 | step 0 builds done (exit 0, 15:12); seed (1.3) running on the user's yes; about 2.5 h at 7 docs per 3 min; scratch_new.txt deleted on the user's yes; started on the user's "Start the S1 build"; runs in the main checkout; **HOLD other lanes off engine builds and LLM traffic while it runs**; the coordinator does not move the main checkout | — |
+| 105 | #105 #106 | local_ca46dd76-e6a3-4f2c-911e-13825e19e398 | done; PR #111, merge on green | — |
+| 107 | #107 | local_b6b60624-dbf9-47d4-ac5e-440de1040908 | done; PR #112, merge on green | — |
 | 109 | #109 | local_7a8f7151-65da-4274-ab3e-bc4a463227af | started | — |
 | 110 | #110 | local_fec1d7cf-a95f-4174-acd4-fc031387bd63 | started | — |
 | audit-s1a | none (read-only audit) | local_484d4a13-5af3-4296-9c4d-deb975f8e6ec | done: **passed**, no blocker (reports/audit-s1a.md). Cost about $1.9-2.9, ceiling about $10.8 excluding retries (A3). Before the build: redo step 0's builds after pulling (A1) and remove the untracked `scratch_new.txt` from the main checkout (A5). Optional: check `document_count=0` after 1.2 (A2); seed prints no D-258 estimate (A4) | — |
