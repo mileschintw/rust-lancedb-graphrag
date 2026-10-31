@@ -81,6 +81,7 @@ def run_export(
     `git_repo` is the repository the D-73 gate reads; the live one when None.
     """
     corpus_toml = repo_root() / "eval" / "corpora" / f"{args.corpus}.toml"
+    # No corpus config is a fixture run, which needs `--questions`; it has no gates.
     config = load_corpus(args.corpus) if corpus_toml.is_file() else None
     if args.questions is not None:
         questions = _read_questions(args.questions)

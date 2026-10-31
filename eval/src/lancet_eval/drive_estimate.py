@@ -13,6 +13,9 @@ stage cap uses:
 - rerank: `RERANK_UNREPORTED_CALL_CEILING_USD` per call, on an arm with the rerank
   lever.
 
+The export's indexing figure is the exception: an approximation of its document text
+at `CHARS_PER_TOKEN`, without the embedded metadata or the chunk overlap.
+
 A `batch submit` prints its own estimate (`batch.cost_estimate`, #53).
 """
 

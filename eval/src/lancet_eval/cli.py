@@ -591,6 +591,8 @@ def run_benchmark(
     field_gate_failures: tuple[str, ...] = ()
     context_export_error: str | None = None
     try:
+        from rich.markup import escape
+
         from lancet_eval.arms import arm_store
         from lancet_eval.config import V1_STORE, get_eval_store
         from lancet_eval.corpus import load_corpus_config
@@ -632,7 +634,8 @@ def run_benchmark(
         if limit is not None:
             questions = min(questions, limit)
         console.print(
-            drive_estimate(questions, drive_arms, retries=retries), soft_wrap=True
+            escape(drive_estimate(questions, drive_arms, retries=retries)),
+            soft_wrap=True,
         )
         settings = load_settings(store=drive_store)
         count = drive(
