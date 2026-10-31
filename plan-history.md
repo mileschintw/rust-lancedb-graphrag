@@ -2,6 +2,12 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane prereg-s01 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane prereg-s01, the S0/S1 pre-registration and run guide (no issue): session local_d5df8b19-d4ed-4c18-b9b6-7e7ff2b0372e, branch `claude/lane-prereg-s01-73d291` @ 5e7f0232. PR #70 was merged 2026-10-31 as 5aedae9f on the user's "開 PR，CI 過了就 merge (Recommended)", after `ci` passed (eval 2m37s).
+  - **Adds:** `EXPERIMENT-S0.md`, `EXPERIMENT-S1.md` and `RUN-S0-S1.md`; D-261 to D-264, the user's four answers, all "(Recommended)": the S0 null guard read both ways with the winner required to pass; v1.0 thresholds kept for S0 and S1; the S1 graph rule applied on the chosen store; the S1 dev null guard 0.10/0.80, which vetoes both choices. Also the stage constants `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` (the latter needs the guide's manual D-73 check).
+  - **Found and filed:** #65, #67 and #68. Fast tier 2739 passed. S0 can run now. S1 waits on #65, #67, #68 and #69.
+
 ## Lane 54 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 54, #54 Reader comparison and cost: session local_c8000942-9af7-443f-833d-077017fa96fd, branch `claude/lane-54-5835c0` @ 1af22049. PR #66 merged 2026-10-31 as f06a020b on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 2m3s). #54 closed. Eval fast tier 2726 passed; slow v1.0 re-score unchanged (35 passed). Interpretations accepted by the user: "answered" = `answer_usable` true on G; carried deepseek arms priced at `measure.GENERATION_*_PRICE_PER_1M` (0.14/1.28); batch rate = declared sync × 0.5; `reasoning_tokens` counted inside `completion_tokens`. Note for #53 is on its roadmap row (`compute_spend` needs `readers=`).
