@@ -78,6 +78,7 @@ from lancet_eval.measure import (
     EMBEDDING_PRICE_PER_1M,
     ESTIMATED_EMBEDDING_TOKENS_PER_QUERY,
     compute_judge_spend,
+    ReaderPriceError,
     compute_spend,
     estimate_judge_cost_per_question,
 )
@@ -114,6 +115,7 @@ from lancet_eval.metrics import (
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval import gitcheck, preregistration, provenance
+from lancet_eval.reader_request import ReaderDeclaration
 from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
@@ -283,6 +285,20 @@ def _p4_reference(config: Any) -> str:
         return str(preregistration.resolve(token).reference_arm)
     except preregistration.PreregistrationError as exc:
         raise ScoreError(f"Cannot build P4: {exc}") from exc
+
+
+def _readers_of(config: Any) -> dict[str, ReaderDeclaration]:
+    """The reader declarations of the corpus's pre-registration (D-257).
+
+    Raises:
+        ScoreError: If the token does not resolve or its reader table is bad.
+    """
+    try:
+        return preregistration.readers_of(
+            preregistration.resolve(config.preregistration_token)
+        )
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(f"D-257: {exc}") from exc
 
 
 def _check_provenance(record: RunRecord) -> bool:
@@ -720,7 +736,9 @@ def _retrieve_node_ms(rec: RunRecord) -> float | None:
     return None
 
 
-def _record_spend_usd(rec: RunRecord) -> float:
+def _record_spend_usd(
+    rec: RunRecord, readers: Mapping[str, ReaderDeclaration] | None = None
+) -> float:
     """One record's spend in USD: wire tokens, the failed-generation ceiling, embedding.
 
     The generation part is `measure.compute_spend([rec], include_embeddings=False)`,
@@ -729,7 +747,12 @@ def _record_spend_usd(rec: RunRecord) -> float:
     embeds: `bm25-only` with graph context off embeds nothing (D-125, pinned by
     06.3.5-04). `measure.compute_spend` is not edited, so the stage cap keeps its
     conservative per-query embedding charge.
+
+    A reader-arm record (#54, D-257) is its batch usage at its reader's declared price
+    in `readers` (`measure.compute_spend`); a reader embeds nothing.
     """
+    if is_reader_arm(rec.graph_arm):
+        return compute_spend([rec], include_embeddings=False, readers=readers)[0]
     generation, _ = compute_spend([rec], include_embeddings=False)
     spec = resolve_arm(rec.graph_arm)
     if spec.retrieval_mode == "bm25_only" and spec.disable_graph_context:
@@ -795,6 +818,10 @@ class _Metric:
     kind: Literal["wilson", "bootstrap"]
     delta_name: str | None = None
     counts: bool = False
+    # #54, D-257: a metric of the arm's own retrieval ranking (chunk-ID or evidence
+    # Hits@4, Hits@10, MRR, MAP). A reader arm replays its base arm's retrieval, so
+    # it is left out of such a metric rather than scored as a miss.
+    own_ranking: bool = False
 
 
 def _load_export_rows(
@@ -840,7 +867,7 @@ def _evidence_metrics(
         return None if found is None else float(context_tokens(found))
 
     return [
-        _Metric("evidence_hits_at_4", hit, "wilson"),
+        _Metric("evidence_hits_at_4", hit, "wilson", own_ranking=True),
         _Metric("context_tokens_mean", tokens, "bootstrap", "context_tokens_delta"),
     ]
 
@@ -886,6 +913,13 @@ def _four_arm_dimensions(
     p4_ids = list(pop.question_ids)
     n_excluded = float(n_g - len(p4_ids))
     chunk_size = int(config.chunk_size)
+    readers = _readers_of(config) if any(map(is_reader_arm, arms)) else None
+
+    def spend(rec: RunRecord) -> float:
+        try:
+            return _record_spend_usd(rec, readers)
+        except ReaderPriceError as exc:
+            raise ScoreError(f"D-257: {exc}") from exc
 
     def paper(rec: RunRecord) -> dict[str, Any]:
         return paper_question_scores(
@@ -912,24 +946,32 @@ def _four_arm_dimensions(
     # delta_name is a secondary: a paired delta against hybrid with a bootstrap CI, no
     # p-value, never Holm-tested (D-111, D-115, D-123).
     metrics = [
-        _Metric("paper_hits_at_4", lambda r: float(paper(r)["hit4"]), "wilson"),
+        _Metric(
+            "paper_hits_at_4",
+            lambda r: float(paper(r)["hit4"]),
+            "wilson",
+            own_ranking=True,
+        ),
         _Metric(
             "paper_hits_at_10",
             lambda r: float(paper(r)["hit10"]),
             "wilson",
             "paper_hits_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_mrr_at_10",
             lambda r: float(paper(r)["rr"]),
             "bootstrap",
             "paper_mrr_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_map_at_10",
             lambda r: float(paper(r)["ap"]),
             "bootstrap",
             "paper_map_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "answer_usable_p4",
@@ -995,7 +1037,12 @@ def _four_arm_dimensions(
             "bootstrap",
             "retrieve_node_ms_delta",
         ),
-        _Metric("spend_usd_mean", _record_spend_usd, "bootstrap", "spend_usd_delta"),
+        _Metric(
+            "spend_usd_mean",
+            spend,
+            "bootstrap",
+            "spend_usd_delta",
+        ),
     ]
     if export_rows is not None:
         metrics += _evidence_metrics(export_rows, gold_map)
@@ -1008,8 +1055,9 @@ def _four_arm_dimensions(
 
     def p4_values(
         fn: Callable[[RunRecord], float | None],
+        value_arms: Sequence[str],
     ) -> tuple[dict[str, dict[str, float]], int]:
-        """Per-arm value maps over the P4 questions every arm can score."""
+        """Per-arm value maps over the P4 questions all of `value_arms` can score."""
         raw = {
             arm: p4_mod.per_question_values(
                 records,
@@ -1017,13 +1065,15 @@ def _four_arm_dimensions(
                 arm,
                 lambda rec: math.nan if (v := fn(rec)) is None else v,
             )
-            for arm in arms
+            for arm in value_arms
         }
         common = [
-            q for q in p4_ids if all(not math.isnan(raw[arm][q]) for arm in arms)
+            q
+            for q in p4_ids
+            if all(not math.isnan(raw[arm][q]) for arm in value_arms)
         ]
         return (
-            {arm: {q: raw[arm][q] for q in common} for arm in arms},
+            {arm: {q: raw[arm][q] for q in common} for arm in value_arms},
             len(p4_ids) - len(common),
         )
 
@@ -1081,8 +1131,11 @@ def _four_arm_dimensions(
     )
 
     for metric in metrics:
-        by_arm, n_unscorable = p4_values(metric.value)
-        for arm in arms:
+        metric_arms = [
+            a for a in arms if not (metric.own_ranking and is_reader_arm(a))
+        ]
+        by_arm, n_unscorable = p4_values(metric.value, metric_arms)
+        for arm in metric_arms:
             values = by_arm[arm]
             detail = {
                 "n_excluded": n_excluded,
@@ -1110,6 +1163,8 @@ def _four_arm_dimensions(
         if metric.delta_name is None:
             continue
         for arm in comparison_arms:
+            if arm not in by_arm:
+                continue
             dims.append(
                 _delta_dimension(
                     f"{metric.delta_name}__{arm_slug(arm)}",
@@ -1127,7 +1182,7 @@ def _four_arm_dimensions(
             )
 
     for base, fn in percentile_metrics:
-        by_arm, n_unscorable = p4_values(fn)
+        by_arm, n_unscorable = p4_values(fn, arms)
         for arm in arms:
             for statistic in ("p50", "p95"):
                 dims.append(
@@ -1146,8 +1201,11 @@ def _four_arm_dimensions(
                 )
 
     # D-122 script-faithful line: every held-out G question per arm; a record with no
-    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive.
+    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive. A
+    # reader arm has no ranking of its own (#54, D-257) and has no such line.
     for arm in arms:
+        if is_reader_arm(arm):
+            continue
         scores: dict[str, dict[str, Any]] = {}
         no_ranking = 0
         for qid in g_ids:
