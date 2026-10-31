@@ -414,3 +414,101 @@ def test_delete_pg_extras_apply_runs_single_transaction_and_returns_deleted(
         _settings(tmp_path), allow_ids={DOC_A}, apply=True, pg_dump_path=dump_path
     )
     assert result == [extra]
+
+
+# --- Per-store schema (#69) -----------------------------------------------------------
+
+
+def _store_settings(lancedb_path: str, schema: str) -> EvalSettings:
+    return EvalSettings(
+        lancedb_path=lancedb_path,
+        dev_lancedb_path="./data/lancedb",
+        database_url=(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet"
+            f"?sslmode=disable&search_path={schema}"
+        ),
+        dev_database_url=(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable"
+        ),
+    )
+
+
+def _record_psql(monkeypatch: pytest.MonkeyPatch, output: str) -> list[str]:
+    seen: list[str] = []
+
+    def fake_run_psql(settings: EvalSettings, sql: str, **kwargs: object) -> str:
+        seen.append(sql)
+        return "" if "DELETE" in sql else output
+
+    monkeypatch.setattr("lancet_eval.identity.run_psql", fake_run_psql)
+    return seen
+
+
+def test_list_pg_documents_reads_the_s1_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#69: S1 settings list the S1 schema's documents, never the v1.0 schema's."""
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n")
+
+    result = list_pg_documents(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1")
+    )
+
+    assert result == {DOC_A: "completed"}
+    assert seen == ["SELECT id, status FROM lancet_eval_s1.documents ORDER BY id;"]
+
+
+def test_list_pg_documents_v1_sql_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _record_psql(monkeypatch, "")
+
+    list_pg_documents(_settings(tmp_path))
+
+    assert seen == ["SELECT id, status FROM lancet_eval.documents ORDER BY id;"]
+
+
+def test_delete_pg_extras_on_the_s1_store_deletes_only_from_its_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#69: `identity repair` on the S1 store reads and deletes in lancet_eval_s1."""
+    dump_path = tmp_path / "backup.sql"
+    dump_path.write_text("-- pg_dump contents\n", encoding="utf-8")
+    extra = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n{extra}|completed\n")
+
+    delete_pg_extras(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        allow_ids={DOC_A},
+        apply=True,
+        pg_dump_path=dump_path,
+    )
+
+    assert seen
+    assert all("lancet_eval_s1.documents" in sql for sql in seen)
+    assert any("DELETE FROM lancet_eval_s1.documents" in sql for sql in seen)
+
+
+@pytest.mark.parametrize(
+    ("lancedb_path", "schema"),
+    [
+        # The S1 store's path with another store's schema, and the reverse.
+        ("./data/lancedb-eval-s1", "lancet_eval"),
+        ("./data/lancedb-eval", "lancet_eval_s1"),
+        # A schema no store owns.
+        ("./data/lancedb-eval-s1", "other_eval"),
+    ],
+)
+def test_delete_pg_extras_refuses_a_schema_not_of_the_selected_store(
+    monkeypatch: pytest.MonkeyPatch, lancedb_path: str, schema: str
+) -> None:
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n")
+
+    with pytest.raises(SeedError, match="schema"):
+        delete_pg_extras(
+            _store_settings(lancedb_path, schema),
+            allow_ids={DOC_A},
+            apply=False,
+            pg_dump_path=None,
+        )
+    assert seen == []

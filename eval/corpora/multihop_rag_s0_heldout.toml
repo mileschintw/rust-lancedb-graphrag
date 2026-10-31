@@ -1,0 +1,41 @@
+# v1.1 S0 (D-238, D-252): Lancet's shipped default against the MultiHop-RAG paper's
+# LlamaIndex pipeline on the held-out split. Driving this corpus, or exporting the
+# LlamaIndex arm over it, is held-out read 1 of D-237's two; Confirm is read 2.
+# `run --arms hybrid+rerank+metadata` drives the Lancet arm on the v1.0 store;
+# `run-external --arm llamaindex` journals the LlamaIndex arm into the same run.
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.heldout.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 351
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[arms]
+# The pre-registration's arm set, reference first. The drive refuses any other set (D-73).
+arms = [
+  "hybrid+rerank+metadata",
+  "llamaindex",
+]
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "heldout"
+
+# D-253: the constant in thresholds.py, committed before the paid run (D-73).
+[preregistration]
+token = "PREREGISTRATION_S0"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"
