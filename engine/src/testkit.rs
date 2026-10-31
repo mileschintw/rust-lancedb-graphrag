@@ -4,10 +4,10 @@
 //! grow additively, so an additive contract change does not churn the test tree,
 //! and [`ScopedSubscriber`], the guard for a test's default `tracing` subscriber.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use tracing::dispatcher::{self, DefaultGuard, Dispatch, WeakDispatch};
+use tracing::dispatcher::{self, DefaultGuard, Dispatch};
 
 use crate::pb::lancet::v1::{Notice, NoticeCode, NoticeSeverity, QueryRagRequest};
 use crate::workflow::notice;
@@ -83,8 +83,8 @@ impl tracing::Subscriber for Disabled {
 /// hold the last reference, so the provider inside the layer shuts down on that thread, under
 /// that lock. The shutdown emits internal `tracing` events, and registering a new callsite there
 /// takes the same lock again behind any waiting writer: the lib tests deadlock (#59). Dropping
-/// this guard waits until the subscriber itself is gone, so the provider locals hold the last
-/// reference and shut down on the test thread. Installing it also keeps a second dispatcher
+/// this guard waits until no other thread holds the subscriber and then drops it here, so the
+/// subscriber and the providers it references always drop on the test thread. Installing it also keeps a second dispatcher
 /// registered for the rest of the run, so a callsite another thread hits first stays visible to
 /// this subscriber.
 ///
@@ -94,7 +94,7 @@ impl tracing::Subscriber for Disabled {
 /// thread fails the test instead of hanging the run.
 pub struct ScopedSubscriber {
     guard: Option<DefaultGuard>,
-    subscriber: WeakDispatch,
+    subscriber: Option<Arc<dyn tracing::Subscriber + Send + Sync>>,
     deadline: Duration,
 }
 
@@ -109,10 +109,11 @@ impl ScopedSubscriber {
         deadline: Duration,
     ) -> Self {
         ALWAYS_REGISTERED.get_or_init(|| Dispatch::new(Disabled));
-        let dispatch = Dispatch::new(subscriber);
+        let subscriber: Arc<dyn tracing::Subscriber + Send + Sync> = Arc::new(subscriber);
+        let dispatch = Dispatch::new(Arc::clone(&subscriber));
         Self {
             guard: Some(dispatcher::set_default(&dispatch)),
-            subscriber: dispatch.downgrade(),
+            subscriber: Some(subscriber),
             deadline,
         }
     }
@@ -121,9 +122,15 @@ impl ScopedSubscriber {
 impl Drop for ScopedSubscriber {
     fn drop(&mut self) {
         drop(self.guard.take());
+        let Some(subscriber) = self.subscriber.take() else {
+            return;
+        };
         let started = Instant::now();
-        while self.subscriber.upgrade().is_some() {
+        while Arc::strong_count(&subscriber) > 1 {
             if started.elapsed() > self.deadline {
+                // Leak it: dropping our reference now could still run the providers' shutdown
+                // on another thread, under tracing-core's lock.
+                std::mem::forget(subscriber);
                 if !std::thread::panicking() {
                     panic!(
                         "ScopedSubscriber: another thread still holds this test's subscriber after {:?}",
@@ -134,36 +141,38 @@ impl Drop for ScopedSubscriber {
             }
             std::thread::yield_now();
         }
+        drop(subscriber);
     }
 }
 
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::thread::ThreadId;
     use std::time::Duration;
 
     use tracing_subscriber::layer::SubscriberExt;
 
     use super::ScopedSubscriber;
 
-    /// Records whether the subscriber it is layered into has been dropped.
-    struct DropProbe(Arc<AtomicBool>);
+    /// Records the thread that dropped the subscriber it is layered into.
+    struct DropProbe(Arc<Mutex<Option<ThreadId>>>);
 
     impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for DropProbe {}
 
     impl Drop for DropProbe {
         fn drop(&mut self) {
-            self.0.store(true, Ordering::SeqCst);
+            *self.0.lock().unwrap() = Some(std::thread::current().id());
         }
     }
 
-    /// #59: a subscriber another thread still holds must be gone before the guard's drop
-    /// returns, so the test's provider locals drop last, on the test thread.
+    /// #59: a subscriber another thread still holds is dropped by the guard, on the test thread,
+    /// once that thread lets go, so the providers it references never shut down elsewhere.
     #[test]
     fn scoped_subscriber_drop_waits_for_another_threads_reference() {
-        let dropped = Arc::new(AtomicBool::new(false));
+        let dropped_on = Arc::new(Mutex::new(None));
         let scoped = ScopedSubscriber::install(
-            tracing_subscriber::Registry::default().with(DropProbe(dropped.clone())),
+            tracing_subscriber::Registry::default().with(DropProbe(dropped_on.clone())),
         );
         let foreign = tracing::dispatcher::get_default(|dispatch| dispatch.clone());
         let holder = std::thread::spawn(move || {
@@ -173,9 +182,10 @@ mod tests {
 
         drop(scoped);
 
-        assert!(
-            dropped.load(Ordering::SeqCst),
-            "the subscriber outlived its guard"
+        assert_eq!(
+            *dropped_on.lock().unwrap(),
+            Some(std::thread::current().id()),
+            "the subscriber must drop on the test thread, before the guard's drop returns"
         );
         holder.join().unwrap();
     }
