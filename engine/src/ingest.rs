@@ -1541,6 +1541,25 @@ pub fn reset_rebuild_invocation_count() {
     REBUILD_COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
 }
 
+// The test rebuild count is per thread, like the fault hooks below: tests run in parallel, and
+// the process-wide `REBUILD_COUNTER` also counts other tests' rebuilds (#64). A `#[tokio::test]`
+// runs on a current-thread runtime, so the rebuilds of a task it spawns count on its thread too.
+#[cfg(test)]
+thread_local! {
+    static THREAD_REBUILD_COUNTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The rebuilds started on this thread since [`reset_thread_rebuild_invocation_count`].
+#[cfg(test)]
+pub fn thread_rebuild_invocation_count() -> usize {
+    THREAD_REBUILD_COUNTER.get()
+}
+
+#[cfg(test)]
+pub fn reset_thread_rebuild_invocation_count() {
+    THREAD_REBUILD_COUNTER.set(0);
+}
+
 #[cfg(test)]
 pub static REBUILD_TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -1756,6 +1775,8 @@ pub async fn rebuild_and_swap_with_graph_builder(
 ) -> Result<Arc<crate::workflow::ports::CorpusSnapshot>, String> {
     let rebuild_start = std::time::Instant::now();
     REBUILD_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(test)]
+    THREAD_REBUILD_COUNTER.set(THREAD_REBUILD_COUNTER.get() + 1);
 
     let prior = {
         let guard = corpus_store.read().await;

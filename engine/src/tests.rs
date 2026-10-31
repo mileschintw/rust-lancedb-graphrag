@@ -8737,7 +8737,7 @@ async fn debounce_coalesces_burst() {
     )
     .await;
 
-    engine::ingest::reset_rebuild_invocation_count();
+    engine::ingest::reset_thread_rebuild_invocation_count();
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
 
@@ -8761,9 +8761,67 @@ async fn debounce_coalesces_burst() {
     tokio::time::sleep(std::time::Duration::from_millis(350)).await;
 
     assert_eq!(
-        engine::ingest::rebuild_invocation_count(),
+        engine::ingest::thread_rebuild_invocation_count(),
         1,
         "burst of 5 notifications must coalesce into exactly 1 rebuild"
+    );
+
+    shutdown_tx.send(true).unwrap();
+    let _ = debounce_task.await;
+    let _ = std::fs::remove_dir_all(path);
+}
+
+/// #64: the burst's rebuild count holds only this test's rebuilds. A rebuild another test runs on
+/// its own thread inside the burst window is not counted.
+#[tokio::test]
+async fn debounce_burst_count_ignores_another_threads_rebuild() {
+    let _lock = engine::ingest::REBUILD_TEST_MUTEX.lock().await;
+    let path = database_path("debounce-burst-foreign");
+    let database = DatabaseManager::initialize(&path).await.unwrap();
+    let service = configured_service(
+        &database,
+        EffectiveRagSettings::default(),
+        Arc::new(FakeEmbedder),
+        Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+            answer: "Answer".into(),
+            cited_evidence_ids: vec![],
+            answer_basis: generation::AnswerBasis::ModelOnly,
+            notices: vec![],
+            warnings: vec![],
+            final_answer: None,
+            usage: None,
+        }))),
+        Arc::new(rerank::NoOpReranker::new()),
+    )
+    .await;
+
+    engine::ingest::reset_thread_rebuild_invocation_count();
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (rebuild_tx, rebuild_rx) = watch::channel(0u64);
+
+    let debounce_task = engine::ingest::spawn_rebuild_debounce_task(
+        rebuild_rx,
+        shutdown_rx,
+        service.database.clone(),
+        service.corpus_store.clone(),
+        service.effective_settings.retrieval.bm25.clone(),
+        std::time::Duration::from_millis(200),
+        RebuildTriggerLinks::default(),
+    );
+
+    let foreign = std::thread::spawn(|| rebuild_on_a_fresh_store("debounce-burst-elsewhere"));
+    for _ in 0..5 {
+        rebuild_tx.send_modify(|v| *v = v.wrapping_add(1));
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+    // Joined before the assertion, so the foreign rebuild has always run by the time it reads.
+    assert_eq!(foreign.join().unwrap(), Ok(()));
+
+    assert_eq!(
+        engine::ingest::thread_rebuild_invocation_count(),
+        1,
+        "another thread's rebuild leaked into this test's rebuild count"
     );
 
     shutdown_tx.send(true).unwrap();
