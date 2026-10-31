@@ -21,6 +21,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 5. #25 (clippy `-D warnings` on main) gets a lane, started only after #11 and #23 have both merged. User's words (2026-10-29 21:58 -0700), answering "When should the #25 clippy lane start?": "After #11 and #23". When both merge: write `briefs/25.md`, then start it in the next turn the user types (the app refuses starts from event turns); this answer is the go-ahead. #11's "cargo clippy passes" criterion is carried by #25; say so in lane 11's PR body.
 
 6. The LlamaIndex baseline (#13) sends the rerank model only the chunk body, as Lancet does, not LlamaIndex's metadata header plus body (fairness rule 5, `experiments/v1.1/RESEARCH.md`). User's words (2026-10-29 22:38 -0700), answering lane 13's open question: "改成只送內文 (Recommended)". Sent to lane 13. Done: lane 13 pushed f3b462e0; PR #31 merged on the user's "開 PR 並 merge (Recommended)" from the same answer set.
+7. Sonnet 5.5 `between_tools` over OpenRouter: keep lane 51's encoding (drop `reasoning`, add top-level `thinking: {type: "between_tools"}`). The paid S2 pilot checks `reasoning_tokens`; if OpenRouter drops the field, the arm goes through the native Anthropic batch API per Q4. Lane 52's brief records it as a new D-ID in the pre-registration. User's words (2026-10-30), answering lane 51's open question: "照 lane 51 的做法 (Recommended)".
 
 Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo uses no triage labels"), opened 2026-10-29 19:21 -0700 outside relay; left to the user.
 
@@ -29,7 +30,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 47 | #47 | local_f74dc425-7470-4904-974a-b8e78264bf9e (`claude/lane-47-239abf`) | started | — |
-| 51 | #51 | local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f (`claude/lane-51-ff04eb`) | started | — |
+| 51 | #51 | local_5e80f874-0b01-4ce9-bd16-ea728c6cb66f (`claude/lane-51-ff04eb`) | done @ 3d46e6b1; PR #60 open, merge once `ci` passes (user: "開 PR，CI 過了就 merge (Recommended)", 2026-10-30) | — |
 | 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | started | — |
 
 Lanes 47, 51, 56 approved on the user's "三條全開" (2026-10-30 21:17 -0700); the app refused the start over Remote Control, so started 2026-10-30 21:39 -0700 on the user's typed "開始". Each has its own worktree. Engine builders 47 and 56 run together at `CARGO_BUILD_JOBS=2`; lane 56's sccache install approved 2026-10-30 on the user's "照提案安裝 (Recommended)": winget Mozilla.sccache, `SCCACHE_DIR=D:\sccache`, `SCCACHE_CACHE_SIZE=40G`, `rustc-wrapper = "sccache"` in the user's global `~/.cargo/config.toml` (all cargo builds on this machine).
