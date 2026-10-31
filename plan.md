@@ -56,10 +56,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | review | — |
-| 74 | #74 #75 | local_66433095-dc50-4460-bbe1-8a93078ad6f6 | done; PR #96, merge on green | — |
 | 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | review | — |
 | 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | parked | #76 merged (same section: llamaindex `cli.py` › `export`) |
-| 95 | #95 | local_b6b939b9-0c70-4fa0-84e9-974bea1fcea2 | done; PR #97, merge on green | — |
 
 Lanes 64, 74, 76, 77 and 95 started 2026-10-31 13:55 -0700 on the user's answers: "#64 計數器 flake, #74 + #75 執行指南, #76 免費預演, #77 + #78 成本與保留讀取" and "新增 D-ID". The same answer set: PR #89 merged ("直接合併"), #49 closed ("關掉"). Only lane 64 builds the engine. Owners: lane 74 owns `RUN-S0-S1.md`, `external_run.py` and `journal.py`; lane 77 owns `eval/src/lancet_eval/cli.py`; lane 76 owns the stub and the export's client construction; lane 95 owns `experiments/v1.1/PLAN.md` (D-265 pinned). #94 and lane 64 both edit `engine/src/tests.rs`, different tests (mechanical overlap).
 
@@ -85,12 +83,9 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 |---|---|---|---|---|---|
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #64 | 1 (lane 64 running) | — | none | `engine/src/ingest.rs` › `REBUILD_COUNTER`, `engine/src/tests.rs` › `debounce_coalesces_burst` | free |
-| #74 | 1 (lane 74 running, with #75) | — | none | `experiments/v1.1/RUN-S0-S1.md` › step 0 | free |
-| #75 | 1 (lane 74 running) | — | none | `RUN-S0-S1.md` › drive steps (per-arm count); `external_run.py` › resume | free |
 | #76 | 1 (lane 76 running) | — | none | `provider_stub.py`, llamaindex `providers.py`, `cli.py` › `export` client construction, new `multihop_rag_s0_rehearsal.toml` | free |
 | #77 | 2 (lane 77 parked, with #78) | — | after #76: llamaindex `cli.py` › `export` | `eval/src/lancet_eval/cli.py` › `run_benchmark`, `run_external_command`; llamaindex `cli.py` › `export` | free |
 | #78 | 2 (lane 77 parked) | — | after #76: llamaindex `cli.py` › `export` | llamaindex `cli.py` › `export` (split gates); `run.py` › `require_split_gates` | free |
-| #95 | 1 (lane 95 running) | — | none | `experiments/v1.1/PLAN.md` › D-257 pointer, new D-265 | free |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
 

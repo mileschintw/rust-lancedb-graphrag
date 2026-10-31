@@ -138,3 +138,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **#95** (D-265) was opened on the user's "新增 D-ID (Recommended)".
 - **Lane 56 (#56):** PR #71 merged 2026-10-31 at 343d29db after #94 fixed #93 (ci green). D:/lane56-targets is to be deleted (user: "等 lane 59 merge 後再跑 (Recommended)").
   - D:/lane56-targets: the coordinator's delete was blocked as a protected path; left for the user to delete by hand.
+- **Lane 74 (#74, #75):** PR #96 merged 2026-10-31 at c566a7cc (ci green). **Lane 95 (#95):** PR #97 merged 2026-10-31 at 266600d4 (ci green); D-265 is on main.
