@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from lancet_eval.config import S1_STORE, V1_STORE, EvalSettings
+from lancet_eval.config import S1_STORE, V1_STORE, EvalSettings, EvalStore
 from lancet_eval.identity import (
     IdentityGateError,
     IdentityReport,
@@ -50,6 +50,7 @@ def _write_map(
     corpus: str = "multihop_rag",
     entries: dict[str, str] | None = None,
     aliases: dict[str, str] | None = None,
+    store: EvalStore = V1_STORE,
 ) -> None:
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
     if entries is None:
@@ -64,7 +65,7 @@ def _write_map(
         },
         aliases=aliases or {},
     )
-    save_document_map_atomic(doc_map)
+    save_document_map_atomic(doc_map, store)
 
 
 def _lance_ok(**overrides: object) -> dict[str, object]:
@@ -520,28 +521,15 @@ def test_delete_pg_extras_refuses_a_schema_not_of_the_selected_store(
 FAILED_UPLOAD = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 
 
-def _s1_identity(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pg_rows: str, *, store: str
+def _store_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pg_rows: str, store: EvalStore
 ) -> IdentityReport:
     """Compute identity for `store` over map {A, B}, a correct LanceDB and `pg_rows`."""
-    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
-    eval_store = S1_STORE if store == "eval-s1" else V1_STORE
-    save_document_map_atomic(
-        DocumentMap(
-            corpus="multihop_rag",
-            seeded_at="2026-10-31T00:00:00Z",
-            index_generation="lance-1",
-            entries={
-                doc_id: DocumentMapEntry(corpus_id=t, document_id=doc_id, title=t)
-                for doc_id, t in {DOC_A: "Article A", DOC_B: "Article B"}.items()
-            },
-        ),
-        eval_store,
-    )
+    _write_map(tmp_path, monkeypatch, store=store)
     _patch_lance(monkeypatch)
     _record_psql(monkeypatch, pg_rows)
     return compute_identity(
-        _store_settings(eval_store.lancedb_path, eval_store.pg_schema), "multihop_rag"
+        _store_settings(store.lancedb_path, store.pg_schema), "multihop_rag"
     )
 
 
@@ -549,11 +537,11 @@ def test_s1_failed_upload_row_outside_the_map_passes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#79: seed's retry leaves the first upload `failed`; the S1 store still passes."""
-    report = _s1_identity(
+    report = _store_identity(
         tmp_path,
         monkeypatch,
         f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|failed\n",
-        store="eval-s1",
+        S1_STORE,
     )
 
     assert report.failures == []
@@ -564,8 +552,8 @@ def test_s1_failed_upload_row_outside_the_map_passes(
 def test_s1_failed_row_of_a_mapped_document_still_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    report = _s1_identity(
-        tmp_path, monkeypatch, f"{DOC_A}|completed\n{DOC_B}|failed\n", store="eval-s1"
+    report = _store_identity(
+        tmp_path, monkeypatch, f"{DOC_A}|completed\n{DOC_B}|failed\n", S1_STORE
     )
 
     assert report.passed is False
@@ -577,11 +565,11 @@ def test_s1_failed_row_of_a_mapped_document_still_fails(
 def test_s1_extra_row_not_failed_still_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    report = _s1_identity(
+    report = _store_identity(
         tmp_path,
         monkeypatch,
         f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|{status}\n",
-        store="eval-s1",
+        S1_STORE,
     )
 
     assert report.passed is False
@@ -592,11 +580,11 @@ def test_v1_failed_row_outside_the_map_still_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """#79: the v1.0 store's gate is unchanged; a failed extra row fails it twice."""
-    report = _s1_identity(
+    report = _store_identity(
         tmp_path,
         monkeypatch,
         f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|failed\n",
-        store="eval",
+        V1_STORE,
     )
 
     assert report.passed is False

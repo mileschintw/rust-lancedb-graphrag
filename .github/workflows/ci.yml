@@ -68,6 +68,7 @@ jobs:
               - 'docs/api-contract.md'
               - 'docs/observability.md'
               - 'docs/assets/**'
+              - 'experiments/v1.1/RUN-S0-S1.md'
               - '.planning/**'
               - '.env.example'
               - 'verify-ingestion.sh'

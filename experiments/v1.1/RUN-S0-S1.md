@@ -11,8 +11,9 @@ For the run-lane worker. Follow the steps in order, one command at a time. The p
   `eval/src/lancet_eval/` (D-73), after the spend. So before step 4, `git status --short eval/src/` must print
   nothing.
 - **`LANCET_ENV` in the harness shell.** The seed and arm-store checks, and preflight's timeout check, read
-  `LANCET_ENV` from the harness's own environment. Every harness command below that talks to a stack sets it inline
-  to that stack's store: `eval-s1` in steps 1.3 to 1.5, 4.3 and 4.4, `eval` elsewhere. Keep it.
+  `LANCET_ENV` from the harness's own environment. Every `seed`, `preflight`, `run`, `run-external` and `identity`
+  command below sets it inline to its stack's store: `eval-s1` in steps 1.3 to 1.5, 4.3 and 4.4, `eval` elsewhere.
+  Keep it.
 - **Ask the user first, once per step**, before each step marked *Paid*, *Store build*, *Store change* or
   *Held-out read*. Ask in Traditional Chinese. Give the step number, its commands, the step's total estimate from
   this guide and what it reads and writes. A yes covers that step's commands only. Run nothing on a guess.
@@ -152,7 +153,7 @@ the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 and #69 c
         LANCET_ENV=eval-s1 uv run --project eval lancet-eval identity pg-delete-extras --store eval-s1 --corpus multihop_rag_s1_dev --apply --pg-dump data/pg-dump-lancet_eval_s1-before-79.sql
         ```
 
-     3. Rerun the second query; it must print no rows.
+     3. Rerun the `status <> 'completed'` query; it must print no rows.
    - Any other status (`queued`, `processing`): stop and tell the user; the seed did not finish.
 
 5. Preflight the store. It sends the arm canaries of the two merged arms, a few cents. Every check must pass,
@@ -357,11 +358,8 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    problems = gitcheck.preregistration_problems(('PREREGISTRATION_S1_MERGED_GRAPH',), created_at=float(created), require_clean_tree=True, unchanged_since_introduction=True)
    if problems: sys.exit('D-73: ' + '; '.join(problems))
    payload = build_lever_comparison(run, prereg=PREREGISTRATION_S1_MERGED_GRAPH)
-   (run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + '
-', encoding='utf-8', newline='
-')
-   (run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8', newline='
-')
+   (run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + '\n', encoding='utf-8', newline='\n')
+   (run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8', newline='\n')
    "
    ```
 
@@ -378,5 +376,5 @@ done. Each store's arms are driven against their own stack into one journal (D-2
 
 Commit the two run directories, the filled Result sections and the S1 document map
 `eval/corpora/multihop_rag/document_map.eval-s1.json` (written by step 1.3; `score` reads it for every `merged/`
-record) on the run lane's own branch, never on `main`; the coordinator opens and merges the PR. Report each step's real spend (the `observed spend` lines and the OpenRouter
-activity page) beside these estimates.
+record) on the run lane's own branch, never on `main`; the coordinator opens and merges the PR. Report each step's
+real spend (the `observed spend` lines and the OpenRouter activity page) beside these estimates.

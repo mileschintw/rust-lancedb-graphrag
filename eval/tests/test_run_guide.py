@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 
 from lancet_eval.config import repo_root
 
@@ -34,3 +35,13 @@ def test_guide_lists_the_rows_the_recovery_step_removes() -> None:
     assert "identity pg-delete-extras --store eval-s1" in GUIDE.read_text(
         encoding="utf-8"
     )
+
+
+def test_python_snippets_compile() -> None:
+    """Each `python -c` snippet, dedented as the agent reads it, is valid Python."""
+    text = GUIDE.read_text(encoding="utf-8")
+    snippets = re.findall(r'python -c "(.*?)"\n', text, flags=re.DOTALL)
+
+    assert len(snippets) >= 4
+    for snippet in snippets:
+        compile(textwrap.dedent(snippet), "<guide>", "exec")
