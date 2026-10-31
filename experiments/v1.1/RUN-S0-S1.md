@@ -6,11 +6,16 @@ For the run-lane worker. Follow the steps in order, one command at a time. The p
 ## Rules for the whole run
 
 - **Main checkout only** (`D:\Repos\lancet`, Git Bash, repository root), on `main` at or after the commit that added
-  `PREREGISTRATION_S0` and `PREREGISTRATION_S1`, with a clean tree. Worktrees lack the live store, and the drive
-  refuses a dirty `eval/src/` (D-73).
-- **Ask the user first, once per step**, before each step marked *Paid*, *Store build* or *Held-out read*. Ask in
-  Traditional Chinese. Give the step number, its commands, the step's total estimate from this guide and what it
-  reads and writes. A yes covers that step's commands only. Run nothing on a guess.
+  `PREREGISTRATION_S0` and `PREREGISTRATION_S1`, with a clean tree. Worktrees lack the live store. For a `dev`
+  corpus the drive does not check the tree (D-170); only `score` and `compare-levers` refuse a dirty
+  `eval/src/lancet_eval/` (D-73), after the spend. So before step 4, `git status --short eval/src/` must print
+  nothing.
+- **`LANCET_ENV` in the harness shell.** The seed and arm-store checks, and preflight's timeout check, read
+  `LANCET_ENV` from the harness's own environment. Every harness command below that talks to a stack sets it inline
+  to that stack's store: `eval-s1` in steps 1.3 to 1.5, 4.3 and 4.4, `eval` elsewhere. Keep it.
+- **Ask the user first, once per step**, before each step marked *Paid*, *Store build*, *Store change* or
+  *Held-out read*. Ask in Traditional Chinese. Give the step number, its commands, the step's total estimate from
+  this guide and what it reads and writes. A yes covers that step's commands only. Run nothing on a guess.
 - **No mid-run cap** (D-258). `run` and `run-external` require `--stage-cap`; pass `--stage-cap 100`, which no step
   here can reach.
 - **A non-zero exit stops the run.** Tell the user what failed, with the last lines of output. The only expected
@@ -110,24 +115,51 @@ the schema `lancet_eval_s1`, and reads no held-out question. Needs #67 and #69 c
    - Writes: `data/lancedb-eval-s1`, `lancet_eval_s1`, `eval/corpora/multihop_rag/document_map.eval-s1.json`.
 
    ```bash
-   uv run --project eval lancet-eval seed --corpus multihop_rag_s1_dev --store eval-s1
+   LANCET_ENV=eval-s1 uv run --project eval lancet-eval seed --corpus multihop_rag_s1_dev --store eval-s1
    ```
 
 4. Check the chunking took. Step 1.5's preflight reports it as its `store_chunking` check (added by #67); this query
-   checks the same thing directly:
+   checks the same thing directly, over the completed documents:
 
    ```bash
-   docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT chunk_strategy, chunk_size, chunk_overlap, count(*) FROM lancet_eval_s1.documents GROUP BY 1, 2, 3;"
+   docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT chunk_strategy, chunk_size, chunk_overlap, count(*) FROM lancet_eval_s1.documents WHERE status = 'completed' GROUP BY 1, 2, 3;"
    ```
 
    It must print one row: `structure-merge`, 256, 25, 346. Anything else: stop and tell the user; the store is not
-   the S1 store.
+   the S1 store. Then list the documents that did not complete:
+
+   ```bash
+   docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT id, status, error_message FROM lancet_eval_s1.documents WHERE status <> 'completed';"
+   ```
+
+   - No rows: go to step 1.5.
+   - Only `failed` rows: a transient ingestion failure, which `seed` retried under a new upload; the gateway keeps
+     the first upload's row (#79). The identity check skips these rows on the S1 store, but remove them so the
+     store holds only the seeded documents. This is a *Store change*: ask the user first, naming the IDs.
+     1. Dry run. It must list exactly the `failed` IDs above; anything else, stop and tell the user.
+
+        ```bash
+        LANCET_ENV=eval-s1 uv run --project eval lancet-eval identity pg-delete-extras --store eval-s1 --corpus multihop_rag_s1_dev
+        ```
+
+     2. Back up the schema, which `--apply` requires (`data/` is gitignored), then delete:
+
+        ```bash
+        docker exec lancet-postgres pg_dump -U postgres -d lancet -n lancet_eval_s1 > data/pg-dump-lancet_eval_s1-before-79.sql
+        ```
+
+        ```bash
+        LANCET_ENV=eval-s1 uv run --project eval lancet-eval identity pg-delete-extras --store eval-s1 --corpus multihop_rag_s1_dev --apply --pg-dump data/pg-dump-lancet_eval_s1-before-79.sql
+        ```
+
+     3. Rerun the second query; it must print no rows.
+   - Any other status (`queued`, `processing`): stop and tell the user; the seed did not finish.
 
 5. Preflight the store. It sends the arm canaries of the two merged arms, a few cents. Every check must pass,
    `store_chunking` and `index_identity` included:
 
    ```bash
-   uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev
+   LANCET_ENV=eval-s1 uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev
    ```
 
 Stop the S1 stack.
@@ -175,7 +207,7 @@ LANCET_ENV=eval ./engine/target/debug/engine
    gateway and engine reachability, and answers one corpus-generation probe question.
 
    ```bash
-   uv run --project eval lancet-eval preflight --corpus multihop_rag_s0_heldout
+   LANCET_ENV=eval uv run --project eval lancet-eval preflight --corpus multihop_rag_s0_heldout
    ```
 
 2. Drive the Lancet arm over the 351 held-out questions. Estimate 351 × $0.0011, **about $0.40** (ceiling $1.5).
@@ -183,7 +215,7 @@ LANCET_ENV=eval ./engine/target/debug/engine
    `run-external` refuses a gate-stage journal.
 
    ```bash
-   uv run --project eval lancet-eval run --corpus multihop_rag_s0_heldout --arms hybrid+rerank+metadata --out <S0_RUN>/journal.jsonl --stage-cap 100
+   LANCET_ENV=eval uv run --project eval lancet-eval run --corpus multihop_rag_s0_heldout --arms hybrid+rerank+metadata --out <S0_RUN>/journal.jsonl --stage-cap 100
    ```
 
 3. Prompt parity (D-247), offline and free. It re-packs each Lancet row and compares it with the checkpointed
@@ -206,7 +238,7 @@ LANCET_ENV=eval ./engine/target/debug/engine
    appends to `<S0_RUN>/journal.jsonl` and copies the rows into `<S0_RUN>/context_export.jsonl`.
 
    ```bash
-   uv run --project eval lancet-eval run-external --corpus multihop_rag_s0_heldout --arm llamaindex --export <S0_RUN>/llamaindex/context_export.jsonl --out <S0_RUN>/journal.jsonl --stage-cap 100
+   LANCET_ENV=eval uv run --project eval lancet-eval run-external --corpus multihop_rag_s0_heldout --arm llamaindex --export <S0_RUN>/llamaindex/context_export.jsonl --out <S0_RUN>/journal.jsonl --stage-cap 100
    ```
 
 6. Score and compare, offline and free. Writes `report.json`, `report.md`, `lever-comparison.json` and
@@ -236,14 +268,14 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    cents:
 
    ```bash
-   uv run --project eval lancet-eval preflight --corpus multihop_rag_s1_dev
+   LANCET_ENV=eval uv run --project eval lancet-eval preflight --corpus multihop_rag_s1_dev
    ```
 
 2. Drive the two small-store arms over the 100 dev questions. Estimate 200 × $0.0011, **about $0.22**. It writes
    `<S1_RUN>/journal.jsonl` and its export.
 
    ```bash
-   uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms small/hybrid+rerank+metadata,small/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
+   LANCET_ENV=eval uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms small/hybrid+rerank+metadata,small/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
    ```
 
    Stop the v1.0 stack and start the S1 stack (step 1.2).
@@ -251,14 +283,14 @@ done. Each store's arms are driven against their own stack into one journal (D-2
 3. Preflight the S1 store, a few cents:
 
    ```bash
-   uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev
+   LANCET_ENV=eval-s1 uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev
    ```
 
 4. Drive the two merged-store arms into the same journal. Estimate 200 questions at about 3,500 prompt tokens,
    **about $0.25**.
 
    ```bash
-   uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms merged/hybrid+rerank+metadata,merged/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
+   LANCET_ENV=eval-s1 uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms merged/hybrid+rerank+metadata,merged/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
    ```
 
    While #65 is open, this drive's end-of-drive export fails on the small-store records (their checkpoints are in
@@ -310,7 +342,7 @@ done. Each store's arms are driven against their own stack into one journal (D-2
 
 7. The merged-store graph reading (D-263), offline and free. It first runs the D-73 check on
    `PREREGISTRATION_S1_MERGED_GRAPH` itself (`compare-levers` checks only the corpus token), then writes
-   `lever-comparison-merged-graph.json` and `.md`:
+   `lever-comparison-merged-graph.json` and `.md` the way `compare-levers` writes its files (LF, no NaN):
 
    ```bash
    uv run --project eval python -c "
@@ -325,8 +357,11 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    problems = gitcheck.preregistration_problems(('PREREGISTRATION_S1_MERGED_GRAPH',), created_at=float(created), require_clean_tree=True, unchanged_since_introduction=True)
    if problems: sys.exit('D-73: ' + '; '.join(problems))
    payload = build_lever_comparison(run, prereg=PREREGISTRATION_S1_MERGED_GRAPH)
-   (run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding='utf-8')
-   (run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8')
+   (run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + '
+', encoding='utf-8', newline='
+')
+   (run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8', newline='
+')
    "
    ```
 
@@ -341,6 +376,7 @@ done. Each store's arms are driven against their own stack into one journal (D-2
 
 ## After the run
 
-Commit the two run directories and the filled Result sections on the run lane's own branch, never on `main`; the
-coordinator opens and merges the PR. Report each step's real spend (the `observed spend` lines and the OpenRouter
+Commit the two run directories, the filled Result sections and the S1 document map
+`eval/corpora/multihop_rag/document_map.eval-s1.json` (written by step 1.3; `score` reads it for every `merged/`
+record) on the run lane's own branch, never on `main`; the coordinator opens and merges the PR. Report each step's real spend (the `observed spend` lines and the OpenRouter
 activity page) beside these estimates.
