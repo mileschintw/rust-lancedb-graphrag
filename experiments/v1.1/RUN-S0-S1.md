@@ -19,9 +19,8 @@ For the run-lane worker. Follow the steps in order, one command at a time. The p
   this guide and what it reads and writes. A yes covers that step's commands only. Run nothing on a guess.
 - **No mid-run cap** (D-258). `run` and `run-external` require `--stage-cap`; pass `--stage-cap 100`, which no step
   here can reach.
-- **A non-zero exit stops the run.** Tell the user what failed, with the last lines of output. The only expected
-  non-zero exit is the one step 4.4 names. Resuming a paid command (same command again; `run` and `run-external`
-  default to `--resume`) needs a new yes.
+- **A non-zero exit stops the run.** Tell the user what failed, with the last lines of output. Resuming a paid
+  command (same command again; `run` and `run-external` default to `--resume`) needs a new yes.
 - **Count after each drive** (#75). A drive can stop early and still exit 0: the rerank degrade tripwire (D-262) and
   a spend cap both print `Drive stopped early` in yellow. An `error` record is a missing pair. After steps 3.2, 3.5,
   4.2 and 4.4, read the drive's output for `Drive stopped early`, then count the journal's records per arm and
@@ -84,7 +83,7 @@ issue is closed and its fix is on `main` (`git log origin/main --oneline --grep 
 |---|---|---|
 | #67 seed sends no chunking | step 1 | `seed --store eval-s1` would build paragraph fragments, not merged chunks |
 | #69 identity check reads only `lancet_eval` | steps 1.5, 4.3, 4.4 | `preflight --store eval-s1` and the merged drive's identity gate fail on a correct S1 store |
-| #65 two-store context export | step 4.5 | stopgap given in step 4.5 |
+| #65 two-store context export | steps 4.4, 4.5 | the merged drive's export and `export-context` read only one store's checkpoints |
 | #68 dev-role scoring | steps 4.6 to 4.8 | `score` and `compare-levers` read only held-out IDs and refuse a dev run |
 
 Steps 2 and 3 do not depend on any of them. With #67 or #69 open, run steps 2 and 3 and stop before step 1. With #68
@@ -328,39 +327,16 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    LANCET_ENV=eval-s1 uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms merged/hybrid+rerank+metadata,merged/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
    ```
 
-   While #65 is open, this drive's end-of-drive export fails on the small-store records (their checkpoints are in
-   `lancet_eval`, not `lancet_eval_s1`) and `run` exits non-zero after journalling every record. This is the one
-   expected non-zero exit. Any other failure stops the run.
+   Count (*Count after each drive*): all four arms must reach 100.
 
-   Count (*Count after each drive*), also after that expected exit: all four arms must reach 100. Then go on to step
-   4.5.
-
-5. Build the two-store context export, offline. Keep the S1 stack's Postgres up (it is the same container). Once #65
-   has cleared:
+5. Build the two-store context export, offline. Keep the S1 stack's Postgres up (it is the same container). It reads
+   each store's checkpoints from its own schema:
 
    ```bash
    uv run --project eval lancet-eval export-context --run <S1_RUN>
    ```
 
-   While #65 is open, this stopgap reads each store's checkpoints from its own schema and writes the same file:
-
-   ```bash
-   uv run --project eval python -c "
-   from pathlib import Path
-   from lancet_eval.config import V1_STORE, S1_STORE, load_settings
-   from lancet_eval.context_export import PostgresCheckpointSource, read_export
-   from lancet_eval.run import write_context_export
-   class Both:
-       def __init__(self):
-           self.sources = [PostgresCheckpointSource(load_settings(store=s)) for s in (V1_STORE, S1_STORE)]
-       def terminal_success(self, ids):
-           return [row for s in self.sources for row in s.terminal_success(ids)]
-   run = Path('<S1_RUN>')
-   print(len(read_export(write_context_export(run / 'journal.jsonl', Both()))), 'rows')
-   "
-   ```
-
-   The row count must equal the number of journal records whose `outcome` is `success`. Count them with:
+   The export's row count must equal the number of journal records whose `outcome` is `success`. Count them with:
 
    ```bash
    uv run --project eval python -c "from lancet_eval.journal import load_records; print(sum(r.outcome == 'success' for r in load_records('<S1_RUN>/journal.jsonl')))"
@@ -405,6 +381,30 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    - Graph: if small is kept, the `small/hybrid+graph+rerank+metadata` row and guard in the same file; if merged is
      adopted, the `merged/hybrid+graph+rerank+metadata` row and guard in `lever-comparison-merged-graph.json`.
    - Ignore `default_decisions`; S1 is applied by hand.
+
+   Print each row and guard the rule reads (`<FILE>` is `lever-comparison.json` or
+   `lever-comparison-merged-graph.json`):
+
+   ```bash
+   uv run --project eval python -c "
+   import json, math
+   d = json.load(open('<S1_RUN>/<FILE>', encoding='utf-8'))
+   for c in d['families'][0]['comparisons']:
+       ok = c['evaluable']
+       print(c['arm'], 'evaluable', ok, 'n_pairs', c['n_pairs'], 'coverage', c['coverage'], 'n_pos', c['n_pos'], 'n_neg', c['n_neg'], 'delta', c['delta'])
+       print('  chunking (above 0):', ok and c['n_pos'] > c['n_neg'], ' graph (+5 points):', ok and c['n_pos'] - c['n_neg'] >= math.ceil(0.05 * c['n_pairs']))
+   for g in d['null_guards']:
+       print('guard', g['arm'], 'evaluable', g['evaluable'], 'passes', g['passes'], 'n_pairs', g['n_pairs'], 'b', g['b'], 'c', g['c'])
+   "
+   ```
+
+   Quote `evaluable`, `n_pairs`, `coverage`, `n_pos`, `n_neg` and `delta` for each row the rule reads, and the
+   guard's `evaluable` and `passes`. Decide from the integers, not from the float `delta` (D-266):
+   - A row with `evaluable: false` keeps small (chunking) or keeps the graph out (graph).
+   - Chunking: `delta` above 0 is `n_pos > n_neg`.
+   - Graph: +5 points is `n_pos - n_neg >= ceil(0.05 * n_pairs)`: a net gain of 5 at 81 to 90 pairs, 4 at 72 to 80.
+     At 80 pairs a net gain of 4 can print `delta` as `0.049999999999999996`; it is +5 points and the graph passes.
+   - A guard that fails or is not evaluable vetoes the choice it guards (D-264).
 
    Write the choice into EXPERIMENT-S1.md › Result with the run directory name. S2 replays the chosen
    `<store>/hybrid+rerank+metadata` arm, or its graph-on arm if the graph joined.

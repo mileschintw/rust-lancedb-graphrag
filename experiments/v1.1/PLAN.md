@@ -304,6 +304,13 @@ are [EXPERIMENT-S0.md](EXPERIMENT-S0.md) and [EXPERIMENT-S1.md](EXPERIMENT-S1.md
   clause: the `pack` body's user message (`parity.user_message`) equals the carried base row's `assembled_prompt` byte
   for byte, so the reader saw the prompt deepseek saw. Supersedes D-257's `is_byok`/provider wording for the native
   target.
+- **D-266 S1 not-evaluable comparison and integer graph reading** (owner: "照建議 (Recommended)", 2026-10-31; #105).
+  A comparison row with `evaluable: false` (fewer than 72 of the 90 dev G pairs, below the 0.80 complete-case floor)
+  keeps small for the chunking choice and keeps the graph out for the graph choice, the same as a not-evaluable null
+  guard (D-264). The graph rule's +5 points is read from the row's integers, `n_pos - n_neg >= ceil(0.05 * n_pairs)`,
+  not from the float `delta`, which can print `0.049999999999999996` for exactly +5 points at 80 pairs. Amends the
+  reading of D-252 and D-263; `PREREGISTRATION_S1` and `PREREGISTRATION_S1_MERGED_GRAPH` are unchanged. Written
+  before any S1 data.
 
 ## Model access
 

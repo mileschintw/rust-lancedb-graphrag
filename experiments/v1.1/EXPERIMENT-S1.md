@@ -49,7 +49,7 @@ and the `default_decisions` rows of `lever-comparison.json` are not read.
 - **Not reported:** chunk-ID Hits@4. The gold chunks are not re-mapped to merged chunks (PLAN.md › S1 details), so any
   chunk-ID figure the report prints for a `merged/` arm is not read.
 
-## Decision rule (D-252, D-262 to D-264)
+## Decision rule (D-252, D-262 to D-264, D-266)
 
 Direction-finding on dev. The harness computes the paired deltas, p-values and null guards; the choice is applied by
 hand in the **Result** section. p-values are reported and not used.
@@ -64,10 +64,16 @@ hand in the **Result** section. p-values are reported and not used.
    - Merged adopted: the `merged/hybrid+graph+rerank+metadata` row of `lever-comparison-merged-graph.json`
      (`PREREGISTRATION_S1_MERGED_GRAPH`).
    - On 90 fully paired questions, +5 points means a net gain of at least 5 questions (4 of 90 is 4.4 points).
-3. **Null guard (D-264).** Margin 0.10 and pair fraction 0.80 on the 10 dev nulls: a guard fails when the net
+   - Read +5 points from the row's integers, not from the float `delta` (D-266): the graph joins only if
+     `n_pos - n_neg >= ceil(0.05 * n_pairs)`. At 80 pairs a net gain of exactly 4 is +5 points but `delta` can print
+     `0.049999999999999996`.
+3. **Not-evaluable comparison (D-266).** A comparison row with `evaluable: false` (fewer than 72 of the 90 G pairs,
+   below the 0.80 complete-case floor; `delta` is then null) keeps small for the chunking choice, and keeps the graph
+   out for the graph choice.
+4. **Null guard (D-264).** Margin 0.10 and pair fraction 0.80 on the 10 dev nulls: a guard fails when the net
    abstention drop exceeds 0.10 of the null pairs (2 or more with 10 pairs; 1 or more with 8 or 9), and is not
    evaluable with fewer than 8 null pairs. A failed or not-evaluable guard vetoes the choice it guards.
-4. The other numbers are the v1.0 lever reading's (D-262): complete-case floor 0.80, bootstrap 10,000 with seed 42,
+5. The other numbers are the v1.0 lever reading's (D-262): complete-case floor 0.80, bootstrap 10,000 with seed 42,
    SC-2 timeout floor 0.025. The constants also carry the rerank tripwire (0.20 after 50 attempts or 5 consecutive
    degrades), but the drive applies no tripwire to a dev-role corpus (`run.rerank_tripwire_for`), so it does not act
    in S1.
@@ -89,7 +95,7 @@ rule uses point estimates, not p-values.
 - The merged store is built only after #67 merges: until then `seed --store eval-s1` uploads without the store's
   chunking and the gateway falls back to `structure-aware`, so the "merged" store would repeat the v1.0 chunking.
 - The S1 store's preflight and identity gate need #69 (the identity check reads only `lancet_eval`).
-- The two-store context export needs #65 or the stopgap in RUN-S0-S1.md step 4.
+- The two-store context export needs #65.
 - Scoring needs #68: until it lands, `score` and `compare-levers` read only held-out IDs and refuse a dev-role run.
 - `PREREGISTRATION_S1_MERGED_GRAPH` is not the corpus token, so `compare-levers` does not check it; the RUN-S0-S1.md
   recipe runs the same D-73 check on it before reading it.
