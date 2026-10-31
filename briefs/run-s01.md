@@ -1,5 +1,5 @@
 Follow `relay:work` and `project.md`; this brief holds only what is specific to this lane.
-User's go-ahead: "今晚開 S0 run lane (Recommended)" (2026-10-31, answering the coordinator after the audit's S0 section); start: <pending: the user's typed start>
+User's go-ahead: "今晚開 S0 run lane (Recommended)" (2026-10-31, answering the coordinator after the audit's S0 section); start: "Start S0 run" (2026-10-31)
 Depends on: none
 Waits for (same section): none
 
