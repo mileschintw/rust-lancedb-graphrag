@@ -1959,6 +1959,7 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
                 "reader",
                 "answer_usable (G)",
                 "n",
+                "excluded",
                 "price in/out per MTok",
                 "sync USD",
                 "answered",
@@ -1971,6 +1972,7 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
                     r["reader"] or "engine (carried)",
                     _fmt(r["answer_usable"]["mean"]),
                     r["answer_usable"]["n"],
+                    r["answer_usable"]["n_excluded"],
                     f"{_fmt(r['price']['input_per_mtok'])} / "
                     f"{_fmt(r['price']['output_per_mtok'])} ({r['price']['source']})",
                     _fmt(r["cost"]["sync_usd"], 6),
@@ -1983,9 +1985,10 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
         )
         pop = group["population"]
         out += [
-            f"{pop['n']} of {pop['n_g']} G questions are ok on every reader. "
+            f"Every row is scored on the {pop['n']} of {pop['n_g']} G questions every "
+            "reader is ok on, so each row excludes the questions any reader drops: "
             + "; ".join(_render_drop(d) for d in pop["drops"])
-            + ".",
+            + ". The paired differences below keep their own pairwise populations.",
             "",
         ]
         out += [f"Paired `answer_usable` differences on G; {group['p_label']}.", ""]

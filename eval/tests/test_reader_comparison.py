@@ -276,6 +276,14 @@ def test_a_degraded_deepseek_record_drops_its_question_from_every_reader_row(
         assert drops[arm]["n"] == 0
     report = render_markdown(payload)
     assert f"`{rf.BASE}` drops 2 (provenance 2, of which rerank degraded 2)" in report
+    # A reader with no drop of its own still shows the 2 questions its row lost.
+    haiku_row = next(
+        line
+        for line in report.splitlines()
+        if line.startswith(f"| {HAIKU_ARM} | haiku-5.5 |")
+    )
+    assert f"| {n} | 2 |" in haiku_row
+    assert "| answer_usable (G) | n | excluded |" in report
 
     # The paired rows keep their own pairwise populations.
     pairs = {(p["arm"], p["against"]): p for p in group["pairs"]}
