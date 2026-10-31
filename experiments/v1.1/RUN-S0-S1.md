@@ -359,23 +359,23 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    `PREREGISTRATION_S1_MERGED_GRAPH` itself (`compare-levers` checks only the corpus token), then writes
    `lever-comparison-merged-graph.json` and `.md` the way `compare-levers` writes its files (LF, no NaN):
 
-   ```bash
-   uv run --project eval python -c "
-   import json, sys
-   from pathlib import Path
-   from lancet_eval import gitcheck
-   from lancet_eval.journal import read_journal_header
-   from lancet_eval.lever_comparison import build_lever_comparison, render_markdown
-   from lancet_eval.thresholds import PREREGISTRATION_S1_MERGED_GRAPH
-   run = Path('<S1_RUN>')
-   created = read_journal_header(run / 'journal.jsonl')['created_at']
-   problems = gitcheck.preregistration_problems(('PREREGISTRATION_S1_MERGED_GRAPH',), created_at=float(created), require_clean_tree=True, unchanged_since_introduction=True)
-   if problems: sys.exit('D-73: ' + '; '.join(problems))
-   payload = build_lever_comparison(run, prereg=PREREGISTRATION_S1_MERGED_GRAPH)
-   (run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + '\n', encoding='utf-8', newline='\n')
-   (run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8', newline='\n')
-   "
-   ```
+```bash
+uv run --project eval python -c "
+import json, sys
+from pathlib import Path
+from lancet_eval import gitcheck
+from lancet_eval.journal import read_journal_header
+from lancet_eval.lever_comparison import build_lever_comparison, render_markdown
+from lancet_eval.thresholds import PREREGISTRATION_S1_MERGED_GRAPH
+run = Path('<S1_RUN>')
+created = read_journal_header(run / 'journal.jsonl')['created_at']
+problems = gitcheck.preregistration_problems(('PREREGISTRATION_S1_MERGED_GRAPH',), created_at=float(created), require_clean_tree=True, unchanged_since_introduction=True)
+if problems: sys.exit('D-73: ' + '; '.join(problems))
+payload = build_lever_comparison(run, prereg=PREREGISTRATION_S1_MERGED_GRAPH)
+(run / 'lever-comparison-merged-graph.json').write_text(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + '\n', encoding='utf-8', newline='\n')
+(run / 'lever-comparison-merged-graph.md').write_text(render_markdown(payload), encoding='utf-8', newline='\n')
+"
+```
 
 8. Read the result by EXPERIMENT-S1.md › Decision rule:
    - Chunking: the `merged/hybrid+rerank+metadata` row and guard in `lever-comparison.json`.
@@ -386,18 +386,18 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    Print each row and guard the rule reads (`<FILE>` is `lever-comparison.json` or
    `lever-comparison-merged-graph.json`):
 
-   ```bash
-   uv run --project eval python -c "
-   import json, math
-   d = json.load(open('<S1_RUN>/<FILE>', encoding='utf-8'))
-   for c in d['families'][0]['comparisons']:
-       ok = c['evaluable']
-       print(c['arm'], 'evaluable', ok, 'n_pairs', c['n_pairs'], 'coverage', c['coverage'], 'n_pos', c['n_pos'], 'n_neg', c['n_neg'], 'delta', c['delta'])
-       print('  chunking (above 0):', ok and c['n_pos'] > c['n_neg'], ' graph (+5 points):', ok and c['n_pos'] - c['n_neg'] >= math.ceil(0.05 * c['n_pairs']))
-   for g in d['null_guards']:
-       print('guard', g['arm'], 'evaluable', g['evaluable'], 'passes', g['passes'], 'n_pairs', g['n_pairs'], 'b', g['b'], 'c', g['c'])
-   "
-   ```
+```bash
+uv run --project eval python -c "
+import json, math
+d = json.load(open('<S1_RUN>/<FILE>', encoding='utf-8'))
+for c in d['families'][0]['comparisons']:
+    ok = c['evaluable']
+    print(c['arm'], 'evaluable', ok, 'n_pairs', c['n_pairs'], 'coverage', c['coverage'], 'n_pos', c['n_pos'], 'n_neg', c['n_neg'], 'delta', c['delta'])
+    print('  chunking (above 0):', ok and c['n_pos'] > c['n_neg'], ' graph (+5 points):', ok and c['n_pos'] - c['n_neg'] >= math.ceil(0.05 * c['n_pairs']))
+for g in d['null_guards']:
+    print('guard', g['arm'], 'evaluable', g['evaluable'], 'passes', g['passes'], 'n_pairs', g['n_pairs'], 'b', g['b'], 'c', g['c'])
+"
+```
 
    Quote `evaluable`, `n_pairs`, `coverage`, `n_pos`, `n_neg` and `delta` for each row the rule reads, and the
    guard's `evaluable` and `passes`. Decide from the integers, not from the float `delta` (D-266):
