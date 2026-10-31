@@ -423,6 +423,21 @@ def test_replay_init_refuses_a_source_arm_missing_a_question(
     _init(s1, tmp_path / "pilot", pilot=True)
 
 
+def test_a_pilot_replay_init_never_writes_into_a_run_of_record(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _, _ = _s1(tmp_path, monkeypatch)
+    s2 = tmp_path / "s2"
+    _init(s1, s2)
+    journal = (s2 / "journal.jsonl").read_bytes()
+    export = (s2 / CONTEXT_EXPORT_FILE).read_bytes()
+    with pytest.raises(ReplayError, match="already holds"):
+        _init(s1, s2, pilot=True)
+    assert (s2 / "journal.jsonl").read_bytes() == journal
+    assert (s2 / CONTEXT_EXPORT_FILE).read_bytes() == export
+    assert not is_pilot_run(read_journal_header(s2 / "journal.jsonl"))
+
+
 def test_a_pilot_run_with_reader_records_is_never_scored(tmp_path, monkeypatch) -> None:
     from lancet_eval.score import ScoreError
 
