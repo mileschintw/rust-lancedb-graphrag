@@ -259,11 +259,26 @@ fn chunk_index_parses_both_separators_after_the_document_id() {
     };
     assert_eq!(index_of("doc", "doc#3"), 3, "LlamaIndex export shape");
     assert_eq!(index_of("doc", "doc:3"), 3, "engine shape");
-    assert_eq!(index_of("a#b", "a#b#7"), 7, "a document ID with # takes the last separator");
-    assert_eq!(index_of("a:b", "a:b:7"), 7, "a document ID with : takes the last separator");
+    assert_eq!(
+        index_of("a#b", "a#b#7"),
+        7,
+        "a document ID with # takes the last separator"
+    );
+    assert_eq!(
+        index_of("a:b", "a:b:7"),
+        7,
+        "a document ID with : takes the last separator"
+    );
     assert_eq!(index_of("a:b", "a:b#7"), 7);
     for chunk_id in [
-        "doc#x", "doc#", "doc#-3", "doc#+3", "doc#2147483648", "doc:-1", "doc3", "other#3",
+        "doc#x",
+        "doc#",
+        "doc#-3",
+        "doc#+3",
+        "doc#2147483648",
+        "doc:-1",
+        "doc3",
+        "other#3",
         "doc#1#3",
     ] {
         assert_eq!(index_of("doc", chunk_id), 0, "{chunk_id}");
