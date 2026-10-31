@@ -25,8 +25,9 @@
 //! `error` line with `error_type` and `error`, and the run goes on. Unreadable input or
 //! configuration exits non-zero before any row is written.
 //!
-//! An export row carries no `chunk_index`. For an engine chunk ID, `<document_id>:<n>`, the index
-//! is `n`; any other chunk ID renders `chunk_index=0` in the evidence provenance.
+//! An export row carries no `chunk_index`. For an engine chunk ID, `<document_id>:<n>`, or a
+//! LlamaIndex-export one, `<document_id>#<n>`, the index is `n`; any other chunk ID shape renders
+//! `chunk_index=0` in the evidence provenance.
 
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
@@ -146,12 +147,16 @@ pub struct EvidenceEntry {
     pub document_metadata: DocMeta,
 }
 
-/// The chunk index an engine chunk ID `<document_id>:<n>` encodes; `0` for any other ID.
+/// The chunk index a chunk ID `<document_id>:<n>` (engine) or `<document_id>#<n>` (LlamaIndex
+/// export) encodes. The separator is the one right after the row's whole document ID, so a
+/// document ID that itself holds `:` or `#` reads from its last separator. Any other chunk ID,
+/// and an `n` that is not plain digits within `i32`, gives `0`.
 pub fn chunk_index_of(entry: &EvidenceEntry) -> i32 {
     entry
         .chunk_id
         .strip_prefix(entry.document_id.as_str())
-        .and_then(|rest| rest.strip_prefix(':'))
+        .and_then(|rest| rest.strip_prefix([':', '#']))
+        .filter(|index| !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit()))
         .and_then(|index| index.parse().ok())
         .unwrap_or(0)
 }
