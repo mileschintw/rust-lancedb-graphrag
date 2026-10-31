@@ -24,6 +24,9 @@ pub fn test_notice(code: NoticeCode, message: &str, severity: NoticeSeverity) ->
 }
 
 /// How long [`ScopedSubscriber`]'s drop waits for other threads to release the subscriber.
+///
+/// Another thread holds it only while tracing-core rebuilds callsite interest, which takes
+/// microseconds; 10 s is far past that on a loaded CI runner and far below the job limit.
 const SUBSCRIBER_RELEASE_DEADLINE: Duration = Duration::from_secs(10);
 
 /// This thread's default `tracing` subscriber for one test, gone before the test's providers drop.
@@ -38,6 +41,11 @@ const SUBSCRIBER_RELEASE_DEADLINE: Duration = Duration::from_secs(10);
 /// takes the same lock again behind any waiting writer: the lib tests deadlock (#59). Dropping
 /// this guard waits until the subscriber itself is gone, so the provider locals hold the last
 /// reference and shut down on the test thread.
+///
+/// # Panics
+///
+/// Dropping it panics if another thread still holds the subscriber after 10 s, so a stuck
+/// thread fails the test instead of hanging the run.
 pub struct ScopedSubscriber {
     guard: Option<DefaultGuard>,
     subscriber: WeakDispatch,
@@ -45,6 +53,7 @@ pub struct ScopedSubscriber {
 }
 
 impl ScopedSubscriber {
+    /// Sets `subscriber` as this thread's default until the returned guard drops.
     pub fn install(subscriber: impl tracing::Subscriber + Send + Sync + 'static) -> Self {
         Self::install_with_deadline(subscriber, SUBSCRIBER_RELEASE_DEADLINE)
     }
@@ -63,8 +72,6 @@ impl ScopedSubscriber {
 }
 
 impl Drop for ScopedSubscriber {
-    /// Panics if another thread still holds the subscriber after the deadline, so a stuck thread
-    /// fails the test instead of hanging it.
     fn drop(&mut self) {
         drop(self.guard.take());
         let started = Instant::now();
@@ -83,7 +90,6 @@ impl Drop for ScopedSubscriber {
     }
 }
 
-#[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;

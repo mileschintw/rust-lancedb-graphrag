@@ -1063,6 +1063,9 @@ async fn engine_log_records_survive_bounded_shutdown() {
         .build();
     let otel_log_layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(&logger_provider);
 
+    // The handle below takes `logger_provider` and drops it on another thread, so keep a clone
+    // that outlives the guard: the subscriber must never hold the provider's last reference.
+    let _provider_outlives_guard = logger_provider.clone();
     let subscriber = tracing_subscriber::Registry::default().with(otel_log_layer);
     let _guard = ScopedSubscriber::install(subscriber);
 

@@ -8694,6 +8694,7 @@ fn rebuild_on_a_fresh_store(test_name: &str) -> Result<(), String> {
 /// rebuild another test runs at the same time on its own thread.
 #[test]
 fn an_armed_rebuild_failure_stays_on_the_arming_thread() {
+    let _lock = engine::ingest::REBUILD_TEST_MUTEX.blocking_lock();
     engine::ingest::arm_rebuild_fail_next();
     engine::ingest::arm_rebuild_checkout_fail_next();
 
