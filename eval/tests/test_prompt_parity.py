@@ -273,3 +273,19 @@ def test_pack_of_a_real_row_renders_the_engine_prompt() -> None:
     user = parity.user_message(line["body"])
     assert "<SOURCE>The Verge</SOURCE>" in user
     assert "Who bought Globex?" in user
+
+
+@integration
+def test_pack_shows_the_chunk_index_of_both_chunk_id_shapes() -> None:
+    engine = _row("q1")
+    external = _row("q2", arm="llamaindex", prompt=None)
+    external["evidence"][0]["chunk_id"] = "doc-a#3"
+
+    lines = parity.cargo_packer(
+        [ContextExportRow.model_validate(r) for r in (engine, external)],
+        ["evidence_metadata"],
+    )
+
+    shown = [parity.user_message(line["body"]) for line in lines]
+    assert "document_id=doc-a, chunk_index=0," in shown[0]
+    assert "document_id=doc-a, chunk_index=3," in shown[1]
