@@ -60,7 +60,7 @@ Opt-in. Run it before a merge that touches the code these tests cover, or in the
 LANCET_SLOW_TESTS=1 uv run --project eval pytest -n auto --dist loadfile
 uv run --project eval python -O -m pytest scripts/test_phase02_live_evidence.py
 (cd gateway && go test -count=1 ./...)
-LANCET_EVAL_INTEGRATION=1 uv run --project eval pytest eval/tests/test_run_external.py eval/tests/test_prompt_parity.py
+LANCET_EVAL_INTEGRATION=1 uv run --project eval pytest eval/tests/test_run_external.py eval/tests/test_prompt_parity.py eval/tests/test_batch.py
 ```
 
 What each command adds:

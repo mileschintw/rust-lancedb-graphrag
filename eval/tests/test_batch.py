@@ -443,7 +443,7 @@ def test_pack_and_render_run_under_the_base_records_levers(s2) -> None:
             assert snapshot is not None and levers == list(snapshot.levers)
 
 
-def test_submit_refuses_a_row_whose_packed_prompt_differs(s2) -> None:
+def test_submit_refuses_a_row_whose_packed_prompt_differs(s2, monkeypatch) -> None:
     run, qs, _, client, binary = s2
 
     def pack(mode, rows, levers, results=None):  # type: ignore[no-untyped-def]
@@ -451,7 +451,7 @@ def test_submit_refuses_a_row_whose_packed_prompt_differs(s2) -> None:
         lines[0]["body"] = rf.pack_body("someone-else")
         return lines
 
-    batch.bin_runner = pack  # monkeypatched by the fixture, restored after the test
+    monkeypatch.setattr(batch, "bin_runner", pack)
     with pytest.raises(batch.BatchError, match="assembled_prompt"):
         batch.submit(run=run, arm=ARM, echo=lambda _: None)
     assert client.batches == {} and not (run / batch.MANIFEST_DIR).exists()
@@ -594,6 +594,61 @@ def test_the_payload_embeds_each_body_byte_for_byte() -> None:
     }
 
 
+def test_an_openrouter_response_with_null_content_keeps_its_usage() -> None:
+    out = openrouter_output({
+        "choices": [{"message": {"content": None}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 9, "completion_tokens": 1, "total_tokens": 10},
+    })
+    assert out.content == "" and out.prompt_tokens == 9
+
+
+def test_a_response_that_cannot_be_read_is_unreadable_not_errored() -> None:
+    from lancet_eval.batch_client import _anthropic_result, _openrouter_result
+
+    assert _openrouter_result({"custom_id": "q", "response": {}}).status == (
+        "unreadable"
+    )
+    assert _anthropic_result({
+        "custom_id": "q",
+        "result": {"type": "succeeded", "message": {"content": "x"}},
+    }).status == ("unreadable")
+    assert _openrouter_result({"custom_id": "q", "error": {"message": "x"}}).status == (
+        "errored"
+    )
+
+
+def test_retry_errors_leaves_billed_answers_render_rejected_or_unreadable(s2) -> None:
+    run, qs, _, client, _ = s2
+    rejected, unreadable, errored = qs.g_ids[0], qs.g_ids[1], qs.g_ids[2]
+    client.content[rejected] = REJECT
+    client.status = {unreadable: "unreadable", errored: "errored"}
+    batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    batch.fetch(run=run, echo=lambda _: None)
+    latest = _latest(run)
+    assert latest[unreadable].error_type == "batch_unreadable_response"
+
+    client.status = {}
+    retry = batch.submit(run=run, arm=ARM, retry_errors=True, echo=lambda _: None)
+
+    assert [r.custom_id for r in client.batches[retry.batch_id]] == [errored]
+
+
+def test_a_refused_submit_journals_nothing(tmp_path, monkeypatch) -> None:
+    def spec_fn(arm: str, qid: str) -> fx.Spec:
+        return fx.Spec(errored=qid == "lv-g002")
+
+    run, _, _, _, binary = _make_s2(tmp_path, monkeypatch, spec_fn=spec_fn)
+    journal = (run / "journal.jsonl").read_text(encoding="utf-8")
+
+    def pack(mode, rows, levers, results=None):  # type: ignore[no-untyped-def]
+        raise parity.PromptParityError("generate_from_context pack exited 101")
+
+    monkeypatch.setattr(batch, "bin_runner", pack)
+    with pytest.raises(batch.BatchError, match="exited 101"):
+        batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    assert (run / "journal.jsonl").read_text(encoding="utf-8") == journal
+
+
 # ---- integration: the real bin ----------------------------------------------------
 
 integration = pytest.mark.skipif(
@@ -624,7 +679,11 @@ def test_pack_rewrite_fake_submit_render_with_the_built_bin() -> None:
                 "content_type": "text/markdown",
                 "score": 0.9,
                 "suspicious": False,
-                "document_metadata": {},
+                "document_metadata": {
+                    "source": "The Verge",
+                    "doc_title": "Acme to buy Globex",
+                    "published_date": "2023-10-02",
+                },
             }
         ],
         "graph_facts": [],

@@ -14,8 +14,10 @@ question ID. Questions are taken in the base arm's journal order:
 
 - by default, every base success question the arm holds no record of; ``--limit N``
   takes the first N, so a pilot and a later submit read disjoint questions;
-- with ``retry_errors``, only the questions whose latest record is an errored,
-  expired or rejected request (never a ``base_error``).
+- with ``retry_errors``, only the questions whose latest record is a request that
+  produced no answer (``RETRYABLE``: errored, expired, canceled, or missing from the
+  results); never a ``base_error``, an answer ``render`` rejected, or a response that
+  arrived unreadable, since those were billed.
 
 It refuses while the arm has a pending batch, and when nothing is left to submit
 (every question already has a record). Each base error record gets one reader error
@@ -43,7 +45,10 @@ result becomes one record under the resume key, with the base record's
 - an answer ``render`` rejects: an error record that keeps the ``replay`` block and
   usage, because the request was billed (``measure.reader_record_usd``);
 - an errored, expired or canceled request, or one the batch returned no result for:
-  an error record with no ``replay`` block, since nothing was billed.
+  an error record with no ``replay`` block, since nothing was billed;
+- a response that arrived but cannot be read (``batch_unreadable_response``): an
+  error record with no ``replay`` block, since it has no usage to price; it was
+  probably billed, so ``--retry-errors`` leaves it.
 
 A fetch skips a request the journal already holds a record of from the same batch,
 then marks the manifest ``fetched``, so a re-run adds nothing.
@@ -113,9 +118,19 @@ RESULT_ERRORS: Mapping[str, str] = {
     "errored": "batch_errored",
     "expired": "batch_expired",
     "canceled": "batch_canceled",
+    "unreadable": "batch_unreadable_response",
 }
 #: The error type of a request the finished batch returned no result for.
 NO_RESULT = "batch_no_result"
+#: The error types `--retry-errors` resubmits: requests that produced no answer. An
+#: answer `render` rejected, or a response that arrived but could not be read, was
+#: billed and is the reader's result; resubmitting it would buy a second answer.
+RETRYABLE = frozenset({
+    RESULT_ERRORS["errored"],
+    RESULT_ERRORS["expired"],
+    RESULT_ERRORS["canceled"],
+    NO_RESULT,
+})
 #: The error type of a rendered request `render` wrote no line for.
 NO_RENDER_LINE = "render_no_line"
 PENDING_STATES = frozenset({"submitting", "submitted"})
@@ -207,6 +222,34 @@ def _reader_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration]:
     return arm, declaration
 
 
+def _export_rows(run_dir: Path) -> dict[tuple[str, str], ContextExportRow]:
+    """The run's export rows by ``(question_id, arm)``."""
+    try:
+        return {
+            (r.question_id, r.arm): r
+            for r in read_export(run_dir / CONTEXT_EXPORT_FILE)
+        }
+    except ContextExportError as exc:
+        raise BatchError(str(exc)) from exc
+
+
+def _run_bin(
+    runner: BinRunner,
+    mode: str,
+    rows: Sequence[ContextExportRow],
+    levers: Sequence[str],
+    results: Sequence[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Runs the bin; a bin failure is a refusal (``BatchError``)."""
+    args: list[Any] = [mode, rows, list(levers)]
+    if results is not None:
+        args.append(results)
+    try:
+        return runner(*args)
+    except parity.PromptParityError as exc:
+        raise BatchError(str(exc)) from exc
+
+
 def _latest(records: Iterable[RunRecord], arm: str) -> dict[str, RunRecord]:
     """The latest record of each question under `arm`, in first-seen order."""
     latest: dict[str, RunRecord] = {}
@@ -235,7 +278,11 @@ def _seq(path: Path) -> int:
 
 
 def read_manifest(path: Path) -> dict[str, Any]:
-    """A manifest's JSON object."""
+    """A manifest's JSON object.
+
+    Raises:
+        BatchError: If the file is unreadable or not a JSON object.
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -308,7 +355,7 @@ def _select(
             for qid in base
             if (rec := held.get(qid)) is not None
             and rec.outcome == "error"
-            and rec.error_type != BASE_ERROR
+            and rec.error_type in RETRYABLE
         ]
     else:
         chosen = [
@@ -319,12 +366,15 @@ def _select(
     if not chosen:
         successes = sum(r.outcome == "success" for r in held.values())
         retryable = sum(
-            r.outcome == "error" and r.error_type != BASE_ERROR for r in held.values()
+            r.outcome == "error" and r.error_type in RETRYABLE for r in held.values()
         )
+        final = len(held) - successes - retryable
         hint = " (use --retry-errors)" if retryable and not retry_errors else ""
         raise BatchError(
             f"nothing to submit for {arm}: {successes} question(s) already have a "
-            f"success record and {retryable} an error record{hint}"
+            f"success record, {retryable} a retryable error record{hint} and "
+            f"{final} a final error record (base error, or a billed answer that "
+            "failed render)"
         )
     return chosen[:limit] if limit is not None else chosen
 
@@ -347,13 +397,7 @@ def _pack(
     declaration: ReaderDeclaration,
     runner: BinRunner,
 ) -> list[_Packed]:
-    try:
-        rows = {
-            (r.question_id, r.arm): r
-            for r in read_export(run.journal.parent / CONTEXT_EXPORT_FILE)
-        }
-    except ContextExportError as exc:
-        raise BatchError(str(exc)) from exc
+    rows = _export_rows(run.journal.parent)
     carried = source_row_hashes(run.header)
     problems: list[str] = []
     groups: dict[tuple[str, ...], list[ContextExportRow]] = {}
@@ -372,7 +416,7 @@ def _pack(
     for levers, group in groups.items():
         lines = {
             (str(line.get("question_id")), str(line.get("arm"))): line
-            for line in runner("pack", group, list(levers))
+            for line in _run_bin(runner, "pack", group, levers)
         }
         for row in group:
             qid = row.question_id
@@ -459,8 +503,10 @@ def submit(
     Raises:
         BatchError: If the run is not an S2 replay run, the arm is not a declared
             reader arm of its corpus, a batch of the arm is pending, nothing is left
-            to submit, or a row fails to pack, match its prompt or rewrite.
-        BatchClientError: If the endpoint refuses the batch.
+            to submit, the bin fails, or a row fails to pack, match its prompt or
+            rewrite.
+        BatchClientError: If the endpoint refuses the batch, or its API key is not
+            set.
     """
     if limit is not None and limit < 1:
         raise BatchError("--limit must be at least 1")
@@ -478,10 +524,21 @@ def submit(
     journal = Journal(state.journal)
     base_errors = _base_error_records(state, label, base, held)
     for rec in base_errors:
-        journal.append(rec)
         held[rec.question_id] = rec
-    qids = _select(label, base, held, retry_errors=retry_errors, limit=limit)
+    try:
+        qids = _select(label, base, held, retry_errors=retry_errors, limit=limit)
+    except BatchError as exc:
+        # Nothing to send, but the base errors still complete the arm.
+        for rec in base_errors:
+            journal.append(rec)
+        if base_errors:
+            raise BatchError(
+                f"{exc}; journalled {len(base_errors)} base error record(s)"
+            ) from exc
+        raise
     packed = _pack(qids, base_arm, base, state, declaration, bin_runner)
+    for rec in base_errors:
+        journal.append(rec)
 
     spent, _ = compute_spend(
         list(held.values()), include_embeddings=False, readers=state.readers
@@ -573,8 +630,9 @@ def fetch(
 
     Raises:
         BatchError: If the run is not an S2 replay run, an arm is not a declared
-            reader arm, or a manifest is unreadable.
-        BatchClientError: If an endpoint cannot be read.
+            reader arm, a manifest is unreadable or names a question the run has no
+            base record or row of, or the bin fails.
+        BatchClientError: If an endpoint cannot be read, or its API key is not set.
     """
     run_dir = Path(run)
     state = _load_run(run_dir)
@@ -628,14 +686,22 @@ def _journal_batch(
     }
     base_arm = reader_base_arm(label)
     base = _latest(state.records, base_arm)
-    rows = {
-        (r.question_id, r.arm): r for r in read_export(run_dir / CONTEXT_EXPORT_FILE)
-    }
+    rows = _export_rows(run_dir)
+    unknown = [
+        qid
+        for qid in requests
+        if qid not in done and (qid not in base or (qid, base_arm) not in rows)
+    ]
+    if unknown:
+        raise BatchError(
+            f"batch {batch_id} of {label}: no {base_arm!r} record or export row for "
+            f"{_listed(unknown)}; the run no longer matches the manifest"
+        )
     by_id = {r.custom_id: r for r in results if r.custom_id in requests}
     records: dict[str, RunRecord] = {}
     to_render: dict[tuple[str, ...], list[tuple[str, ReaderOutput]]] = {}
 
-    def common(qid: str) -> dict[str, Any]:
+    def record_fields(qid: str) -> dict[str, Any]:
         rec = base[qid]
         return {
             "corpus": state.corpus,
@@ -653,14 +719,14 @@ def _journal_batch(
         result = by_id.get(qid)
         if result is None:
             records[qid] = RunRecord(
-                **common(qid),
+                **record_fields(qid),
                 outcome="error",
                 error_type=NO_RESULT,
                 error=f"batch {batch_id} returned no result for this request",
             )
         elif result.output is None or result.status != "succeeded":
             records[qid] = RunRecord(
-                **common(qid),
+                **record_fields(qid),
                 outcome="error",
                 error_type=RESULT_ERRORS.get(result.status, "batch_errored"),
                 error=result.error or f"the request {result.status}",
@@ -676,10 +742,11 @@ def _journal_batch(
         ]
         lines = {
             str(line.get("question_id")): line
-            for line in bin_runner(
+            for line in _run_bin(
+                bin_runner,
                 "render",
                 reader_rows,
-                list(levers),
+                levers,
                 [render_line(qid, label, out) for qid, out in group],
             )
             if line.get("arm") == label
@@ -691,12 +758,12 @@ def _journal_batch(
             )
             line = lines.get(qid)
             if line is not None and line.get("outcome") == "success":
-                records[qid] = _success(common(qid), line, replay, meta)
+                records[qid] = _success(record_fields(qid), line, replay, meta)
                 if (qid, label) not in rows:
                     new_rows.append(row)
             else:
                 records[qid] = RunRecord(
-                    **common(qid),
+                    **record_fields(qid),
                     outcome="error",
                     error_type=(
                         str(line.get("error_type")) if line else NO_RENDER_LINE
@@ -730,7 +797,7 @@ def _journal_batch(
 
 
 def _success(
-    common: Mapping[str, Any],
+    fields: Mapping[str, Any],
     line: Mapping[str, Any],
     replay: ReplayProvenance,
     meta: WorkflowWireMeta,
@@ -738,7 +805,7 @@ def _success(
     from lancet_eval.client import Notice, StructuredCitation
 
     return RunRecord(
-        **common,
+        **fields,
         outcome="success",
         answer=line.get("answer") or "",
         structured_citations=[

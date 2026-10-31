@@ -31,7 +31,10 @@ replay record need (``ReplayProvenance``), whatever the target:
 
 A value the response does not report fails closed rather than being guessed: a
 missing OpenRouter reasoning count is recorded as ``MISSING_REASONING_TOKENS``, so
-the ``reasoning_tokens`` clause refuses it for a thinking-off reader. Completion
+the ``reasoning_tokens`` clause refuses it for a reader whose thinking is not ``on``
+(a thinking-on reader is exempt from that clause, so the -1 stands unchecked there).
+A response with null content is read as empty content, which `render` rejects while
+the record keeps its usage; one with no usage or choice is ``unreadable``. Completion
 tokens include reasoning tokens on both targets.
 
 The OpenRouter batch response shape is not documented at the time of writing; the
@@ -52,7 +55,8 @@ import httpx
 from lancet_eval.provenance import REPLAY_PROVIDERS
 from lancet_eval.reader_request import Target
 
-ResultStatus = Literal["succeeded", "errored", "expired", "canceled"]
+#: `unreadable`: a response arrived, but not one `ReaderOutput` can be read from.
+ResultStatus = Literal["succeeded", "errored", "expired", "canceled", "unreadable"]
 
 #: Recorded when an OpenRouter response reports no reasoning token count; the
 #: ``reasoning_tokens`` clause then fails for a reader that must report 0 (D-260).
@@ -65,6 +69,17 @@ ANTHROPIC_VERSION = "2023-06-01"
 #: Anthropic `stop_reason` → the chat-completions `finish_reason` `render` reads.
 _STOP_REASONS = {"end_turn": "stop", "max_tokens": "length", "refusal": "refusal"}
 _TIMEOUT_S = 120.0
+#: OpenRouter batch statuses after which no result changes. A request the results
+#: omit becomes an error record that `--retry-errors` resubmits.
+_OPENROUTER_FINISHED = frozenset({
+    "completed",
+    "ended",
+    "expired",
+    "cancelled",
+    "canceled",
+    "failed",
+    "error",
+})
 
 
 class BatchClientError(RuntimeError):
@@ -140,6 +155,8 @@ def openrouter_output(response: Mapping[str, Any]) -> ReaderOutput:
         usage = response["usage"]
     except (KeyError, IndexError, TypeError) as exc:
         raise BatchClientError(f"unreadable OpenRouter response: {exc!r}") from exc
+    if content is None:
+        content = ""  # `render` rejects it, and the record keeps the usage
     if not isinstance(content, str):
         raise BatchClientError("the OpenRouter response's content is not text")
     details = usage.get("completion_tokens_details") or {}
@@ -262,9 +279,12 @@ class OpenRouterBatchClient:
         data = _json(res, f"OpenRouter batch {batch_id}")
         if not isinstance(data, dict):
             raise BatchClientError(f"OpenRouter batch {batch_id}: not an object")
-        if data.get("status") not in {"completed", "ended", "expired", "cancelled"}:
+        if data.get("status") not in _OPENROUTER_FINISHED:
             return None
-        return [_openrouter_result(item) for item in data.get("results") or []]
+        items = data.get("results") or []
+        if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
+            raise BatchClientError(f"OpenRouter batch {batch_id}: unreadable results")
+        return [_openrouter_result(item) for item in items]
 
 
 def _openrouter_result(item: Mapping[str, Any]) -> BatchResult:
@@ -283,7 +303,7 @@ def _openrouter_result(item: Mapping[str, Any]) -> BatchResult:
     try:
         output = openrouter_output(item["response"])
     except BatchClientError as exc:
-        return BatchResult(custom_id, "errored", error=str(exc))
+        return BatchResult(custom_id, "unreadable", error=str(exc))
     return BatchResult(custom_id, "succeeded", output=output)
 
 
@@ -333,10 +353,24 @@ class AnthropicBatchClient:
                 f"Anthropic batch {batch_id} results: HTTP {lines.status_code}"
             )
         return [
-            _anthropic_result(json.loads(line))
+            _anthropic_result(_object(line, batch_id))
             for line in lines.text.splitlines()
             if line.strip()
         ]
+
+
+def _object(line: str, batch_id: str) -> dict[str, Any]:
+    try:
+        item = json.loads(line)
+    except ValueError as exc:
+        raise BatchClientError(
+            f"Anthropic batch {batch_id}: a results line is not JSON"
+        ) from exc
+    if not isinstance(item, dict):
+        raise BatchClientError(
+            f"Anthropic batch {batch_id}: a results line is not an object"
+        )
+    return item
 
 
 def _anthropic_result(item: Mapping[str, Any]) -> BatchResult:
@@ -349,7 +383,7 @@ def _anthropic_result(item: Mapping[str, Any]) -> BatchResult:
                 custom_id, "succeeded", output=anthropic_output(result["message"])
             )
         except (BatchClientError, KeyError) as exc:
-            return BatchResult(custom_id, "errored", error=str(exc))
+            return BatchResult(custom_id, "unreadable", error=str(exc))
     if kind in {"expired", "canceled"}:
         return BatchResult(custom_id, kind, error=f"the request {kind}")
     return BatchResult(
@@ -358,7 +392,12 @@ def _anthropic_result(item: Mapping[str, Any]) -> BatchResult:
 
 
 def client_for(target: Target) -> BatchClient:
-    """The real client for a reader's target, keyed from the environment."""
+    """The real client for a reader's target, keyed from the environment.
+
+    Raises:
+        BatchClientError: If the target's API key (`ANTHROPIC_API_KEY` or
+            `OPENROUTER_API_KEY`) is not set.
+    """
     if target == "anthropic":
         return AnthropicBatchClient(os.environ.get("ANTHROPIC_API_KEY", ""))
     return OpenRouterBatchClient(os.environ.get("OPENROUTER_API_KEY", ""))
