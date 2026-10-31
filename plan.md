@@ -55,12 +55,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 56 | #56 | local_cc2e29ae-f7ff-43cb-96d4-4c08701a7505 (`claude/lane-56-ed9b87`) | PR #71: #93 fixed by PR #94 (merged 0fc830e8, 2026-10-31); lane 56 told to merge origin/main and push. Merge once `ci` passes; then delete `D:/lane56-targets` (user: "等 lane 59 merge 後再跑 (Recommended)") | — |
-| 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | started | — |
-| 74 | #74 #75 | local_66433095-dc50-4460-bbe1-8a93078ad6f6 | started | — |
-| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | started | — |
+| 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | review | — |
+| 74 | #74 #75 | local_66433095-dc50-4460-bbe1-8a93078ad6f6 | done; PR #96, merge on green | — |
+| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | review | — |
 | 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | parked | #76 merged (same section: llamaindex `cli.py` › `export`) |
-| 95 | #95 | local_b6b939b9-0c70-4fa0-84e9-974bea1fcea2 | started | — |
+| 95 | #95 | local_b6b939b9-0c70-4fa0-84e9-974bea1fcea2 | done; PR #97, merge on green | — |
 
 Lanes 64, 74, 76, 77 and 95 started 2026-10-31 13:55 -0700 on the user's answers: "#64 計數器 flake, #74 + #75 執行指南, #76 免費預演, #77 + #78 成本與保留讀取" and "新增 D-ID". The same answer set: PR #89 merged ("直接合併"), #49 closed ("關掉"). Only lane 64 builds the engine. Owners: lane 74 owns `RUN-S0-S1.md`, `external_run.py` and `journal.py`; lane 77 owns `eval/src/lancet_eval/cli.py`; lane 76 owns the stub and the export's client construction; lane 95 owns `experiments/v1.1/PLAN.md` (D-265 pinned). #94 and lane 64 both edit `engine/src/tests.rs`, different tests (mechanical overlap).
 
@@ -84,7 +83,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
-| #56 | 1 (next to #47 and #51) | — (after #44; files overlap) | none set | `engine/Cargo.toml` › `[profile.*]`, new `.cargo/config.toml` if needed, `docs/testing.md` (job-count rule, timings), CI cache check in #44's workflow (opened 2026-10-30 from a forked side session on the user's "把這件事規劃成issue，然後交給coordinator安排如何？") | limited: item 1 (sccache machine setup) needs the user's yes; the rest is free |
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #64 | 1 (lane 64 running) | — | none | `engine/src/ingest.rs` › `REBUILD_COUNTER`, `engine/src/tests.rs` › `debounce_coalesces_burst` | free |
 | #74 | 1 (lane 74 running, with #75) | — | none | `experiments/v1.1/RUN-S0-S1.md` › step 0 | free |
@@ -119,6 +117,14 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
 
 ## Waiting for the user's decision
 
+- **S1 → S2 path (relayed 2026-10-31 from the user's side session local_b18259ae-8393-499e-aa94-ced26b2c14e6, user's words "可以，就照這個規劃通知coordinator", found in its transcript; awaiting the user's own yes here):**
+  1. Before S1, wait only for #74, #75 (PR #96) and #77, #78 (lane 77). #76, #64, #95 and #71 are not needed before S1. #58 waits until S2 is submitted.
+  2. Audit part 1 (read-only session): `RUN-S0-S1.md` step 1 (S1 store build) against main: commands and flags exist, the prereg constants match EXPERIMENT-S1.md, and the cost estimate.
+  3. Once it passes, in parallel: build the S1 store in the main checkout with engine-building lanes held, including the deferred Atlas `lancet_eval_s1` step (paid, ~$2-3, ceiling ~$11, ask first). Also audit part 2 (read-only): S1 step 4 and the S2 run path, including the S1→S2 handoff, in audit-s012's format.
+  4. Each blocker gets an issue and a fix; non-blocking findings are logged.
+  5. S1 step 4 (paid, ~$0.5, dev only, ask first; keep the machine quiet).
+  6. S2 pilot, then the S2 arms, submitted by the morning of 2026-11-02.
+  - Not yet approved as issues: (a) confirm that `evidence_metadata` reads only document fields (no gold evidence or qrels) and note it in EXPERIMENT-S0.md; (b) check whether the LlamaIndex `input_type` live check (fairness rule 7) ever ran.
 - **Delete D:/s0-run-backup/ by hand** (user: "直接合併 (Recommended)", which included deleting it). The coordinator's `Remove-Item` was blocked as a protected path. Its 33 files match the run dir committed by PR #89 (merged 2026-10-31 as b3fba1c5). The worktree D:/Repos/lancet-run-s01 was removed.
 
 S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
