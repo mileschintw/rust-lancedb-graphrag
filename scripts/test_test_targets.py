@@ -124,6 +124,17 @@ def test_the_engine_gate_fails_a_new_target_with_no_floor(tmp_path: Path) -> Non
     assert "tests/new_suite.rs reports 3 tests but has no floor" in out
 
 
+def test_the_engine_gate_reads_a_colour_listing(tmp_path: Path) -> None:
+    # CI sets CARGO_TERM_COLOR=always: cargo then wraps `Running` in ANSI escapes
+    plain = _cargo_listing(ENGINE_TARGETS)
+    coloured = plain.replace(
+        "     Running ", "\x1b[1m\x1b[92m     Running\x1b[0m "
+    ).replace(" tests, 0 benchmarks", "\x1b[0m tests, 0 benchmarks")
+    code, out = _run(tmp_path, "cargo", coloured, "engine-test-targets.sh")
+    assert code == 0, out
+    assert "TOTAL: 980" in out
+
+
 def test_the_engine_gate_fails_when_nothing_is_listed(tmp_path: Path) -> None:
     code, out = _run(
         tmp_path, "cargo", "error[E0425]: oops\n", "engine-test-targets.sh"

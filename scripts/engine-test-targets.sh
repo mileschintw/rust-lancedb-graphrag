@@ -38,7 +38,11 @@ TMP_LIST=$(mktemp)
 TMP_COUNTS=$(mktemp)
 trap 'rm -f "$TMP_LIST" "$TMP_COUNTS"' EXIT
 
-"$CARGO_CMD" test --manifest-path engine/Cargo.toml --locked -- --list 2>&1 | tr '\\' '/' | tr -d '\r' > "$TMP_LIST"
+# --color never, and strip any ANSI escape that still gets through (CARGO_TERM_COLOR=always in CI
+# wraps `Running` in escapes the parser below would not match).
+ESC=$(printf '\033')
+"$CARGO_CMD" test --manifest-path engine/Cargo.toml --locked --color never -- --list 2>&1 \
+  | tr '\\' '/' | tr -d '\r' | sed "s/${ESC}\[[0-9;]*[A-Za-z]//g" > "$TMP_LIST"
 
 # One "<target> <count>" line per `Running` block.
 awk '
