@@ -88,6 +88,7 @@ from lancet_eval.arms import (
     canonical_arm,
     in_registry_order,
     is_external_arm,
+    is_reader_arm,
     judged_arms,
     resolve_arm,
 )
@@ -113,6 +114,7 @@ from lancet_eval.metrics import (
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval import gitcheck, preregistration, provenance
+from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
 from lancet_eval.split import HeldOutSplit, load_split, split_sha256
@@ -2049,6 +2051,12 @@ def score_run(
     require_external_provenance(
         records, journal_path, config, {*doc_map.entries, *doc_map.aliases}
     )
+    try:
+        require_replay_provenance(
+            records, journal_path, getattr(config, "preregistration_token", None)
+        )
+    except ReplayError as exc:
+        raise ScoreError(str(exc)) from exc
     _ordered_protocol_guard(
         config,
         judged=judged,
@@ -2127,9 +2135,10 @@ def score_run(
     for arm, arm_records in records_by_arm.items():
         # D-101: the GRAPH_ABLATION provenance check holds every engine arm that
         # switches graph context off, not only the literal `graph-off`. An external
-        # arm (D-247) has no engine notices; its own clauses ran before this point.
+        # arm (D-247) or a reader arm (D-257) has no engine notices or snapshot; its
+        # own clauses ran before this point.
         arm_spec = resolve_arm(arm)
-        external = arm_spec.kind == "external"
+        external = arm_spec.kind == "external" or is_reader_arm(arm)
         needs_ablation_provenance = not external and arm_spec.disable_graph_context
         total_records = len(arm_records)
         unusable_records = [r for r in arm_records if not is_usable(r)]

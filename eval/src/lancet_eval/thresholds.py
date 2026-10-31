@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from lancet_eval.arms import ExternalPipeline
+    from lancet_eval.reader_request import ReaderDeclaration
 
 
 class ThresholdError(ValueError):
@@ -533,12 +534,18 @@ class StagePreRegistration(LeverPreRegistration):
     Its arm labels may be external (D-247) or store-prefixed (D-251). Each stage writes
     its own constant of this type on its own branch; none is defined here.
 
+    Its arm labels may also be reader arms (D-257, ``<arm>@<reader>``).
+
     Attributes:
         external_pipelines: ``(arm label, arms.ExternalPipeline)`` pairs, one per
             external arm; ``preregistration.external_pipelines_of`` reads them.
+        readers: ``(reader name, reader_request.ReaderDeclaration)`` pairs, one per
+            reader its reader arms name (slug, target, thinking, sync list price);
+            ``preregistration.readers_of`` reads them.
     """
 
     external_pipelines: tuple[tuple[str, ExternalPipeline], ...] = ()
+    readers: tuple[tuple[str, ReaderDeclaration], ...] = ()
 
 
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single

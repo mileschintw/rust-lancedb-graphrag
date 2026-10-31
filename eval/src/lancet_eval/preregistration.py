@@ -18,6 +18,11 @@ fails closed when an external arm has no pipeline. Constants without the attribu
 v1.0 ones) declare none. A label may carry a store prefix (D-251,
 ``small/hybrid+rerank+metadata``); ``resolve`` refuses a constant naming a label the arm
 registry does not know, a bad prefix included.
+
+v1.1 S2 (D-257): a label may be a reader arm (``<arm>@<reader>``). The constant
+declares each reader its arms name in a ``readers`` attribute, a tuple of
+``(reader name, reader_request.ReaderDeclaration)`` pairs; ``readers_of`` reads it, and
+``resolve`` refuses a constant whose reader arm names a reader it does not declare.
 """
 
 from __future__ import annotations
@@ -26,10 +31,23 @@ from dataclasses import is_dataclass
 from typing import Any
 
 from lancet_eval import thresholds
-from lancet_eval.arms import ExternalPipeline, canonical_arm, is_external_arm
+from lancet_eval.arms import (
+    READERS,
+    ExternalPipeline,
+    arm_reader,
+    canonical_arm,
+    is_external_arm,
+)
 from lancet_eval.gitcheck import PreregistrationError
+from lancet_eval.reader_request import ReaderDeclaration
 
-__all__ = ["PreregistrationError", "arms_of", "external_pipelines_of", "resolve"]
+__all__ = [
+    "PreregistrationError",
+    "arms_of",
+    "external_pipelines_of",
+    "readers_of",
+    "resolve",
+]
 
 
 def resolve(token: str) -> Any:
@@ -44,8 +62,9 @@ def resolve(token: str) -> Any:
 
     Raises:
         PreregistrationError: If ``thresholds`` has no such attribute, the attribute
-            is not a pre-registration, or it names an arm label the registry does not
-            know (a bad store prefix included).
+            is not a pre-registration, it names an arm label the registry does not
+            know (a bad store prefix or reader included), or its reader declarations
+            fail ``readers_of``.
     """
     if not token or not token.isidentifier():
         raise PreregistrationError(
@@ -73,6 +92,10 @@ def resolve(token: str) -> Any:
             canonical_arm(label)
         except ValueError as exc:
             raise PreregistrationError(f"{token} names an unknown arm: {exc}") from exc
+    try:
+        readers_of(prereg)
+    except PreregistrationError as exc:
+        raise PreregistrationError(f"{token}: {exc}") from exc
     return prereg
 
 
@@ -134,3 +157,45 @@ def external_pipelines_of(prereg: Any) -> dict[str, ExternalPipeline]:
             "(external_pipelines, D-247)"
         )
     return pipelines
+
+
+def readers_of(prereg: Any) -> dict[str, ReaderDeclaration]:
+    """The reader declaration a pre-registration fixes for each reader (D-257).
+
+    Args:
+        prereg: A pre-registration object.
+
+    Returns:
+        ``{reader name: declaration}``; empty for a constant that declares none.
+
+    Raises:
+        PreregistrationError: If a declared name is not a known reader or is declared
+            twice, a declared value is not a ``ReaderDeclaration``, or a reader arm of
+            ``arms_of(prereg)`` names a reader with no declaration.
+    """
+    readers: dict[str, ReaderDeclaration] = {}
+    for name, declaration in getattr(prereg, "readers", ()):
+        if name not in READERS:
+            raise PreregistrationError(
+                f"readers names {name!r}, which is not a known reader "
+                f"{list(READERS)} (D-257)"
+            )
+        if name in readers:
+            raise PreregistrationError(f"readers declares {name!r} twice")
+        if not isinstance(declaration, ReaderDeclaration):
+            raise PreregistrationError(
+                f"readers[{name!r}] is not a ReaderDeclaration "
+                f"(got {type(declaration).__name__})"
+            )
+        readers[name] = declaration
+    undeclared = sorted({
+        reader
+        for arm in arms_of(prereg)
+        if (reader := arm_reader(arm)) is not None and reader not in readers
+    })
+    if undeclared:
+        raise PreregistrationError(
+            f"reader arm(s) name reader(s) {undeclared} with no declaration "
+            "(readers, D-257)"
+        )
+    return readers

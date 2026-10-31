@@ -248,7 +248,8 @@ _ALIAS: dict[str, str] = {
 STORE_PREFIXES: dict[str, str] = {"small": "eval", "merged": "eval-s1"}
 
 #: D-257 reader names: ``<base>@<reader>`` replays the base arm's context to this
-#: reader. A pre-registration declares each one it uses (``preregistration.readers_of``).
+#: reader. A pre-registration declares each reader it uses
+#: (``preregistration.readers_of``).
 READERS: tuple[str, ...] = ("haiku-5.5", "sonnet-5.5", "opus-5.5")
 
 
