@@ -135,6 +135,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     }
+    // The two 768s are the config's generation limits, which extraction does not send: its
+    // request carries its own output cap, `EXTRACTION_MAX_COMPLETION_TOKENS` (D-272).
     let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
         effective_settings.generation_model.clone(),
         effective_settings.chat_endpoint.clone(),
@@ -144,7 +146,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         1.0,
         768,
         768,
-    )?;
+    )?
+    .with_provider_order(effective_settings.generation_provider_order.clone())
+    .with_max_price(effective_settings.generation_max_price);
     let extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator> = Arc::new(
         graph::extraction::OpenRouterExtractionGenerator::new_with_config(
             api_key.clone(),
@@ -165,7 +169,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             effective_settings.top_p,
             effective_settings.grounding_limits_arc(),
         )?
-        .with_provider_order(effective_settings.generation_provider_order.clone());
+        .with_provider_order(effective_settings.generation_provider_order.clone())
+        .with_max_price(effective_settings.generation_max_price);
     let generator: Arc<dyn generation::Generator> = Arc::new(
         generation::openrouter::OpenRouterGenerator::new_with_config(api_key, generation_config)?,
     );

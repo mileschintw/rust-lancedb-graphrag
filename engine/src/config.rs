@@ -875,6 +875,13 @@ pub struct OpenRouterSettings {
     /// Rerank keeps its own D-131 body. Not overridable by environment.
     #[serde(default)]
     pub generation_provider_order: Vec<String>,
+    /// The most OpenRouter may charge per million prompt tokens for a generation or extraction
+    /// request, in US dollars (D-271). Absent sends no prompt cap. Not overridable by environment.
+    #[serde(default)]
+    pub generation_max_price_prompt: Option<f64>,
+    /// The completion-token side of the D-271 price cap, in US dollars per million tokens.
+    #[serde(default)]
+    pub generation_max_price_completion: Option<f64>,
 }
 
 impl Default for OpenRouterSettings {
@@ -894,6 +901,8 @@ impl Default for OpenRouterSettings {
             top_p: 1.0,
             max_output_tokens: 2048,
             generation_provider_order: Vec::new(),
+            generation_max_price_prompt: None,
+            generation_max_price_completion: None,
         }
     }
 }
@@ -923,6 +932,8 @@ pub struct EffectiveRagSettings {
     pub top_p: f64,
     pub max_output_tokens: u32,
     pub generation_provider_order: Vec<String>,
+    /// The price cap generation and extraction requests carry (D-271).
+    pub generation_max_price: generation::openrouter::MaxPrice,
     /// The levers a request that names none runs with (D-157).
     pub default_levers: workflow::LeverSet,
     pub index_generation: String,
@@ -991,6 +1002,10 @@ impl EffectiveRagSettings {
             top_p: settings.openrouter.top_p,
             max_output_tokens: settings.openrouter.max_output_tokens,
             generation_provider_order: settings.openrouter.generation_provider_order.clone(),
+            generation_max_price: generation::openrouter::MaxPrice::new(
+                settings.openrouter.generation_max_price_prompt,
+                settings.openrouter.generation_max_price_completion,
+            ),
             default_levers,
             index_generation: new_index_generation(),
             grounding_limits: Arc::new(limits),
@@ -1071,6 +1086,7 @@ impl EffectiveRagSettings {
             return Err("invalid top_p: must be finite and between 0.0 and 1.0".into());
         }
         validate_generation_provider_order(&self.generation_provider_order)?;
+        validate_generation_max_price(&self.generation_max_price)?;
         if self.index_generation.trim().is_empty() {
             return Err("invalid index_generation: must not be empty".into());
         }
@@ -1106,6 +1122,26 @@ fn validate_generation_provider_order(order: &[String]) -> Result<(), String> {
             return Err(format!(
                 "invalid generation_provider_order[{index}]: duplicates an earlier entry"
             ));
+        }
+    }
+    Ok(())
+}
+
+/// Refuses a price cap side that is zero, negative or not finite (D-271). An absent side is valid
+/// and sends no cap.
+fn validate_generation_max_price(
+    max_price: &generation::openrouter::MaxPrice,
+) -> Result<(), String> {
+    for (key, cap) in [
+        ("generation_max_price_prompt", max_price.prompt()),
+        ("generation_max_price_completion", max_price.completion()),
+    ] {
+        if let Some(cap) = cap {
+            if !cap.is_finite() || cap <= 0.0 {
+                return Err(format!(
+                    "invalid {key}: must be finite and greater than 0 dollars per million tokens"
+                ));
+            }
         }
     }
     Ok(())
@@ -1933,14 +1969,52 @@ mod tests {
         }
     }
 
-    /// D-191: the compiled-in default sends no pin, both committed files carry the Sail Research
-    /// pin, and the `verify` overlay inherits it. Each of the three starts.
+    /// D-271: startup accepts no price cap and finite positive caps, and refuses zero, a
+    /// negative cap and a non-finite one, naming the key.
+    #[test]
+    fn generation_max_price_is_validated_at_startup() {
+        let with_caps = |prompt: Option<f64>, completion: Option<f64>| {
+            let mut settings = Settings::default();
+            settings.openrouter.generation_max_price_prompt = prompt;
+            settings.openrouter.generation_max_price_completion = completion;
+            EffectiveRagSettings::try_from_settings(&settings)
+        };
+
+        for (prompt, completion) in [
+            (None, None),
+            (Some(0.07), Some(0.45)),
+            (Some(0.07), None),
+            (None, Some(0.45)),
+        ] {
+            let effective = with_caps(prompt, completion)
+                .unwrap_or_else(|error| panic!("{prompt:?}/{completion:?} must start: {error}"));
+            assert_eq!(
+                effective.generation_max_price,
+                generation::openrouter::MaxPrice::new(prompt, completion)
+            );
+        }
+
+        for bad in [0.0, -0.07, f64::NAN, f64::INFINITY] {
+            let error = with_caps(Some(bad), None).expect_err("a bad prompt cap must refuse");
+            assert!(error.contains("generation_max_price_prompt"), "{error}");
+            let error = with_caps(None, Some(bad)).expect_err("a bad completion cap must refuse");
+            assert!(error.contains("generation_max_price_completion"), "{error}");
+        }
+    }
+
+    /// D-191, D-271: the compiled-in default sends no pin and no price cap, both committed files
+    /// pin generation and extraction to Wafer's US endpoint under a price cap, and the `verify`
+    /// overlay inherits both. Each of the three starts.
     #[test]
     fn generation_provider_order_is_pinned_in_the_committed_files_and_open_by_default() {
         const CONFIG_VERIFY_TOML: &str = include_str!("../../config/config.verify.toml");
         assert!(OpenRouterSettings::default()
             .generation_provider_order
             .is_empty());
+        assert_eq!(
+            EffectiveRagSettings::default().generation_max_price,
+            generation::openrouter::MaxPrice::default()
+        );
 
         let layered = |sources: &[&str]| {
             let mut builder = ::config::Config::builder();
@@ -1955,9 +2029,9 @@ mod tests {
             let settings: Settings = built
                 .try_deserialize()
                 .expect("configuration must deserialize through Settings");
-            EffectiveRagSettings::try_from_settings(&settings)
+            let effective = EffectiveRagSettings::try_from_settings(&settings)
                 .expect("configuration must pass startup validation");
-            order
+            (order, effective.generation_max_price)
         };
         for (name, sources) in [
             ("config/config.toml", vec![CONFIG_TOML]),
@@ -1967,10 +2041,16 @@ mod tests {
                 vec![CONFIG_TOML, CONFIG_VERIFY_TOML],
             ),
         ] {
+            let (order, max_price) = layered(&sources);
             assert_eq!(
-                layered(&sources),
-                ["sail-research"],
-                "{name} must pin generation to Sail Research (D-191)"
+                order,
+                ["wafer/us"],
+                "{name} must pin generation to Wafer's US endpoint (D-271)"
+            );
+            assert_eq!(
+                max_price,
+                generation::openrouter::MaxPrice::new(Some(0.07), Some(0.45)),
+                "{name} must cap the price at 0.07 in / 0.45 out $/M (D-271)"
             );
         }
     }

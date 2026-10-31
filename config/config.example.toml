@@ -217,7 +217,12 @@ temperature = 0.0
 top_p = 1.0
 # unit=tokens; range=>0
 max_output_tokens = 2048
-# D-191: generation is pinned to Sail Research with fallbacks off, the 06.3.5 reference provider (amends D-96).
-# An empty list sends no pin. Not environment-overridable; rerank keeps its own D-131 body.
+# D-271 (amends D-191): generation and graph extraction are pinned to Wafer's US endpoint with fallbacks off,
+# under a price cap (Wafer lists 0.0448 in / 0.30 out). S0 generation ran on sail-research.
+# An empty list sends no pin and an absent cap sends none. Not environment-overridable; rerank keeps its own D-131 body.
 # unit=provider slugs; range=empty, or unique entries of 1..=64 chars without whitespace
-generation_provider_order = ["sail-research"]
+generation_provider_order = ["wafer/us"]
+# unit=USD per million prompt tokens; range=finite >0, or absent for no cap
+generation_max_price_prompt = 0.07
+# unit=USD per million completion tokens; range=finite >0, or absent for no cap
+generation_max_price_completion = 0.45

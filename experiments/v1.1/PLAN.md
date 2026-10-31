@@ -341,6 +341,33 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   2 points of the leader, the cheapest of them wins. (c) Two Claude readers are compared through their paired deltas
   against deepseek on the common population, since the lever comparison pairs each family arm with the reference
   only. Amends the reading of D-252; written before any S2 data.
+- **D-271 deepseek generation and graph extraction pinned to Wafer US under a price cap** (owner: "照做
+  (Recommended)", 2026-10-31; #118). Amends D-191. Both the engine's generation request and its graph extraction
+  request send `provider: {order: ["wafer/us"], allow_fallbacks: false, max_price: {prompt: 0.07, completion: 0.45}}`
+  (generation keeps D-96's `require_parameters: true` beside it; extraction sends none, as before). `max_price` is in
+  US dollars per million tokens; OpenRouter refuses a request that no allowed endpoint can serve under the cap. Before
+  this, extraction sent no provider pin, and generation was pinned to `sail-research` with no variant, so OpenRouter
+  could serve any Sail Research endpoint: **S0's generation ran on `sail-research`**, so S0 and S1 differ in serving
+  provider. Reason (owner's OpenRouter stats for `deepseek/deepseek-v4-flash-0731`, 2026-10-31): wafer/us lists
+  0.0448 / 0.30 $/M with P50 / P90 / P99 latency 0.33 / 0.58 / 3.39 s, against sail-research's 0.15 / 0.30 $/M and
+  0.95 / 1.74 / 3.85 s; baidu (90% promotional discount) and deepinfra (P99 5.55 s) were excluded. The cap leaves
+  headroom over Wafer's list price and stops a silent move to a dearer endpoint. Syntax checked 2026-10-31 against
+  https://openrouter.ai/docs/guides/routing/provider-selection: `max_price` is an object of `prompt` / `completion`
+  (also `request`, `image`) in $ per million tokens, and an `order` slug may name one endpoint as
+  `provider[/variant][/region]`. That page does not list `wafer/us` itself; the slug is the owner's, read from the
+  model's provider list. Set in `config/config.toml` (`generation_provider_order`, `generation_max_price_prompt`,
+  `generation_max_price_completion`); not environment-overridable. Must merge before S1 step 4.2.
+- **D-272 Extraction output cap raised from 768 to 16,384 tokens** (owner: "停、修、重建 (Recommended)", 2026-10-31;
+  #118). The S1 seed lost about 18% of chunks to graph extraction: at 113 of 346 documents, 215 of 1,226 chunks failed
+  all 3 attempts, every one a SchemaValidation "EOF while parsing", a truncated JSON answer. The engine built the
+  extraction request's `max_completion_tokens` from a hard-coded 768 in `engine/src/main.rs` (not from
+  `max_output_tokens = 2048`, which is generation's and is unchanged). Extraction now sends its own cap,
+  `EXTRACTION_MAX_COMPLETION_TOKENS = 16384` in `engine/src/graph/extraction.rs`, apart from the generation limits
+  (which stop at 4,096). Sizing: a schema-maximal answer (32 entities, 64 relations, every string at `maxLength`,
+  pretty-printed) is about 35,600 bytes, estimated at about 11,900 tokens at 3 bytes a token; 16,384 holds that with a
+  25% margin, and a test pins it. Billing is per token produced. wafer/us lists a max completion of 943,718 tokens
+  (OpenRouter endpoints API, 2026-10-31). The seed was stopped; the S1 store is rebuilt after this merges. The
+  extraction timeout is still `generation_timeout_secs` (30 s); a very long answer could now hit it instead.
 
 ## Model access
 
