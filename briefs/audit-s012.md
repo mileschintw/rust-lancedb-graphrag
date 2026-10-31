@@ -1,5 +1,5 @@
 Follow `relay:work` and `project.md`; this brief holds only what is specific to this lane.
-User's go-ahead: "開稽核 session (Recommended)" (2026-10-31, answering the coordinator; plan relayed from the user's side session local_adc211cd-77b7-418f-9611-ef413a3bab17, where the user said "可以，就這樣做"); start: <pending: the user's typed start>
+User's go-ahead: "開稽核 session (Recommended)" (2026-10-31, answering the coordinator; plan relayed from the user's side session local_adc211cd-77b7-418f-9611-ef413a3bab17, where the user said "可以，就這樣做"); start: "Start audit" (2026-10-31)
 Depends on: none
 Waits for (same section): none
 
