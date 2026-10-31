@@ -4,9 +4,11 @@
 endpoint through ``BatchClient``, so the tests use a fake and no paid call. Two
 implementations exist, one per ``reader_request.Target``:
 
-- ``OpenRouterBatchClient``: ``POST /api/v1/batches`` with inline
-  ``{custom_id, body}`` requests; ``GET /api/v1/batches/{id}`` returns the status
-  and, once finished, each request's chat-completions response or error.
+- ``OpenRouterBatchClient``: ``POST /api/v1/batches`` with the batch-level
+  ``endpoint``, ``model`` and ``provider`` ahead of inline ``{custom_id, body}``
+  requests (#107; model and provider pin read from the bodies);
+  ``GET /api/v1/batches/{id}`` returns the status and, once finished,
+  each request's chat-completions response or error.
 - ``AnthropicBatchClient``: the Message Batches API. ``POST /v1/messages/batches``
   with ``{custom_id, params}`` requests; ``GET /v1/messages/batches/{id}`` gives the
   processing status and, once ended, a ``results_url`` of JSON lines.
@@ -63,6 +65,8 @@ ResultStatus = Literal["succeeded", "errored", "expired", "canceled", "unreadabl
 MISSING_REASONING_TOKENS = -1
 
 OPENROUTER_BATCHES_URL = "https://openrouter.ai/api/v1/batches"
+#: The Batch API's batch-level ``endpoint``: every body is a chat-completions body.
+OPENROUTER_ENDPOINT = "/v1/chat/completions"
 ANTHROPIC_BATCHES_URL = "https://api.anthropic.com/v1/messages/batches"
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -214,13 +218,56 @@ def anthropic_output(message: Mapping[str, Any]) -> ReaderOutput:
     )
 
 
-def _payload(requests: Sequence[BatchRequest], body_key: str) -> bytes:
-    # Each body is embedded as the exact text whose hash the manifest records.
+def _payload(
+    requests: Sequence[BatchRequest],
+    body_key: str,
+    head: Mapping[str, Any] | None = None,
+) -> bytes:
+    # Each body is embedded as the exact text whose hash the manifest records;
+    # `head`'s batch-level fields go first, in order.
+    fields = "".join(
+        f"{json.dumps(k)}:{json.dumps(v, separators=(',', ':'))},"
+        for k, v in (head or {}).items()
+    )
     items = ",".join(
         f'{{"custom_id":{json.dumps(r.custom_id)},"{body_key}":{r.body_json}}}'
         for r in requests
     )
-    return f'{{"requests":[{items}]}}'.encode()
+    return f'{{{fields}"requests":[{items}]}}'.encode()
+
+
+def _openrouter_head(requests: Sequence[BatchRequest]) -> dict[str, Any]:
+    """The batch-level fields OpenRouter's Batch API wants ahead of `requests`.
+
+    One model and one provider pin per batch, read from the bodies (the rewrite
+    sets both from the reader's declaration). The batch-level ``provider`` takes
+    only the keys that schema allows (``only``, ``allow_fallbacks``).
+
+    Raises:
+        BatchClientError: If the bodies name no model, or no ``provider.only`` pin,
+            or disagree on either: a batch without the pin may run, and be billed,
+            on shared capacity.
+    """
+    heads = set()
+    for r in requests:
+        try:
+            body = json.loads(r.body_json)
+        except ValueError as exc:
+            raise BatchClientError(f"{r.custom_id}: the body is not JSON") from exc
+        model = body.get("model") if isinstance(body, dict) else None
+        provider = body.get("provider") if isinstance(body, dict) else None
+        if not isinstance(model, str) or not model:
+            raise BatchClientError(f"{r.custom_id}: the body names no model")
+        if not isinstance(provider, dict) or not provider.get("only"):
+            raise BatchClientError(f"{r.custom_id}: the body pins no provider")
+        pin = {k: provider[k] for k in ("only", "allow_fallbacks") if k in provider}
+        heads.add(json.dumps({"model": model, "provider": pin}))
+    if len(heads) != 1:
+        raise BatchClientError(
+            "an OpenRouter batch needs one model and one provider pin, got "
+            f"{len(heads)}"
+        )
+    return {"endpoint": OPENROUTER_ENDPOINT, **json.loads(heads.pop())}
 
 
 def _error_text(error: Any) -> str:
@@ -262,7 +309,7 @@ class OpenRouterBatchClient:
     def submit(self, requests: Sequence[BatchRequest]) -> str:
         res = httpx.post(
             self._url,
-            content=_payload(requests, "body"),
+            content=_payload(requests, "body", _openrouter_head(requests)),
             headers=self._headers,
             timeout=_TIMEOUT_S,
         )
