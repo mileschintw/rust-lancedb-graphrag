@@ -95,7 +95,8 @@ rule uses point estimates, not p-values.
 - The merged store is built only after #67 merges: until then `seed --store eval-s1` uploads without the store's
   chunking and the gateway falls back to `structure-aware`, so the "merged" store would repeat the v1.0 chunking.
 - The S1 store's preflight and identity gate need #69 (the identity check reads only `lancet_eval`).
-- The two-store context export needs #65.
+- The two-store context export needs #65 (closed; `export-context` reads each store's checkpoints from its own
+  schema).
 - Scoring needs #68: until it lands, `score` and `compare-levers` read only held-out IDs and refuse a dev-role run.
 - `PREREGISTRATION_S1_MERGED_GRAPH` is not the corpus token, so `compare-levers` does not check it; the RUN-S0-S1.md
   recipe runs the same D-73 check on it before reading it.

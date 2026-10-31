@@ -86,8 +86,9 @@ issue is closed and its fix is on `main` (`git log origin/main --oneline --grep 
 | #65 two-store context export | steps 4.4, 4.5 | the merged drive's export and `export-context` read only one store's checkpoints |
 | #68 dev-role scoring | steps 4.6 to 4.8 | `score` and `compare-levers` read only held-out IDs and refuse a dev run |
 
-Steps 2 and 3 do not depend on any of them. With #67 or #69 open, run steps 2 and 3 and stop before step 1. With #68
-open, steps 4.1 to 4.5 may run, and the run stops before 4.6 until it clears.
+Steps 2 and 3 do not depend on any of them. With #67 or #69 open, run steps 2 and 3 and stop before step 1. With #65
+open, the run stops before step 4.4. With #68 open, steps 4.1 to 4.5 may run, and the run stops before 4.6 until it
+clears.
 
 Then `git pull --ff-only` on `main`, check that `git status` is clean, fix `<S0_RUN>` and `<S1_RUN>`, and build the
 engine once:
