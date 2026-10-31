@@ -56,7 +56,8 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 64 | #64 | local_28db4994-f0ab-4ecd-9c15-268a4a44b74b | review | — |
-| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | review | — |
+| 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | done; PR #102, merge on green. The LlamaIndex arm rehearsed free; the Lancet arm's rehearsal needs the live store (main checkout only) | — |
+| audit-s1b | none (read-only audit) | local_4cf636bb-f778-4b7e-b41a-a891d0b6b7fc | started on the user's "Start audit part 2" | — |
 | 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | GO sent 2026-10-31 (wait on #76 dropped; `export` is a mechanical overlap with lane 76) | — |
 | audit-s1a | none (read-only audit) | local_484d4a13-5af3-4296-9c4d-deb975f8e6ec | done: **passed**, no blocker (reports/audit-s1a.md). Cost about $1.9-2.9, ceiling about $10.8 excluding retries (A3). Before the build: redo step 0's builds after pulling (A1) and remove the untracked `scratch_new.txt` from the main checkout (A5). Optional: check `document_count=0` after 1.2 (A2); seed prints no D-258 estimate (A4) | — |
 
