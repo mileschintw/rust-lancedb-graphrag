@@ -474,8 +474,8 @@ class Journal:
         and `score` refuses it unless `context_export.jsonl` holds a row for every
         success record (D-249).
 
-        ``replay_source`` adds ``"replay_source"``: the S1 run, arms and row hashes an
-        S2 journal was carried from (``replay.replay_init``, D-257).
+        ``replay_source`` adds ``"replay_source"``: the S1 run, its corpus, arms and row
+        hashes an S2 journal was carried from (``replay.replay_init``, D-257, #80).
         """
         if gate_stage is not None and max_retries is None:
             raise ValueError("gate_stage requires max_retries (D-67)")
