@@ -815,3 +815,217 @@ def test_preflight_of_an_unprefixed_corpus_has_no_arm_store_check(
         settings=_store_settings(str(tmp_path / "lancedb-eval"), "lancet_eval"),
     )
     assert "arm_store" not in [r.name for r in results]
+
+
+# --- Store chunking (#67) -------------------------------------------------------------
+
+
+def _s1_chunking_settings() -> EvalSettings:
+    return _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1")
+
+
+def _stub_psql(monkeypatch: pytest.MonkeyPatch, output: str) -> list[str]:
+    """Answer the store's documents query with `output`; return the SQL it got."""
+    seen: list[str] = []
+
+    def fake_psql(settings: EvalSettings, sql: str, **kw: object) -> str:
+        seen.append(sql)
+        return output
+
+    monkeypatch.setattr("lancet_eval.preflight.run_psql", fake_psql)
+    return seen
+
+
+def test_store_chunking_passes_when_every_document_used_the_declared_chunking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.config import S1_STORE
+    from lancet_eval.corpus import load_corpus_config
+    from lancet_eval.preflight import check_store_chunking
+
+    seen = _stub_psql(monkeypatch, "structure-merge|256|25|346\n")
+
+    res = check_store_chunking(
+        _s1_chunking_settings(), load_corpus_config("multihop_rag_s1_dev"), S1_STORE
+    )
+
+    assert res.passed, res.message
+    assert res.name == "store_chunking"
+    assert '"lancet_eval_s1".documents' in seen[0]
+    assert "structure-merge" in res.message
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "structure-aware|500|50|346\n",
+        "structure-merge|256|25|345\nstructure-aware|500|50|1\n",
+        "structure-merge|500|50|346\n",
+        "",
+    ],
+)
+def test_store_chunking_fails_when_documents_used_another_chunking(
+    monkeypatch: pytest.MonkeyPatch, rows: str
+) -> None:
+    """#67: a store built with the v1.0 chunker (or a mix, other sizes, or no
+    documents at all) fails the S1 preflight."""
+    from lancet_eval.config import S1_STORE
+    from lancet_eval.corpus import load_corpus_config
+    from lancet_eval.preflight import check_store_chunking
+
+    _stub_psql(monkeypatch, rows)
+
+    res = check_store_chunking(
+        _s1_chunking_settings(), load_corpus_config("multihop_rag_s1_dev"), S1_STORE
+    )
+
+    assert not res.passed
+    assert "structure-merge" in res.message
+
+
+def test_store_chunking_fails_closed_without_the_corpus_stores_entry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.config import S1_STORE
+    from lancet_eval.corpus import load_corpus_config
+    from lancet_eval.preflight import check_store_chunking
+
+    seen = _stub_psql(monkeypatch, "structure-merge|256|25|1\n")
+
+    res = check_store_chunking(
+        _s1_chunking_settings(), load_corpus_config("multihop_rag"), S1_STORE
+    )
+
+    assert not res.passed
+    assert "[stores.merged]" in res.message
+    assert seen == []
+
+
+def test_store_chunking_never_raises_on_a_psql_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from lancet_eval.config import S1_STORE
+    from lancet_eval.corpus import load_corpus_config
+    from lancet_eval.preflight import check_store_chunking
+    from lancet_eval.seed import SeedError
+
+    def failing_psql(settings: EvalSettings, sql: str, **kw: object) -> str:
+        raise SeedError("psql command failed (exit 2): connection refused")
+
+    monkeypatch.setattr("lancet_eval.preflight.run_psql", failing_psql)
+
+    res = check_store_chunking(
+        _s1_chunking_settings(), load_corpus_config("multihop_rag_s1_dev"), S1_STORE
+    )
+
+    assert not res.passed
+    assert "connection refused" in res.message
+
+
+@pytest.mark.parametrize("store_name", ["eval", "eval-s1"])
+def test_run_preflight_checks_checks_chunking_only_off_the_v1_store(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    store_name: str,
+) -> None:
+    """#67: `preflight --store eval-s1` reports `store_chunking`; a v1.0 preflight
+    runs exactly the checks it ran before."""
+    from lancet_eval.config import get_eval_store
+
+    store = get_eval_store(store_name)
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    save_document_map_atomic(DocumentMap(corpus="multihop_rag"), store)
+    _stub_psql(monkeypatch, "structure-aware|500|50|346\n")
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    results = run_preflight_checks(
+        corpus_name="multihop_rag_s1_dev",
+        settings=_store_settings(store.lancedb_path, store.pg_schema),
+        store=store,
+    )
+
+    chunking = [r for r in results if r.name == "store_chunking"]
+    if store_name == "eval":
+        assert chunking == []
+    else:
+        assert len(chunking) == 1
+        assert not chunking[0].passed
+
+
+def test_s1_preflight_passes_identity_and_chunking_on_a_correct_s1_store(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#67, #69: on an S1 store whose PostgreSQL rows, LanceDB rows and S1 map agree
+    and whose documents used structure-merge 256/25, `preflight --corpus
+    multihop_rag_s1_dev --store eval-s1` passes index_identity and store_chunking,
+    reading only the S1 schema."""
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    save_document_map_atomic(
+        DocumentMap(
+            corpus="multihop_rag_s1_dev",
+            entries={
+                _DOC_S1: DocumentMapEntry(corpus_id="Article S1", document_id=_DOC_S1)
+            },
+        ),
+        S1_STORE,
+    )
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: {
+            "documents": [_DOC_S1],
+            "nodes": [_DOC_S1],
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        },
+    )
+    sql_seen: list[str] = []
+
+    def fake_psql(settings: EvalSettings, sql: str, **kw: object) -> str:
+        sql_seen.append(sql)
+        if "chunk_strategy" in sql:
+            return "structure-merge|256|25|1\n"
+        return f"{_DOC_S1}|completed\n"
+
+    # conftest fakes `list_pg_documents` outside test_identity.py; load a fresh copy
+    # of the real one, so the S1 schema's SQL runs through `run_psql`.
+    import importlib.util
+
+    spec = importlib.util.find_spec("lancet_eval.identity")
+    assert spec is not None and spec.loader is not None
+    real_identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real_identity)
+    monkeypatch.setattr(real_identity, "run_psql", fake_psql)
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_pg_documents", real_identity.list_pg_documents
+    )
+    monkeypatch.setattr("lancet_eval.preflight.run_psql", fake_psql)
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    results = {
+        r.name: r
+        for r in run_preflight_checks(
+            corpus_name="multihop_rag_s1_dev",
+            settings=_s1_chunking_settings(),
+            store=S1_STORE,
+        )
+    }
+
+    assert results["store_isolation"].passed, results["store_isolation"].message
+    assert results["index_identity"].passed, results["index_identity"].message
+    assert results["store_chunking"].passed, results["store_chunking"].message
+    assert len(sql_seen) == 2
+    assert all("lancet_eval_s1" in sql for sql in sql_seen)

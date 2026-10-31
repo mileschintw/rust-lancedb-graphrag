@@ -125,6 +125,51 @@ class ExternalProvenance(BaseModel):
     generation_provider_order: list[str]
 
 
+class ReplayProvenance(BaseModel):
+    """The replay record kind's own provenance (D-257).
+
+    A reader arm's success record carries this block and no engine snapshot: its
+    context is the base arm's context-export row, packed by the engine and rewritten
+    for the reader (``reader_request.rewrite_pack_body``). An engine or external record
+    never carries it. The replay provenance clauses read it; malformed values parse,
+    so the clause that reads them names the failure.
+
+    Attributes:
+        export_row_sha256: ``replay.export_row_sha256`` of the base arm's row the
+            request was packed from.
+        pack_body: The ``body`` string ``generate_from_context pack`` emitted, byte for
+            byte.
+        sent_body_sha256: SHA-256 of the request body sent, as UTF-8 JSON text.
+        rewritten_fields: The fields the rewrite reported, in its order.
+        model: The model the response names.
+        provider: The provider the response names (OpenRouter target); for the
+            native Anthropic target, whose response names none, the endpoint host the
+            request was sent to (``provenance.REPLAY_PROVIDERS``).
+        is_byok: Whether the response reports the request as billed to the
+            owner's own key (OpenRouter target); ``None`` for the native target,
+            whose response reports no such flag.
+        reasoning_tokens: The reasoning tokens the response reports; 0 for the
+            native target, whose usage has no separate reasoning count.
+        batch_id: The batch the request was sent in.
+        content_block_types: The ``type`` of each content block of the response, in
+            order (native target, #82); ``None`` for the OpenRouter target. The
+            ``reasoning_tokens`` clause reads it for thinking blocks.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    export_row_sha256: str
+    pack_body: str
+    sent_body_sha256: str
+    rewritten_fields: list[str]
+    model: str
+    provider: str
+    is_byok: bool | None
+    reasoning_tokens: int
+    batch_id: str
+    content_block_types: list[str] | None = None
+
+
 class RunRecord(BaseModel):
     """Durable record of a single question execution under one experimental arm."""
 
@@ -158,6 +203,13 @@ class RunRecord(BaseModel):
         default=None,
         description=(
             "D-247: the external record kind's provenance; set on an external arm's "
+            "success record only."
+        ),
+    )
+    replay: ReplayProvenance | None = Field(
+        default=None,
+        description=(
+            "D-257: the replay record kind's provenance; set on a reader arm's "
             "success record only."
         ),
     )
@@ -405,6 +457,7 @@ class Journal:
         order_seed: int | None = None,
         split_sha256: str | None = None,
         context_export: bool = False,
+        replay_source: dict[str, Any] | None = None,
     ) -> None:
         """Write journal metadata header if file is empty or new.
 
@@ -420,6 +473,9 @@ class Journal:
         ``context_export=True`` adds ``"context_export": true``: the run is a v1.1 run,
         and `score` refuses it unless `context_export.jsonl` holds a row for every
         success record (D-249).
+
+        ``replay_source`` adds ``"replay_source"``: the S1 run, its corpus, arms and row
+        hashes an S2 journal was carried from (``replay.replay_init``, D-257, #80).
         """
         if gate_stage is not None and max_retries is None:
             raise ValueError("gate_stage requires max_retries (D-67)")
@@ -439,6 +495,8 @@ class Journal:
                 header["split_sha256"] = split_sha256
             if context_export:
                 header["context_export"] = True
+            if replay_source is not None:
+                header["replay_source"] = replay_source
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(header, ensure_ascii=False) + "\n")
                 f.flush()

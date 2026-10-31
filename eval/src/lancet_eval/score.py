@@ -78,6 +78,7 @@ from lancet_eval.measure import (
     EMBEDDING_PRICE_PER_1M,
     ESTIMATED_EMBEDDING_TOKENS_PER_QUERY,
     compute_judge_spend,
+    ReaderPriceError,
     compute_spend,
     estimate_judge_cost_per_question,
 )
@@ -88,6 +89,7 @@ from lancet_eval.arms import (
     canonical_arm,
     in_registry_order,
     is_external_arm,
+    is_reader_arm,
     judged_arms,
     resolve_arm,
 )
@@ -113,6 +115,8 @@ from lancet_eval.metrics import (
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
 from lancet_eval import gitcheck, preregistration, provenance
+from lancet_eval.reader_request import ReaderDeclaration
+from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
 from lancet_eval.split import HeldOutSplit, load_split, split_sha256
@@ -281,6 +285,20 @@ def _p4_reference(config: Any) -> str:
         return str(preregistration.resolve(token).reference_arm)
     except preregistration.PreregistrationError as exc:
         raise ScoreError(f"Cannot build P4: {exc}") from exc
+
+
+def _readers_of(config: Any) -> dict[str, ReaderDeclaration]:
+    """The reader declarations of the corpus's pre-registration (D-257).
+
+    Raises:
+        ScoreError: If the token does not resolve or its reader table is bad.
+    """
+    try:
+        return preregistration.readers_of(
+            preregistration.resolve(config.preregistration_token)
+        )
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(f"D-257: {exc}") from exc
 
 
 def _check_provenance(record: RunRecord) -> bool:
@@ -545,12 +563,43 @@ def _default_gold_chunks_path() -> Path:
     )
 
 
+def population_label(role: str | None) -> str:
+    """The name of the population a `[split]` corpus of `role` is scored on (#68)."""
+    return "dev" if role == "dev" else "held-out"
+
+
+def scope_split(
+    split: HeldOutSplit, role: str | None, gold_map: Mapping[str, Any]
+) -> HeldOutSplit:
+    """The split whose G and null lists are the population a `role` corpus reads (#68).
+
+    A dev-role corpus (S1, S2) is scored on the dev IDs, scoped the way `dev_reads.py`
+    does: G = the dev IDs with gold evidence, null = the dev null IDs. A dev ID missing
+    from the question file stays in G, so the caller's G check refuses it. Any other
+    role reads the split as written.
+    """
+    if role != "dev":
+        return split
+    dev_null = [q for q in split.dev_ids if q in gold_map and gold_map[q].is_null]
+    nulls = set(dev_null)
+    dev_g = [q for q in split.dev_ids if q not in nulls]
+    return split.model_copy(
+        update={"heldout_g_ids": dev_g, "heldout_null_ids": dev_null}
+    )
+
+
 @dataclass(frozen=True)
 class _SplitInputs:
-    """What a `[split]` corpus's four-arm report reads besides the journal."""
+    """What a `[split]` corpus's four-arm report reads besides the journal.
+
+    `split` is scoped to the population the corpus's role reads (`scope_split`);
+    `on_disk` is the split as written, which the journal's split marker hashes.
+    """
 
     split: HeldOutSplit
     gold_sets: dict[str, list[frozenset[str]]]
+    on_disk: HeldOutSplit
+    population: str
 
 
 def _load_split_inputs(
@@ -558,19 +607,25 @@ def _load_split_inputs(
     gold_map: Mapping[str, Any],
     gold_chunks_path: Path | str | None,
 ) -> _SplitInputs:
-    """Loads the held-out split and the gold chunk sets; fails closed on any gap.
+    """Loads the split and the gold chunk sets; fails closed on any gap.
+
+    A dev-role corpus reads the dev population (`scope_split`); every other role reads
+    the held-out lists.
 
     Raises:
-        ScoreError: If the split or the gold-chunk table cannot be read, or a held-out
-            G question has no gold question, is a null question, is not one of the
-            three G question types, or has no gold set.
+        ScoreError: If the split or the gold-chunk table cannot be read, or a G
+            question of the population has no gold question, is a null question, is
+            not one of the three G question types, or has no gold set.
     """
     try:
-        split = load_split(config.split_path)
+        on_disk = load_split(config.split_path)
     except (OSError, ValueError) as exc:
         raise ScoreError(
-            f"Could not load the held-out split {config.split_path}: {exc}"
+            f"Could not load the split {config.split_path}: {exc}"
         ) from exc
+    role = getattr(config, "split_role", None)
+    population = population_label(role)
+    split = scope_split(on_disk, role, gold_map)
     path = (
         Path(gold_chunks_path)
         if gold_chunks_path is not None
@@ -590,7 +645,7 @@ def _load_split_inputs(
         if gold is None:
             problems.append(f"{qid}: not in the corpus's question file")
         elif gold.is_null:
-            problems.append(f"{qid}: a held-out G question with no gold evidence")
+            problems.append(f"{qid}: a {population} G question with no gold evidence")
         elif gold.question_type not in strata.STRATUM_TYPES:
             problems.append(
                 f"{qid}: question_type {gold.question_type!r} is not a G stratum"
@@ -599,10 +654,12 @@ def _load_split_inputs(
             problems.append(f"{qid}: no row in the gold-chunk table")
     if problems:
         raise ScoreError(
-            f"{len(problems)} held-out G question(s) cannot be scored: "
+            f"{len(problems)} {population} G question(s) cannot be scored: "
             + "; ".join(problems[:20])
         )
-    return _SplitInputs(split=split, gold_sets=gold_sets)
+    return _SplitInputs(
+        split=split, gold_sets=gold_sets, on_disk=on_disk, population=population
+    )
 
 
 def _interval(
@@ -718,7 +775,9 @@ def _retrieve_node_ms(rec: RunRecord) -> float | None:
     return None
 
 
-def _record_spend_usd(rec: RunRecord) -> float:
+def _record_spend_usd(
+    rec: RunRecord, readers: Mapping[str, ReaderDeclaration] | None = None
+) -> float:
     """One record's spend in USD: wire tokens, the failed-generation ceiling, embedding.
 
     The generation part is `measure.compute_spend([rec], include_embeddings=False)`,
@@ -727,7 +786,12 @@ def _record_spend_usd(rec: RunRecord) -> float:
     embeds: `bm25-only` with graph context off embeds nothing (D-125, pinned by
     06.3.5-04). `measure.compute_spend` is not edited, so the stage cap keeps its
     conservative per-query embedding charge.
+
+    A reader-arm record (#54, D-257) is its batch usage at its reader's declared price
+    in `readers` (`measure.compute_spend`); a reader embeds nothing.
     """
+    if is_reader_arm(rec.graph_arm):
+        return compute_spend([rec], include_embeddings=False, readers=readers)[0]
     generation, _ = compute_spend([rec], include_embeddings=False)
     spec = resolve_arm(rec.graph_arm)
     if spec.retrieval_mode == "bm25_only" and spec.disable_graph_context:
@@ -793,6 +857,10 @@ class _Metric:
     kind: Literal["wilson", "bootstrap"]
     delta_name: str | None = None
     counts: bool = False
+    # #54, D-257: a metric of the arm's own retrieval ranking (chunk-ID or evidence
+    # Hits@4, Hits@10, MRR, MAP). A reader arm replays its base arm's retrieval, so
+    # it is left out of such a metric rather than scored as a miss.
+    own_ranking: bool = False
 
 
 def _load_export_rows(
@@ -838,7 +906,7 @@ def _evidence_metrics(
         return None if found is None else float(context_tokens(found))
 
     return [
-        _Metric("evidence_hits_at_4", hit, "wilson"),
+        _Metric("evidence_hits_at_4", hit, "wilson", own_ranking=True),
         _Metric("context_tokens_mean", tokens, "bootstrap", "context_tokens_delta"),
     ]
 
@@ -884,6 +952,13 @@ def _four_arm_dimensions(
     p4_ids = list(pop.question_ids)
     n_excluded = float(n_g - len(p4_ids))
     chunk_size = int(config.chunk_size)
+    readers = _readers_of(config) if any(map(is_reader_arm, arms)) else None
+
+    def spend(rec: RunRecord) -> float:
+        try:
+            return _record_spend_usd(rec, readers)
+        except ReaderPriceError as exc:
+            raise ScoreError(f"D-257: {exc}") from exc
 
     def paper(rec: RunRecord) -> dict[str, Any]:
         return paper_question_scores(
@@ -910,24 +985,32 @@ def _four_arm_dimensions(
     # delta_name is a secondary: a paired delta against hybrid with a bootstrap CI, no
     # p-value, never Holm-tested (D-111, D-115, D-123).
     metrics = [
-        _Metric("paper_hits_at_4", lambda r: float(paper(r)["hit4"]), "wilson"),
+        _Metric(
+            "paper_hits_at_4",
+            lambda r: float(paper(r)["hit4"]),
+            "wilson",
+            own_ranking=True,
+        ),
         _Metric(
             "paper_hits_at_10",
             lambda r: float(paper(r)["hit10"]),
             "wilson",
             "paper_hits_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_mrr_at_10",
             lambda r: float(paper(r)["rr"]),
             "bootstrap",
             "paper_mrr_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "paper_map_at_10",
             lambda r: float(paper(r)["ap"]),
             "bootstrap",
             "paper_map_at_10_delta",
+            own_ranking=True,
         ),
         _Metric(
             "answer_usable_p4",
@@ -993,7 +1076,12 @@ def _four_arm_dimensions(
             "bootstrap",
             "retrieve_node_ms_delta",
         ),
-        _Metric("spend_usd_mean", _record_spend_usd, "bootstrap", "spend_usd_delta"),
+        _Metric(
+            "spend_usd_mean",
+            spend,
+            "bootstrap",
+            "spend_usd_delta",
+        ),
     ]
     if export_rows is not None:
         metrics += _evidence_metrics(export_rows, gold_map)
@@ -1006,8 +1094,9 @@ def _four_arm_dimensions(
 
     def p4_values(
         fn: Callable[[RunRecord], float | None],
+        value_arms: Sequence[str],
     ) -> tuple[dict[str, dict[str, float]], int]:
-        """Per-arm value maps over the P4 questions every arm can score."""
+        """Per-arm value maps over the P4 questions all of `value_arms` can score."""
         raw = {
             arm: p4_mod.per_question_values(
                 records,
@@ -1015,18 +1104,22 @@ def _four_arm_dimensions(
                 arm,
                 lambda rec: math.nan if (v := fn(rec)) is None else v,
             )
-            for arm in arms
+            for arm in value_arms
         }
         common = [
-            q for q in p4_ids if all(not math.isnan(raw[arm][q]) for arm in arms)
+            q
+            for q in p4_ids
+            if all(not math.isnan(raw[arm][q]) for arm in value_arms)
         ]
         return (
-            {arm: {q: raw[arm][q] for q in common} for arm in arms},
+            {arm: {q: raw[arm][q] for q in common} for arm in value_arms},
             len(p4_ids) - len(common),
         )
 
     dims: list[DimensionResult] = []
-    empty = "P4 is empty: no held-out G question has an ok record on every arm"
+    empty = (
+        f"P4 is empty: no {inputs.population} G question has an ok record on every arm"
+    )
 
     # p4_size: |P4|, the coverage and the per-arm exclusions (D-122).
     size_detail: dict[str, float] = {
@@ -1079,8 +1172,11 @@ def _four_arm_dimensions(
     )
 
     for metric in metrics:
-        by_arm, n_unscorable = p4_values(metric.value)
-        for arm in arms:
+        metric_arms = [
+            a for a in arms if not (metric.own_ranking and is_reader_arm(a))
+        ]
+        by_arm, n_unscorable = p4_values(metric.value, metric_arms)
+        for arm in metric_arms:
             values = by_arm[arm]
             detail = {
                 "n_excluded": n_excluded,
@@ -1108,6 +1204,8 @@ def _four_arm_dimensions(
         if metric.delta_name is None:
             continue
         for arm in comparison_arms:
+            if arm not in by_arm:
+                continue
             dims.append(
                 _delta_dimension(
                     f"{metric.delta_name}__{arm_slug(arm)}",
@@ -1125,7 +1223,7 @@ def _four_arm_dimensions(
             )
 
     for base, fn in percentile_metrics:
-        by_arm, n_unscorable = p4_values(fn)
+        by_arm, n_unscorable = p4_values(fn, arms)
         for arm in arms:
             for statistic in ("p50", "p95"):
                 dims.append(
@@ -1144,8 +1242,11 @@ def _four_arm_dimensions(
                 )
 
     # D-122 script-faithful line: every held-out G question per arm; a record with no
-    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive.
+    # valid ranking scores as an empty ranking (a miss). Labelled, never decisive. A
+    # reader arm has no ranking of its own (#54, D-257) and has no such line.
     for arm in arms:
+        if is_reader_arm(arm):
+            continue
         scores: dict[str, dict[str, Any]] = {}
         no_ranking = 0
         for qid in g_ids:
@@ -1171,7 +1272,7 @@ def _four_arm_dimensions(
                         "n_excluded": 0.0,
                         "n_no_valid_ranking": float(no_ranking),
                     },
-                    empty_reason="the split has no held-out G question",
+                    empty_reason=f"the split has no {inputs.population} G question",
                 )
             )
 
@@ -1189,7 +1290,9 @@ def _four_arm_dimensions(
             kind="wilson",
             qtype_of=qtype_of,
             detail={"n_excluded": float(n_g - len(values))},
-            empty_reason="no usable held-out G record carries a scorable payload",
+            empty_reason=(
+                f"no usable {inputs.population} G record carries a scorable payload"
+            ),
         )
         if dim.status == "ok":
             dim.detail.update(strata.constant_yes_baselines(list(values), gold_map))
@@ -1210,7 +1313,10 @@ def _four_arm_dimensions(
                 DimensionResult(
                     name=name,
                     status="skipped",
-                    reason="no ok record of this arm on a held-out null question",
+                    reason=(
+                        f"no ok record of this arm on a {inputs.population} null "
+                        "question"
+                    ),
                     detail={"n_excluded": float(len(null_ids))},
                     n=0,
                 )
@@ -2049,6 +2155,12 @@ def score_run(
     require_external_provenance(
         records, journal_path, config, {*doc_map.entries, *doc_map.aliases}
     )
+    try:
+        require_replay_provenance(
+            records, journal_path, getattr(config, "preregistration_token", None)
+        )
+    except ReplayError as exc:
+        raise ScoreError(str(exc)) from exc
     _ordered_protocol_guard(
         config,
         judged=judged,
@@ -2099,7 +2211,7 @@ def score_run(
                 f"{listed}{tail}"
             )
         split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
-        _require_split_marker_matches(header_split_marker, split_inputs.split)
+        _require_split_marker_matches(header_split_marker, split_inputs.on_disk)
 
     # D-113 / D-120 step 7: nothing judged exists before the order is proven.
     verified: Any = None
@@ -2127,9 +2239,10 @@ def score_run(
     for arm, arm_records in records_by_arm.items():
         # D-101: the GRAPH_ABLATION provenance check holds every engine arm that
         # switches graph context off, not only the literal `graph-off`. An external
-        # arm (D-247) has no engine notices; its own clauses ran before this point.
+        # arm (D-247) or a reader arm (D-257) has no engine notices or snapshot; its
+        # own clauses ran before this point.
         arm_spec = resolve_arm(arm)
-        external = arm_spec.kind == "external"
+        external = arm_spec.kind == "external" or is_reader_arm(arm)
         needs_ablation_provenance = not external and arm_spec.disable_graph_context
         total_records = len(arm_records)
         unusable_records = [r for r in arm_records if not is_usable(r)]
@@ -3433,7 +3546,8 @@ def score_run(
             size = next(d for d in four_arm if d.name == "p4_size")
             p_all_note = (
                 f"{P_ALL_LABEL}: |P_all| = {size.n} of "
-                f"{int(size.detail['n_heldout_g'])} held-out G questions (coverage "
+                f"{int(size.detail['n_heldout_g'])} {split_inputs.population} G "
+                "questions (coverage "
                 f"{size.detail['coverage']:.3f}). The per-arm cells are on this "
                 "population; below any coverage floor they are labelled, never "
                 "refused, and compare-levers reads one pairwise population per "

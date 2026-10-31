@@ -655,7 +655,7 @@ def test_s1_reseed_resets_only_the_s1_schema_and_store(
     )
 
     reseed_corpus(
-        "multihop_rag",
+        "multihop_rag_s1_dev",
         confirmation=True,
         settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
         store=S1_STORE,
@@ -808,7 +808,7 @@ def test_s1_reseed_keeps_the_v1_document_map(
     )
 
     reseed_corpus(
-        "multihop_rag",
+        "multihop_rag_s1_dev",
         confirmation=True,
         settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
         store=S1_STORE,
@@ -862,3 +862,161 @@ def test_default_store_seed_refuses_settings_on_the_s1_path(
             "multihop_rag",
             settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
         )
+
+
+# --- Per-store chunking (#67) ---------------------------------------------------------
+
+_V1_ROW = {
+    "title": "Article Alpha",
+    "text": "Alpha body text.",
+    "url": "https://example.com/alpha",
+    "source": "The Verge",
+    "published_at": "2023-10-07T23:30:00-05:00",
+}
+
+# The v1.0 upload of `_V1_ROW` as `main` sent it before #67, multipart boundary
+# replaced by BOUNDARY: no chunk_* field, the gateway's default chunking applies.
+_V1_UPLOAD = (
+    b'--BOUNDARY\r\nContent-Disposition: form-data; name="doc_title"\r\n\r\n'
+    b"Article Alpha\r\n"
+    b'--BOUNDARY\r\nContent-Disposition: form-data; name="source"\r\n\r\n'
+    b"The Verge\r\n"
+    b'--BOUNDARY\r\nContent-Disposition: form-data; name="published_date"\r\n\r\n'
+    b"2023-10-08\r\n"
+    b'--BOUNDARY\r\nContent-Disposition: form-data; name="file"; '
+    b'filename="Article_Alpha.txt"\r\nContent-Type: text/plain\r\n\r\n'
+    b"Alpha body text.\r\n--BOUNDARY--\r\n"
+)
+
+
+def _mock_seed_gateway(httpx_mock: HTTPXMock, uploads: int) -> None:
+    for i in range(uploads):
+        httpx_mock.add_response(
+            url="http://testgateway:8080/documents",
+            method="POST",
+            status_code=202,
+            json={"id": f"doc-gw-{i}", "status": "completed"},
+        )
+    httpx_mock.add_response(
+        url="http://testgateway:8080/rag/query",
+        method="POST",
+        text='data: {"snapshot":{"index_generation":"gen-chunk-01"}}\n\n',
+    )
+
+
+def _write_subset(root: Path, rows: list[dict]) -> None:
+    corpus_dir = root / "eval" / "corpora" / "multihop_rag"
+    corpus_dir.mkdir(parents=True, exist_ok=True)
+    (corpus_dir / "documents.subset.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+
+
+def _uploads(httpx_mock: HTTPXMock) -> list[bytes]:
+    """Each upload body with its multipart boundary replaced by BOUNDARY."""
+    bodies = []
+    for request in httpx_mock.get_requests():
+        if request.url.path != "/documents":
+            continue
+        boundary = request.headers["content-type"].split("boundary=")[1].encode()
+        bodies.append(request.read().replace(boundary, b"BOUNDARY"))
+    return bodies
+
+
+def _form_field(body: bytes, name: str) -> str | None:
+    marker = f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode()
+    if marker not in body:
+        return None
+    return body.split(marker, 1)[1].split(b"\r\n", 1)[0].decode()
+
+
+@pytest.mark.parametrize("corpus", ["multihop_rag", "multihop_rag_s1_dev"])
+def test_v1_seed_upload_is_byte_for_byte_unchanged(
+    httpx_mock: HTTPXMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corpus: str,
+) -> None:
+    """#67: a v1.0 seed sends no chunk_* field, even for a corpus with [stores]."""
+    _write_subset(tmp_path, [_V1_ROW])
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
+    _mock_seed_gateway(httpx_mock, uploads=1)
+
+    seed_corpus(
+        corpus,
+        settings=EvalSettings(
+            gateway_url="http://testgateway:8080",
+            lancedb_path=str(tmp_path / "lancedb-eval"),
+            dev_lancedb_path=str(tmp_path / "lancedb-dev"),
+        ),
+    )
+
+    assert _uploads(httpx_mock) == [_V1_UPLOAD]
+
+
+def test_s1_seed_sends_the_merged_store_chunking_with_every_upload(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """#67: `seed --corpus multihop_rag_s1_dev --store eval-s1` sends the corpus's
+    [stores.merged] chunking, and otherwise the v1.0 fields, with every upload."""
+    from lancet_eval.config import S1_STORE
+
+    second = {**_V1_ROW, "title": "Article Beta", "url": "https://example.com/beta"}
+    _write_subset(tmp_path, [_V1_ROW, second])
+    _mock_seed_gateway(httpx_mock, uploads=2)
+
+    seed_corpus(
+        "multihop_rag_s1_dev",
+        settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        store=S1_STORE,
+    )
+
+    uploads = _uploads(httpx_mock)
+    assert len(uploads) == 2
+    for body in uploads:
+        assert _form_field(body, "chunk_strategy") == "structure-merge"
+        assert _form_field(body, "chunk_size") == "256"
+        assert _form_field(body, "chunk_overlap") == "25"
+        assert _form_field(body, "doc_title") is not None
+        assert b'name="file"' in body
+    assert get_document_map_path("multihop_rag_s1_dev", S1_STORE).is_file()
+
+
+def test_s1_seed_without_the_stores_entry_is_refused_before_any_upload(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """#67: a corpus with no [stores.merged] entry cannot seed the S1 store, so it
+    never falls back to the gateway's default chunking."""
+    from lancet_eval.config import S1_STORE
+
+    _write_subset(tmp_path, [_V1_ROW])
+
+    with pytest.raises(SeedError, match=r"\[stores\.merged\]"):
+        seed_corpus(
+            "multihop_rag",
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+            store=S1_STORE,
+        )
+
+    assert httpx_mock.get_requests() == []
+    assert not get_document_map_path("multihop_rag", S1_STORE).exists()
+
+
+def test_s1_reseed_without_the_stores_entry_deletes_nothing(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path]
+) -> None:
+    """#67: reseed checks the corpus's chunking before it drops the schema or the
+    store, so a corpus with no [stores.merged] entry never wipes a built S1 store."""
+    from lancet_eval.config import S1_STORE
+
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match=r"\[stores\.merged\]"):
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+            store=S1_STORE,
+        )
+    assert v1_canary.exists()
+    assert s1_canary.exists()
+    assert httpx_mock.get_requests() == []

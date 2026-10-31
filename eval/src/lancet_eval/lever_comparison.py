@@ -20,7 +20,11 @@ What it computes (06.3.6 AI-SPEC section 5):
   lines, which decide nothing;
 * one `default_decision` row per lever (D-150, O16);
 * with a context export beside the journal (D-249), evidence Hits@4 and o200k context
-  tokens per arm, and `evidence_hits_at_4` as a primary a family may name (D-250).
+  tokens per arm, and `evidence_hits_at_4` as a primary a family may name (D-250);
+* with reader arms (#54, D-257), the reader comparison: per reader, `answer_usable` on
+  G, the paired differences and the null guard against every other reader, the cost
+  per answered question at the sync list price, and the actual batch spend apart.
+  A reader arm replays another arm's retrieval, so it has no Hits@4 of either kind.
 
 No judge runs here and no judged result exists in this phase (D-153): this module never
 opens one. Bootstrap CIs and Wilson intervals are estimation only and are labelled so.
@@ -41,7 +45,15 @@ from typing import Any
 
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
-from lancet_eval.arms import canonical_arm, is_external_arm, resolve_arm
+from lancet_eval.arms import (
+    arm_reader,
+    canonical_arm,
+    in_registry_order,
+    is_external_arm,
+    is_reader_arm,
+    reader_base_arm,
+    resolve_arm,
+)
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
@@ -50,6 +62,16 @@ from lancet_eval.context_export import (
 )
 from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
+from lancet_eval.measure import (
+    BATCH_PRICE_FACTOR,
+    GENERATION_LIST_INPUT_PRICE_PER_1M,
+    GENERATION_LIST_OUTPUT_PRICE_PER_1M,
+    ReaderPriceError,
+    compute_spend,
+    reader_declaration,
+    reader_record_usd,
+    tokens_usd,
+)
 from lancet_eval.metrics import (
     answer_usable,
     context_tokens,
@@ -64,12 +86,16 @@ from lancet_eval.metrics import (
     recall_at_k,
 )
 from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice
+from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval.report import CorpusReport
 from lancet_eval.score import (
     ScoreError,
     _default_gold_chunks_path,
     _record_spend_usd,
+    population_label,
     require_external_provenance,
+    scope_split,
 )
 from lancet_eval.seed import load_document_map
 from lancet_eval.split import HeldOutSplit, load_split
@@ -538,6 +564,7 @@ class _Ctx:
     chunk_size: int
     pops: dict[tuple[str, bool], p4_mod.P4Population]
     export: dict[tuple[str, str], ContextExportRow] | None = None
+    readers: dict[str, ReaderDeclaration] | None = None
 
     @property
     def g_ids(self) -> list[str]:
@@ -606,8 +633,9 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
 
 def _chunk_id_scorable(rec: RunRecord) -> bool:
     """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
-    not Lancet chunks, so its records have no value and leave every such pairing."""
-    return not is_external_arm(rec.graph_arm)
+    not Lancet chunks, so its records have no value and leave every such pairing. A
+    reader arm (D-257) replays another arm's retrieval and has none either."""
+    return not (is_external_arm(rec.graph_arm) or is_reader_arm(rec.graph_arm))
 
 
 def _values(
@@ -680,9 +708,14 @@ def _evidence_texts(ctx: _Ctx, rec: RunRecord) -> list[str]:
 
 
 def _evidence_hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
-    return lambda r: float(
-        evidence_hit_at_4(
-            _evidence_texts(ctx, r), ctx.gold_map[r.question_id].gold_facts
+    """Evidence Hits@4; None on a reader arm, which saw its base arm's evidence."""
+    return lambda r: (
+        None
+        if is_reader_arm(r.graph_arm)
+        else float(
+            evidence_hit_at_4(
+                _evidence_texts(ctx, r), ctx.gold_map[r.question_id].gold_facts
+            )
         )
     )
 
@@ -1205,7 +1238,7 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
         "prompt_tokens_mean": _prompt_tokens_value,
         "latency_total_ms_mean": lambda r: float(r.duration_ms),
         "retrieve_node_ms_mean": retrieve_ms,
-        "spend_usd_mean": _record_spend_usd,
+        "spend_usd_mean": lambda r: _priced(lambda: _record_spend_usd(r, ctx.readers)),
         # Evidence Hits@4 is a primary candidate like paper_hits_at_4, so it is
         # never a secondary; context tokens are.
         **(
@@ -1266,7 +1299,9 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
         rows.append({
             "arm": arm,
             "n": len(recs),
-            "evidence_hits_at_4": _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
+            "evidence_hits_at_4": None
+            if is_reader_arm(arm)
+            else _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
             "context_tokens_mean": _mean(
                 {r.question_id: tokens(r) or 0.0 for r in recs}
             ),
@@ -1276,6 +1311,241 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
             "label": LABEL_DESCRIPTIVE,
         })
     return rows
+
+
+# ---- readers (#54, D-245, D-252, D-257) ----------------------------------------------
+
+LABEL_READER_P = (
+    "exact paired sign-flip p, reported, not used (direction-finding, D-252)"
+)
+#: The carried engine arm's sync list price: deepseek's listing, not the budget
+#: ceiling `measure` charges a drive (#81).
+ENGINE_PRICE_SOURCE = "measure.GENERATION_LIST_*_PRICE_PER_1M"
+COST_BASIS = (
+    "Every reader is scored on the same G questions: the ones every reader of the "
+    "group is ok on (a reader replaying a rerank-degraded context is dropped with its "
+    "base). cost per answered question = sync list price x the reader's tokens over "
+    "those questions, divided by its answer_usable answers among them; the retrieval "
+    "every reader shares is left out. The batch spend is the reader's actual usage at "
+    f"the batch rate ({BATCH_PRICE_FACTOR} x the sync price), apart from the "
+    "comparison."
+)
+
+
+def _priced(fn: Callable[[], float]) -> float:
+    """Calls a pricing function; a reader record it cannot price stops the report."""
+    try:
+        return fn()
+    except ReaderPriceError as exc:
+        raise LeverComparisonError(f"D-257: {exc}") from exc
+
+
+def _reader_declarations(
+    prereg: Any, arms: Sequence[str]
+) -> dict[str, ReaderDeclaration] | None:
+    """The declaration of every reader the run's reader arms name; None without any.
+
+    `arms` are the pre-registered arms (the run's arm set equals them), so
+    `readers_of` refuses a reader arm whose reader has no declaration.
+
+    Raises:
+        LeverComparisonError: If a reader arm's reader has no declared price, or the
+            pre-registration's reader table is bad.
+    """
+    if not any(is_reader_arm(a) for a in arms):
+        return None
+    try:
+        return preregistration.readers_of(prereg)
+    except preregistration.PreregistrationError as exc:
+        raise LeverComparisonError(
+            f"D-257: a reader with no declared price, or a bad reader table: {exc}"
+        ) from exc
+
+
+def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
+    """The sync list price of an arm's reader, and where it is declared."""
+    if not is_reader_arm(arm):
+        return (
+            ReaderPrice(
+                GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
+            ),
+            ENGINE_PRICE_SOURCE,
+        )
+    price = _priced(lambda: reader_declaration(arm, ctx.readers).price)
+    return price, "preregistration"
+
+
+def _reader_population(
+    ctx: _Ctx, members: Sequence[str]
+) -> tuple[list[str], dict[str, Any]]:
+    """The G questions every reader of a group is ok on, and why the rest are not.
+
+    A reader record carries none of the engine clauses, so its replay of a degraded
+    context is ok; the common population drops it with its base record (#81). Each
+    reader's own drops are counted the way `_exclusions` counts them; a question two
+    readers drop is counted under both.
+    """
+    states = {
+        arm: {
+            qid: _record_state(ctx.by_key.get((qid, canonical_arm(arm))))
+            for qid in ctx.g_ids
+        }
+        for arm in members
+    }
+    common = [qid for qid in ctx.g_ids if all(states[a][qid] == "ok" for a in members)]
+    drops: list[dict[str, Any]] = []
+    for arm in members:
+        failure = [q for q, s in states[arm].items() if s == "failure"]
+        provenance = [q for q, s in states[arm].items() if s == "provenance"]
+        drops.append({
+            "arm": arm,
+            "n": len(failure) + len(provenance),
+            "own_failure": len(failure),
+            "own_provenance": len(provenance),
+            "of_which_rerank_degrade": sum(
+                carries_rerank_degraded(ctx.by_key[(q, canonical_arm(arm))])
+                for q in provenance
+            ),
+        })
+    return common, {"n": len(common), "n_g": ctx.n_g, "drops": drops}
+
+
+def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
+    """A record's generation tokens at a sync list price (a reader record checked)."""
+    if is_reader_arm(rec.graph_arm):
+        return _priced(lambda: reader_record_usd(rec, price))
+    meta = rec.workflow_meta
+    return 0.0 if meta is None else tokens_usd(meta, price)
+
+
+def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any]:
+    """One reader's `answer_usable` and cost over the group's common population."""
+    price, source = _reader_price(ctx, arm)
+    recs = [ctx.rec(qid, arm) for qid in population]
+    usable = _usable_value(ctx)
+    n_usable = sum(int(usable(r) or 0) for r in recs)
+    sync = sum(_sync_usd(r, price) for r in recs)
+    label = canonical_arm(arm)
+    batch = [
+        r
+        for r in ctx.records
+        if canonical_arm(r.graph_arm) == label and r.replay is not None
+    ]
+    return {
+        "arm": arm,
+        "reader": arm_reader(arm),
+        "price": {
+            "input_per_mtok": price.input_per_mtok,
+            "output_per_mtok": price.output_per_mtok,
+            "source": source,
+        },
+        "answer_usable": {
+            "n": len(recs),
+            "n_excluded": ctx.n_g - len(recs),
+            "n_usable": n_usable,
+            "mean": n_usable / len(recs) if recs else None,
+        },
+        "cost": {
+            "sync_usd": sync,
+            "reasoning_tokens": sum(
+                r.replay.reasoning_tokens for r in recs if r.replay
+            ),
+            "n_answered": n_usable,
+            "per_answered_usd": sync / n_usable if n_usable else None,
+        },
+        # #53 may land after this: an arm with no batch record yet reports "none".
+        "batch_spend": {
+            "usd": _priced(lambda: compute_spend(batch, readers=ctx.readers)[0]),
+            "n_records": len(batch),
+            "note": None,
+        }
+        if batch
+        else {"usd": None, "n_records": 0, "note": "none"},
+    }
+
+
+def _reader_pair(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
+    pop = _pairwise(ctx.records, ctx.split, against, arm)
+    vx, vr = _paired(ctx, pop, arm, _usable_value(ctx), reference=against)
+    n_pos, n_neg, p = sign_flip(vx, vr) if vx else (0, 0, 1.0)
+    pd = ctx.delta(vx, vr)
+    return {
+        "arm": arm,
+        "against": against,
+        "n_pairs": len(vx),
+        "mean_arm": _mean(vx),
+        "mean_against": _mean(vr),
+        "delta": None if pd is None else pd.delta,
+        "ci_lo": None if pd is None else pd.ci_lower,
+        "ci_hi": None if pd is None else pd.ci_upper,
+        "ci_label": LABEL_UNADJUSTED,
+        "n_pos": n_pos,
+        "n_neg": n_neg,
+        "raw_p": p,
+        "p_label": LABEL_READER_P,
+    }
+
+
+def _reader_guard(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
+    pop = _pairwise(ctx.records, ctx.split, against, arm, null=True)
+    b = c = 0
+    for qid in pop.question_ids:
+        h = is_abstention(ctx.rec(qid, against))
+        x = is_abstention(ctx.rec(qid, arm))
+        if h and not x:
+            b += 1
+        elif x and not h:
+            c += 1
+    prereg = ctx.prereg
+    guard = evaluate_null_guard(
+        b,
+        c,
+        len(pop.question_ids),
+        ctx.n_null,
+        margin=float(prereg.null_guard_margin),
+        min_pair_fraction=float(prereg.null_guard_min_pair_fraction),
+        arm=arm,
+        predicate=str(prereg.null_guard_predicate),
+    )
+    return {**asdict(guard), "against": against}
+
+
+def _reader_comparison(ctx: _Ctx, arms: Sequence[str]) -> dict[str, Any] | None:
+    """The reader comparison of a run whose arms differ only by reader (#54, D-257).
+
+    One group per replayed base arm: the base (the carried engine reader) and its
+    reader arms. Within a group every reader is paired with every other one on G
+    (`answer_usable`, exact p reported but not used) and guarded against every other
+    one on the null questions. D-252's S2 rule and D-245 are applied by hand.
+
+    Returns:
+        None for a run with no reader arm, so its payload is unchanged.
+    """
+    reader_arms = [a for a in arms if is_reader_arm(a)]
+    if not reader_arms:
+        return None
+    groups: list[dict[str, Any]] = []
+    for base in dict.fromkeys(reader_base_arm(a) for a in reader_arms):
+        members = [
+            base,
+            *in_registry_order([a for a in reader_arms if reader_base_arm(a) == base]),
+        ]
+        common, population = _reader_population(ctx, members)
+        groups.append({
+            "base": base,
+            "population": population,
+            "readers": [_reader_row(ctx, a, common) for a in members],
+            "pairs": [
+                _reader_pair(ctx, members[j], members[i])
+                for i in range(len(members))
+                for j in range(i + 1, len(members))
+            ],
+            "null_guards": [
+                _reader_guard(ctx, a, b) for a in members for b in members if a != b
+            ],
+            "p_label": LABEL_READER_P,
+        })
+    return {"cost_basis": COST_BASIS, "groups": groups}
 
 
 def _load_export(run: Path) -> dict[tuple[str, str], ContextExportRow] | None:
@@ -1382,7 +1652,7 @@ def _load_inputs(
             f"corpus {config.name!r} declares no [split]; the populations need one"
         )
     try:
-        split = load_split(config.split_path)
+        on_disk = load_split(config.split_path)
         gold_map = {q.question_id: q for q in load_sample_questions(config.name)}
     except Exception as exc:
         raise LeverComparisonError(
@@ -1399,21 +1669,26 @@ def _load_inputs(
         gold_sets = load_gold_chunk_sets(gold_path)
     except (OSError, ValueError, KeyError) as exc:
         raise LeverComparisonError(f"cannot read the gold-chunk table: {exc}") from exc
+    # #68: a dev-role corpus (S1, S2) reads the dev population, as `score` does.
+    split = scope_split(on_disk, config.split_role, gold_map)
+    population = population_label(config.split_role)
     problems = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
         if gold is None or gold.is_null:
-            problems.append(f"{qid}: not a held-out G question of the corpus")
+            problems.append(f"{qid}: not a {population} G question of the corpus")
         elif gold.question_type not in STRATUM_TYPES:
             problems.append(f"{qid}: question_type {gold.question_type!r}")
         elif not gold_sets.get(qid):
             problems.append(f"{qid}: no gold-chunk row")
     for qid in split.heldout_null_ids:
         if qid not in gold_map:
-            problems.append(f"{qid}: held-out null question missing from the corpus")
+            problems.append(
+                f"{qid}: {population} null question missing from the corpus"
+            )
     if problems:
         raise LeverComparisonError(
-            f"{len(problems)} held-out question(s) cannot be scored: "
+            f"{len(problems)} {population} question(s) cannot be scored: "
             + "; ".join(problems[:10])
         )
     return records, split, gold_map, gold_sets
@@ -1490,7 +1765,9 @@ def build_lever_comparison(
             require_external_provenance(
                 records, journal, config, {*doc_map.entries, *doc_map.aliases}
             )
-    except ScoreError as exc:
+        # D-257: the replay clauses too, for the same reason.
+        require_replay_provenance(records, journal, config.preregistration_token)
+    except (ScoreError, ReplayError) as exc:
         raise LeverComparisonError(str(exc)) from exc
     if gates is None:
         gates = load_gates(run)
@@ -1508,6 +1785,7 @@ def build_lever_comparison(
         chunk_size=int(config.chunk_size),
         pops={},
         export=_load_export(run),
+        readers=_reader_declarations(prereg, sorted(arm_set)),
     )
 
     families = [_family_block(ctx, f) for f in prereg.families]
@@ -1584,6 +1862,12 @@ def build_lever_comparison(
             "floor": float(prereg.complete_case_floor),
             "p_all_label": LABEL_ALL_ARM,
             "provenance_block_passed": prov_ok,
+            # #68: named only off held-out, so a held-out payload stays byte-identical.
+            **(
+                {"population": population_label(config.split_role)}
+                if config.split_role == "dev"
+                else {}
+            ),
         },
         "fwer_statement": FWER_STATEMENT,
         "ci_statement": CROSS_FAMILY_NOTE,
@@ -1610,6 +1894,9 @@ def build_lever_comparison(
     }
     if ctx.export is not None:
         payload["context"] = _context_rows(ctx)
+    readers = _reader_comparison(ctx, preregistration.arms_of(prereg))
+    if readers is not None:
+        payload["reader_comparison"] = readers
     return payload
 
 
@@ -1639,6 +1926,110 @@ def _table(header: Sequence[str], rows: Sequence[Sequence[object]]) -> list[str]
     ]
 
 
+def _render_drop(drop: Mapping[str, Any]) -> str:
+    """How many G questions one reader drops from the common population, and why."""
+    out = f"`{drop['arm']}` drops {drop['n']}"
+    if not drop["n"]:
+        return out
+    why = []
+    if drop["own_failure"]:
+        why.append(f"failure {drop['own_failure']}")
+    if drop["own_provenance"]:
+        degraded = drop["of_which_rerank_degrade"]
+        why.append(
+            f"provenance {drop['own_provenance']}"
+            + (f", of which rerank degraded {degraded}" if degraded else "")
+        )
+    return f"{out} ({'; '.join(why)})"
+
+
+def _render_readers(rc: Mapping[str, Any]) -> list[str]:
+    """The reader comparison (#54): per group, readers, pairs and null guards."""
+    out: list[str] = []
+    for group in rc["groups"]:
+        out += [
+            f"## Readers of `{group['base']}` (D-257; direction-finding, D-252)",
+            "",
+            rc["cost_basis"],
+            "",
+        ]
+        out += _table(
+            [
+                "arm",
+                "reader",
+                "answer_usable (G)",
+                "n",
+                "excluded",
+                "price in/out per MTok",
+                "sync USD",
+                "answered",
+                "USD per answered question",
+                "batch spend USD",
+            ],
+            [
+                (
+                    r["arm"],
+                    r["reader"] or "engine (carried)",
+                    _fmt(r["answer_usable"]["mean"]),
+                    r["answer_usable"]["n"],
+                    r["answer_usable"]["n_excluded"],
+                    f"{_fmt(r['price']['input_per_mtok'])} / "
+                    f"{_fmt(r['price']['output_per_mtok'])} ({r['price']['source']})",
+                    _fmt(r["cost"]["sync_usd"], 6),
+                    r["cost"]["n_answered"],
+                    _fmt(r["cost"]["per_answered_usd"], 6),
+                    r["batch_spend"]["note"] or _fmt(r["batch_spend"]["usd"], 6),
+                )
+                for r in group["readers"]
+            ],
+        )
+        pop = group["population"]
+        out += [
+            f"Every row is scored on the {pop['n']} of {pop['n_g']} G questions every "
+            "reader is ok on, so each row excludes the questions any reader drops: "
+            + "; ".join(_render_drop(d) for d in pop["drops"])
+            + ". The paired differences below keep their own pairwise populations.",
+            "",
+        ]
+        out += [f"Paired `answer_usable` differences on G; {group['p_label']}.", ""]
+        out += _table(
+            ["arm - against", "n_pairs", "delta", "95% CI", "n_pos/n_neg", "raw p"],
+            [
+                (
+                    f"{p['arm']} - {p['against']}",
+                    p["n_pairs"],
+                    _fmt(p["delta"]),
+                    f"[{_fmt(p['ci_lo'])}, {_fmt(p['ci_hi'])}]",
+                    f"{p['n_pos']}/{p['n_neg']}",
+                    _fmt(p["raw_p"]),
+                )
+                for p in group["pairs"]
+            ],
+        )
+        out += ["Null guard of each reader against every other reader.", ""]
+        out += _table(
+            ["arm", "against", "N pairs", "b", "c", "net loss", "status"],
+            [
+                (
+                    g["arm"],
+                    g["against"],
+                    g["n_pairs"],
+                    g["b"],
+                    g["c"],
+                    _fmt(g["net_loss_rate"]),
+                    g["status"],
+                )
+                for g in group["null_guards"]
+            ],
+        )
+    return out
+
+
+def _population_prefix(pops: Mapping[str, Any]) -> str:
+    """`dev population: ` on a dev-role payload; empty on a held-out one (#68)."""
+    return f"{pops['population']} population: " if "population" in pops else ""
+
+
 def render_markdown(payload: Mapping[str, Any]) -> str:
     """Renders the payload as `lever-comparison.md`."""
     run = payload["run"]
@@ -1649,7 +2040,8 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
         f"- Run: `{run['run']}`; pre-registration `{run['preregistration_token']}`; "
         f"reference arm `{run['reference_arm']}`.",
         "- No judge ran and no judged figure exists in this phase (D-153).",
-        f"- |H_G| = {pops['n_heldout_g']}, |H_N| = {pops['n_heldout_null']}; "
+        f"- {_population_prefix(pops)}|H_G| = {pops['n_heldout_g']}, "
+        f"|H_N| = {pops['n_heldout_null']}; "
         f"coverage floor {pops['floor']} per comparison (exact).",
         f"- `report.json` cells are on the {pops['p_all_label']}.",
         "",
@@ -2003,6 +2395,8 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
             for p in payload["provenance_counts"]
         ],
     )
+    if payload.get("reader_comparison") is not None:
+        out += _render_readers(payload["reader_comparison"])
     out += ["## Default decisions (D-150, O16)", ""]
     out += _table(
         ["lever", "decision", "answer_usable", "delta", "Hits@4 support", "reasons"],

@@ -7728,7 +7728,7 @@ async fn run_node_capturing_events(
     let capture = RejectionCapture::default();
     let filter = engine::telemetry::resolve_log_filter(None).targets;
     let subscriber = tracing_subscriber::registry().with(capture.clone().with_filter(filter));
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let cancel = CancellationToken::new();
     let result = node.run(ctx, &cancel).await;

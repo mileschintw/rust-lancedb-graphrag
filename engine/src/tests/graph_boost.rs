@@ -199,14 +199,14 @@ impl std::io::Write for LogSink {
     }
 }
 
-fn capture_logs() -> (tracing::subscriber::DefaultGuard, Arc<Mutex<Vec<u8>>>) {
+fn capture_logs() -> (crate::testkit::ScopedSubscriber, Arc<Mutex<Vec<u8>>>) {
     let sink = Arc::new(Mutex::new(Vec::new()));
     let writer = LogSink(Arc::clone(&sink));
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
-    (tracing::subscriber::set_default(subscriber), sink)
+    (crate::testkit::ScopedSubscriber::install(subscriber), sink)
 }
 
 fn captured(sink: &Arc<Mutex<Vec<u8>>>) -> String {

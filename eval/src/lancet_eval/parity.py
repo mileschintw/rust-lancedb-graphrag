@@ -12,6 +12,10 @@ since the levers select prompt sentences. The check fails closed: a row with no
 success record, a record with no lever echo, a row the bin cannot pack, or a single
 differing byte names its question and arm, and the whole check fails.
 
+A reader arm's row (S2, `<arm>@<reader>`) is skipped: it is its base row under the
+reader label, so its record has no snapshot, and the replay `prompt` clause checks the
+prompt that reader was sent (#53).
+
 The bin packs under today's engine configuration (`config/config.toml` and `LANCET_*`
 overrides). A budget, `graph_weight` or lever-sentence change since the run therefore
 fails parity too, reported as a differing prompt.
@@ -27,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lancet_eval.arms import is_reader_arm
 from lancet_eval.config import repo_root
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
@@ -65,10 +70,12 @@ class PromptParityError(Exception):
 
 @dataclass(frozen=True)
 class ParityResult:
-    """How many Lancet rows matched and how many external rows were not checked."""
+    """How many Lancet rows matched, and how many external and reader rows were not
+    checked."""
 
     checked: int
     external: int
+    readers: int = 0
 
 
 def write_rows(rows: Sequence[ContextExportRow], path: Path) -> None:
@@ -79,9 +86,15 @@ def write_rows(rows: Sequence[ContextExportRow], path: Path) -> None:
 
 
 def run_bin(
-    mode: str, rows: Sequence[ContextExportRow], levers: Sequence[str]
+    mode: str,
+    rows: Sequence[ContextExportRow],
+    levers: Sequence[str],
+    results: Sequence[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Runs `generate_from_context <mode>` over `rows`; returns its output lines.
+
+    `results` is the `render` mode's results file, one line per reader output
+    (`batch.render_line`); it is passed as `--results` only when given.
 
     Raises `PromptParityError` when the bin exits non-zero, times out or writes a line
     that is not JSON.
@@ -97,6 +110,13 @@ def run_bin(
             "--levers",
             ",".join(levers),
         ]
+        if results is not None:
+            results_path = Path(tmp) / "results.jsonl"
+            with open(results_path, "w", encoding="utf-8", newline="\n") as f:
+                f.writelines(
+                    json.dumps(line, ensure_ascii=False) + "\n" for line in results
+                )
+            cmd += ["--results", str(results_path)]
         try:
             res = subprocess.run(
                 cmd,
@@ -181,7 +201,14 @@ def check_prompt_parity(
     """
     run = Path(run_dir)
     rows = read_export(run / CONTEXT_EXPORT_FILE)
-    lancet_rows = [row for row in rows if row.assembled_prompt is not None]
+    # A reader arm's row is its base row under the reader label (#53): it carries the
+    # base `assembled_prompt`, but its record has no snapshot, and the `prompt` replay
+    # clause checks what that reader was sent.
+    lancet_rows = [
+        row
+        for row in rows
+        if row.assembled_prompt is not None and not is_reader_arm(row.arm)
+    ]
     records, _ = deduplicate_by_arm(load_records(run / "journal.jsonl"))
     successes = {
         (r.question_id, r.graph_arm): r for r in records if r.outcome == "success"
@@ -217,4 +244,9 @@ def check_prompt_parity(
             f"prompt parity failed on {len(failures)} of {len(lancet_rows)} Lancet "
             f"row(s): {listed}" + (f" (and {more} more)" if more > 0 else "")
         )
-    return ParityResult(checked=len(lancet_rows), external=len(rows) - len(lancet_rows))
+    readers = sum(is_reader_arm(row.arm) for row in rows)
+    return ParityResult(
+        checked=len(lancet_rows),
+        external=len(rows) - len(lancet_rows) - readers,
+        readers=readers,
+    )

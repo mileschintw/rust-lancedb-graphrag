@@ -7483,7 +7483,7 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,
@@ -7518,7 +7518,7 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,
@@ -7563,7 +7563,7 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
         captured: captured.clone(),
     };
     let subscriber = tracing_subscriber::registry().with(layer);
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
 
     let response = execute_query_rag(
         &service,
@@ -8651,6 +8651,68 @@ async fn rebuild_checkout_latest_failure_degrades_not_fails() {
 
     engine::ingest::clear_rebuild_checkout_fail_next();
     let _ = std::fs::remove_dir_all(path);
+}
+
+/// Runs one `rebuild_and_swap` on a fresh store, on a current-thread runtime of this thread.
+fn rebuild_on_a_fresh_store(test_name: &str) -> Result<(), String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build test runtime");
+    runtime.block_on(async {
+        let path = database_path(test_name);
+        let database = DatabaseManager::initialize(&path).await.unwrap();
+        let service = configured_service(
+            &database,
+            EffectiveRagSettings::default(),
+            Arc::new(FakeEmbedder),
+            Arc::new(FakeGenerator::new(Ok(generation::ModelOutput {
+                answer: "Answer".into(),
+                cited_evidence_ids: vec![],
+                answer_basis: generation::AnswerBasis::ModelOnly,
+                notices: vec![],
+                warnings: vec![],
+                final_answer: None,
+                usage: None,
+            }))),
+            Arc::new(rerank::NoOpReranker::new()),
+        )
+        .await;
+        let result = engine::ingest::rebuild_and_swap(
+            &service.database,
+            &service.corpus_store,
+            service.effective_settings.retrieval.bm25.clone(),
+        )
+        .await
+        .map(|_| ());
+        let _ = std::fs::remove_dir_all(path);
+        result
+    })
+}
+
+/// #61: an armed rebuild failure reaches only a rebuild on the thread that armed it, never the
+/// rebuild another test runs at the same time on its own thread.
+#[test]
+fn an_armed_rebuild_failure_stays_on_the_arming_thread() {
+    let _lock = engine::ingest::REBUILD_TEST_MUTEX.blocking_lock();
+    engine::ingest::arm_rebuild_fail_next();
+    engine::ingest::arm_rebuild_checkout_fail_next();
+
+    let other_thread = std::thread::spawn(|| rebuild_on_a_fresh_store("armed-elsewhere"))
+        .join()
+        .unwrap();
+    assert_eq!(other_thread, Ok(()), "another thread's rebuild consumed the armed failure");
+
+    assert_eq!(
+        rebuild_on_a_fresh_store("armed-here"),
+        Err("injected rebuild failure".to_string()),
+        "the arming thread's rebuild must see its armed failure"
+    );
+    let checkout = rebuild_on_a_fresh_store("armed-checkout-here");
+    assert!(
+        checkout.as_ref().is_err_and(|err| err.contains("injected checkout_latest failure")),
+        "the arming thread's next rebuild must see its armed checkout failure: {checkout:?}"
+    );
 }
 
 #[tokio::test]

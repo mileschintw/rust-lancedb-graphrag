@@ -1,11 +1,16 @@
 """Index identity comparison between PostgreSQL, LanceDB, and the document map.
 
-Compares the document-ID sets recorded in PostgreSQL (`lancet_eval.documents`),
+Compares the document-ID sets recorded in PostgreSQL (the store schema's `documents`),
 LanceDB (`documents`, distinct `nodes.document_id`, and `edges`/
 `entity_edges.document_id` as subsets), and the committed `document_map.json`
 for a corpus. The gate exists to prevent a drive or measurement pass from
 running against a store whose contents have drifted from what the harness
 believes it seeded (D-61).
+
+On a store other than v1.0, a `failed` PostgreSQL row outside the map is a
+superseded upload: `seed` retried that document under a new ID and the gateway
+kept the first row (#79). Such rows are reported and skipped; the v1.0 gate
+still fails on them.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval.config import EvalSettings, repo_root, store_for_settings
+from lancet_eval.config import V1_STORE, EvalSettings, repo_root, store_for_settings
 from lancet_eval.seed import (
     SeedError,
     assert_schema_isolated,
@@ -46,6 +51,7 @@ class IdentityReport(BaseModel):
     lance_edges: list[str] = Field(default_factory=list)
     lance_entity_edges: list[str] = Field(default_factory=list)
     pg_status: dict[str, str] = Field(default_factory=dict)
+    superseded_failed: list[str] = Field(default_factory=list)
     staged_rows: int = 0
     alias_ids: list[str] = Field(default_factory=list)
     failures: list[str] = Field(default_factory=list)
@@ -79,6 +85,7 @@ def list_lancedb_document_ids(lancedb_path: str) -> dict[str, Any]:
             cwd=repo_root(),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=1800,
         )
     except subprocess.TimeoutExpired as exc:
@@ -115,8 +122,13 @@ def list_lancedb_document_ids(lancedb_path: str) -> dict[str, Any]:
 
 
 def list_pg_documents(settings: EvalSettings) -> dict[str, str]:
-    """List PostgreSQL `lancet_eval.documents` IDs and statuses via `run_psql`."""
-    sql = "SELECT id, status FROM lancet_eval.documents ORDER BY id;"
+    """List the settings schema's `documents` IDs and statuses via `run_psql` (#69).
+
+    The schema is validated as an isolated plain identifier, so the v1.0 query is
+    still `lancet_eval.documents` and the S1 store's is `lancet_eval_s1.documents`.
+    """
+    schema = assert_schema_isolated(settings)
+    sql = f"SELECT id, status FROM {schema}.documents ORDER BY id;"
     output = run_psql(settings, sql)
     result: dict[str, str] = {}
     for raw_line in output.splitlines():
@@ -138,7 +150,8 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     `map_corpus` (e.g. a diagnostic corpus) resolves to the one shared map, and
     reads the map of the store whose LanceDB path `settings` use (#18).
     """
-    doc_map = load_document_map(corpus_name, store_for_settings(settings))
+    store = store_for_settings(settings)
+    doc_map = load_document_map(corpus_name, store)
     map_ids = set(doc_map.entries.keys())
     # Only the alias *keys* (stale IDs that resolve elsewhere via aliasing) must be
     # absent from the stores. Alias *values* are the canonical current document_id
@@ -154,7 +167,20 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
     lance_entity_edges = set(lance_data.get("entity_edges", []))
     staged_rows = int(lance_data.get("staged_documents_v2_rows", 0))
 
-    pg_ids = set(pg_status.keys())
+    # Superseded uploads (#79): skipped on a non-v1.0 store, reported either way.
+    superseded_failed: set[str] = set()
+    if store != V1_STORE:
+        superseded_failed = {
+            doc_id
+            for doc_id, status in pg_status.items()
+            if status == "failed" and doc_id not in map_ids | alias_ids
+        }
+    checked_pg = {
+        doc_id: status
+        for doc_id, status in pg_status.items()
+        if doc_id not in superseded_failed
+    }
+    pg_ids = set(checked_pg.keys())
 
     failures: list[str] = []
 
@@ -196,7 +222,7 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
         )
 
     non_completed = {
-        doc_id: status for doc_id, status in pg_status.items() if status != "completed"
+        doc_id: status for doc_id, status in checked_pg.items() if status != "completed"
     }
     if non_completed:
         failures.append(
@@ -225,6 +251,7 @@ def compute_identity(settings: EvalSettings, corpus_name: str) -> IdentityReport
         lance_edges=sorted(lance_edges),
         lance_entity_edges=sorted(lance_entity_edges),
         pg_status=pg_status,
+        superseded_failed=sorted(superseded_failed),
         staged_rows=staged_rows,
         alias_ids=sorted(alias_ids),
         failures=failures,
@@ -261,7 +288,9 @@ def delete_pg_extras(
 ) -> list[str]:
     """Delete PostgreSQL documents not present in `allow_ids`.
 
-    Refuses to run against anything but the isolated `lancet_eval` schema, refuses
+    Refuses to run against any schema but the selected store's own (#69: the store
+    whose LanceDB path `settings` use, so `public`, the dev schema and another
+    store's schema are refused), refuses
     an empty `allow_ids` (which would otherwise delete every document), and refuses
     any non-UUID allow_id before any SQL is built. In apply mode, refuses to run
     without an existing non-empty `pg_dump_path` snapshot, executes the delete as a
@@ -269,9 +298,11 @@ def delete_pg_extras(
     the set. Dry-run (the default) returns the extra IDs and executes no DELETE.
     """
     schema_name = assert_schema_isolated(settings)
-    if schema_name != "lancet_eval":
+    store = store_for_settings(settings)
+    if schema_name != store.pg_schema:
         raise SeedError(
-            f"delete_pg_extras refuses non-'lancet_eval' schema, got {schema_name!r}"
+            f"delete_pg_extras refuses schema {schema_name!r}: store {store.name!r} "
+            f"uses schema {store.pg_schema!r}"
         )
     if not allow_ids:
         raise SeedError(
@@ -304,7 +335,7 @@ def delete_pg_extras(
 
     quoted_ids = ", ".join(f"'{doc_id}'" for doc_id in sorted(allow_ids))
     sql = (
-        f"BEGIN; DELETE FROM lancet_eval.documents WHERE id NOT IN ({quoted_ids}); "
+        f"BEGIN; DELETE FROM {schema_name}.documents WHERE id NOT IN ({quoted_ids}); "
         "COMMIT;"
     )
     run_psql(settings, sql)

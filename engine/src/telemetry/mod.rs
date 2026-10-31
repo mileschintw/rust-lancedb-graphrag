@@ -671,7 +671,7 @@ mod log_filter_tests {
     fn log_filter_otlp_shape_passes_oi02_events_and_blocks_h2_codec_on_every_layer() {
         let (subscriber, probe) = otlp_shape(&resolve_log_filter(None));
         {
-            let _guard = tracing::subscriber::set_default(subscriber);
+            let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
             emit_probe_records();
         }
         probe.flush();
@@ -698,7 +698,7 @@ mod log_filter_tests {
         let subscriber =
             assemble_subscriber(&resolve_log_filter(None), fmt.clone(), None, None, "test-service");
         {
-            let _guard = tracing::subscriber::set_default(subscriber);
+            let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
             emit_probe_records();
         }
         let out = fmt.contents();
@@ -711,7 +711,7 @@ mod log_filter_tests {
     fn log_filter_override_reaches_every_layer_not_just_fmt() {
         let (subscriber, probe) = otlp_shape(&resolve_log_filter(Some("warn")));
         {
-            let _guard = tracing::subscriber::set_default(subscriber);
+            let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
             emit_probe_records();
         }
         probe.flush();
@@ -735,7 +735,7 @@ mod log_filter_tests {
         let expected = resolve_log_filter(rust_log.as_deref());
         let (handle, subscriber) = build_providers_and_layers(&settings);
         assert_eq!(handle.log_filter, expected.effective);
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let _guard = crate::testkit::ScopedSubscriber::install(subscriber);
         assert_eq!(
             tracing::enabled!(target: "h2::codec", Level::TRACE),
             expected.targets.would_enable("h2::codec", &Level::TRACE)

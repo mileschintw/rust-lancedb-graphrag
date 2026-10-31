@@ -70,19 +70,63 @@ tolerance: ``score`` refuses the run and names the clause.
 
 The last five need the run directory, so ``external_run_failures`` checks them over
 all records at once, from inputs its caller loads.
+
+Replay records (v1.1 S2, D-257), a reader arm's records, have a clause set of their
+own too, and neither the engine nor the external clauses run on them: their context is
+the base arm's export row, replayed to another reader, so they carry no snapshot or
+notices. Every replay clause is zero tolerance.
+
+* **replay_record** (per record): a reader arm's record carries an engine snapshot or
+  an ``external`` block, or its success record lacks its ``replay`` block; or an
+  engine or external record carries a ``replay`` block;
+* **batch_id** (per record): no batch ID is recorded;
+* **row_hash**: the record's export-row hash differs from the carried base row's (the
+  journal header's ``replay_source`` hash), or the run's export lacks the base row or
+  the reader arm's row, or either row hashes otherwise;
+* **prompt** (#82): the ``pack`` body's user message is not, byte for byte, the
+  carried base row's ``assembled_prompt``, the prompt the deepseek reader saw (a
+  ``pack`` with the wrong levers or after a config change would differ);
+* **body_hash**: the sent body's hash is not that of the #51 rewrite of the record's
+  ``pack`` body for its declared reader, or the rewrite refuses that body;
+* **rewritten_fields**: the recorded field list is not the rewrite's;
+* **model**: the response's model is not the declared reader's slug;
+* **is_byok**: per the reader's ``target`` (#82, Q4). OpenRouter: the response does
+  not report the owner's own key. Native Anthropic: the record carries an
+  ``is_byok`` value, which that response never reports;
+* **provider**: the record's provider is not ``REPLAY_PROVIDERS[target]``: the
+  provider OpenRouter routed to, or the native endpoint's host;
+* **reasoning_tokens**: a reader whose thinking is not ``on`` shows thinking (D-260:
+  ``off`` and ``between_tools`` must report 0 reasoning tokens; a thinking-on reader,
+  Opus 5.5 at effort low, is exempt). The native target's usage has no reasoning
+  count, so its record must also list the response's content block types, none of
+  them ``THINKING_BLOCK_TYPES``.
+
+The first two are per record (``provenance_failures``); ``replay_run_failures``
+checks all ten over every reader-arm record, from inputs its caller loads, since the
+target-dependent clauses need the reader's declaration.
 """
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Container, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
 
 from lancet_eval.arms import (
+    arm_reader,
     echo_failures,
     is_external_arm,
+    is_reader_arm,
     lever_echo_failures,
+    reader_base_arm,
     resolve_arm,
+)
+from lancet_eval.reader_request import (
+    ReaderDeclaration,
+    ReaderRequestError,
+    Target,
+    rewrite_pack_body,
 )
 from lancet_eval.usability import (
     carries_graph_ablation,
@@ -96,7 +140,7 @@ if TYPE_CHECKING:
     from lancet_eval.arms import ExternalPipeline
     from lancet_eval.client import RankedCandidate, StructuredCitation
     from lancet_eval.context_export import ContextExportRow
-    from lancet_eval.journal import RunRecord
+    from lancet_eval.journal import ReplayProvenance, RunRecord
 
 #: The external clause set (D-247), in the order a refusal lists it.
 EXTERNAL_CODES: tuple[str, ...] = (
@@ -107,6 +151,28 @@ EXTERNAL_CODES: tuple[str, ...] = (
     "index_fingerprint",
     "generation_model",
 )
+#: The replay clause set (D-257), in the order a refusal lists it.
+REPLAY_CODES: tuple[str, ...] = (
+    "replay_record",
+    "row_hash",
+    "prompt",
+    "body_hash",
+    "rewritten_fields",
+    "model",
+    "is_byok",
+    "provider",
+    "reasoning_tokens",
+    "batch_id",
+)
+#: The provider a replay record must name, by its reader's target (D-257, #82): the
+#: provider OpenRouter's response names, or the native endpoint's host, since a native
+#: Message Batches result names no provider.
+REPLAY_PROVIDERS: Mapping[Target, str] = {
+    "openrouter": "Anthropic",
+    "anthropic": "api.anthropic.com",
+}
+#: Native content block types that show the reader thought (#82, D-260).
+THINKING_BLOCK_TYPES = frozenset({"thinking", "redacted_thinking"})
 #: Ranked evidence entries an external success record's export row must hold
 #: (fairness rule 3: k = 8 on every arm).
 EXTERNAL_K = 8
@@ -140,11 +206,46 @@ def _external_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
         problems.append("an external record carries an engine snapshot")
     if record.outcome == "success" and record.external is None:
         problems.append("an external success record lacks its external block")
-    if not problems:
-        return []
+    failures: list[ProvenanceFailure] = []
+    if problems:
+        failures.append(
+            ProvenanceFailure(
+                code="external_record",
+                label=record.graph_arm,
+                detail="; ".join(problems),
+            )
+        )
+    if record.replay is not None:
+        failures.append(
+            ProvenanceFailure(
+                code="replay_record",
+                label=record.graph_arm,
+                detail="an external record carries a replay block",
+            )
+        )
+    return failures
+
+
+def _replay_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
+    """The per-record replay clauses of a reader arm's record (D-257)."""
+    details: dict[str, list[str]] = {}
+
+    def fail(code: str, detail: str) -> None:
+        details.setdefault(code, []).append(detail)
+
+    if record.snapshot is not None:
+        fail("replay_record", "a replay record carries an engine snapshot")
+    if record.external is not None:
+        fail("replay_record", "a replay record carries an external block")
+    replay = record.replay
+    if record.outcome == "success" and replay is None:
+        fail("replay_record", "a replay success record lacks its replay block")
+    if replay is not None and not replay.batch_id.strip():
+        fail("batch_id", "no batch ID recorded")
     return [
-        ProvenanceFailure(
-            code="external_record", label=record.graph_arm, detail="; ".join(problems)
+        ProvenanceFailure(code=code, label=record.graph_arm, detail="; ".join(found))
+        for code, found in sorted(
+            details.items(), key=lambda item: REPLAY_CODES.index(item[0])
         )
     ]
 
@@ -250,6 +351,8 @@ def provenance_failures(
         ValueError: If the record's arm label is unknown.
     """
     label = record.graph_arm
+    if is_reader_arm(label):
+        return _replay_record_failures(record)
     spec = resolve_arm(label)
     if is_external_arm(spec.label):
         return _external_record_failures(record)
@@ -261,6 +364,8 @@ def provenance_failures(
 
     if record.external is not None:
         fail("external_record", "an engine record carries an external block")
+    if record.replay is not None:
+        fail("replay_record", "an engine record carries a replay block")
 
     # (e) composed from has_arm_provenance: notices exist even without a snapshot.
     if spec.disable_graph_context and not has_arm_provenance(record):
@@ -464,20 +569,211 @@ def external_run_failures(
     return [failure for _, _, failure in found]
 
 
+def _replay_row_failures(
+    label: str,
+    expected: str | None,
+    recorded: str,
+    rows: Mapping[str, ContextExportRow | None],
+) -> list[str]:
+    """The ``row_hash`` details of one reader-arm record (D-257)."""
+    from lancet_eval.replay import export_row_sha256
+
+    base = reader_base_arm(label)
+    if expected is None:
+        return [f"the journal header records no hash of the {base!r} row"]
+    details: list[str] = []
+    if recorded != expected:
+        details.append(
+            f"export row hash {recorded!r} != the carried {base!r} row's {expected!r}"
+        )
+    for which, row in rows.items():
+        if row is None:
+            details.append(f"no {which} export row")
+        elif export_row_sha256(row.model_copy(update={"arm": base})) != expected:
+            details.append(f"the {which} export row differs from the carried row")
+    return details
+
+
+def _prompt_failure(pack_body: str, base_row: ContextExportRow | None) -> str | None:
+    """The ``prompt`` detail of one reader-arm record, or None when it holds (#82)."""
+    from lancet_eval.parity import first_difference, user_message
+
+    if base_row is None:
+        return "no base export row to compare the prompt with"
+    if base_row.assembled_prompt is None:
+        return "the base export row records no assembled_prompt"
+    try:
+        sent = user_message(pack_body)
+    except (KeyError, TypeError, ValueError) as exc:
+        return f"the pack body's user message is unreadable: {exc}"
+    if sent != base_row.assembled_prompt:
+        at = first_difference(sent, base_row.assembled_prompt)
+        return (
+            "the pack body's user message differs from the base row's "
+            f"assembled_prompt at character {at}"
+        )
+    return None
+
+
+def _target_failures(
+    replay: ReplayProvenance, declaration: ReaderDeclaration
+) -> list[tuple[str, str]]:
+    """The ``is_byok``, ``provider`` and ``reasoning_tokens`` details (D-257, #82)."""
+    found: list[tuple[str, str]] = []
+    native = declaration.target == "anthropic"
+    if native and replay.is_byok is not None:
+        found.append((
+            "is_byok",
+            f"is_byok is {replay.is_byok!r}, but a native Anthropic response reports "
+            "none; expected None",
+        ))
+    elif not native and replay.is_byok is not True:
+        found.append(("is_byok", f"is_byok is {replay.is_byok!r}, expected True"))
+    provider = REPLAY_PROVIDERS[declaration.target]
+    if replay.provider != provider:
+        found.append((
+            "provider",
+            f"provider {replay.provider!r}, expected {provider!r} for target "
+            f"{declaration.target!r}",
+        ))
+    if declaration.thinking == "on":
+        return found
+    thinking = f"thinking {declaration.thinking!r}"
+    if replay.reasoning_tokens != 0:
+        found.append((
+            "reasoning_tokens",
+            f"{replay.reasoning_tokens} reasoning tokens from a reader with "
+            f"{thinking}, expected 0 (D-260)",
+        ))
+    if native:
+        blocks = replay.content_block_types
+        if blocks is None:
+            found.append((
+                "reasoning_tokens",
+                "no content block types recorded; a native response's thinking is "
+                "checked from them",
+            ))
+        elif shown := sorted(THINKING_BLOCK_TYPES.intersection(blocks)):
+            found.append((
+                "reasoning_tokens",
+                f"{shown} content block(s) from a reader with {thinking} (D-260)",
+            ))
+    return found
+
+
+def replay_run_failures(
+    records: Sequence[RunRecord],
+    *,
+    export_rows: Mapping[tuple[str, str], ContextExportRow],
+    source_row_sha256: Mapping[tuple[str, str], str],
+    readers: Mapping[str, ReaderDeclaration],
+) -> list[ProvenanceFailure]:
+    """Checks every replay clause over every reader-arm record (D-257).
+
+    Engine and external records are skipped. An error record is checked by the
+    per-record clauses only.
+
+    Args:
+        records: The journal's records, one per question and arm.
+        export_rows: The run's context-export rows by ``(question_id, arm)``.
+        source_row_sha256: The carried base rows' hashes by ``(question_id, arm)``,
+            as the journal header records them (``replay.source_row_hashes``).
+        readers: The pre-registered reader declarations by reader name.
+
+    Returns:
+        One failure per broken clause and record, in ``REPLAY_CODES`` order, then by
+        question. Each detail starts with the question ID.
+    """
+    found: list[tuple[int, str, ProvenanceFailure]] = []
+
+    def fail(code: str, label: str, qid: str, detail: str) -> None:
+        failure = ProvenanceFailure(code=code, label=label, detail=f"{qid}: {detail}")
+        found.append((REPLAY_CODES.index(code), qid, failure))
+
+    for rec in records:
+        label = rec.graph_arm
+        if not is_reader_arm(label):
+            continue
+        qid = rec.question_id
+        for failure in _replay_record_failures(rec):
+            fail(failure.code, label, qid, failure.detail)
+        replay = rec.replay
+        if rec.outcome != "success" or replay is None:
+            continue
+        base = reader_base_arm(label)
+        row_details = _replay_row_failures(
+            label,
+            source_row_sha256.get((qid, base)),
+            replay.export_row_sha256,
+            {
+                "base": export_rows.get((qid, base)),
+                "reader": export_rows.get((qid, label)),
+            },
+        )
+        if row_details:
+            fail("row_hash", label, qid, "; ".join(row_details))
+        prompt = _prompt_failure(replay.pack_body, export_rows.get((qid, base)))
+        if prompt is not None:
+            fail("prompt", label, qid, prompt)
+        reader = arm_reader(label)
+        declaration = readers.get(reader) if reader is not None else None
+        if declaration is None:
+            fail("model", label, qid, f"no declaration for reader {reader!r}")
+            continue
+        try:
+            request = rewrite_pack_body(replay.pack_body, declaration)
+        except ReaderRequestError as exc:
+            fail("body_hash", label, qid, f"the rewrite refuses the pack body: {exc}")
+        else:
+            sent = hashlib.sha256(request.body_json.encode("utf-8")).hexdigest()
+            if replay.sent_body_sha256 != sent:
+                fail(
+                    "body_hash",
+                    label,
+                    qid,
+                    f"sent body hash {replay.sent_body_sha256!r} != the rewrite's "
+                    f"{sent!r}",
+                )
+            if tuple(replay.rewritten_fields) != request.rewritten_fields:
+                fail(
+                    "rewritten_fields",
+                    label,
+                    qid,
+                    f"rewritten fields {replay.rewritten_fields!r} != the rewrite's "
+                    f"{list(request.rewritten_fields)!r}",
+                )
+        if replay.model != declaration.slug:
+            fail(
+                "model",
+                label,
+                qid,
+                f"model {replay.model!r} != the declared reader {declaration.slug!r}",
+            )
+        details: dict[str, list[str]] = {}
+        for code, detail in _target_failures(replay, declaration):
+            details.setdefault(code, []).append(detail)
+        for code, listed in details.items():
+            fail(code, label, qid, "; ".join(listed))
+    found.sort(key=lambda item: (item[0], item[1], item[2].label))
+    return [failure for _, _, failure in found]
+
+
 def is_zero_tolerance(code: str) -> bool:
-    """Whether a failure code makes ``score`` refuse: (a, b, c, d, f, h, j) or any
-    external clause (D-247)."""
-    return code in ZERO_TOLERANCE_CODES or code in EXTERNAL_CODES
+    """Whether a failure code makes ``score`` refuse: (a, b, c, d, f, h, j), any
+    external clause (D-247) or any replay clause (D-257)."""
+    return (
+        code in ZERO_TOLERANCE_CODES or code in EXTERNAL_CODES or code in REPLAY_CODES
+    )
 
 
 def is_ok(record: RunRecord) -> bool:
     """ok(r) of AI-SPEC 5 Populations.
 
-    The record is D-34 usable and has no failure in clauses (a) to (f), (h), (i), (j)
-    or the per-record external clause. Clause (g) is corroboration only and never
-    changes the result.
+    The record is D-34 usable and has no failure in clauses (a) to (f), (h), (i), (j),
+    the per-record external clause or a per-record replay clause. Clause (g) is
+    corroboration only and never changes the result.
     """
     return is_usable(record) and not any(
-        f.code in _OK_CODES or f.code in EXTERNAL_CODES
+        f.code in _OK_CODES or f.code in EXTERNAL_CODES or f.code in REPLAY_CODES
         for f in provenance_failures(record)
     )

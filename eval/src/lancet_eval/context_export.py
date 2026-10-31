@@ -13,9 +13,12 @@ flag, document metadata); the graph facts; and, for Lancet arms, `assembled_prom
 evidence exports an empty evidence list, which is distinct from a missing row.
 
 Checkpoints are read through the `CheckpointSource` port: `PostgresCheckpointSource`
-for a live store and `InMemoryCheckpointSource` for tests. The export fails closed: a
-success record with no checkpoint, or one that cannot be joined, names its question and
-arm, and no file is written.
+for a live store and `InMemoryCheckpointSource` for tests. An S1 journal holds arms of
+two stores (D-251), each store's checkpoints in its own schema, so the export can take
+one source per store (`store_checkpoint_sources`) and reads each record from the store
+its arm label declares (#65). The export fails closed: a success record with no
+checkpoint, one that cannot be joined, or one whose store has no source, names its
+question and arm, and no file is written.
 """
 
 from __future__ import annotations
@@ -32,7 +35,15 @@ from typing import Any, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from lancet_eval.config import EvalSettings, pg_schema_of
+from lancet_eval.arms import arm_store
+from lancet_eval.config import (
+    EVAL_STORES,
+    V1_STORE,
+    EvalSettings,
+    pg_schema_of,
+    store_for_settings,
+    with_search_path,
+)
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.pairing import deduplicate_by_arm
 from lancet_eval.seed import SeedError, run_psql
@@ -175,6 +186,34 @@ class PostgresCheckpointSource:
                 if line.strip():
                     rows.append(_parse_checkpoint_line(line))
         return rows
+
+
+#: One checkpoint source per eval store name (`config.EVAL_STORES`).
+StoreSources = Mapping[str, CheckpointSource]
+
+
+def store_checkpoint_sources(settings: EvalSettings) -> dict[str, CheckpointSource]:
+    """A Postgres checkpoint source for each known eval store, keyed by store name.
+
+    The store `settings` target keeps `settings` as they are; every other store reads
+    the same database with its own schema as the `search_path` (D-251).
+    """
+    own = store_for_settings(settings)
+    sources: dict[str, CheckpointSource] = {}
+    for store in EVAL_STORES.values():
+        store_settings = (
+            settings
+            if store == own
+            else settings.model_copy(
+                update={
+                    "database_url": with_search_path(
+                        settings.database_url, store.pg_schema
+                    )
+                }
+            )
+        )
+        sources[store.name] = PostgresCheckpointSource(store_settings)
+    return sources
 
 
 def _parse_checkpoint_line(line: str) -> CheckpointRow:
@@ -327,45 +366,93 @@ def require_export_rows(journal_path: Path | str) -> None:
         )
 
 
-def export_context(journal_path: Path | str, source: CheckpointSource) -> Path:
+def _store_name(label: str) -> str:
+    """The eval store a label's checkpoints live in; unprefixed labels are v1.0's."""
+    return arm_store(label) or V1_STORE.name
+
+
+def _checkpoints_by_trace(
+    records: list[RunRecord], source: CheckpointSource
+) -> dict[str, list[Mapping[str, Any]]]:
+    """`records`' checkpoints in `source`, by trace ID; one query for all of them."""
+    by_trace: dict[str, list[Mapping[str, Any]]] = {}
+    wanted = {r.correlation_id for r in records if r.correlation_id}
+    for checkpoint in source.terminal_success(wanted) if wanted else []:
+        by_trace.setdefault(checkpoint.trace_id, []).append(checkpoint.snapshot)
+    return by_trace
+
+
+def _join_failure(record: RunRecord, snapshots: list[Mapping[str, Any]]) -> str | None:
+    """Why `record` cannot be joined on `snapshots`, its checkpoints; None if it can."""
+    cid = record.correlation_id
+    if not cid:
+        return "the record has no correlation_id to join on"
+    if not snapshots:
+        return f"no terminal_success checkpoint for correlation_id {cid!r}"
+    if len(snapshots) > 1:
+        return (
+            f"{len(snapshots)} terminal_success checkpoints for correlation_id {cid!r}"
+        )
+    if snapshots[0].get("trace_id") != cid:
+        return (
+            f"the checkpoint's snapshot trace_id {snapshots[0].get('trace_id')!r} "
+            f"is not {cid!r}"
+        )
+    return None
+
+
+def export_context(
+    journal_path: Path | str, source: CheckpointSource | StoreSources
+) -> Path:
     """Writes `context_export.jsonl` beside `journal_path` from its success records.
 
+    `source` is one checkpoint source for every record, or one source per eval store
+    name (`store_checkpoint_sources`): then each record is read from the store its arm
+    label declares, and a record whose store has no source fails (#65). Rows follow
+    the journal's order either way.
+
     Returns the written path. Raises `ContextExportError`, writing nothing, when a
-    success record has no checkpoint or cannot be joined.
+    success record has no checkpoint, cannot be joined, or has no store source.
     """
     journal = Path(journal_path)
     successes = _success_records(journal)
-    by_trace: dict[str, list[Mapping[str, Any]]] = {}
-    wanted = {r.correlation_id for r in successes if r.correlation_id}
-    for checkpoint in source.terminal_success(wanted) if wanted else []:
-        by_trace.setdefault(checkpoint.trace_id, []).append(checkpoint.snapshot)
+    per_store = isinstance(source, Mapping)
+    # One source alone serves every record under the key "".
+    sources: Mapping[str, CheckpointSource] = source if per_store else {"": source}
+    # Each record's store key, or why it has none; then each store queried once.
+    placed: list[tuple[RunRecord, str | None, str | None]] = []
+    by_store: dict[str, list[RunRecord]] = {}
+    for record in successes:
+        try:
+            store = _store_name(record.graph_arm) if per_store else ""
+        except ValueError as exc:
+            placed.append((record, None, str(exc)))
+            continue
+        if store not in sources:
+            placed.append((record, None, f"no checkpoint source for store {store!r}"))
+            continue
+        placed.append((record, store, None))
+        by_store.setdefault(store, []).append(record)
+    checkpoints = {
+        store: _checkpoints_by_trace(records, sources[store])
+        for store, records in by_store.items()
+    }
     rows: list[ContextExportRow] = []
     failures: list[str] = []
-    for record in successes:
-        unit = _unit(record)
-        cid = record.correlation_id
-        snapshots = by_trace.get(cid, [])
-        if not cid:
-            failures.append(f"{unit}: the record has no correlation_id to join on")
-        elif not snapshots:
-            failures.append(
-                f"{unit}: no terminal_success checkpoint for correlation_id {cid!r}"
-            )
-        elif len(snapshots) > 1:
-            failures.append(
-                f"{unit}: {len(snapshots)} terminal_success checkpoints for "
-                f"correlation_id {cid!r}"
-            )
-        elif snapshots[0].get("trace_id") != cid:
-            failures.append(
-                f"{unit}: the checkpoint's snapshot trace_id "
-                f"{snapshots[0].get('trace_id')!r} is not {cid!r}"
-            )
-        else:
-            try:
-                rows.append(validate_row(_row_from_checkpoint(record, snapshots[0])))
-            except ContextExportError as exc:
-                failures.append(f"{unit}: {exc}")
+    for record, store, failure in placed:
+        snapshots = (
+            []
+            if store is None
+            else checkpoints[store].get(record.correlation_id or "", [])
+        )
+        failure = failure or _join_failure(record, snapshots)
+        if failure is not None:
+            failures.append(f"{_unit(record)}: {failure}")
+            continue
+        try:
+            rows.append(validate_row(_row_from_checkpoint(record, snapshots[0])))
+        except ContextExportError as exc:
+            failures.append(f"{_unit(record)}: {exc}")
     if failures:
         raise ContextExportError(
             f"context export failed closed on {len(failures)} success record(s): "

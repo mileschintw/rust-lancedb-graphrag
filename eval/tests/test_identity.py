@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from lancet_eval.config import EvalSettings
+from lancet_eval.config import S1_STORE, V1_STORE, EvalSettings, EvalStore
 from lancet_eval.identity import (
     IdentityGateError,
+    IdentityReport,
     compute_identity,
     delete_pg_extras,
     list_lancedb_document_ids,
@@ -49,6 +50,7 @@ def _write_map(
     corpus: str = "multihop_rag",
     entries: dict[str, str] | None = None,
     aliases: dict[str, str] | None = None,
+    store: EvalStore = V1_STORE,
 ) -> None:
     monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: tmp_path)
     if entries is None:
@@ -63,7 +65,7 @@ def _write_map(
         },
         aliases=aliases or {},
     )
-    save_document_map_atomic(doc_map)
+    save_document_map_atomic(doc_map, store)
 
 
 def _lance_ok(**overrides: object) -> dict[str, object]:
@@ -414,3 +416,178 @@ def test_delete_pg_extras_apply_runs_single_transaction_and_returns_deleted(
         _settings(tmp_path), allow_ids={DOC_A}, apply=True, pg_dump_path=dump_path
     )
     assert result == [extra]
+
+
+# --- Per-store schema (#69) -----------------------------------------------------------
+
+
+def _store_settings(lancedb_path: str, schema: str) -> EvalSettings:
+    return EvalSettings(
+        lancedb_path=lancedb_path,
+        dev_lancedb_path="./data/lancedb",
+        database_url=(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet"
+            f"?sslmode=disable&search_path={schema}"
+        ),
+        dev_database_url=(
+            "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable"
+        ),
+    )
+
+
+def _record_psql(monkeypatch: pytest.MonkeyPatch, output: str) -> list[str]:
+    seen: list[str] = []
+
+    def fake_run_psql(settings: EvalSettings, sql: str, **kwargs: object) -> str:
+        seen.append(sql)
+        return "" if "DELETE" in sql else output
+
+    monkeypatch.setattr("lancet_eval.identity.run_psql", fake_run_psql)
+    return seen
+
+
+def test_list_pg_documents_reads_the_s1_schema(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#69: S1 settings list the S1 schema's documents, never the v1.0 schema's."""
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n")
+
+    result = list_pg_documents(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1")
+    )
+
+    assert result == {DOC_A: "completed"}
+    assert seen == ["SELECT id, status FROM lancet_eval_s1.documents ORDER BY id;"]
+
+
+def test_list_pg_documents_v1_sql_is_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen = _record_psql(monkeypatch, "")
+
+    list_pg_documents(_settings(tmp_path))
+
+    assert seen == ["SELECT id, status FROM lancet_eval.documents ORDER BY id;"]
+
+
+def test_delete_pg_extras_on_the_s1_store_deletes_only_from_its_schema(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#69: `identity repair` on the S1 store reads and deletes in lancet_eval_s1."""
+    dump_path = tmp_path / "backup.sql"
+    dump_path.write_text("-- pg_dump contents\n", encoding="utf-8")
+    extra = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n{extra}|completed\n")
+
+    delete_pg_extras(
+        _store_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+        allow_ids={DOC_A},
+        apply=True,
+        pg_dump_path=dump_path,
+    )
+
+    assert seen
+    assert all("lancet_eval_s1.documents" in sql for sql in seen)
+    assert any("DELETE FROM lancet_eval_s1.documents" in sql for sql in seen)
+
+
+@pytest.mark.parametrize(
+    ("lancedb_path", "schema"),
+    [
+        # The S1 store's path with another store's schema, and the reverse.
+        ("./data/lancedb-eval-s1", "lancet_eval"),
+        ("./data/lancedb-eval", "lancet_eval_s1"),
+        # A schema no store owns.
+        ("./data/lancedb-eval-s1", "other_eval"),
+    ],
+)
+def test_delete_pg_extras_refuses_a_schema_not_of_the_selected_store(
+    monkeypatch: pytest.MonkeyPatch, lancedb_path: str, schema: str
+) -> None:
+    seen = _record_psql(monkeypatch, f"{DOC_A}|completed\n")
+
+    with pytest.raises(SeedError, match="schema"):
+        delete_pg_extras(
+            _store_settings(lancedb_path, schema),
+            allow_ids={DOC_A},
+            apply=False,
+            pg_dump_path=None,
+        )
+    assert seen == []
+
+
+# --- Failed upload rows on the S1 store (#79) -----------------------------------------
+
+FAILED_UPLOAD = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+
+
+def _store_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pg_rows: str, store: EvalStore
+) -> IdentityReport:
+    """Compute identity for `store` over map {A, B}, a correct LanceDB and `pg_rows`."""
+    _write_map(tmp_path, monkeypatch, store=store)
+    _patch_lance(monkeypatch)
+    _record_psql(monkeypatch, pg_rows)
+    return compute_identity(
+        _store_settings(store.lancedb_path, store.pg_schema), "multihop_rag"
+    )
+
+
+def test_s1_failed_upload_row_outside_the_map_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#79: seed's retry leaves the first upload `failed`; the S1 store still passes."""
+    report = _store_identity(
+        tmp_path,
+        monkeypatch,
+        f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|failed\n",
+        S1_STORE,
+    )
+
+    assert report.failures == []
+    assert report.passed is True
+    assert report.superseded_failed == [FAILED_UPLOAD]
+
+
+def test_s1_failed_row_of_a_mapped_document_still_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _store_identity(
+        tmp_path, monkeypatch, f"{DOC_A}|completed\n{DOC_B}|failed\n", S1_STORE
+    )
+
+    assert report.passed is False
+    assert any("not completed" in f for f in report.failures)
+    assert report.superseded_failed == []
+
+
+@pytest.mark.parametrize("status", ["completed", "processing", "queued"])
+def test_s1_extra_row_not_failed_still_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    report = _store_identity(
+        tmp_path,
+        monkeypatch,
+        f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|{status}\n",
+        S1_STORE,
+    )
+
+    assert report.passed is False
+    assert any("extra_in_pg" in f for f in report.failures)
+
+
+def test_v1_failed_row_outside_the_map_still_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#79: the v1.0 store's gate is unchanged; a failed extra row fails it twice."""
+    report = _store_identity(
+        tmp_path,
+        monkeypatch,
+        f"{DOC_A}|completed\n{DOC_B}|completed\n{FAILED_UPLOAD}|failed\n",
+        V1_STORE,
+    )
+
+    assert report.passed is False
+    assert any("extra_in_pg" in f for f in report.failures)
+    assert any("not completed" in f for f in report.failures)
+    assert report.superseded_failed == []

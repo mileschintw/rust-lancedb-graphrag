@@ -7,7 +7,7 @@ import json
 import logging
 import math
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from pydantic import ConfigDict
 
-from lancet_eval.arms import explicit_default_fields
+from lancet_eval.arms import arm_reader, explicit_default_fields, is_reader_arm
 from lancet_eval.client import QueryOutcome, run_query
 from lancet_eval.config import EvalSettings, load_settings, pg_schema_of, repo_root
 from lancet_eval.corpus import GoldQuestion, load_corpus, load_corpus_config
@@ -40,6 +40,7 @@ from lancet_eval.latency import (
     percentile_with_ci,
 )
 from lancet_eval.preflight import read_effective_workflow_config
+from lancet_eval.reader_request import ReaderDeclaration, ReaderPrice
 from lancet_eval.thresholds import COMMITTED_THRESHOLDS, DecisionThresholds
 
 if TYPE_CHECKING:
@@ -70,6 +71,14 @@ MEASUREMENT_ARMS: tuple[str, str] = ("graph-off", "graph-on")
 # tests/fixtures/openrouter_models_excerpt_2026-10-09.json.
 GENERATION_INPUT_PRICE_PER_1M = 0.14
 GENERATION_OUTPUT_PRICE_PER_1M = 1.28
+# #81, D-257: the 2026-10-09 listing above, as a price and not a budget ceiling. The S2
+# reader comparison costs the carried deepseek arm at it, like every other reader at
+# its sync list price; the ceilings above still bound what a drive may spend.
+GENERATION_LIST_INPUT_PRICE_PER_1M = 0.0137
+GENERATION_LIST_OUTPUT_PRICE_PER_1M = 1.28
+# #54, D-255 fact (2026-10-30): a Claude reader's batch request costs half its sync
+# list price. The sync price is the reader's declaration in the pre-registration.
+BATCH_PRICE_FACTOR = 0.5
 # 06.3.6 O15 / D-176: the charge for one rerank call whose response carried no
 # `usage.cost` (`workflow_meta.rerank.cost_reported` is False). Frozen in the D-154 freeze
 # commit (2026-10-10) as 1.5 x the largest per-call cost reported by the two sources AI-SPEC
@@ -142,6 +151,11 @@ class MeasurementRecord(RunRecord):
 
 class SpendHaltError(RuntimeError):
     """Raised when spend cap is exceeded or allowance cannot be verified."""
+
+
+class ReaderPriceError(ValueError):
+    """A reader record that cannot be priced: no declared price, or usage that does not
+    add up (#54, D-257)."""
 
 
 class SchemaIsolationError(RuntimeError):
@@ -223,9 +237,67 @@ def count_failed_generation_attempts(records: Sequence[RunRecord]) -> int:
     )
 
 
+def tokens_usd(meta: WorkflowWireMeta, price: ReaderPrice) -> float:
+    """A record's prompt and completion tokens at a per-million-token price."""
+    return (meta.prompt_tokens / 1_000_000.0) * price.input_per_mtok + (
+        meta.completion_tokens / 1_000_000.0
+    ) * price.output_per_mtok
+
+
+def reader_record_usd(
+    rec: RunRecord, price: ReaderPrice, *, factor: float = 1.0
+) -> float:
+    """One reader-arm record's generation cost: its usage at `price` times `factor`.
+
+    The usage is the record's own: `workflow_meta.prompt_tokens` and
+    `completion_tokens`. The provider bills reasoning as output, so the completion
+    tokens hold `replay.reasoning_tokens`; a record whose reasoning tokens exceed its
+    completion tokens is refused rather than priced low. A record with no replay block
+    (an errored or expired batch request) was not billed and costs 0.
+
+    Raises:
+        ReaderPriceError: If a replay record has no usage, or its reasoning tokens
+            exceed its completion tokens.
+    """
+    if rec.replay is None:
+        return 0.0
+    meta = rec.workflow_meta
+    if meta is None:
+        raise ReaderPriceError(
+            f"{rec.graph_arm} {rec.question_id}: a reader record carries no usage"
+        )
+    if rec.replay.reasoning_tokens > meta.completion_tokens:
+        raise ReaderPriceError(
+            f"{rec.graph_arm} {rec.question_id}: {rec.replay.reasoning_tokens} "
+            f"reasoning tokens exceed the {meta.completion_tokens} completion tokens "
+            "they are billed in"
+        )
+    return tokens_usd(meta, price) * factor
+
+
+def reader_declaration(
+    label: str, readers: Mapping[str, ReaderDeclaration] | None
+) -> ReaderDeclaration:
+    """The declaration of the reader a reader-arm label names.
+
+    Raises:
+        ReaderPriceError: If the pre-registration declares no price for that reader.
+    """
+    reader = arm_reader(label)
+    declaration = (readers or {}).get(reader or "")
+    if declaration is None:
+        raise ReaderPriceError(
+            f"{label}: reader {reader!r} has no declared price in the "
+            "pre-registration (D-257)"
+        )
+    return declaration
+
+
 def compute_spend(
     records: Sequence[RunRecord],
     include_embeddings: bool = True,
+    *,
+    readers: Mapping[str, ReaderDeclaration] | None = None,
 ) -> tuple[float, bool]:
     """Calculate token-based spend in USD across records.
 
@@ -249,13 +321,34 @@ def compute_spend(
     `include_embeddings=False` still includes it (that flag only drops the embedding
     estimate). A record without `workflow_meta.rerank`, which is every record written
     before 06.3.6, adds nothing, so every earlier journal prices byte-identically.
+
+    Reader-arm records (#54, D-257) are batch usage: each is priced at its reader's
+    declared sync list price in `readers` times `BATCH_PRICE_FACTOR`
+    (`reader_record_usd`), with no failed-generation ceiling and no embedding, since a
+    reader neither retrieves nor is billed for an errored request. A run without
+    reader-arm records prices exactly as before.
+
+    Raises:
+        ReaderPriceError: If a reader-arm record's reader has no declaration in
+            `readers`, or its usage does not add up.
     """
     total_prompt_tokens = 0
     total_completion_tokens = 0
     query_count = 0
     rerank_spend = 0.0
+    batch_spend = 0.0
 
+    engine_records: list[RunRecord] = []
     for rec in records:
+        if is_reader_arm(rec.graph_arm):
+            declaration = reader_declaration(rec.graph_arm, readers)
+            batch_spend += reader_record_usd(
+                rec, declaration.price, factor=BATCH_PRICE_FACTOR
+            )
+        else:
+            engine_records.append(rec)
+
+    for rec in engine_records:
         for attempt in _every_attempt(rec):
             query_count += 1
             if attempt.workflow_meta is not None:
@@ -273,12 +366,14 @@ def compute_spend(
         total_completion_tokens / 1_000_000.0
     ) * GENERATION_OUTPUT_PRICE_PER_1M
     gen_spend += (
-        count_failed_generation_attempts(records)
+        count_failed_generation_attempts(engine_records)
         * failed_generation_attempt_usd()
         * FAILED_GENERATION_CHARGE_MULTIPLIER
     )
     if rerank_spend:
         gen_spend += rerank_spend
+    if batch_spend:
+        gen_spend += batch_spend
 
     if not include_embeddings:
         return gen_spend, True

@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval.arms import STORE_PREFIXES
 from lancet_eval.config import (
     EVAL_STORES,
     V1_STORE,
@@ -25,7 +26,13 @@ from lancet_eval.config import (
     repo_root,
     store_target_failures,
 )
-from lancet_eval.corpus import CorpusError, load_corpus, load_corpus_config
+from lancet_eval.corpus import (
+    CorpusConfig,
+    CorpusError,
+    StoreChunking,
+    load_corpus,
+    load_corpus_config,
+)
 from lancet_eval.evidence_meta import normalise
 
 if TYPE_CHECKING:
@@ -36,7 +43,7 @@ class SeedError(Exception):
     """Raised when seeding fails or is blocked by an isolation error."""
 
 
-def _quote_pg_identifier(name: str) -> str:
+def quote_pg_identifier(name: str) -> str:
     """Validate and quote a PostgreSQL identifier."""
     if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
         raise SeedError(f"Invalid PostgreSQL identifier: {name!r}")
@@ -177,6 +184,7 @@ def run_psql(settings: EvalSettings, sql: str, *, timeout_s: float = 30.0) -> st
         input=sql,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=timeout_s,
     )
     if res.returncode != 0:
@@ -193,8 +201,8 @@ def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> No
         settings.database_url, settings.dev_database_url
     )
 
-    drop_sql = f"DROP SCHEMA IF EXISTS {_quote_pg_identifier(schema_name)} CASCADE;"
-    create_sql = f"CREATE SCHEMA {_quote_pg_identifier(schema_name)};"
+    drop_sql = f"DROP SCHEMA IF EXISTS {quote_pg_identifier(schema_name)} CASCADE;"
+    create_sql = f"CREATE SCHEMA {quote_pg_identifier(schema_name)};"
     drop_create_sql = f"{drop_sql} {create_sql}"
 
     try:
@@ -208,6 +216,7 @@ def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> No
         cwd=gateway_dir,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60.0,
     )
     if res_atlas.returncode != 0:
@@ -393,6 +402,29 @@ def record_index_generation(
     return observed_generation
 
 
+def store_chunking_of(corpus: CorpusConfig, store: EvalStore) -> StoreChunking | None:
+    """The chunking `store` is built with, from the corpus's `[stores.<prefix>]` (#67).
+
+    None for the v1.0 store, which keeps the gateway's default chunking. Any other
+    store needs its prefix's entry, so it never falls back to that default.
+
+    Raises:
+        SeedError: If the corpus has no `[stores.<prefix>]` entry for `store`.
+    """
+    if store == V1_STORE:
+        return None
+    prefix = next((p for p, s in STORE_PREFIXES.items() if s == store.name), None)
+    if prefix is None:
+        raise SeedError(f"Store {store.name!r} has no arm prefix (D-251)")
+    chunking = corpus.store_chunking.get(prefix)
+    if chunking is None:
+        raise SeedError(
+            f"Corpus {corpus.name!r} has no [stores.{prefix}] entry for store "
+            f"{store.name!r}; its chunking must be declared (#67, D-251)"
+        )
+    return chunking
+
+
 def _sanitize_filename(name: str) -> str:
     """Sanitize string for multipart filename header."""
     clean = re.sub(r"[^\w\-_.]", "_", name.strip())
@@ -412,9 +444,11 @@ def seed_corpus(
 
     settings = settings or load_settings(store=store)
     assert_store_target(settings, store)
-    _ = load_corpus(corpus_name)
+    corpus = load_corpus(corpus_name)
+    chunking = store_chunking_of(corpus, store)
+    # A corpus that shares another corpus's map (D-68) seeds that corpus's documents.
     subset_path = (
-        repo_root() / "eval" / "corpora" / corpus_name / "documents.subset.jsonl"
+        repo_root() / "eval" / "corpora" / corpus.map_corpus / "documents.subset.jsonl"
     )
 
     if not subset_path.is_file():
@@ -471,7 +505,6 @@ def seed_corpus(
             if len(content_bytes) > 10 * 1024 * 1024:
                 continue
 
-            # Multipart file upload without chunk_size / chunk_overlap overrides
             safe_name = _sanitize_filename(corpus_id)
             files = {
                 "file": (safe_name, content_bytes, "text/plain"),
@@ -481,6 +514,14 @@ def seed_corpus(
             # non-empty normalised values are sent, so a row without one ingests with
             # that key absent.
             form_fields = {k: v for k, v in normalise(doc).items() if v}
+            # #67: a store other than v1.0 sends its declared chunking; a v1.0 upload
+            # sends none, so the gateway's default chunking applies as before.
+            if chunking is not None:
+                form_fields |= {
+                    "chunk_strategy": chunking.chunk_strategy,
+                    "chunk_size": str(chunking.chunk_size),
+                    "chunk_overlap": str(chunking.chunk_overlap),
+                }
 
             max_article_attempts = 5
             last_err = ""
@@ -589,6 +630,9 @@ def reseed_corpus(
 
     settings = settings or load_settings(store=store)
     assert_store_target(settings, store)
+    # #67: a store whose chunking the corpus does not declare is refused here, before
+    # anything is dropped, not by seed_corpus after the store is gone.
+    store_chunking_of(load_corpus(corpus_name), store)
 
     # Verify store isolation before destroying anything
     eval_lance = Path(settings.lancedb_path).resolve()

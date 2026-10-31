@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from lancet_eval.arms import ExternalPipeline
+
 if TYPE_CHECKING:
-    from lancet_eval.arms import ExternalPipeline
+    from lancet_eval.reader_request import ReaderDeclaration
 
 
 class ThresholdError(ValueError):
@@ -533,12 +535,220 @@ class StagePreRegistration(LeverPreRegistration):
     Its arm labels may be external (D-247) or store-prefixed (D-251). Each stage writes
     its own constant of this type on its own branch; none is defined here.
 
+    Its arm labels may also be reader arms (D-257, ``<arm>@<reader>``).
+
     Attributes:
         external_pipelines: ``(arm label, arms.ExternalPipeline)`` pairs, one per
             external arm; ``preregistration.external_pipelines_of`` reads them.
+        readers: ``(reader name, reader_request.ReaderDeclaration)`` pairs, one per
+            reader its reader arms name (slug, target, thinking, sync list price);
+            ``preregistration.readers_of`` reads them.
     """
 
     external_pipelines: tuple[tuple[str, ExternalPipeline], ...] = ()
+    readers: tuple[tuple[str, ReaderDeclaration], ...] = ()
+
+
+# v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
+# shipped default against the MultiHop-RAG paper's LlamaIndex pipeline, read once on the
+# held-out split (the first of D-237's two reads). Every number a reading uses is inside
+# this assignment, which the D-73 check compares by AST; nothing here changes after data
+# is seen.
+PREREGISTRATION_S0 = StagePreRegistration(
+    reference_arm="hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=("llamaindex",),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=(),
+    test="paired_sign_flip_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=("llamaindex",),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "S0 changes no default; it is the published starting point and does not gate "
+        "S1 (D-252). One Holm family, m = 1: answer_usable of llamaindex against "
+        "hybrid+rerank+metadata on the held-out G population, exact paired sign-flip, "
+        "alpha 0.05. If the comparison is evaluable (|P| / |H_G| >= "
+        "complete_case_floor) and Holm rejects, the arm with the higher answer_usable "
+        "leads, but only if the null guard read in its direction passes (D-261): for "
+        "llamaindex the guard as computed (net abstention drop b - c against the "
+        "reference); for hybrid+rerank+metadata the same null pairs with b and c "
+        "swapped (c - b). Each direction passes iff at least ceil(0.80 x |H_N|) null "
+        "pairs exist and the net drop / pairs <= 0.10. A leader whose guard fails or "
+        "is not evaluable is reported as a difference with a failed guard, and no lead "
+        "is claimed. Without a rejection the reading is 'no significant difference'. "
+        "Evidence Hits@4, context tokens and latency are supporting and never tested; "
+        "chunk-ID Hits@4 is a Lancet-only secondary (D-250)"
+    ),
+    provenance=(
+        "v1.1 S0. D-238 (two arms, one each), D-239 and D-252 (Holm m = 1, exact "
+        "paired sign-flip, null guard on both arms), D-261 (the guard read in both "
+        "directions, the leader's direction vetoes; owner 2026-10-30: "
+        "'雙向讀，勝方須過'), D-262 (every number reused from PREREGISTRATION_06_3_6: "
+        "alpha 0.05, guard margin 0.10 and pair fraction 0.80, complete-case floor "
+        "0.80, bootstrap 10,000 seed 42, SC-2 timeout floor 0.025, rerank tripwire "
+        "0.20 after 50 attempts or 5 consecutive; owner 2026-10-30: '全部沿用 v1.0'), "
+        "D-247 and D-248 (the external arm and its pipeline), D-259 (the external "
+        "reader runs with evidence_metadata only, which matches the shipped default's "
+        "reader-side levers; rerank is retrieval-side), D-237 (this is held-out read 1 "
+        "of 2; Confirm is read 2). Written 2026-10-30, before any S0 data."
+    ),
+    external_pipelines=(
+        (
+            "llamaindex",
+            ExternalPipeline(
+                framework="llama-index-core",
+                framework_version="0.14.25",
+                chunk_size=256,
+                chunk_overlap=25,
+                dense_top_k=20,
+                rerank_model="voyageai/rerank-2.5-lite",
+                keep=8,
+            ),
+        ),
+    ),
+)
+
+
+# v1.1 S1 (D-241, D-242, D-251, D-252, D-262 to D-264;
+# experiments/v1.1/EXPERIMENT-S1.md): paragraph fragments (the v1.0 `small` store)
+# against merged ~256-token chunks (the `merged` store), each with the graph off and on,
+# read on the levers-dev pool of 100 (90 G, 10 null). Direction-finding: the harness
+# computes the paired differences, p-values and null guards, and the choice is applied
+# by hand in EXPERIMENT-S1.md (D-252). The family is `decisional` only because the lever
+# comparison needs one; its default-decision rows are not read. This constant gives the
+# chunking reading and the small-store graph reading (both against small graph-off);
+# PREREGISTRATION_S1_MERGED_GRAPH gives the merged-store graph reading of the same
+# journal.
+PREREGISTRATION_S1 = StagePreRegistration(
+    reference_arm="small/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "merged/hybrid+rerank+metadata",
+                "small/hybrid+graph+rerank+metadata",
+            ),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("merged/hybrid+graph+rerank+metadata",),
+    test="paired_sign_flip_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=(
+        "merged/hybrid+rerank+metadata",
+        "small/hybrid+graph+rerank+metadata",
+    ),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Applied by hand in EXPERIMENT-S1.md, never by code (D-252). Chunking: adopt "
+        "merged iff the paired answer_usable delta of merged/hybrid+rerank+metadata "
+        "against small/hybrid+rerank+metadata on G is above 0 and its null guard "
+        "passes (D-264); otherwise keep small. Graph, on the chosen store only "
+        "(D-263): the graph joins iff the paired answer_usable delta of that store's "
+        "graph-on arm against its graph-off arm is at least +0.05 and that "
+        "comparison's null guard passes (D-264). Small store: the "
+        "small/hybrid+graph+rerank+metadata row of this constant. Merged store: the "
+        "merged/hybrid+graph+rerank+metadata row of PREREGISTRATION_S1_MERGED_GRAPH. A "
+        "guard that fails or is not evaluable vetoes the choice it guards. p-values "
+        "are reported, not used. Evidence Hits@4 is supporting; chunk-ID Hits@4 is not "
+        "read for S1 (D-250, the gold is not re-mapped to merged chunks)"
+    ),
+    provenance=(
+        "v1.1 S1. D-241 and D-242 (one 256-token o200k target, merge rule), D-251 (the "
+        "merged store and store-prefixed arms), D-252 (direction-finding rule: merged "
+        "if the delta is above 0 with the null guard; graph if at least +5 points; "
+        "p-values reported, not used), D-259 (the levers-dev question set, the D-237 "
+        "dev pool of 100: 90 G, 10 null), D-262 (every number reused from "
+        "PREREGISTRATION_06_3_6; owner 2026-10-30: '全部沿用 v1.0'), D-263 (the graph "
+        "rule on the chosen store; owner 2026-10-30: '在選中的 store 上套用'), D-264 "
+        "(null guard margin 0.10 and pair fraction 0.80 on the 10 dev nulls, vetoing "
+        "both choices; owner 2026-10-30: '沿用 0.10/0.80，兩個選擇都否決'). Written "
+        "2026-10-30, before any S1 data."
+    ),
+)
+
+
+# v1.1 S1, merged-store graph reading (D-263): PREREGISTRATION_S1 with merged graph-off
+# as the reference, so the lever comparison pairs merged graph-on against it. Every
+# number is PREREGISTRATION_S1's; only the arm roles differ (a test pins this). It is
+# read with `build_lever_comparison(run, prereg=PREREGISTRATION_S1_MERGED_GRAPH)` over
+# the S1 run (experiments/v1.1/RUN-S0-S1.md); the corpus token stays PREREGISTRATION_S1,
+# so the D-73 check still runs on it.
+PREREGISTRATION_S1_MERGED_GRAPH = StagePreRegistration(
+    reference_arm="merged/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=("merged/hybrid+graph+rerank+metadata",),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=(
+        "small/hybrid+rerank+metadata",
+        "small/hybrid+graph+rerank+metadata",
+    ),
+    test="paired_sign_flip_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=("merged/hybrid+graph+rerank+metadata",),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "The merged-store half of PREREGISTRATION_S1's graph rule (D-263): read only "
+        "if S1 adopts merged. The graph joins iff the paired answer_usable delta of "
+        "merged/hybrid+graph+rerank+metadata against merged/hybrid+rerank+metadata on "
+        "G is at least +0.05 and its null guard passes (D-264). Applied by hand in "
+        "EXPERIMENT-S1.md"
+    ),
+    provenance=(
+        "v1.1 S1, D-252 and D-263: the merged-store graph comparison as its own "
+        "reference pairing, because the lever comparison pairs every family arm with "
+        "the constant's reference. Numbers as PREREGISTRATION_S1 (D-262, D-264). "
+        "Written 2026-10-30, before any S1 data."
+    ),
+)
 
 
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single

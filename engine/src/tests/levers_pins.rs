@@ -1951,7 +1951,7 @@ impl std::io::Write for LogSink {
 }
 
 fn capture_logs() -> (
-    tracing::subscriber::DefaultGuard,
+    crate::testkit::ScopedSubscriber,
     Arc<std::sync::Mutex<Vec<u8>>>,
 ) {
     let sink = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1960,7 +1960,7 @@ fn capture_logs() -> (
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
-    (tracing::subscriber::set_default(subscriber), sink)
+    (crate::testkit::ScopedSubscriber::install(subscriber), sink)
 }
 
 /// [`capture_logs`] with ANSI styling on, the way the engine's default log layer styles `engine.log`.
@@ -1969,7 +1969,7 @@ fn capture_logs() -> (
 /// contiguous text here; only a message is. A test over this capture proves a literal survives in
 /// the real log file.
 fn capture_logs_styled() -> (
-    tracing::subscriber::DefaultGuard,
+    crate::testkit::ScopedSubscriber,
     Arc<std::sync::Mutex<Vec<u8>>>,
 ) {
     let sink = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1978,7 +1978,7 @@ fn capture_logs_styled() -> (
         .with_ansi(true)
         .with_writer(move || writer.clone())
         .finish();
-    (tracing::subscriber::set_default(subscriber), sink)
+    (crate::testkit::ScopedSubscriber::install(subscriber), sink)
 }
 
 fn captured(sink: &Arc<std::sync::Mutex<Vec<u8>>>) -> String {
