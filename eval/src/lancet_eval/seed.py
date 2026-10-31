@@ -184,6 +184,7 @@ def run_psql(settings: EvalSettings, sql: str, *, timeout_s: float = 30.0) -> st
         input=sql,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=timeout_s,
     )
     if res.returncode != 0:
@@ -215,6 +216,7 @@ def reset_eval_schema(settings: EvalSettings, store: EvalStore = V1_STORE) -> No
         cwd=gateway_dir,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60.0,
     )
     if res_atlas.returncode != 0:

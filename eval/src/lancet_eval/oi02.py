@@ -345,7 +345,11 @@ def idle_recovery(
 
 def _git(*args: str) -> str:
     result = subprocess.run(
-        ["git", *args], capture_output=True, text=True, check=False
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     return result.stdout.strip()
 
