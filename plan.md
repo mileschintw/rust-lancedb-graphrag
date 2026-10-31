@@ -1,6 +1,6 @@
 # Plan
 
-Last updated: 2026-10-30 15:25 -0700
+Last updated: 2026-10-30 17:45 -0700
 
 Current state only. Done work moves to `plan-history.md` with a one-line pointer here; nothing is deleted. These always stay in this file: the sessions in **Now**, **Rulings** not yet carried by a repo doc, both **Waiting for the user** sections, **Deadlines**, and the user's standing instructions under **Handover**.
 
@@ -28,7 +28,7 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 44 | #44 | local_926e074a-57c2-4ee7-8614-c320ca44dced (`claude/lane-44-fc59e2`) | started | — |
+| 44 | #44 | local_926e074a-57c2-4ee7-8614-c320ca44dced (`claude/lane-44-fc59e2`) | done; PR #57 open, CI running (first run, cold engine build) | merge on the user's "開 PR，CI 過了就 merge (Recommended)" with `--match-head-commit d58d083d` once `ci` passes; then update project.md checks (user: "更新 (Recommended)") |
 
 Lane 44 started 2026-10-30 15:25 -0700 on the user's typed "Start 44"; runs alone (S2's first ticket; scope includes the CI owner comments on #44). Lane 46 started 2026-10-30 14:43 -0700 on the user's typed "Start 46".
 
