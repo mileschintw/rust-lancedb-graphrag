@@ -82,12 +82,12 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
-| #105 | 1 (waits for the user's ruling) | — | none | `experiments/v1.1/EXPERIMENT-S1.md` › Decision rule, `PLAN.md` (new D-ID), `RUN-S0-S1.md` › 4.8 | limited: pre-registration amendment, the user decides |
+| #105 | 1 (lane 105 proposed, with #106) | — | none | `experiments/v1.1/EXPERIMENT-S1.md` › Decision rule, `PLAN.md` (new D-ID), `RUN-S0-S1.md` › 4.8 | limited: pre-registration amendment, the user decides |
 | #106 | 1 (with #105) | — | none | `RUN-S0-S1.md` › 4.4, 4.5 (stale #65 text; opened by the coordinator from audit-s1b) | free |
-| #107 | 1 (waits for the user) | — | none | `eval/src/lancet_eval/batch_client.py` › `_payload`, its test | free; blocks S2 |
+| #107 | 1 (lane 107 proposed) | — | none | `eval/src/lancet_eval/batch_client.py` › `_payload`, its test | free; blocks S2 |
 | #108 | pilot | — | none | engine answer schema vs Anthropic structured outputs; settle in the paid pilot, then a D-ID if needed | limited: paid pilot |
-| #109 | 1 (waits for the user) | — | none | `replay.py`/`batch.py` (D-73 check before spend; pilot record handling) | free; blocks S2 |
-| #110 | 1 (waits for the user) | — | none | `thresholds.py` › `PREREGISTRATION_S2`, new `EXPERIMENT-S2.md`, S2 stage toml, S2 run guide, `.gitignore`, S1→S2 handoff check | limited: pre-registration needs owner decisions |
+| #109 | 1 (lane 109 proposed) | — | none | `replay.py`/`batch.py` (D-73 check before spend; pilot record handling) | free; blocks S2 |
+| #110 | 1 (lane 110 proposed) | — | none | `thresholds.py` › `PREREGISTRATION_S2`, new `EXPERIMENT-S2.md`, S2 stage toml, S2 run guide, `.gitignore`, S1→S2 handoff check | limited: pre-registration needs owner decisions |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
@@ -123,7 +123,7 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
   5. S1 step 4 (paid, ~$0.5, dev only, ask first; keep the machine quiet).
   6. S2 pilot, then the S2 arms, submitted by the morning of 2026-11-02.
   - Side checks (a) and (b) were approved in the same answer and opened as #98 and #99; lane 98 handles both.
-- **#105: S1 decision rule gap (pre-registration amendment, the user's call; settle before S1 step 4.2).** Found by audit-s1b. `EXPERIMENT-S1.md` › Decision rule does not say what an `evaluable: false` comparison means (fewer than 72 of 90 dev pairs, for example after rerank degrades; dev drives have no tripwire). Also, at n=80 the graph's +0.05 delta can print 0.049999…, so it should be read from integers: `n_pos - n_neg >= ceil(0.05 * n_pairs)`. Recommendation: new D-266, "not evaluable → keep small / graph does not join", plus the integer reading in step 4.8. One lane edits EXPERIMENT-S1.md, PLAN.md and RUN-S0-S1.md 4.8, together with #106 (stale 4.4/4.5 text).
+- **Lanes 105, 107, 109, 110: approved 2026-10-31, waiting to be started.** User's answers: #105 "照建議 (Recommended)" (D-266: not evaluable → keep small, graph does not join; integer graph rule; one lane with #106); #107/#109 "現在開，延後跑測試 (Recommended)"; #110 "開 lane 起草 (Recommended)"; #108 "在付費 pilot 確認 (Recommended)" (no lane). Briefs are written. The app refused the start from an event turn, so they were proposed as cards task_27396c5e (105), task_e26217ef (107), task_fd0867d2 (109) and task_02a54f0e (110). Start them on the user's next typed message (start_session with proposal_id). Contract between 109 and 110: `PREREGISTRATION_S2.replay_source_arm: str`. Hold: no full test tiers until the coordinator sends `TESTS OK` once run-s1store ends.
 - **Delete D:/s0-run-backup/ by hand** (user: "直接合併 (Recommended)", which included deleting it). The coordinator's `Remove-Item` was blocked as a protected path. Its 33 files match the run dir committed by PR #89 (merged 2026-10-31 as b3fba1c5). The worktree D:/Repos/lancet-run-s01 was removed.
 
 S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
