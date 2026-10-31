@@ -59,7 +59,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 76 | #76 | local_e39f2d20-0e60-46dd-9042-aba6bc0a2923 | review | — |
 | 77 | #77 #78 | local_cbb3863f-fa47-48aa-9dad-db1d8fe24c08 | GO sent 2026-10-31 (wait on #76 dropped; `export` is a mechanical overlap with lane 76) | — |
 | audit-s1a | none (read-only audit) | local_484d4a13-5af3-4296-9c4d-deb975f8e6ec | done: **passed**, no blocker (reports/audit-s1a.md). Cost about $1.9-2.9, ceiling about $10.8 excluding retries (A3). Before the build: redo step 0's builds after pulling (A1) and remove the untracked `scratch_new.txt` from the main checkout (A5). Optional: check `document_count=0` after 1.2 (A2); seed prints no D-258 estimate (A4) | — |
-| 98 | #98 #99 | local_1cb8c5b8-584b-4499-af28-1de219ef9533 | done; PR #101, merge on green. #98 clean; #99: neither arm sent `input_type`, and the live check ran in step 2.1 (`forwarded`), so rule 7 holds for S0. Lane opened #100 (README stale) | — |
 
 Lanes 64, 74, 76, 77 and 95 started 2026-10-31 13:55 -0700 on the user's answers: "#64 計數器 flake, #74 + #75 執行指南, #76 免費預演, #77 + #78 成本與保留讀取" and "新增 D-ID". The same answer set: PR #89 merged ("直接合併"), #49 closed ("關掉"). Only lane 64 builds the engine. Owners: lane 74 owns `RUN-S0-S1.md`, `external_run.py` and `journal.py`; lane 77 owns `eval/src/lancet_eval/cli.py`; lane 76 owns the stub and the export's client construction; lane 95 owns `experiments/v1.1/PLAN.md` (D-265 pinned). #94 and lane 64 both edit `engine/src/tests.rs`, different tests (mechanical overlap).
 
@@ -85,8 +84,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 |---|---|---|---|---|---|
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #64 | 1 (lane 64 running) | — | none | `engine/src/ingest.rs` › `REBUILD_COUNTER`, `engine/src/tests.rs` › `debounce_coalesces_burst` | free |
-| #98 | 1 (lane 98 running, with #99) | — | none | `experiments/v1.1/EXPERIMENT-S0.md` › Result (note) | free |
-| #99 | 1 (lane 98 running) | — | none | `EXPERIMENT-S0.md` › Result (note) | free |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
 | #76 | 1 (lane 76 running) | — | none | `provider_stub.py`, llamaindex `providers.py`, `cli.py` › `export` client construction, new `multihop_rag_s0_rehearsal.toml` | free |
 | #77 | 1 (lane 77 running, with #78) | — | none (mechanical overlap with #76 on `export`) | `eval/src/lancet_eval/cli.py` › `run_benchmark`, `run_external_command`; llamaindex `cli.py` › `export` | free |
