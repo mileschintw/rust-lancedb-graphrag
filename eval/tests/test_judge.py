@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 from pytest_httpx import HTTPXMock
 
+from lancet_eval import judge
 from lancet_eval.client import StructuredCitation
 from lancet_eval.corpus import load_corpus_config
 from lancet_eval.judge import (
@@ -353,8 +355,12 @@ def test_judge_once_returns_none_usage_when_omitted(httpx_mock: HTTPXMock) -> No
     assert usage is None
 
 
-def test_judge_once_returns_none_usage_on_transport_failure(httpx_mock: HTTPXMock) -> None:
+def test_judge_once_returns_none_usage_on_transport_failure(
+    httpx_mock: HTTPXMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Proves judge_once yields None usage and error string on transport failure."""
+    # the five attempts' backoff is not under test; skip its sleeps (#44)
+    monkeypatch.setattr(judge._post_judge.retry, "sleep", lambda _seconds: None)
     httpx_mock.add_exception(httpx.ConnectError("Connection refused"), is_reusable=True)
 
     client = httpx.Client()

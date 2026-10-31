@@ -4,7 +4,8 @@ The ordered judged fixture of `test_score_judged_ordered` is relabelled onto the
 store-prefixed arms S1 drives: its four arms run on the small store or the merged store
 under labels such as `merged/hybrid`, declared in the corpus's `[stores.*]` tables. The
 real judge stage runs against the fake judge and the D-120 sequence is committed in git,
-so `score --judged` sees every prefixed arm. No test makes a network call.
+so `score --judged` sees every prefixed arm. The same run also checks that `compare`
+refuses it (#34). No test makes a network call.
 """
 
 from __future__ import annotations
@@ -31,10 +32,15 @@ from test_score_judged_ordered import (
     make_record,
     write_corpus,
 )
+from typer.testing import CliRunner
 
 from lancet_eval import calibration, judge, judge_stage, thresholds
+from lancet_eval import comparison as cmp_mod
 from lancet_eval import score as score_mod
 from lancet_eval.arms import arm_slug
+from lancet_eval.cli import app
+from lancet_eval.comparison import ComparisonError, build_comparison
+from lancet_eval.gitcheck import PREREGISTRATION_TOKEN
 from lancet_eval.journal import Journal
 from lancet_eval.judge_stage import JudgeStageRecord
 from lancet_eval.report import CorpusReport
@@ -106,9 +112,7 @@ def _build(base: Path, mp: pytest.MonkeyPatch) -> Scenario:
     mp.setattr(judge_stage, "judge_once", judge_fn)
     # both stores map the fixture's one document (the stores' maps are not under test)
     v1_map = load_document_map("multihop_rag")
-    mp.setattr(
-        "lancet_eval.score.load_document_map", lambda corpus, store=None: v1_map
-    )
+    mp.setattr("lancet_eval.score.load_document_map", lambda corpus, store=None: v1_map)
     run = root / "runs" / "run"
     run.mkdir(parents=True)
     journal = Journal(run / "journal.jsonl")
@@ -235,3 +239,69 @@ def test_every_paired_delta_names_its_reference_mean_and_count_neutrally(
         assert d.detail["count_delta"] == (
             d.detail["count_x"] - d.detail["count_reference"]
         )
+
+
+# ---- `compare` on the same run (#34) ----------------------------------------------
+# `compare` is the 06.3.5 four-arm comparison: its Holm families, P4 rebuild and strata
+# are fixed by `PREREGISTRATION_06_3_5`. A run whose corpus names another
+# pre-registration is refused up front with a message naming that mismatch, never the
+# D-120 "run score --judged first" message its prefixed judged dimensions used to
+# trigger. #44 moved these tests here from `test_compare_store_arms.py`, so both read
+# one build of the fixture.
+
+
+def test_compare_refuses_a_run_under_another_preregistration(
+    prefixed: Scenario,
+) -> None:
+    with pytest.raises(ComparisonError) as info:
+        build_comparison(
+            prefixed.run, gold_chunks_path=prefixed.gold, git_repo=prefixed.root
+        )
+    message = str(info.value)
+    assert TOKEN in message
+    assert PREREGISTRATION_TOKEN in message
+    assert "compare-levers" in message
+    assert "D-120" not in message
+    assert "score --judged" not in message
+
+
+def test_compare_refuses_prefixed_arms_left_on_the_06_3_5_token(
+    prefixed: Scenario, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = cmp_mod.load_corpus_config
+
+    def default_token(corpus: str) -> Any:
+        config = real(corpus)
+        config.preregistration_token = PREREGISTRATION_TOKEN
+        return config
+
+    monkeypatch.setattr(cmp_mod, "load_corpus_config", default_token)
+    with pytest.raises(ComparisonError) as info:
+        build_comparison(
+            prefixed.run, gold_chunks_path=prefixed.gold, git_repo=prefixed.root
+        )
+    message = str(info.value)
+    assert "merged/hybrid+graph" in message
+    assert PREREGISTRATION_TOKEN in message
+    assert "D-120" not in message
+    assert "compare-levers" not in message
+
+
+def test_the_compare_command_exits_one_with_the_mismatch_and_writes_nothing(
+    prefixed: Scenario, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = cmp_mod.write_comparison
+    monkeypatch.setattr(
+        cmp_mod,
+        "write_comparison",
+        lambda run_dir, **kw: real(
+            run_dir, gold_chunks_path=prefixed.gold, git_repo=prefixed.root
+        ),
+    )
+    result = CliRunner().invoke(app, ["compare", "--run", str(prefixed.run)])
+    assert result.exit_code == 1
+    assert TOKEN in result.output
+    assert "D-120" not in result.output
+    for name in ("comparison.json", "comparison.md", "chart.json", "chart.svg"):
+        assert not (prefixed.run / name).exists()
+

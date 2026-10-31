@@ -1109,13 +1109,28 @@ def test_d198_refusal_helper_names_each_legacy_label_and_passes_canonical_corpor
     refuse_legacy_labels_for_live_drive("multihop_rag_heldout")
 
 
-def test_d198_direct_drive_still_accepts_legacy_labels_for_offline_callers() -> None:
-    """The rule lives in the `run` command: drive() keeps its arm handling unchanged."""
-    import inspect
+def test_d198_direct_drive_still_accepts_legacy_labels_for_offline_callers(
+    httpx_mock: HTTPXMock, tmp_path: Path
+) -> None:
+    """The rule lives in the `run` command: drive() itself still drives a legacy-label
+    corpus (`graphrag_bench`: graph-on, graph-off) and journals those labels."""
+    from lancet_eval.journal import load_records
 
-    from lancet_eval import run as run_module
+    _register(httpx_mock, _sse(_SSE_ANSWER_OK), _sse(_SSE_ANSWER_OK))
+    j_path = tmp_path / "journal.jsonl"
 
-    assert "refuse_legacy_labels_for_live_drive" not in inspect.getsource(run_module.drive)
+    count = drive(
+        corpus="graphrag_bench",
+        journal_path=j_path,
+        stage_spend_cap=10.0,
+        limit=1,
+        workers=1,
+        client=httpx.Client(base_url="http://testserver"),
+    )
+
+    assert count == 2
+    labels = sorted(r.graph_arm for r in load_records(j_path))
+    assert labels == ["graph-off", "graph-on"]
 
 
 @pytest.mark.parametrize("label", ["", "  ", "has space", "tab\there"])

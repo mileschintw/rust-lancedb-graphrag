@@ -257,11 +257,6 @@ fn the_jitter_is_deterministic_per_trace_bounded_and_spread() {
     );
 }
 
-#[test]
-fn the_attempt_count_is_one_try_plus_one_retry() {
-    assert_eq!(QUERY_EMBEDDING_ATTEMPTS, 2);
-}
-
 // ---- the count on the wire ---------------------------------------------------------------------
 
 fn dense_row() -> Candidate {

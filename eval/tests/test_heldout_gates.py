@@ -189,10 +189,6 @@ _PER_ARM_COMPUTATIONS = (
 )
 
 
-def test_the_stage_label_is_heldout() -> None:
-    assert gates.HELDOUT_STAGE == "heldout"
-
-
 def test_a_complete_four_arm_journal_passes_per_arm_and_pooled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

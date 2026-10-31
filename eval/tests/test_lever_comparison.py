@@ -33,7 +33,6 @@ from levers_fixture import (
 )
 
 from lancet_eval import gitcheck, lever_comparison, thresholds
-from lancet_eval import p4 as p4_mod
 from lancet_eval.dimensions import DimensionResult
 from lancet_eval.lever_comparison import (
     LeverComparisonError,
@@ -819,7 +818,6 @@ def test_a_pairwise_population_comes_from_build_p4(
 ) -> None:
     run, gold, _ = _setup(tmp_path, monkeypatch)
     payload = build_lever_comparison(run, gold_chunks_path=gold)
-    assert p4_mod.build_p4  # the population builder the plan names
     for fam in payload["families"]:
         for c in fam["comparisons"]:
             assert c["n_pairs"] == 10

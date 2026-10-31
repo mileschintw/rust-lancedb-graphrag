@@ -1,0 +1,224 @@
+# Fast-tier CI (#44). Each module's job runs only when a path it reads changed; the
+# `changes` job decides, and `ci` is the one check to require in branch protection.
+# A job skipped by its `if:` reports success, so a PR that touches no module's paths (most
+# docs) passes `ci` after the `changes` job alone. The paths, budgets and tier commands are in docs/testing.md.
+#
+# No job makes a paid call, needs a secret, or uses the live stack, PostgreSQL or
+# data/lancedb-eval. The eval job reads committed held-out files offline but makes no
+# D-237 held-out read (docs/testing.md). Pull requests run under `pull_request`, never `pull_request_target`.
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      eval: ${{ steps.filter.outputs.eval }}
+      eval_py_files: ${{ steps.filter.outputs.eval_py_files }}
+      llamaindex: ${{ steps.filter.outputs.llamaindex }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          list-files: shell
+          filters: |
+            engine:
+              - 'engine/**'
+              - 'config/**'
+              - 'deploy/**'
+              - 'scripts/engine-test-targets.sh'
+              - '.github/workflows/ci.yml'
+            gateway:
+              - 'gateway/**'
+              - 'config/**'
+              - 'scripts/gateway-test-targets.sh'
+              - '.github/workflows/ci.yml'
+            eval:
+              - 'eval/**'
+              - 'scripts/**'
+              - 'config/**'
+              - 'proto/**'
+              - 'gateway/atlas.hcl'
+              - 'gateway/db/schema*.hcl'
+              - 'engine/src/config.rs'
+              - 'engine/src/generation/mod.rs'
+              - 'engine/src/ingest.rs'
+              - 'engine/src/prompt.rs'
+              - 'engine/src/workflow/mod.rs'
+              - 'docs/api-contract.md'
+              - 'docs/observability.md'
+              - 'docs/assets/**'
+              - '.planning/**'
+              - '.env.example'
+              - 'verify-ingestion.sh'
+              - 'verify-live-evidence.sh'
+              - '.github/workflows/ci.yml'
+            eval_py:
+              - added|modified: 'eval/**/*.py'
+            llamaindex:
+              - 'baselines/llamaindex/**'
+              - 'eval/src/**'
+              - 'eval/corpora/**'
+              - 'eval/pyproject.toml'
+              - 'eval/uv.lock'
+              - 'config/**'
+              - '.github/workflows/ci.yml'
+
+  engine:
+    needs: changes
+    if: needs.changes.outputs.engine == 'true'
+    runs-on: ubuntu-24.04
+    # Budget: 10 minutes on a warm cache. The limit allows a cold build after an eviction.
+    timeout-minutes: 45
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      # No debug info: it is most of engine/target's size, and the runner has a 14 GB SSD
+      # and the repo a 10 GB Actions cache.
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@035fceb3c12fb0c6a9461b52775e16473133e591 # 1.95.0
+        with:
+          components: clippy
+      - name: protoc
+        # lance's build scripts compile proto3 files with protoc. protobuf-compiler ships no
+        # .proto files; libprotobuf-dev adds the well-known types (google/protobuf/empty.proto)
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends protobuf-compiler libprotobuf-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: engine
+          # Only main writes the cache: a PR's cache is scoped to its merge ref, so PRs
+          # saving theirs would only evict main's.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: clippy
+        run: cargo clippy --manifest-path engine/Cargo.toml --locked --all-targets -- -D warnings
+      - name: fast-tier tests
+        run: cargo test --manifest-path engine/Cargo.toml --locked
+      - name: test-target floors
+        run: sh scripts/engine-test-targets.sh
+
+  gateway:
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - name: fast-tier tests
+        working-directory: gateway
+        run: go test -count=1 -short ./...
+      - name: test-target floors
+        run: sh scripts/gateway-test-targets.sh
+
+  eval:
+    needs: changes
+    if: needs.changes.outputs.eval == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # uv hardlinks from its cache on Linux; copies keep package data files single-linked
+      UV_LINK_MODE: copy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the ruff step reads each changed file at the base commit
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: eval/uv.lock
+      - name: ruff (no new findings in changed files)
+        if: github.event_name == 'pull_request' && needs.changes.outputs.eval_py_files != ''
+        env:
+          FILES: ${{ needs.changes.outputs.eval_py_files }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        # `shell: bash` runs with -eo pipefail; the default (`bash -e`) would let a ruff
+        # failure inside a pipe pass
+        shell: bash
+        run: |
+          # main carries legacy findings, so a changed file fails only on a rule it has
+          # more findings of than at the base commit (a new file: any finding).
+          rules() { sed -nE 's/^.*:[0-9]+: \[([^]]+)\] .*/\1/p' | sort | uniq -c; }
+          # ruff exits 1 when it reports findings; any other failure (2: bad config, crash) fails the step
+          lint() { rc=0; uv run --project eval ruff check --preview --no-fix --output-format pylint "$@" || rc=$?; [ "$rc" -le 1 ]; }
+          status=0
+          for f in $FILES; do
+            lint "$f" | rules > "$RUNNER_TEMP/head"
+            { git show "$BASE:$f" 2>/dev/null || true; } | lint --stdin-filename "$f" - | rules > "$RUNNER_TEMP/base"
+            new=$(awk 'FILENAME == ARGV[1] { base[$2] = $1; next } $1 > base[$2] + 0 { print $2 }' "$RUNNER_TEMP/base" "$RUNNER_TEMP/head")
+            if [ -n "$new" ]; then
+              echo "::error file=$f::new ruff findings:" $new
+              lint "$f"
+              status=1
+            fi
+          done
+          exit $status
+      - name: fast-tier tests
+        env:
+          # Typer forces a Rich terminal when GITHUB_ACTIONS is set, which puts ANSI codes in
+          # the CLI help the tests read; this is Typer's switch to turn that off
+          _TYPER_FORCE_DISABLE_TERMINAL: "1"
+        run: uv run --project eval pytest -n auto --dist loadfile
+
+  llamaindex:
+    needs: changes
+    if: needs.changes.outputs.llamaindex == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # nltk refuses a multiply-linked data file, and uv hardlinks from its cache on Linux
+      UV_LINK_MODE: copy
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: baselines/llamaindex/uv.lock
+      - name: offline tests
+        run: uv run --project baselines/llamaindex pytest baselines/llamaindex
+
+  ci:
+    # The one check to require in branch protection: green when every triggered job
+    # passed and every other job was skipped by its path filter.
+    if: always()
+    needs: [changes, engine, gateway, eval, llamaindex]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: every triggered job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in
+              success|skipped) ;;
+              *) exit 1 ;;
+            esac
+          done

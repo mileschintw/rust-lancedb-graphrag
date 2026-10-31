@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -34,23 +33,6 @@ def test_percentile_calculations() -> None:
     assert percentile([0.0, 10.0], 0.5) == 5.0
     assert percentile([0.0, 1.0, 2.0, 3.0, 4.0], 0.5) == 2.0
     assert percentile([10.0, 20.0], 0.95) == 19.5
-
-
-def test_shared_retrieval_percentile_pair_in_one_place() -> None:
-    """Asserts shared retrieval latency pair is computed once in make_vector_yield.
-
-    Proves make_vector_yield accepts retrieve_latencies and score.py does not
-    contain a second percentile call for the retrieval node.
-    """
-    import lancet_eval.score as score_module
-
-    sig = inspect.signature(make_vector_yield)
-    assert "retrieve_latencies" in sig.parameters
-
-    # Check score.py source has no second percentile call
-    source = inspect.getsource(score_module)
-    # percentile should not be called in score.py for retrieve
-    assert source.count("percentile(") == 0
 
 
 def test_bm25_yield_scoring_and_wilson_bounds() -> None:

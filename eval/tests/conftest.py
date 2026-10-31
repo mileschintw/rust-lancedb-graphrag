@@ -3,6 +3,10 @@
 from pathlib import Path
 
 import pytest
+from slow_tier import (  # noqa: F401 (hooks)
+    pytest_collection_modifyitems,
+    pytest_configure,
+)
 
 from lancet_eval.client import NodeFailed
 from lancet_eval.journal import NodeTiming

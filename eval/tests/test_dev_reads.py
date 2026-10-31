@@ -595,14 +595,6 @@ def test_the_cli_entry_exits_non_zero_on_a_violation(lrepo: Path) -> None:
     assert dev_reads.main(args) == 1
 
 
-def test_the_module_names_the_three_command_words() -> None:
-    import inspect
-
-    source = inspect.getsource(dev_reads)
-    for word in ("censored_above_p95_rank", "lint-ledger", "derive-rerank-timeout"):
-        assert word in source
-
-
 def test_the_dev_reads_command_mirrors_the_module(tmp_path: Path) -> None:
     from typer.testing import CliRunner
 

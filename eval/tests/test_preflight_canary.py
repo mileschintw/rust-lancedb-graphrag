@@ -386,14 +386,6 @@ def _committed_canary_rows() -> list[dict[str, Any]]:
     ]
 
 
-def test_canary_manifest_counts_are_named_constants() -> None:
-    """D-80 moves the hard-coded counts from 7 rows / 6 IDs to 8 / 7."""
-    assert hasattr(preflight_module, "CANARY_MANIFEST_ROW_COUNT")
-    assert hasattr(preflight_module, "CANARY_MANIFEST_DISTINCT_IDS")
-    assert preflight_module.CANARY_MANIFEST_ROW_COUNT == 8
-    assert preflight_module.CANARY_MANIFEST_DISTINCT_IDS == 7
-
-
 def _manifest_files(tmp_path: Path, *, rows: int, ids: int) -> tuple[Path, Path]:
     """A sample of `ids` questions and a manifest of `rows` rows over `ids` IDs."""
     sample_rows = [

@@ -139,6 +139,7 @@ def test_censored_set_refused_or_flagged_never_flat(synthetic_all_at_ceiling_lat
     assert "saturated instrument" in trend.reason
 
 
+@pytest.mark.slow
 def test_restart_discriminator_spans_zero_inconclusive():
     """Assert boundary discriminator returns inconclusive when CI spans zero."""
     seg1 = [190.0, 210.0] * 20

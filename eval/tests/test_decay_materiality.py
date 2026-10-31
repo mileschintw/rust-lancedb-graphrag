@@ -465,6 +465,7 @@ def test_noise_escalation_rule_boundaries():
     assert noise_escalation(121, 1, False, True) is True
 
 
+@pytest.mark.slow
 def test_contiguous_window_noise_flat_320_records_has_121_windows_and_no_fires():
     result = contiguous_window_noise(_flat(320, 160.0))
 

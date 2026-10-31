@@ -72,8 +72,9 @@ uv run --project eval lancet-eval preflight --store eval-s1 --corpus <S1 corpus>
 All evaluation commands are executed from the **repository root** using `uv run --project eval`:
 
 ```bash
-# Run unit and contract tests (offline, no gateway or API key required)
-uv run --project eval pytest
+# Run unit and contract tests (offline, no gateway or API key required); the slow tier
+# and the CI jobs are in docs/testing.md
+uv run --project eval pytest -n auto --dist loadfile
 
 # Run linter
 uv run --project eval ruff check --preview eval/src eval/tests
@@ -169,6 +170,8 @@ Perform a manual end-to-end spot-check on roughly 10 scored records (question, r
 The test suite in `eval/tests/` passes completely offline with no network access, no running gateway, and no `OPENROUTER_API_KEY`:
 
 ```bash
-uv run --project eval pytest eval/tests/ -v
+uv run --project eval pytest eval/tests/ -n auto --dist loadfile
 ```
+
+Tests marked `slow` skip unless `LANCET_SLOW_TESTS=1`; the tiers are in [`docs/testing.md`](../docs/testing.md).
 

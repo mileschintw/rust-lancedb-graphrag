@@ -858,9 +858,10 @@ fn the_rebuild_path_attaches_a_freshly_scanned_map() {
     let success = body
         .find("rebuild_degraded: false")
         .expect("the success snapshot literal exists");
-    let swap = body
-        .find("// Swap under a short write lock")
-        .expect("the swap follows the success literal");
+    let swap = success
+        + body[success..]
+            .find("*write_guard = Arc::clone(&new_snapshot);")
+            .expect("the swap follows the success literal");
     assert!(scan < success, "the scan precedes the success snapshot");
     assert!(
         !body[success..swap].contains("Arc::clone(&prior.doc_meta)"),

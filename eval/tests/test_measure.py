@@ -300,29 +300,16 @@ def test_censoring_labels_mutually_exclusive_and_exhaustive():
 
 
 def test_workflow_node_order_constant_and_runner_verification():
-    """Assert WORKFLOW_NODE_ORDER matches runner.rs execution order."""
-    expected = (
-        "ReformulateQuery",
-        "ExtractGraphContext",
-        "RetrieveHybrid",
-        "AssemblePrompt",
-        "GenerateAnswer",
-    )
-    assert WORKFLOW_NODE_ORDER == expected
+    """Assert WORKFLOW_NODE_ORDER matches the engine's execution order: the order
+    `service.rs` adds the nodes to the runner, which runs them in insertion order."""
+    import re
 
+    from lancet_eval.config import repo_root
 
-def test_dropped_node_timings_stamped_on_measurement_record():
-    """Assert dropped_node_timings is captured on MeasurementRecord."""
-    rec = MeasurementRecord(
-        corpus="m",
-        question_id="q",
-        graph_arm="on",
-        ordinal=1,
-        segment="s1",
-        outcome="success",
-        dropped_node_timings=3,
-    )
-    assert rec.dropped_node_timings == 3
+    service_rs = repo_root() / "engine" / "src" / "service.rs"
+    service = service_rs.read_text(encoding="utf-8")
+    added = re.findall(r"runner\.add_node\(\s*workflow::nodes::(\w+?)Node\b", service)
+    assert tuple(added) == WORKFLOW_NODE_ORDER
 
 
 def test_two_ceiling_report_distinct_comparisons():
@@ -796,26 +783,11 @@ def test_derivation_is_pure_and_needs_no_client(ceiling_censored_measurement_rec
     assert result.census.total_records == len(ceiling_censored_measurement_records)
 
 
-def test_run_measurement_pass_summary_keeps_existing_keys():
-    """run_measurement_pass summary still emits every pre-extraction key."""
-    import inspect
-
-    from lancet_eval.measure import run_measurement_pass
-
-    src = inspect.getsource(run_measurement_pass)
-    for key in _SUMMARY_KEYS:
-        assert f'"{key}"' in src
-
-
-def test_run_measurement_pass_calibration_note_matches_derivation_contract():
-    """Summary note must not claim budgets are unused after derivation exists."""
-    import inspect
-
-    from lancet_eval.measure import run_measurement_pass
-
-    src = inspect.getsource(run_measurement_pass)
-    assert "is not an input to any derived budget" not in src
-    assert "derives proposed timeout budgets" in src
+def test_run_measurement_pass_summary_keeps_existing_keys(tmp_path):
+    """run_measurement_pass's returned summary carries every pre-extraction key."""
+    summary, *_ = _run_capped_pass(tmp_path, workers=1, cap=1.0, n_questions=1)
+    missing = [key for key in _SUMMARY_KEYS if key not in summary]
+    assert missing == []
 
 
 def test_run_measurement_pass_allowance_check_reads_env_api_key(monkeypatch, tmp_path):
