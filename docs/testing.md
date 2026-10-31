@@ -113,7 +113,8 @@ Rules for lanes:
 - Leave `CARGO_TARGET_DIR` unset, so each lane builds in its own `engine/target`. sccache puts `CARGO_*`
   environment variables in the cache key, `CARGO_BUILD_JOBS` excepted, so a lane that sets one the others don't gets
   no hits from them: a measured second worktree hit 0.5% with `CARGO_TARGET_DIR` set and 63% without it. The same
-  holds for the `CARGO_PROFILE_RELEASE_*` variables below: lanes that set them identically share release builds.
+  holds for the `CARGO_PROFILE_RELEASE_*` variables below: lanes that set them identically should share release builds
+  (not measured).
 - Never run `sccache --stop-server` while another lane builds: its compiles fail.
 - `sccache --show-stats` shows the hit rate. Expect about 60% on a second worktree. These never come from the cache:
   the `engine` crate itself (built incrementally), binaries and proc-macro crates, build scripts, and C code that
@@ -171,8 +172,8 @@ every 30 s).
   debug info, which this profile also gives dependencies, so the cached `engine/target` should not grow. Not yet
   observed: no Rust cache had been saved when #56 was measured, because the first `main` run timed out on a test hang
   (#59), so neither the cache size nor a warm CI engine time is known. The PR run of #57 built cold in 16.5 minutes
-  (clippy 5.5, `cargo test` build 8). The `Cargo.toml` change gives the cache a new key once; the old entry ages out
-  after 7 days.
+  (clippy 5.5 min, `cargo test` build 8 min, the rest setup and test runs). The `Cargo.toml` change gives the cache a
+  new key once; the old entry ages out after 7 days.
 
 ## Slow tier
 
