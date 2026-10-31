@@ -22,6 +22,21 @@ For the run-lane worker. Follow the steps in order, one command at a time. The p
 - **A non-zero exit stops the run.** Tell the user what failed, with the last lines of output. The only expected
   non-zero exit is the one step 4.4 names. Resuming a paid command (same command again; `run` and `run-external`
   default to `--resume`) needs a new yes.
+- **Count after each drive** (#75). A drive can stop early and still exit 0: the rerank degrade tripwire (D-262) and
+  a spend cap both print `Drive stopped early` in yellow. An `error` record is a missing pair. After steps 3.2, 3.5,
+  4.2 and 4.4, read the drive's output for `Drive stopped early`, then count the journal's records per arm and
+  outcome, the later record of a question and arm winning, as `score` reads them (`<RUN>` is `<S0_RUN>` or
+  `<S1_RUN>`):
+
+  ```bash
+  uv run --project eval python -c "from collections import Counter; from lancet_eval.journal import load_records; from lancet_eval.pairing import deduplicate_by_arm; rs, _ = deduplicate_by_arm(load_records('<RUN>/journal.jsonl')); [print(arm, outcome, n) for (arm, outcome), n in sorted(Counter((r.graph_arm, r.outcome) for r in rs).items())]; [print('error', r.graph_arm, r.question_id, r.error_type, r.error) for r in rs if r.outcome == 'error']"
+  ```
+
+  It prints one line per arm and outcome, then one `error` line per error record. Each drive step gives the count
+  each arm must reach (success plus error). On `Drive stopped early`, or on an arm short of its count, stop and tell
+  the user, with the counts and every `error` line. Re-driving after a tripwire halt is the user's decision (D-174):
+  ask them, and run nothing until they answer. With every count met, go on, and name every `error` line in the run
+  report.
 - **Never touch** `data/lancedb-eval`, the `lancet_eval` schema or `eval/corpora/multihop_rag/{heldout_split.json,
   questions.heldout.jsonl,diag_selection.json}`. No `reseed` without `--store eval-s1`.
 - **Held-out budget** (D-237): S0 is held-out read 1 of 2. Steps 3.2, 3.4 and 3.5 are that one read. Nothing else
@@ -49,7 +64,9 @@ Token counts used below: the 346 seeded documents hold 812,734 o200k body tokens
 2,700 to 3,000 prompt and about 300 completion tokens (`2026-10-10-levers-heldout`), so one Lancet question costs about
 $0.0011 with rerank. The engine caps the evidence at 8,192 tokens and an answer at 2,048, so one attempt stays under
 about $0.0042; the ceilings below assume every question pays that once. `run` retries a failed question up to twice
-(`--retries 2`), which can add to the ceiling for the questions that fail.
+(`--retries 2`), and a
+resumed `run-external` re-reads an `error` question up to twice; both can add to the ceiling for the questions that
+fail.
 
 | Step | Estimate | Ceiling |
 |---|---|---|
@@ -81,7 +98,16 @@ engine once:
 cargo build --manifest-path engine/Cargo.toml --locked
 ```
 
-The generate-only bin (`generate_from_context`) is built by cargo on its first use in step 3.
+Then build the two release bins the harness runs through `cargo run --release` (#74): `inspect_lancedb` for the
+index identity check (steps 1.5, 3.1, 3.2, 4.1 to 4.4) and `generate_from_context` for steps 3.3 and 3.5. The harness
+gives each such call 1800 s, and a cold release build takes about 70-74 minutes on this machine (`docs/testing.md`),
+so a build left to the first call times out, possibly after a paid step. Start it with `run_in_background`:
+
+```bash
+cargo build --manifest-path engine/Cargo.toml --locked --release --bin inspect_lancedb --bin generate_from_context
+```
+
+Start no *Paid* step until this build has exited 0. A failed build stops the run.
 
 ## Step 1: S1 store build (Store build, Paid)
 
@@ -219,6 +245,8 @@ LANCET_ENV=eval ./engine/target/debug/engine
    LANCET_ENV=eval uv run --project eval lancet-eval run --corpus multihop_rag_s0_heldout --arms hybrid+rerank+metadata --out <S0_RUN>/journal.jsonl --stage-cap 100
    ```
 
+   Count (*Count after each drive*): `hybrid+rerank+metadata` must reach 351.
+
 3. Prompt parity (D-247), offline and free. It re-packs each Lancet row and compares it with the checkpointed
    prompt.
 
@@ -241,6 +269,11 @@ LANCET_ENV=eval ./engine/target/debug/engine
    ```bash
    LANCET_ENV=eval uv run --project eval lancet-eval run-external --corpus multihop_rag_s0_heldout --arm llamaindex --export <S0_RUN>/llamaindex/context_export.jsonl --out <S0_RUN>/journal.jsonl --stage-cap 100
    ```
+
+   Count (*Count after each drive*): both arms must reach 351. `run` retried each failed Lancet question twice
+   inside the drive; `run-external` gives the `llamaindex` arm the same budget across resumes, re-reading only its
+   `error` questions, each at most twice. So while `llamaindex` has `error` lines, ask the user for a yes to run the
+   same command again (each re-read costs about $0.001 per question), at most twice, and count after each.
 
 6. Score and compare, offline and free. Writes `report.json`, `report.md`, `lever-comparison.json` and
    `lever-comparison.md` in `<S0_RUN>`.
@@ -279,6 +312,8 @@ done. Each store's arms are driven against their own stack into one journal (D-2
    LANCET_ENV=eval uv run --project eval lancet-eval run --corpus multihop_rag_s1_dev --arms small/hybrid+rerank+metadata,small/hybrid+graph+rerank+metadata --out <S1_RUN>/journal.jsonl --stage-cap 100
    ```
 
+   Count (*Count after each drive*): both small arms must reach 100.
+
    Stop the v1.0 stack and start the S1 stack (step 1.2).
 
 3. Preflight the S1 store, a few cents:
@@ -296,7 +331,10 @@ done. Each store's arms are driven against their own stack into one journal (D-2
 
    While #65 is open, this drive's end-of-drive export fails on the small-store records (their checkpoints are in
    `lancet_eval`, not `lancet_eval_s1`) and `run` exits non-zero after journalling every record. This is the one
-   expected non-zero exit: go on to step 4.5. Any other failure stops the run.
+   expected non-zero exit. Any other failure stops the run.
+
+   Count (*Count after each drive*), also after that expected exit: all four arms must reach 100. Then go on to step
+   4.5.
 
 5. Build the two-store context export, offline. Keep the S1 stack's Postgres up (it is the same container). Once #65
    has cleared:
