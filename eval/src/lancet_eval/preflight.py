@@ -24,6 +24,7 @@ from lancet_eval.config import (
     store_for_settings,
     store_target_failures,
 )
+from lancet_eval.corpus import StoreChunking
 from lancet_eval.seed import (
     assert_schema_isolated,
     get_document_map_path,
@@ -1651,8 +1652,6 @@ def check_store_chunking(
     name = "store_chunking"
     try:
         expected = store_chunking_of(corpus_config, store)
-        if expected is None:
-            raise ValueError(f"store {store.name!r} declares no chunking to check")
         schema = quote_pg_identifier(assert_schema_isolated(settings))
         output = run_psql(
             settings,
@@ -1667,22 +1666,31 @@ def check_store_chunking(
             detail={"store": store.name},
         )
 
-    want = (expected.chunk_strategy, expected.chunk_size, expected.chunk_overlap)
-    found: dict[str, int] = {}
+    def label(c: StoreChunking) -> str:
+        return f"{c.chunk_strategy} {c.chunk_size}/{c.chunk_overlap}"
+
+    found: dict[StoreChunking, int] = {}
     for line in output.splitlines():
         if line.strip():
             strategy, size, overlap, count = line.strip().split("|")
-            found[f"{strategy} {size}/{overlap}"] = int(count)
-    want_key = f"{want[0]} {want[1]}/{want[2]}"
-    detail = {"store": store.name, "expected": want_key, "found": found}
-    if list(found) != [want_key]:
+            chunking = StoreChunking(
+                chunk_strategy=strategy, chunk_size=size, chunk_overlap=overlap
+            )
+            found[chunking] = int(count)
+    detail = {
+        "store": store.name,
+        "expected": label(expected) if expected else None,
+        "found": {label(c): n for c, n in found.items()},
+    }
+    if expected is None or list(found) != [expected]:
+        want = label(expected) if expected else "a declared chunking"
         return PreflightCheckResult(
             name=name,
             passed=False,
             message=(
-                f"Store {store.name!r} documents were not all chunked {want_key} as "
+                f"Store {store.name!r} documents were not all chunked {want} as "
                 f"{corpus_config.name!r} declares; found "
-                f"{found or 'no documents'}. Reseed the store."
+                f"{detail['found'] or 'no documents'}. Reseed the store."
             ),
             detail=detail,
         )
@@ -1690,8 +1698,8 @@ def check_store_chunking(
         name=name,
         passed=True,
         message=(
-            f"All {found[want_key]} documents in store {store.name!r} were chunked "
-            f"{want_key}."
+            f"All {found[expected]} documents in store {store.name!r} were chunked "
+            f"{label(expected)}."
         ),
         detail=detail,
     )

@@ -655,7 +655,7 @@ def test_s1_reseed_resets_only_the_s1_schema_and_store(
     )
 
     reseed_corpus(
-        "multihop_rag",
+        "multihop_rag_s1_dev",
         confirmation=True,
         settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
         store=S1_STORE,
@@ -808,7 +808,7 @@ def test_s1_reseed_keeps_the_v1_document_map(
     )
 
     reseed_corpus(
-        "multihop_rag",
+        "multihop_rag_s1_dev",
         confirmation=True,
         settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
         store=S1_STORE,
@@ -1000,3 +1000,23 @@ def test_s1_seed_without_the_stores_entry_is_refused_before_any_upload(
 
     assert httpx_mock.get_requests() == []
     assert not get_document_map_path("multihop_rag", S1_STORE).exists()
+
+
+def test_s1_reseed_without_the_stores_entry_deletes_nothing(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path]
+) -> None:
+    """#67: reseed checks the corpus's chunking before it drops the schema or the
+    store, so a corpus with no [stores.merged] entry never wipes a built S1 store."""
+    from lancet_eval.config import S1_STORE
+
+    v1_canary, s1_canary = s1_repo
+    with pytest.raises(SeedError, match=r"\[stores\.merged\]"):
+        reseed_corpus(
+            "multihop_rag",
+            confirmation=True,
+            settings=_s1_settings("./data/lancedb-eval-s1", "lancet_eval_s1"),
+            store=S1_STORE,
+        )
+    assert v1_canary.exists()
+    assert s1_canary.exists()
+    assert httpx_mock.get_requests() == []

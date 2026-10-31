@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval.arms import STORE_PREFIXES
 from lancet_eval.config import (
     EVAL_STORES,
     V1_STORE,
@@ -410,10 +411,10 @@ def store_chunking_of(corpus: CorpusConfig, store: EvalStore) -> StoreChunking |
     """
     if store == V1_STORE:
         return None
-    from lancet_eval.arms import STORE_PREFIXES
-
     prefix = next((p for p, s in STORE_PREFIXES.items() if s == store.name), None)
-    chunking = corpus.store_chunking.get(prefix) if prefix else None
+    if prefix is None:
+        raise SeedError(f"Store {store.name!r} has no arm prefix (D-251)")
+    chunking = corpus.store_chunking.get(prefix)
     if chunking is None:
         raise SeedError(
             f"Corpus {corpus.name!r} has no [stores.{prefix}] entry for store "
@@ -627,6 +628,9 @@ def reseed_corpus(
 
     settings = settings or load_settings(store=store)
     assert_store_target(settings, store)
+    # #67: a store whose chunking the corpus does not declare is refused here, before
+    # anything is dropped, not by seed_corpus after the store is gone.
+    store_chunking_of(load_corpus(corpus_name), store)
 
     # Verify store isolation before destroying anything
     eval_lance = Path(settings.lancedb_path).resolve()

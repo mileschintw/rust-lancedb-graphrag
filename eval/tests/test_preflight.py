@@ -955,3 +955,77 @@ def test_run_preflight_checks_checks_chunking_only_off_the_v1_store(
     else:
         assert len(chunking) == 1
         assert not chunking[0].passed
+
+
+def test_s1_preflight_passes_identity_and_chunking_on_a_correct_s1_store(
+    httpx_mock: HTTPXMock,
+    s1_overlay_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#67, #69: on an S1 store whose PostgreSQL rows, LanceDB rows and S1 map agree
+    and whose documents used structure-merge 256/25, `preflight --corpus
+    multihop_rag_s1_dev --store eval-s1` passes index_identity and store_chunking,
+    reading only the S1 schema."""
+    from lancet_eval.config import S1_STORE
+
+    monkeypatch.setattr("lancet_eval.seed.repo_root", lambda: s1_overlay_root)
+    save_document_map_atomic(
+        DocumentMap(
+            corpus="multihop_rag_s1_dev",
+            entries={
+                _DOC_S1: DocumentMapEntry(corpus_id="Article S1", document_id=_DOC_S1)
+            },
+        ),
+        S1_STORE,
+    )
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_lancedb_document_ids",
+        lambda path: {
+            "documents": [_DOC_S1],
+            "nodes": [_DOC_S1],
+            "edges": [],
+            "entity_edges": [],
+            "staged_documents_v2_rows": 0,
+        },
+    )
+    sql_seen: list[str] = []
+
+    def fake_psql(settings: EvalSettings, sql: str, **kw: object) -> str:
+        sql_seen.append(sql)
+        if "chunk_strategy" in sql:
+            return "structure-merge|256|25|1\n"
+        return f"{_DOC_S1}|completed\n"
+
+    # conftest fakes `list_pg_documents` outside test_identity.py; load a fresh copy
+    # of the real one, so the S1 schema's SQL runs through `run_psql`.
+    import importlib.util
+
+    spec = importlib.util.find_spec("lancet_eval.identity")
+    assert spec is not None and spec.loader is not None
+    real_identity = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(real_identity)
+    monkeypatch.setattr(real_identity, "run_psql", fake_psql)
+    monkeypatch.setattr(
+        "lancet_eval.identity.list_pg_documents", real_identity.list_pg_documents
+    )
+    monkeypatch.setattr("lancet_eval.preflight.run_psql", fake_psql)
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("Connection refused")
+
+    httpx_mock.add_callback(error_handler, is_reusable=True)
+
+    results = {
+        r.name: r
+        for r in run_preflight_checks(
+            corpus_name="multihop_rag_s1_dev",
+            settings=_s1_chunking_settings(),
+            store=S1_STORE,
+        )
+    }
+
+    assert results["store_isolation"].passed, results["store_isolation"].message
+    assert results["index_identity"].passed, results["index_identity"].message
+    assert results["store_chunking"].passed, results["store_chunking"].message
+    assert len(sql_seen) == 2
+    assert all("lancet_eval_s1" in sql for sql in sql_seen)
