@@ -114,3 +114,7 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 ## audit-s012 finished (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Read-only paper audit of the S0/S1/S2 pipelines, session local_0b05ece6-b691-41ff-ab64-1658bbffdae1. It had no branch commits and no PR (`ready` lists it as "branch not pushed", which is expected). It filed #74 to #82 and commented on #49, #53 and #78; the report is `reports/audit-s012.md`. S0 had no code blocker. #74, #75 and #76 were carried into brief run-s01, #79 got lane 79, #80 and #82 got lane 80, which failed to start, #81 got lane 81, and #77 and #78 block nothing.
+
+## Lane 79 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 79, #79 (S1 seed failed rows, run guide recovery, S1 document map commit): session local_1bcc1f38-7e77-4d99-8d8c-a80616cd1707, branch `claude/lane-79-415c90` @ 17801a6c. PR #85 merged 2026-10-31 under the auto-PR rule after `ci` passed (engine 9m3s, eval 2m6s). #79 closed. Main checkout not fast-forwarded (run-s01 active).

@@ -34,7 +34,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | 59 | #59 | local_c2bb79da-b215-4c0b-932a-492cfac1a805 (`claude/lane-59-c47b6e`) | started | — |
 | 50 | #50 | local_966633ab-d14a-4d0a-b91e-32999fa2a658 (`claude/lane-50-c453ac`) | started 2026-10-30 23:35 -0700 on the user's typed "Start 50" (critical path to the 2026-11-02 deadline) | — |
 | run-s01 | none (S0 run) | local_84c49113-d407-4be2-bb02-3ba19e84b3a8 (app put it in the coordinator worktree despite cwd; told 2026-10-31 to run every command in D:/Repos/lancet) | paused for the reboot (steps 0, 2 and the rehearsal done; no held-out read). S0 with `PYTHONUTF8=1` (#84 workaround, user's choice) after the reboot; asks before 3.2; **do not fast-forward the main checkout while it runs** | — |
-| 79 | #79 | local_1bcc1f38-7e77-4d99-8d8c-a80616cd1707 | done @ 17801a6c; PR #85 open, merge on green (auto-PR rule); recheck CI after the reboot | — |
 | 80 | #80 #82 | local_73af9a6c-5f1e-47a9-9bd6-b2b6e5122e73 | FAILED TO START (app: "Background full checkout failed: config-hooks-refused"); the user can retry from that session; not restarted | — |
 | 81 | #81 | local_73abd391-fc59-4104-8901-ddc3156a2e76 | parked; #68 merged (PR #83). Send GO #81 after the reboot (held so it starts no work before the reboot) | GO #81 after #68 merges |
 
@@ -69,7 +68,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #76 | 2 | — | none set | `provider_stub` /rerank, LlamaIndex endpoint override, S0 rehearsal corpus (audit-s012) | free; tonight replaced by a paid 3-question rehearsal |
 | #77 | 2 | — | none set | drive commands print no D-258 cost estimate (audit-s012) | free; blocks nothing |
 | #78 | 2 | — | none set | D-237 held-out reads not counted; export skips split gates (audit-s012) | free; blocks nothing |
-| #79 | 1 | — | none set | `experiments/v1.1/RUN-S0-S1.md` steps 1.4/1.5 (`status = 'completed'` filter, `identity pg-delete-extras --store eval-s1`), After-the-run commit list (`document_map.eval-s1.json`) (audit-s012) | free; blocks S1 step 1 checks |
 | #80 | 1 | — | none set | `replay.py` (corpus written into S2 journal; source role check), `cli.py` › `replay-init` (`--corpus`) (audit-s012) | free; blocks S2 scoring; same file as #82 → one lane |
 | #81 | 1 | — | none set | `lever_comparison.py`/`measure.py` reader rows: deepseek priced at budget ceiling, per-reader rows unpaired (audit-s012) | free; S2 report |
 | #82 | 1 | — | none set | `replay.py`/`provenance.py` replay clauses: native Anthropic fallback cannot pass; reader prompt never compared (audit-s012) | free; blocks the Q4 fallback; pair with #80 |
