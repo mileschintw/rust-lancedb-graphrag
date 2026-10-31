@@ -173,11 +173,6 @@ impl OpenRouterGenerationConfig {
         self
     }
 
-    /// The price cap the chat request carries (D-271).
-    pub fn max_price(&self) -> MaxPrice {
-        self.max_price
-    }
-
     /// The provider order and price cap the chat request carries (D-191, D-271).
     pub(crate) fn provider_pin(&self) -> ProviderPin {
         ProviderPin::new(self.provider_order.clone(), self.max_price)

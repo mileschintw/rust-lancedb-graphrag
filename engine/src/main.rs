@@ -136,12 +136,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     // The two 768s are the config's generation limits, which extraction does not send: its
-    // request carries its own output cap, `EXTRACTION_MAX_COMPLETION_TOKENS` (D-272).
+    // request carries its own output cap, `EXTRACTION_MAX_COMPLETION_TOKENS`, and its own
+    // timeout, `EXTRACTION_TIMEOUT` (D-272).
     let extraction_config = generation::openrouter::OpenRouterGenerationConfig::new(
         effective_settings.generation_model.clone(),
         effective_settings.chat_endpoint.clone(),
         effective_settings.model_metadata_endpoint.clone(),
-        Duration::from_secs(effective_settings.generation_timeout_secs),
+        graph::extraction::EXTRACTION_TIMEOUT,
         0.0,
         1.0,
         768,

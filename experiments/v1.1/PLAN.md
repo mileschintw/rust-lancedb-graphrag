@@ -357,7 +357,7 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   `provider[/variant][/region]`. That page does not list `wafer/us` itself; the slug is the owner's, read from the
   model's provider list. Set in `config/config.toml` (`generation_provider_order`, `generation_max_price_prompt`,
   `generation_max_price_completion`); not environment-overridable. Must merge before S1 step 4.2.
-- **D-272 Extraction output cap raised from 768 to 16,384 tokens** (owner: "停、修、重建 (Recommended)", 2026-10-31;
+- **D-272 Extraction output cap raised from 768 to 16,384 tokens, extraction timeout 120 s** (owner: "停、修、重建 (Recommended)", 2026-10-31;
   #118). The S1 seed lost about 18% of chunks to graph extraction: at 113 of 346 documents, 215 of 1,226 chunks failed
   all 3 attempts, every one a SchemaValidation "EOF while parsing", a truncated JSON answer. The engine built the
   extraction request's `max_completion_tokens` from a hard-coded 768 in `engine/src/main.rs` (not from
@@ -366,8 +366,14 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   (which stop at 4,096). Sizing: a schema-maximal answer (32 entities, 64 relations, every string at `maxLength`,
   pretty-printed) is about 35,600 bytes, estimated at about 11,900 tokens at 3 bytes a token; 16,384 holds that with a
   25% margin, and a test pins it. Billing is per token produced. wafer/us lists a max completion of 943,718 tokens
-  (OpenRouter endpoints API, 2026-10-31). The seed was stopped; the S1 store is rebuilt after this merges. The
-  extraction timeout is still `generation_timeout_secs` (30 s); a very long answer could now hit it instead.
+  (OpenRouter endpoints API, 2026-10-31). The seed was stopped; the S1 store is rebuilt after this merges.
+  Extraction also gets its own HTTP timeout, `EXTRACTION_TIMEOUT = 120 s` (the coordinator's call within the owner's
+  answer above): at wafer/us's P50 of about 112 tokens/s a schema-maximal answer takes about 106 s, and 2,000 to 4,000
+  tokens can pass 30 s at its P99 of about 43 tokens/s, so the old 30 s would turn truncations into timeouts.
+  Generation keeps `generation_timeout_secs = 30` and `max_output_tokens = 2048`, so S0/S1 generation stays
+  comparable. The token estimate assumes English text; a non-ASCII maximal answer (about one token per character)
+  would not fit, which the MultiHop-RAG news corpus does not reach. The rebuild's `extraction_attempt` outcomes
+  (`call_failed` with a timeout or a truncation) are the check.
 
 ## Model access
 

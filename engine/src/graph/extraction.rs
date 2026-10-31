@@ -4,6 +4,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     sync::Arc,
     sync::Mutex,
+    time::Duration,
 };
 
 use reqwest::Client;
@@ -24,6 +25,15 @@ pub const MIN_CHUNK_CONTENT_LENGTH: usize = 40;
 /// estimated at 11,900 tokens at 3 bytes a token; 16,384 holds that with a 25% margin. Billing
 /// is per token produced, so the headroom costs nothing on ordinary answers.
 pub const EXTRACTION_MAX_COMPLETION_TOKENS: usize = 16_384;
+
+/// The HTTP timeout of one extraction attempt (D-272), apart from generation's
+/// `generation_timeout_secs`.
+///
+/// With [`EXTRACTION_MAX_COMPLETION_TOKENS`] raised, a long answer would otherwise trade a
+/// truncation for a timeout: at wafer/us's P50 of about 112 tokens/s a schema-maximal answer of
+/// about 11,900 tokens takes about 106 s, and 2,000 to 4,000 tokens can pass 30 s at its P99 of
+/// about 43 tokens/s.
+pub const EXTRACTION_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// A request to extract entities and relationships from a single chunk.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

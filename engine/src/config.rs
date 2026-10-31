@@ -867,12 +867,13 @@ pub struct OpenRouterSettings {
     pub top_p: f64,
     #[serde(default = "default_max_output_tokens")]
     pub max_output_tokens: u32,
-    /// OpenRouter provider slugs the generation chat request is pinned to, in order (D-191,
-    /// amending D-96).
+    /// OpenRouter provider slugs the generation and extraction chat requests are pinned to, in
+    /// order (D-191 amending D-96, D-271).
     ///
-    /// A non-empty list is sent as `provider.order` with `allow_fallbacks = false`, beside
-    /// `require_parameters = true`. An empty list sends no pin and keeps the old request bytes.
-    /// Rerank keeps its own D-131 body. Not overridable by environment.
+    /// A non-empty list is sent as `provider.order` with `allow_fallbacks = false`; generation
+    /// sends it beside `require_parameters = true`, extraction alone. An empty list sends no pin
+    /// and keeps the old request bytes. Rerank keeps its own D-131 body. Not overridable by
+    /// environment.
     #[serde(default)]
     pub generation_provider_order: Vec<String>,
     /// The most OpenRouter may charge per million prompt tokens for a generation or extraction

@@ -725,6 +725,33 @@ fn main_pins_the_extraction_and_generation_configs_to_the_configured_provider() 
     }
 }
 
+/// D-272: `main` builds the extraction client with extraction's own 120 s timeout, and the
+/// generation client keeps `generation_timeout_secs`.
+#[test]
+fn main_gives_extraction_its_own_timeout() {
+    assert_eq!(
+        crate::graph::extraction::EXTRACTION_TIMEOUT,
+        std::time::Duration::from_secs(120)
+    );
+    let main = include_str!("main.rs");
+    let span = |config: &str, client: &str| {
+        let start = main.find(config).expect("main builds the config");
+        let end = start + main[start..].find(client).expect("main builds the client");
+        &main[start..end]
+    };
+    let extraction = span(
+        "let extraction_config =",
+        "OpenRouterExtractionGenerator::new_with_config(",
+    );
+    assert!(extraction.contains("graph::extraction::EXTRACTION_TIMEOUT,"));
+    assert!(!extraction.contains("generation_timeout_secs"));
+    let generation = span(
+        "let generation_config =",
+        "OpenRouterGenerator::new_with_config(api_key, generation_config)",
+    );
+    assert!(generation.contains("Duration::from_secs(effective_settings.generation_timeout_secs)"));
+}
+
 /// Sets `name` to `value` under the caller's `ENV_MUTEX` guard, runs `load_settings`, and restores
 /// the prior value before returning the result.
 fn load_settings_with_env(name: &str, value: &str) -> Result<Settings, ::config::ConfigError> {
