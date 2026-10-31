@@ -46,11 +46,127 @@ job has its own limit (below). Measured on 2026-10-30 (#44), `CARGO_BUILD_JOBS=2
 | Go: `gateway-test-targets.sh` | — | 3 s | — |
 | Python: `pytest` | 428 s serial, 1 failure | 85 s with `-n auto` (325 s serial), no failure | 3 min |
 
-- A cold Rust build is not in the budget: about 20 minutes here (`cargo test --no-run`, 1,178 s). Keep
-  `engine/target` between runs.
+- A cold Rust build is not in the budget: 20 to 27 minutes here with `CARGO_BUILD_JOBS=2`. Keep `engine/target`
+  between runs, and use sccache to share dependency builds between worktrees ([Engine builds across
+  lanes](#engine-builds-across-lanes)).
 - The Go row before #44 is fast only because the engine was already built: without `-short`, `TestRAGQueryCrossRuntime`
   runs `cargo build` for the `engine` and `seed_rag_fixture` bins, a full build on a cold checkout.
 - A test that does not fit belongs in the slow tier. Mark it rather than raising the budget.
+
+## Engine builds across lanes
+
+Lanes build the engine at the same time, each in its own worktree, on one machine (12 logical cores, 32 GB RAM, of
+which about 12 GB is free while lanes run). Three settings keep that fast without running out of memory (#56).
+
+### Job count
+
+Set `CARGO_BUILD_JOBS` from how many lanes build the engine at the same time. Briefs and the coordinator's notes copy
+this table:
+
+| Lanes building at once | `CARGO_BUILD_JOBS` per lane |
+|---|---|
+| 1 | 6 |
+| 2 | 3 |
+| 3 or more | 2 |
+
+- The rule keeps about 6 rustc processes on the machine in total. On 2026-10-29, three or four lanes at the default
+  job count (12 each) ran it out of memory: `cl.exe` 0xc000012d, rustc `STATUS_STACK_BUFFER_OVERRUN` and "only metadata
+  stub found".
+- A lane counts as building while its cargo build or test build runs, not for the whole time it is open. Most of a
+  lane's time is editing and test runs, so two or three open lanes rarely all compile at once.
+- The higher rows are untested here: the figures below were measured at `CARGO_BUILD_JOBS=2` while other lanes
+  built. If a lane runs out of memory at its row's count, drop one row.
+- The job count is not part of sccache's cache key, so lanes on different rows still share dependency builds.
+
+### sccache
+
+[sccache](https://github.com/mozilla/sccache) caches each dependency crate's compiled output, so a second worktree
+reuses what the first one built. It shares builds across worktrees without a shared `CARGO_TARGET_DIR`, which would
+make the lanes wait on each other for cargo's lock on that directory.
+
+Setup, once per machine (Windows):
+
+1. Install it: `winget install --id Mozilla.sccache -e`.
+2. Put the cache on a disk with room, in `%APPDATA%\Mozilla\sccache\config\config`. Every sccache server reads this
+   file, whichever shell starts it:
+
+   ```toml
+   [cache.disk]
+   dir = 'D:\sccache'
+   size = 42949672960 # 40 GiB
+   ```
+
+   `SCCACHE_DIR` and `SCCACHE_CACHE_SIZE`, when set, override the file. A server keeps the settings it started with
+   until it stops after 10 idle minutes.
+3. Turn it on for every cargo build, in the user's `%USERPROFILE%\.cargo\config.toml`:
+
+   ```toml
+   [build]
+   rustc-wrapper = "sccache"
+   ```
+
+   Keep `rustc-wrapper` out of the repository's `.cargo/config.toml`: CI has no sccache.
+
+Rules for lanes:
+
+- Don't set `CARGO_TARGET_DIR`, or any other `CARGO_*` variable that differs between lanes. sccache puts every
+  `CARGO_*` environment variable in the cache key, so such a lane gets no hits from other lanes: a measured second
+  worktree hit 0.5% with `CARGO_TARGET_DIR` set and 63% without it.
+- Never run `sccache --stop-server` while another lane builds: its compiles fail.
+- `sccache --show-stats` shows the hit rate. Expect about 60% on a second worktree. These never come from the cache:
+  the `engine` crate itself (built incrementally), binaries and proc-macro crates, build scripts, and C code that
+  build scripts compile.
+- Without sccache: run a build with `RUSTC_WRAPPER=` (empty) to bypass it, or skip the setup. Everything works the
+  same, only slower.
+
+Undo the setup: remove the `[build]` lines from `%USERPROFILE%\.cargo\config.toml`, delete
+`%APPDATA%\Mozilla\sccache\config\config` and the `SCCACHE_DIR`/`SCCACHE_CACHE_SIZE` user variables if set, run
+`winget uninstall Mozilla.sccache`, and delete `D:\sccache`.
+
+### Build profile
+
+- `engine/Cargo.toml` builds `dev` and `test` with `debug = "line-tables-only"` (file and line in backtraces) and
+  dependencies with no debug info. A cold `engine/target` went from 45 GB to 9.7 GB. CI turns debug info off for the
+  `engine` crate too (`CARGO_PROFILE_DEV_DEBUG=0`).
+- The repository's `.cargo/config.toml` links with `rust-lld` on Windows; it ships with the MSVC toolchain. Linux
+  toolchains already use lld. Cargo reads that file from the directory it runs in upward, so run cargo from inside the
+  repository (the commands in this file run from the root).
+
+### Integration binary
+
+The integration tier needs the release `generate_from_context`, which the harness builds with `cargo run --release`.
+For the tests, build it at `opt-level = 1`, about half the time of a full release build:
+
+```bash
+export CARGO_PROFILE_RELEASE_OPT_LEVEL=1 CARGO_PROFILE_RELEASE_INCREMENTAL=true
+cargo build --manifest-path engine/Cargo.toml --locked --release --bin generate_from_context
+LANCET_EVAL_INTEGRATION=1 uv run --project eval pytest eval/tests/test_run_external.py eval/tests/test_prompt_parity.py
+```
+
+- Keep both variables set for the pytest run too, or the harness's `cargo run --release` rebuilds at the full
+  `opt-level = 3`. Each switch between the two rebuilds the release binaries.
+- The prompt-parity and `provider_stub` tests pass at `opt-level = 1` (45 passed); the optimisation level does not
+  change what the engine sends.
+- Build eval drives, `inspect_lancedb` and anything you ship without these variables.
+
+### Measurements
+
+Measured on 2026-10-30 and 2026-10-31 (#56), `CARGO_BUILD_JOBS=2`, rust-lld (the machine's own cargo config already
+used it before #56). "Other builds" is how many other lanes' cargo processes ran during the measurement (sampled
+every 30 s).
+
+| Build | Before #56 | After #56 | Other builds |
+|---|---|---|---|
+| Cold `cargo test` (build, then run) | 1,605 s (build 25 m 25 s) | 1,430 s (build 22 m 04 s), sccache filling an empty cache | 1 for all of before; 1, and 2 for a quarter of after |
+| `cargo test` in a second worktree, sccache warm | same as cold | 991 s (build 15 m 04 s), 63% hits | none for most of it, 1 for a fifth |
+| `engine/target` after a cold `cargo test` | 45 GB | 9.7 GB | — |
+| Release `generate_from_context` | about 74 min (lanes 14 and 44, #56's issue) | 37 m 17 s at `opt-level = 1` | 0 to 2 |
+| Integration tier, bin built | — | 35 s, 45 passed | — |
+
+- The before row for the release build comes from earlier lanes on this machine and was not re-run here.
+- CI caches the dependency build with `Swatinem/rust-cache`. #56 changes no CI setting: CI already builds with no
+  debug info, which this profile also gives dependencies, so the cached `engine/target` does not grow. The
+  `Cargo.toml` change gives the cache a new key once; the old entry ages out after 7 days.
 
 ## Slow tier
 
@@ -77,9 +193,9 @@ What each command adds:
   runs the bins it built.
 - `LANCET_EVAL_INTEGRATION=1` builds the `generate_from_context` bin in release mode and runs it against the loopback
   `provider_stub` (seam S-C). The harness gives each `cargo run --release` 30 minutes, so a cold release build that
-  takes longer times the tests out (about 70 minutes here with `CARGO_BUILD_JOBS=2`). Build the bin first with
-  `cargo build --manifest-path engine/Cargo.toml --locked --release --bin generate_from_context`; the tests then take
-  about 10 seconds.
+  takes longer times the tests out (about 70 minutes here with `CARGO_BUILD_JOBS=2`, 37 minutes at `opt-level = 1`).
+  Build the bin first, at `opt-level = 1` ([Integration binary](#integration-binary)); the tests then take about
+  30 seconds.
 
 None of them makes a paid call. The v1.0 drive-2 re-score
 (`test_score_deterministic.py::test_rescore_of_the_recorded_drive2_reproduces_its_report`) and the held-out
