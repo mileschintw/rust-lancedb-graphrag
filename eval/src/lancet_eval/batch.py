@@ -13,16 +13,22 @@ refuses), writes the manifest, then submits one batch whose ``custom_id`` is the
 question ID. Questions are taken in the base arm's journal order:
 
 - by default, every base success question the arm holds no record of; ``--limit N``
-  takes the first N, so a pilot and a later submit read disjoint questions;
+  takes the first N, so a pilot and a later submit read disjoint questions. ``--limit``
+  is for a pilot run only (``replay-init --pilot``, #109): a pilot's records could not
+  be replaced in a run of record once the pilot moves a reader to another target
+  (D-260), and no arm of a run of record is run halfway (D-258);
 - with ``retry_errors``, only the questions whose latest record is a request that
   produced no answer (``RETRYABLE``: errored, expired, canceled, or missing from the
   results); never a ``base_error``, an answer ``render`` rejected, or a response that
   arrived unreadable, since those were billed.
 
-It refuses while the arm has a pending batch, and when nothing is left to submit
-(every question already has a record). Each base error record gets one reader error
-record (``BASE_ERROR``), since there is no row to pack and completeness needs every
-question under every arm. They are journalled once the endpoint accepts the batch,
+In a run of record it first refuses unless D-73 holds against the journal header's
+``created_at`` (``replay.require_d73``), the gate ``compare-levers`` applies after the
+spend, so a constant committed or edited after ``replay-init`` stops the submit, not
+the report. It refuses while the arm has a pending batch, and when nothing is left to
+submit (every question already has a record). Each base error record gets one reader
+error record (``BASE_ERROR``), since there is no row to pack and completeness needs
+every question under every arm. They are journalled once the endpoint accepts the batch,
 so a refused submit writes nothing to the journal; the one exception is a submit
 with nothing to send, which journals them and then refuses.
 
@@ -108,7 +114,10 @@ from lancet_eval.reader_request import (
 from lancet_eval.replay import (
     JOURNAL_FILE,
     REPLAY_SOURCE_KEY,
+    ReplayError,
     export_row_sha256,
+    is_pilot_run,
+    require_d73,
     source_row_hashes,
 )
 
@@ -180,6 +189,7 @@ class _Run:
     readers: dict[str, ReaderDeclaration]
     records: list[RunRecord]
     arms: set[str]
+    token: str
 
 
 def _listed(problems: Sequence[str]) -> str:
@@ -206,7 +216,35 @@ def _load_run(run: Path) -> _Run:
     except preregistration.PreregistrationError as exc:
         raise BatchError(f"the S2 pre-registration: {exc}") from exc
     run_arms = {canonical_arm(a) for a in config.arms}
-    return _Run(journal, corpus, header, readers, load_records(journal), run_arms)
+    return _Run(
+        journal,
+        corpus,
+        header,
+        readers,
+        load_records(journal),
+        run_arms,
+        config.preregistration_token,
+    )
+
+
+def _require_record_ready(run: _Run, limit: int | None) -> None:
+    """Refuses ``--limit`` and a failed D-73 in a run of record (#109)."""
+    if limit is not None:
+        raise BatchError(
+            "--limit is for a pilot run: a run of record submits every question, and "
+            "a pilot's records could not be replaced in it; make the pilot with "
+            "replay-init --pilot in its own run directory"
+        )
+    created_at = run.header.get("created_at")
+    if isinstance(created_at, bool) or not isinstance(created_at, int | float):
+        raise BatchError(
+            "D-73: the journal header must carry a numeric created_at to prove the "
+            f"pre-registration predates the data (got {created_at!r})"
+        )
+    try:
+        require_d73(run.token, created_at=float(created_at))
+    except ReplayError as exc:
+        raise BatchError(str(exc)) from exc
 
 
 def _reader_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration]:
@@ -504,9 +542,9 @@ def submit(
 
     Raises:
         BatchError: If the run is not an S2 replay run, the arm is not a declared
-            reader arm of its corpus, a batch of the arm is pending, nothing is left
-            to submit, the bin fails, or a row fails to pack, match its prompt or
-            rewrite.
+            reader arm of its corpus, a run of record gets ``limit`` or fails D-73, a
+            batch of the arm is pending, nothing is left to submit, the bin fails, or
+            a row fails to pack, match its prompt or rewrite.
         BatchClientError: If the endpoint refuses the batch, or its API key is not
             set.
     """
@@ -515,6 +553,9 @@ def submit(
     run_dir = Path(run)
     state = _load_run(run_dir)
     label, declaration = _reader_arm(arm, state)
+    pilot = is_pilot_run(state.header)
+    if not pilot:
+        _require_record_ready(state, limit)
     pending = _pending(run_dir, label)
     if pending:
         raise BatchError(
@@ -543,6 +584,11 @@ def submit(
     spent, _ = compute_spend(
         list(held.values()), include_embeddings=False, readers=state.readers
     )
+    if pilot:
+        echo(
+            "This is a pilot run (replay-init --pilot): its records are never the S2 "
+            "result; start the run of record with a fresh replay-init."
+        )
     echo(cost_estimate(packed, base, declaration, spent))
 
     client = client_factory(declaration.target)

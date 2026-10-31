@@ -382,12 +382,10 @@ def test_replay_init_refuses_a_constant_without_a_source_arm(
         pytest.skip("the type declares replay_source_arm (#110)")
     s1, _, _ = _s1(tmp_path, monkeypatch)
     full = rf.s2_prereg()
-    plain = thresholds.StagePreRegistration(
-        **{
-            f.name: getattr(full, f.name)
-            for f in dataclasses.fields(thresholds.StagePreRegistration)
-        }
-    )
+    plain = thresholds.StagePreRegistration(**{
+        f.name: getattr(full, f.name)
+        for f in dataclasses.fields(thresholds.StagePreRegistration)
+    })
     monkeypatch.setattr(thresholds, fx.TOKEN, plain, raising=False)
     with pytest.raises(ReplayError, match="replay_source_arm"):
         _init(s1, tmp_path / "s2")
