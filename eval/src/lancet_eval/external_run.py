@@ -24,6 +24,13 @@ wrote no line for each become an error record, never a missing one. The reader r
 with the ``evidence_metadata`` lever only (D-248: the document metadata reaches the
 reader in the same DocMeta tags as Lancet's metadata lever).
 
+A resume re-reads a question whose latest record is an error, until the question has
+had ``1 + EXTERNAL_RETRIES`` attempts (#75). `run` retries a failed question inside the
+drive (`--retries 2`); without the re-read, a transient reader failure would be final
+for the external arm only and drop more of its pairs. The new record is appended after
+the error one, and the journal's readers keep the later record of a question and arm
+(``pairing.deduplicate_by_arm``).
+
 The stage spend cap holds as it does for `run` (D-86): before each batch, the spend of
 every record in the journal (``measure.compute_spend``) is compared with the cap, and
 the drive stops before that batch once the spend reaches it. A batch already sent is
@@ -76,6 +83,10 @@ PIPELINE_CONFIG_FILE = "pipeline_config.json"
 
 #: The levers an external arm is read with (D-248).
 EXTERNAL_READER_LEVERS: tuple[str, ...] = ("evidence_metadata",)
+
+#: Re-reads a resume gives a question whose records are all errors; the same budget as
+#: `run`'s default `--retries 2`.
+EXTERNAL_RETRIES = 2
 
 #: Rows per bin call. Each call has one timeout (`parity.run_bin`), so a batch must
 #: finish well inside it at the reader's latency.
@@ -364,6 +375,21 @@ def _read(
     return [records[(r.question_id, r.arm)] for r in rows]
 
 
+def _rereadable(records: Sequence[RunRecord], *, max_retries: int) -> set[str]:
+    """Keys whose latest record is an error with retry budget left."""
+    attempts: dict[str, int] = {}
+    latest: dict[str, RunRecord] = {}
+    for record in records:
+        key = journal_key(record.corpus, record.question_id, record.graph_arm)
+        attempts[key] = attempts.get(key, 0) + 1 + len(record.prior_attempts)
+        latest[key] = record
+    return {
+        key
+        for key, record in latest.items()
+        if record.outcome == "error" and attempts[key] <= max_retries
+    }
+
+
 def _bin(
     runner: BinRunner,
     mode: str,
@@ -399,8 +425,9 @@ def run_external(
         stage_spend_cap: The stage spend cap in USD; finite and positive.
         pipeline_config: The arm's pipeline echo; `pipeline_config.json` beside
             `export_path` when None.
-        resume: Skip questions the journal already holds a record of. Without it the
-            journal must hold no record.
+        resume: Skip questions the journal already holds a record of, except an error
+            record with retry budget left (``EXTERNAL_RETRIES``), which is re-read.
+            Without it the journal must hold no record.
         runner: Runs the bin; ``bin_runner`` when None.
         git_repo: The repository the D-73 gate reads; the live one when None.
 
@@ -454,7 +481,12 @@ def run_external(
         split_sha=split_sha256(split) if split is not None else None,
         order_seed=split.order_seed if split is not None else None,
     )
-    remaining = [r for r in rows if journal_key(corpus, r.question_id, arm) not in done]
+    reread = _rereadable(journalled, max_retries=EXTERNAL_RETRIES)
+    remaining = [
+        r
+        for r in rows
+        if (key := journal_key(corpus, r.question_id, arm)) not in done or key in reread
+    ]
     # The rows go in first, so every record journalled below already has its row.
     _write_run_export(run_export, existing, rows)
     records: list[RunRecord] = []
