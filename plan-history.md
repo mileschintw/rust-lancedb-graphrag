@@ -2,6 +2,10 @@
 
 Finished work moved out of `plan.md`, newest first, for checking only; the plan is the source for anything current. Each block names when it moved and the coordinator that moved it.
 
+## Lane 54 merged (moved 2026-10-31, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
+
+- Lane 54, #54 Reader comparison and cost: session local_c8000942-9af7-443f-833d-077017fa96fd, branch `claude/lane-54-5835c0` @ 1af22049. PR #66 merged 2026-10-31 as f06a020b on the user's "開 PR，CI 過了就 merge (Recommended)" after `ci` passed (eval 2m3s). #54 closed. Eval fast tier 2726 passed; slow v1.0 re-score unchanged (35 passed). Interpretations accepted by the user: "answered" = `answer_usable` true on G; carried deepseek arms priced at `measure.GENERATION_*_PRICE_PER_1M` (0.14/1.28); batch rate = declared sync × 0.5; `reasoning_tokens` counted inside `completion_tokens`. Note for #53 is on its roadmap row (`compute_spend` needs `readers=`).
+
 ## Lane 47 merged (moved 2026-10-30, coordinator local_e5497074-397c-4170-ba22-60a6e066d35b)
 
 - Lane 47, #47 External evidence shows chunk_index=0: session local_f74dc425-7470-4904-974a-b8e78264bf9e, branch `claude/lane-47-239abf` @ a596c66a. PR #62 merged 2026-10-30 as 2c9ca064 on the user's "開 PR，CI 過了就 merge (Recommended)". The first engine job (14m49s) failed on the flaky `graph_augmentation_attempted_and_failed_is_observable_end_to_end` (tracing interest caching, unrelated; lane 59 fixes it). A rerun of the failed job passed (engine 12m13s), per the user's rerun-once rule. #47 closed. `chunk_index_of` parses `:` and `#`; Lancet pack byte-identical. Follow-up #61 (rebuild-hook race) was folded into lane 59. `engine/target` (49 GB) deleted. Engine CI time for #58: 12m13s on the rerun (> 8 min; decide after #56 merges).
