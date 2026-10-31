@@ -7467,6 +7467,16 @@ where
     }
 }
 
+/// Raises the graph budgets far past any CI stall, for the tests that read the
+/// `graph_augmentation` tag. A graph operation that runs out of budget ends with
+/// `GRAPH_TIMEOUT` and records no tag, and the default 2424 ms ran out on the 4-CPU CI
+/// runner under the full suite (#93). These tests check the tag, not the budget.
+fn lift_graph_budgets(service: &mut LancetServiceImpl) {
+    let workflow = &mut service.effective_settings.workflow;
+    workflow.graph_operation_timeout_ms = 60_000;
+    workflow.graph_node_timeout_ms = 120_000;
+}
+
 /// Test 1 (04.1-05 Task 2): a full `query_rag` call whose seed vector-search
 /// finds a matching entity and whose traversal returns at least one neighbor
 /// records `graph_augmentation = "succeeded"` on the request's tracing span.
@@ -7476,7 +7486,8 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
 
     let path = database_path("graph-aug-succeeded-observable");
     let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
-    let service = query_rag_graph_service_with_db(database).await;
+    let mut service = query_rag_graph_service_with_db(database).await;
+    lift_graph_budgets(&mut service);
 
     let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let layer = GraphAugmentationCaptureLayer {
@@ -7496,6 +7507,10 @@ async fn graph_augmentation_succeeded_is_observable_end_to_end() {
         "this fixture has no chunk evidence, only graph context"
     );
 
+    assert!(
+        !response.notices.iter().any(|n| n.code == "GRAPH_TIMEOUT"),
+        "the graph operation timed out, so no graph_augmentation tag was recorded"
+    );
     let captured = captured.lock().unwrap();
     assert_eq!(captured.as_slice(), ["succeeded"]);
 
@@ -7511,7 +7526,8 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
     use tracing_subscriber::layer::SubscriberExt;
 
     let path = database_path("graph-aug-no-match-observable");
-    let service = query_graph_service(&path).await;
+    let mut service = query_graph_service(&path).await;
+    lift_graph_budgets(&mut service);
 
     let captured: Arc<std::sync::Mutex<Vec<String>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let layer = GraphAugmentationCaptureLayer {
@@ -7531,6 +7547,10 @@ async fn graph_augmentation_no_match_found_is_observable_end_to_end() {
     .expect("query_rag returns Ok even when no entity matches and no chunk evidence exists");
     assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
 
+    assert!(
+        !response.notices.iter().any(|n| n.code == "GRAPH_TIMEOUT"),
+        "the graph operation timed out, so no graph_augmentation tag was recorded"
+    );
     let captured = captured.lock().unwrap();
     assert_eq!(captured.as_slice(), ["no_match_found"]);
 
@@ -7551,7 +7571,8 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
 
     let path = database_path("graph-aug-attempted-failed-observable");
     let database = seed_single_edge_graph(&path, "Alice", "Bob", "knows").await;
-    let service = query_rag_graph_service_with_db(database).await;
+    let mut service = query_rag_graph_service_with_db(database).await;
+    lift_graph_budgets(&mut service);
     let edges_dir = std::path::Path::new(&path).join("entity_edges.lance");
     std::fs::remove_dir_all(&edges_dir)
         .expect("remove entity_edges.lance to force a real table-open failure");
@@ -7576,6 +7597,10 @@ async fn graph_augmentation_attempted_and_failed_is_observable_end_to_end() {
     );
     assert!(response.notices.iter().any(|n| n.code == "NO_EVIDENCE"));
 
+    assert!(
+        !response.notices.iter().any(|n| n.code == "GRAPH_TIMEOUT"),
+        "the graph operation timed out, so no graph_augmentation tag was recorded"
+    );
     let captured = captured.lock().unwrap();
     assert_eq!(captured.as_slice(), ["attempted_and_failed"]);
 

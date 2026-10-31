@@ -400,6 +400,37 @@ def test_a_resume_drives_only_the_questions_not_yet_done(s0: S0) -> None:
     assert again.generated == [s0.qs.g_ids[2]]
 
 
+def test_a_resume_rereads_an_error_row_and_not_an_ok_row(s0: S0) -> None:
+    failing = s0.qs.g_ids[1]
+    _run(s0, FakeBin(errors={failing: "provider returned 502"}))
+    again = FakeBin()
+
+    result = _run(s0, again)
+
+    assert again.generated == [failing]
+    assert (result.appended, result.errors) == (1, 0)
+    latest = {r.question_id: r for r in _external_records(s0)}
+    assert latest[failing].outcome == "success"
+    assert all(r.outcome == "success" for r in latest.values())
+    report = score_run(run_dir=s0.run, no_judge=True, gold_chunks_path=s0.gold)
+    assert EXTERNAL in report.metadata.arm_labels
+
+
+def test_an_error_row_is_reread_at_most_the_retry_budget(s0: S0) -> None:
+    failing = s0.qs.g_ids[1]
+    budget = 1 + external_run.EXTERNAL_RETRIES
+    for _ in range(budget):
+        _run(s0, FakeBin(errors={failing: "provider returned 502"}))
+    spent = FakeBin()
+
+    result = _run(s0, spent)
+
+    assert (result.appended, spent.generated) == (0, [])
+    attempts = [r for r in _external_records(s0) if r.question_id == failing]
+    assert len(attempts) == budget
+    assert all(r.outcome == "error" for r in attempts)
+
+
 def test_a_failed_bin_call_keeps_the_batches_journalled_before_it(
     s0: S0, monkeypatch: pytest.MonkeyPatch
 ) -> None:
