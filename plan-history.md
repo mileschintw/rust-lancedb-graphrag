@@ -174,3 +174,9 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 | 147 | #147 | local_104e6592-6081-4db7-9dff-6b240ae49211 | started 2026-11-01 (unattended): metric fix (yes/no split, guess-adjusted, evidence split as reported secondaries) + D-IDs for principles 1-9; free | — |
 | #147 | now (lane 147) | — | none | `score.py`, `lever_comparison.py`, `PLAN.md` › Decisions | free |
 - Merged PR #153 (ce3773f2): answer_usable by kind (yes/no, open), balanced accuracy, evidence split; D-281..D-289. Opened #152 (slow-tier v1.0 re-score drift since D-276).
+
+## Lane 117 (merged 2026-11-01, unattended)
+
+| 117 | #117 | local_cb4d73f6-3280-45c7-beb4-29ac541d651d | started 2026-11-01 on the user's "Start #117": writer pilot in its own worktree (never the main checkout); thinking per the confirmed ruling (Haiku off, Sonnet effort low, batch); free work done (2951e977); **paid gate approved 2026-11-01, user: "Approve, in stages"**: canaries → 4 Haiku + Sonnet batch 1 → project Sonnet from batch 1, continue if ≤ $15 else ask → deepseek sync; ceilings Claude $20, OpenRouter $1; batches by the morning of 2026-11-02 | — |
+| #117 | after S2 submit | — | none | writer pilot: Haiku/Sonnet subset extraction (30-50 docs), cost and quality, no store; BYOK check (user: "是，排在 S2 後 (Recommended)") | limited: paid, before the credit expires 2026-11-03 |
+- Merged PR #155 (8f313127). deepseek 1,803 chunks $0.245 OR. Recommendation: Haiku as third writer (cheaper per chunk than deepseek on Batch, no runaways, ~25% more entities, ~40% more relations); Sonnet only if affordable (14 dangling vs 238, ~20x Haiku's price). Follow-up #156 (deepseek runaways).
