@@ -5,3 +5,10 @@
 
 [engine]
 lancedb_path = "./data/lancedb-eval-s1"
+
+# D-273: S1's merged chunks (256 tokens, D-251) run up to 1,489 characters (measured from the
+# built store, 2026-10-31), so the base 512 cut nearly every retrieved excerpt and left evidence
+# Hits@4 UNDECIDABLE. The cap shapes only the retrieved and cited excerpts, never the prompt the
+# reader sees. The v1.0 arm stays at 512 (its 55-token chunks never reach it).
+[engine.retrieval]
+excerpt_max_chars = 2048

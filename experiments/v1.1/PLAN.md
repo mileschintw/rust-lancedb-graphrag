@@ -374,6 +374,20 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   comparable. The token estimate assumes English text; a non-ASCII maximal answer (about one token per character)
   would not fit, which the MultiHop-RAG news corpus does not reach. The rebuild's `extraction_attempt` outcomes
   (`call_failed` with a timeout or a truncation) are the check.
+- **D-273 S1 excerpt cap 2,048 characters** (owner: "開 lane 修 #120 (Recommended)", 2026-10-31; #120). S1's step
+  1.5 preflight failed `corpus_generation` on a truncated excerpt: `[engine.retrieval] excerpt_max_chars = 512` in
+  `config/config.toml` cut nearly every merged chunk, and `fact_matches_excerpt` reads a truncated excerpt as
+  UNDECIDABLE, so evidence Hits@4 (one of S1's two metrics) would have been mostly undecidable for the merged arms.
+  Measured read-only from the built store (`data/lancedb-eval-s1`, `nodes.content`, 3,953 chunks, 2026-10-31): the
+  longest S1 chunk is 1,489 Unicode characters (p50 990, p90 1,201, p99 1,339), and 3,708 chunks exceed 512.
+  `config/config.eval-s1.toml` now sets `excerpt_max_chars = 2048`, 37% above the longest chunk; a test holds the cap
+  at least 25% above 1,489. This changes measurement only, so "change chunking and nothing else" holds: the cap
+  (`citation_excerpt_max_chars`) shapes only the excerpts of `RetrievalSnapshot.retrieved_chunks` (RetrieveNode) and of
+  the resolved citations (GenerateAnswerNode, after generation); the prompt is packed from the full evidence block text.
+  The judge reads citation excerpts under its own 1,500-character per-passage budget, so at 512 it would have seen S1
+  passages cut and v1.0 passages whole; 2,048 removes that difference.
+  The v1.0 arm (`config.toml`, `config.eval.toml`) stays at 512, which its 55-token chunks never reach. Applies to every
+  arm run under `LANCET_ENV=eval-s1`; no re-seed is needed, since excerpts are cut at query time.
 
 ## Model access
 
