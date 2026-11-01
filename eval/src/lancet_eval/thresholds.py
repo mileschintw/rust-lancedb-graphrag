@@ -958,6 +958,104 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 )
 
 
+# #143, exploratory (experiments/v1.1/EXPLORE-S2-MERGED.md): PREREGISTRATION_S2 moved to
+# S1's merged graph-off arm at K = 2, its replicate 1 carried from the S1 run of record.
+# Readers, transports, thinking, prices and every number are S2's, so each reader
+# compares with S2's small-store run directly (a test pins this). It decides nothing and
+# changes no S2 or S3 decision. Added in one commit before the run's replay-init (D-73).
+PREREGISTRATION_S2X = ReplayStagePreRegistration(
+    replay_source_arm="merged/hybrid+rerank+metadata",
+    reference_arm="merged/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "merged/hybrid+rerank+metadata@haiku-5.5",
+                "merged/hybrid+rerank+metadata@sonnet-5.5",
+            ),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("merged/hybrid+rerank+metadata@opus-5.5",),
+    test="paired_sign_flip_permutation_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=(
+        "merged/hybrid+rerank+metadata@haiku-5.5",
+        "merged/hybrid+rerank+metadata@sonnet-5.5",
+    ),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Exploratory: this run decides nothing and changes no S2 or S3 decision; S2's "
+        "reader choice stands (EXPERIMENT-S2.md). The family is decisional only "
+        "because the lever comparison needs one. Read in EXPLORE-S2-MERGED.md, by "
+        "hand: per reader, answer_usable and the abstention rate on the 90 G "
+        "questions, split by whether every gold fact is in the context "
+        "(metrics.gold_contained, evidence_split) and by yes/no against open "
+        "questions, beside S2's small-store run; the paired deltas against "
+        "deepseek and the null guards as the lever comparison prints them; "
+        "reasoning_tokens; spend. Every arm answers "
+        "each question 2 times, and every test is the exact sign-flip permutation on "
+        "the per-question mean differences (D-274). The written predictions are "
+        "checked, never tuned after the data"
+    ),
+    provenance=(
+        "#143, owner 2026-11-01: '好，執行三個 reader K=2 跟補跑deepseek' (the three "
+        "Claude readers at K=2, plus deepseek's replicate 2). Source: S1's run of "
+        "record eval/runs/2026-10-31-s1-multihop_rag_s1_dev, arm "
+        "merged/hybrid+rerank+metadata, replicate 1 carried (D-254). Everything else "
+        "is PREREGISTRATION_S2's: readers and thinking (D-255, D-260, D-265, D-267, "
+        "D-280), prices (D-269, D-277), deepseek's pinned sync replicates (D-278), "
+        "the replicate test (D-274), the null guard numbers (D-264, D-269). Dev only "
+        "(D-237), no held-out read. Written 2026-11-01, before any data of this run."
+    ),
+    replicates=2,
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+    readers=(
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="between_tools",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
+    ),
+)
+
+
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single
 # freeze commit that also holds every frozen lever parameter (prompt sentences, rerank and
 # retrieve budgets, the graph-v2 precision variant, the unreported rerank-call cost ceiling,
