@@ -204,4 +204,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 
 ## Unattended log
 
-- 2026-11-01 02:15 -0800: round started. Running: 117 (deepseek extraction), 143 (S2X paid run, holds main checkout), 145 (amending freeze for Opus). Started: 147, 148, 149, spare-1, spare-2 (parked). Session folders: to confirm.
+- 2026-11-01 02:15 -0800: round started. Running: 117 (deepseek extraction), 143 (S2X paid run, holds main checkout), 145 (amending freeze for Opus). Started: 147, 148, 149, spare-1, spare-2 (parked). Session folders confirmed: each in its own worktree (lane-143-529d4b, lane-117-229c1a, lane-145-06ada6, lane-147-1c4eb0, lane-148-efa826, lane-149-1a898d, lane-spare-1-c7ab76, lane-spare-2-6b3626).
