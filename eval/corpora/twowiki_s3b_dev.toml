@@ -1,0 +1,51 @@
+# #149 item B, exploratory: a hybrid 2Wiki store (eval-2wiki: #145's 6,119 pinned
+# passages, one document and one chunk each, no graph) over the 100 D-243 dev questions.
+# It decides nothing (experiments/v1.1/EXPLORE-B-2WIKI-READERS.md). `run --arms
+# twowiki/hybrid+rerank+metadata` drives deepseek's first answer into a drive run;
+# `replay-init` carries it into the run of record, and `batch submit`/`fetch` write
+# deepseek's second answer and the reader arms (experiments/v1.1/RUN-EXPLORE-BC.md).
+#
+# Both files below hold Wikipedia text, so they stay in twowiki/.cache/ and are never
+# committed (ATTRIBUTION.md): `python -m lancet_eval.twowiki fetch` then
+# `python -m lancet_eval.twowiki_b` writes them. The documents file is pinned by sha256.
+[documents]
+map_corpus = "twowiki"
+file = "twowiki/.cache/documents.jsonl"
+sha256 = "57d038e26b2bfc10bdd91afcde3a2df30a79bad583f9b9f4f2aa3002d744e822"
+source = "https://huggingface.co/datasets/osunlp/HippoRAG_2"
+license = "apache-2.0"
+count = 6119
+commit_documents = false
+chunk_size = 8192
+
+[questions]
+file = "twowiki/.cache/questions.dev.jsonl"
+label_format = "multihop_rag"
+sample_seed = 243
+sample_size = 100
+
+[arms]
+# The driven deepseek arm, then its reader arms, as in multihop_rag_full_dev.toml.
+arms = [
+  "twowiki/hybrid+rerank+metadata",
+  "twowiki/hybrid+rerank+metadata@haiku-5.5",
+  "twowiki/hybrid+rerank+metadata@sonnet-5.5",
+  "twowiki/hybrid+rerank+metadata@opus-5.5",
+]
+
+# Ingested as given: fixed-size windows of 8,192 characters hold every passage (the
+# longest is 6,457) in one chunk, so no passage is split.
+[stores.twowiki]
+chunk_strategy = "fixed-size"
+chunk_size = 8192
+chunk_overlap = 0
+
+[split]
+file = "twowiki/s3b_split.json"
+role = "dev"
+
+[preregistration]
+token = "PREREGISTRATION_EXPLORE_B"
+
+[preflight]
+legacy_canaries = false
