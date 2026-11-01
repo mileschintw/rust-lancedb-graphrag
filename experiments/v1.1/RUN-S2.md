@@ -220,7 +220,8 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
    time through OpenRouter's sync chat-completions API and journals them every 20, in the foreground, so it needs no
    fetch. It ends with a `Routing (<WINNER>): …` line. It refuses before any request if the packed body lacks D-271's
    pin, or carries values other than `config/config.toml`'s (one `order` entry, `allow_fallbacks: false`, a
-   `max_price`). If it stops with `stopped before sending more`, an answer broke `is_byok` or the provider: those
+   `max_price`). If it stops with `stopped before sending more`, an answer broke `is_byok`, the provider or
+   `reasoning_tokens`: those
    answers stay recorded and `score` refuses them, so stop and tell the user, with the line. If it is interrupted,
    rerunning the same command sends only the answers that hold no record yet.
 

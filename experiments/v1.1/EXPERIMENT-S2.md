@@ -20,7 +20,8 @@ winning arm into the S2 run, with their context export rows and row hashes (Q9):
 replicate 1. Its replicates 2 to 5 are new deepseek answers to the same packed prompts, the engine's `pack` body sent
 unrewritten, one request at a time, through OpenRouter's sync chat-completions API with D-271's full provider pin
 (D-278: the Batch API cannot carry `order` or `max_price`, and this model has no batch variant). Each Claude reader reads the same packed prompts,
-sent through a Claude batch (D-254), with only the declared fields rewritten (D-255), 5 times.
+with only the declared fields rewritten (D-255), 5 times: Haiku 5.5 and Opus 5.5 through a Claude batch on OpenRouter
+(D-254), Sonnet 5.5 through OpenRouter's sync API, since the Batch API refuses its `between_tools` (D-280).
 
 | Arm label | Reader | How it is read |
 |---|---|---|
@@ -320,7 +321,8 @@ readers' own noise is not known before the run: if it is well above deepseek's, 
   `replay-init --pilot` (#109). Only a pilot run takes `batch submit --limit`.
 - D-258: no mid-run cap; each submit prints a cost estimate and never refuses.
 - No prompt caching (D-256).
-- Four submitted arms: the three readers by batch, and deepseek's replicates 2 to 5 by the sync API (D-274, D-278).
+- Four submitted arms: Haiku 5.5 and Opus 5.5 by batch, Sonnet 5.5 (D-280) and deepseek's replicates 2 to 5 (D-274,
+  D-278) by the sync API.
   Each arm counts 500 records when it is complete; `score` checks replicate 1 only, so the run guide counts every replicate.
 
 ## Decisions (D-267 to D-270, D-274, D-275)
