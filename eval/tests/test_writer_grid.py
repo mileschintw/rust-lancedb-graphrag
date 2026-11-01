@@ -218,3 +218,18 @@ def test_shards_split_the_unanswered_chunks_and_results_merge_them(
     assert sorted(wg.results(ds, out)) == ["d000-c000", "d000-c003"]
     with pytest.raises(wp.PilotError):
         wg.shard(ds, out, 2, 2)
+
+
+def test_answers_keep_only_what_the_engine_accepts_and_runaways_count(
+    tmp_path: Path,
+) -> None:
+    chunks = [_chunk("d000-c000", "a" * 60), _chunk("d000-c001", "b" * 60)]
+    wp.write_chunks(tmp_path, chunks)
+    good = _ok("d000-c000")
+    runaway = _ok("d000-c001") | {"content": "   ", "finish_reason": "length"}
+    with (tmp_path / "haiku-5.5.reused.jsonl").open("w", encoding="utf-8") as f:
+        for r in (good, runaway):
+            f.write(json.dumps(r) + "\n")
+    w = wg.WRITERS["haiku-5.5"]
+    assert wg.answers(w, tmp_path, chunks) == [{"text": "a" * 60, "content": ANSWER}]
+    assert wg.runaways(wg.results(w, tmp_path).values()) == 1

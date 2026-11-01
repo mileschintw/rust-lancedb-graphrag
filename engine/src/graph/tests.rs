@@ -2228,3 +2228,32 @@ mod snapshot_graph_index {
         );
     }
 }
+
+#[tokio::test]
+async fn recorded_extractions_parse_like_live_answers_and_refuse_the_rest() {
+    use crate::generation::GenerationErrorKind;
+    use crate::graph::extraction::{ExtractionGenerator, ExtractionRequest, RecordedExtractions};
+
+    let ok = r#"{"entities":[{"name":"OpenAI","entity_type":"org"}],"relations":[]}"#;
+    let bad_confidence = r#"{"entities":[],"relations":[{"source":"a","target":"b","relation_type":"r","confidence":1.5}]}"#;
+    let unknown_field = r#"{"entities":[],"relations":[],"x":1}"#;
+    let recorded = RecordedExtractions::new([
+        ("chunk one".to_owned(), ok.to_owned()),
+        ("chunk one".to_owned(), "not json".to_owned()),
+        ("chunk two".to_owned(), bad_confidence.to_owned()),
+        ("chunk three".to_owned(), unknown_field.to_owned()),
+    ]);
+    assert_eq!(recorded.len(), 3);
+    let request = |text: &str| ExtractionRequest {
+        chunk_id: "d:0".to_owned(),
+        document_id: "d".to_owned(),
+        chunk_text: text.to_owned(),
+    };
+    // The first answer of a repeated chunk text is kept.
+    let output = recorded.extract(request("chunk one")).await.unwrap();
+    assert_eq!(output.entities[0].name, "OpenAI");
+    for text in ["chunk two", "chunk three", "no such chunk"] {
+        let err = recorded.extract(request(text)).await.unwrap_err();
+        assert_eq!(err.kind, GenerationErrorKind::SchemaValidation, "{text}");
+    }
+}

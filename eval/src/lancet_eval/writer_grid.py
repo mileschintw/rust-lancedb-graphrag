@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -218,6 +218,31 @@ def scope(writer: wp.Writer, pilot: Path) -> frozenset[str] | None:
     return frozenset(c.custom_id for c in wp.read_chunks(pilot))
 
 
+def runaways(records: Iterable[Mapping[str, Any]]) -> int:
+    """Answers stopped by the token cap (``finish_reason`` ``length``), #156's
+    runaways."""
+    return sum(
+        r["status"] == "succeeded" and r.get("finish_reason") == "length"
+        for r in records
+    )
+
+
+def answers(
+    writer: wp.Writer, out: Path, chunks: Sequence[wp.PilotChunk]
+) -> list[dict[str, str]]:
+    """The import bin's input: ``{"text", "content"}`` for every chunk whose answer the
+    engine accepts (``writer_pilot.parse_extraction``). A chunk with none is left out,
+    so the import drops it as a failed extraction."""
+    got = results(writer, out)
+    rows = []
+    for c in chunks:
+        r = got.get(c.custom_id)
+        if r is not None and r["status"] == "succeeded":
+            if wp.parse_extraction(r["content"])[0] is not None:
+                rows.append({"text": c.text, "content": r["content"]})
+    return rows
+
+
 def _output_tokens(writer: wp.Writer, out: Path) -> float:
     done = [
         r["completion_tokens"]
@@ -343,17 +368,31 @@ def report(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
         for w in WRITERS.values():
             if label == "grid" and w.name in SPOT_CHECK:
                 continue
+            got = results(w, out)
             row = wp.summarise(
                 w,
                 scoped,
-                results(w, out),
+                got,
                 publishers,
                 None if w.name == wp.DEEPSEEK else reference,
             )
-            summary.append({"chunks_of": label} | row)
+            ran = runaways(got[c.custom_id] for c in scoped if c.custom_id in got)
+            summary.append({"chunks_of": label} | row | {"runaways": ran})
     text = json.dumps(summary, indent=2, ensure_ascii=False)
     (out / "summary.json").write_text(text + "\n", encoding="utf-8")
     typer.echo(text)
+
+
+@app.command("answers")
+def answers_command(writer: str, to: Path, out: Path = DEFAULT_OUT) -> None:
+    """Free: writes the import bin's input for a writer (one JSON object a line)."""
+    w = _writer(writer)
+    out = wp._out(out)
+    rows = answers(w, out, wp.read_chunks(out))
+    with to.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(wp._dumps(row) + "\n")
+    typer.echo(f"{w.name}: {len(rows)} accepted answer(s) -> {to}")
 
 
 if __name__ == "__main__":
