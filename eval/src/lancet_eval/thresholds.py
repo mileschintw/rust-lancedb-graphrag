@@ -583,11 +583,17 @@ class ReplayStagePreRegistration(StagePreRegistration):
             carried deepseek reader, at which its cost per answered question (D-257)
             and its replicates' spend are read. None reads the engine's list price
             (``measure.GENERATION_LIST_*``), as before D-277.
+        reader_replicates: #149: ``(reader name, K)`` pairs for readers that give
+            fewer answers than ``replicates`` (a costly reader at K = 1). Each names a
+            declared reader, with K from 1 to ``replicates``; a reader not listed gives
+            ``replicates`` answers. ``compare-levers`` reads one K for every arm, so a
+            stage that sets this is read by hand.
     """
 
     replay_source_arm: str
     replicates: int = 1
     reference_price: ReaderPrice | None = None
+    reader_replicates: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         if self.replicates < 1:
@@ -599,6 +605,16 @@ class ReplayStagePreRegistration(StagePreRegistration):
                 f"{self.replicates} replicates need test {REPLICATE_TEST!r} (D-274), "
                 f"not {self.test!r}"
             )
+        declared = {name for name, _ in self.readers}
+        named = [name for name, _ in self.reader_replicates]
+        if len(set(named)) != len(named):
+            raise ThresholdError(f"reader_replicates names a reader twice: {named}")
+        for name, k in self.reader_replicates:
+            if name not in declared or not 1 <= k <= self.replicates:
+                raise ThresholdError(
+                    f"reader_replicates entry ({name!r}, {k}) must name a declared "
+                    f"reader with K from 1 to replicates ({self.replicates})"
+                )
         source = self.replay_source_arm
         labels = (
             self.reference_arm,
@@ -1391,5 +1407,205 @@ PREREGISTRATION_S3M = StagePreRegistration(
         "Claude credit, so Opus is a spot check; deepseek is re-extracted, not the "
         "v1.0 graph. Dev only (D-237), no held-out read. Written 2026-11-01, before "
         "any extraction of the grid and any reading run."
+    ),
+)
+
+
+# #149 item C, exploratory (experiments/v1.1/EXPLORE-C-MHR-FULL.md):
+# PREREGISTRATION_S2X's readers on the full 609-document small store (`full/`, no
+# graph), over 1,000 fresh dev questions no earlier run read (fresh_split.json). Sonnet
+# and Opus answer once, deepseek and Haiku twice. It decides nothing. Added in one
+# commit before the run's drive (D-73).
+PREREGISTRATION_EXPLORE_C = ReplayStagePreRegistration(
+    replay_source_arm="full/hybrid+rerank+metadata",
+    reference_arm="full/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "full/hybrid+rerank+metadata@haiku-5.5",
+                "full/hybrid+rerank+metadata@sonnet-5.5",
+            ),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("full/hybrid+rerank+metadata@opus-5.5",),
+    test="paired_sign_flip_permutation_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=(
+        "full/hybrid+rerank+metadata@haiku-5.5",
+        "full/hybrid+rerank+metadata@sonnet-5.5",
+    ),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Exploratory: this run decides nothing and changes no S2 or S3 decision. The "
+        "family is decisional only because the class needs one; compare-levers reads "
+        "one K for every arm, so the run is read by hand in EXPLORE-C-MHR-FULL.md: per "
+        "reader, answer_usable over all its answers and the abstention rate, on the "
+        "fresh dev G and null questions, split by yes/no against open questions and "
+        "by whether every gold fact is in the context (metrics.gold_contained, "
+        "evidence_split); reasoning_tokens; spend. deepseek and Haiku answer each "
+        "question 2 times, Sonnet and Opus once (reader_replicates). The written "
+        "predictions are checked, never tuned after the data"
+    ),
+    provenance=(
+        "#149 item C, owner 2026-11-01: '全部接受' (the coordinator's package, items "
+        "B and C) and K per accepted principle 3 (Haiku 2, Sonnet 1, Opus 1, deepseek "
+        "2). Store: all 609 MultiHop-RAG documents, structure-aware 500/50, no graph "
+        "(eval-full). Questions: the fresh dev set of eval/corpora/multihop_rag/"
+        "fresh_split.json (1,000 questions no earlier run read, seed 149, split "
+        "sha256 30d3dee89824cf4ef89b960a26889a2f1f8bed9128a47d341b93da0376d80e7d); "
+        "its 1,056 held-out questions are reserved for #146 and never read here. "
+        "deepseek's replicate 1 comes from this run's own drive. Readers, thinking, "
+        "prices and every number are PREREGISTRATION_S2X's: D-255, D-260, D-265, "
+        "D-267, D-269, D-274, D-277, D-278, D-280. Dev only (D-237). Written "
+        "2026-11-01, before any data of this run."
+    ),
+    replicates=2,
+    reader_replicates=(("sonnet-5.5", 1), ("opus-5.5", 1)),
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+    readers=(
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="between_tools",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
+    ),
+)
+
+
+# #149 item B, exploratory (experiments/v1.1/EXPLORE-B-2WIKI-READERS.md): the same
+# readers and K as PREREGISTRATION_EXPLORE_C on a hybrid 2Wiki store (`twowiki/`, no
+# graph), over the 100 D-243 dev questions. It decides nothing. Added in one commit
+# before the run's drive (D-73).
+PREREGISTRATION_EXPLORE_B = ReplayStagePreRegistration(
+    replay_source_arm="twowiki/hybrid+rerank+metadata",
+    reference_arm="twowiki/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "twowiki/hybrid+rerank+metadata@haiku-5.5",
+                "twowiki/hybrid+rerank+metadata@sonnet-5.5",
+            ),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("twowiki/hybrid+rerank+metadata@opus-5.5",),
+    test="paired_sign_flip_permutation_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=(
+        "twowiki/hybrid+rerank+metadata@haiku-5.5",
+        "twowiki/hybrid+rerank+metadata@sonnet-5.5",
+    ),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Exploratory: this run decides nothing and changes no S2 or S3 decision; S3's "
+        "design is its own (D-234). The family is decisional only because the class "
+        "needs one; compare-levers reads one K for every arm, so the run is read by "
+        "hand in EXPLORE-B-2WIKI-READERS.md: per reader, answer_usable over all its "
+        "answers and the abstention rate on the 100 D-243 dev questions, split by "
+        "2Wiki question type and by whether every supporting sentence is in the "
+        "context (metrics.gold_contained, evidence_split); reasoning_tokens; spend. "
+        "deepseek and Haiku answer each question 2 times, Sonnet and Opus once "
+        "(reader_replicates). The written predictions are checked, never tuned "
+        "after the data"
+    ),
+    provenance=(
+        "#149 item B, owner 2026-11-01: '全部接受' (the coordinator's package, items "
+        "B and C) and K per accepted principle 3 (Haiku 2, Sonnet 1, Opus 1, deepseek "
+        "2). Store: #145's 6,119 pinned 2Wiki passages (osunlp/HippoRAG_2 at revision "
+        "5ec05b38deecc3318bb432c69865959c56058990), one document and one chunk per "
+        "passage, ingested as given, no graph (eval-2wiki). Questions: the 100 dev "
+        "questions of the D-243 split (eval/corpora/twowiki/split.json, seed 243), "
+        "carried into eval/corpora/twowiki/s3b_split.json (split sha256 "
+        "54a15e0781a51e70551230a5e4bbf44754b57d3f668341850027fa3b5934b76e); the 900 "
+        "held-out questions are never read here. deepseek's replicate 1 comes from "
+        "this run's own drive. Readers, thinking, prices and every number are "
+        "PREREGISTRATION_S2X's: D-255, D-260, D-265, D-267, D-269, D-274, D-277, "
+        "D-278, D-280. Dev only (D-237, D-243). Written 2026-11-01, before any data "
+        "of this run."
+    ),
+    replicates=2,
+    reader_replicates=(("sonnet-5.5", 1), ("opus-5.5", 1)),
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+    readers=(
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="between_tools",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
     ),
 )

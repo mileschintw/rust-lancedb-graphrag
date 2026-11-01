@@ -1,0 +1,50 @@
+# #149 item C, exploratory: all 609 MultiHop-RAG documents in their own store (eval-full,
+# structure-aware 500/50, no graph), over the 1,000 fresh dev questions no earlier run
+# read (multihop_rag/fresh_split.json). It decides nothing
+# (experiments/v1.1/EXPLORE-C-MHR-FULL.md). `run --arms full/hybrid+rerank+metadata`
+# drives deepseek's first answer into a drive run; `replay-init` carries it into the
+# run of record, and `batch submit`/`fetch` write deepseek's second answer and the reader
+# arms (run guide: experiments/v1.1/RUN-EXPLORE-BC.md).
+[documents]
+# The 609 article texts are never committed (ATTRIBUTION.md): `seed` reads the cached
+# dataset file (`lancet-eval corpus fetch --corpus multihop_rag`), pinned by sha256.
+map_corpus = "multihop_rag_full"
+file = "multihop_rag/.cache/corpus.json"
+sha256 = "20b61b5ab84de84a927420c5d265b7ec8d859ae49980699958a787ade9e4d28f"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = false
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.fresh_dev.jsonl"
+label_format = "multihop_rag"
+sample_seed = 149
+sample_size = 1000
+
+[arms]
+# The driven deepseek arm, then its reader arms, as in multihop_rag_s2x_dev.toml.
+arms = [
+  "full/hybrid+rerank+metadata",
+  "full/hybrid+rerank+metadata@haiku-5.5",
+  "full/hybrid+rerank+metadata@sonnet-5.5",
+  "full/hybrid+rerank+metadata@opus-5.5",
+]
+
+[stores.full]
+chunk_strategy = "structure-aware"
+chunk_size = 500
+chunk_overlap = 50
+
+[split]
+file = "multihop_rag/fresh_split.json"
+role = "dev"
+
+[preregistration]
+token = "PREREGISTRATION_EXPLORE_C"
+
+# No canary: the arm canaries would send every listed arm, and a reader arm sends no
+# gateway request (D-257). The drive's `--limit 1` smoke run stands in for them.
+[preflight]
+legacy_canaries = false

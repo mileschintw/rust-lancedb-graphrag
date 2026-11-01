@@ -220,6 +220,20 @@ pub fn default_context_default_enabled() -> bool {
     true
 }
 
+/// Whether ingestion runs graph extraction on each chunk: `true`.
+///
+/// **Derivation.** Every store built before v1.1 #149 extracts a graph at ingest, so the
+/// compiled-in default and the committed `config.toml` keep it on. #149's hybrid-only stores
+/// (`config.eval-full.toml`, `config.eval-2wiki.toml`) set it `false`: their arms never read
+/// the graph, and extraction would be one paid call per chunk.
+///
+/// **Effect of changing it.** `false` stores chunks, embeddings and BM25 as usual and writes
+/// no entity or relation, so graph context finds nothing in that store. It changes nothing at
+/// query time.
+pub fn default_ingest_extraction() -> bool {
+    true
+}
+
 /// The `[engine.graph] graph_v2_chunk_precision` values (D-139).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -282,6 +296,9 @@ pub struct GraphConfigSettings {
     /// (06.4 D-207). A request's explicit `false` (on) or `true` (off) overrides this default.
     #[serde(default = "default_context_default_enabled")]
     pub context_default_enabled: bool,
+    /// Whether ingestion extracts a graph from each chunk (#149).
+    #[serde(default = "default_ingest_extraction")]
+    pub ingest_extraction: bool,
 }
 
 impl Default for GraphConfigSettings {
@@ -296,6 +313,7 @@ impl Default for GraphConfigSettings {
             max_graph_chunk_candidates: default_max_graph_chunk_candidates(),
             graph_v2_chunk_precision: default_graph_v2_chunk_precision(),
             context_default_enabled: default_context_default_enabled(),
+            ingest_extraction: default_ingest_extraction(),
         }
     }
 }
@@ -2145,5 +2163,36 @@ mod tests {
         );
         // A malformed list reaches startup validation as it is; nothing is repaired here.
         assert_eq!(parse_lever_names_env("rerank,"), ["rerank", ""]);
+    }
+
+    fn graph_of(raw: &str) -> GraphConfigSettings {
+        ::config::Config::builder()
+            .add_source(::config::File::from_str(raw, ::config::FileFormat::Toml))
+            .build()
+            .expect("configuration file must parse as TOML")
+            .get::<GraphConfigSettings>("engine.graph")
+            .unwrap_or_default()
+    }
+
+    /// #149: every store extracts a graph unless its overlay turns it off.
+    #[test]
+    fn ingest_extraction_is_on_unless_an_overlay_turns_it_off() {
+        assert!(graph_of(CONFIG_TOML).ingest_extraction);
+        assert!(graph_of(CONFIG_EXAMPLE_TOML).ingest_extraction);
+        for (name, raw) in [
+            (
+                "config/config.eval-full.toml",
+                include_str!("../../config/config.eval-full.toml"),
+            ),
+            (
+                "config/config.eval-2wiki.toml",
+                include_str!("../../config/config.eval-2wiki.toml"),
+            ),
+        ] {
+            assert!(
+                !graph_of(raw).ingest_extraction,
+                "{name} must set [engine.graph] ingest_extraction = false"
+            );
+        }
     }
 }

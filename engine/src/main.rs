@@ -150,12 +150,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?
     .with_provider_order(effective_settings.generation_provider_order.clone())
     .with_max_price(effective_settings.generation_max_price);
-    let extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator> = Arc::new(
-        graph::extraction::OpenRouterExtractionGenerator::new_with_config(
-            api_key.clone(),
-            extraction_config,
-        )?,
-    );
+    // #149: a hybrid-only store turns graph extraction off and calls no provider at ingest.
+    let extraction_generator: Arc<dyn graph::extraction::ExtractionGenerator> =
+        if settings.engine.graph.ingest_extraction {
+            Arc::new(
+                graph::extraction::OpenRouterExtractionGenerator::new_with_config(
+                    api_key.clone(),
+                    extraction_config,
+                )?,
+            )
+        } else {
+            tracing::info!("[engine.graph] ingest_extraction = false: ingestion extracts no graph");
+            Arc::new(graph::no_extraction::NoExtractionGenerator)
+        };
 
     // D-202: every fallible startup step runs before the ingest worker spawns and before any
     // staged job is replayed. A replay re-spends provider calls, so an engine that cannot serve
