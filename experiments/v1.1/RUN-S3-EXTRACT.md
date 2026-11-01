@@ -67,14 +67,15 @@ The estimates came from #117's pilot (1,803 MultiHop-RAG chunks) and were scaled
 | Sonnet 5.5 | $19.01 | the pilot's Sonnet answers |
 | Opus 5.5, part 1 (500) | $2.98 | the pilot's Sonnet answers (Opus was not in the pilot) |
 | Opus 5.5, parts 2-13 (5,619) | $39.46 | Opus part 1's own answers: overhead 593, completion 235 + 2.99 × unit tokens |
+| deepseek (6,119, sync, full price) | $0.62 | #117's deepseek answers; their runaways bend the fit, so the first 59 answers here projected $0.87, and the shards' start $1.04 |
 
 Opus part 1 cost $3.40 against its $2.98 estimate. With the rest of Opus at $39.46, the projected Claude total came to
 about $63-66, under the $70 ceiling. The rest of Opus was submitted on that projection.
 
 ## Result
 
-The batches were submitted on 2026-11-01 between 11:10 and 11:18 UTC and had finished by 11:29 UTC. The figures
-come from `summary.json`. Cost is tokens × list price × 0.5, the Batch API rate.
+The Claude batches were submitted on 2026-11-01 between 11:10 and 11:18 UTC and had finished by 11:29 UTC. The
+figures come from `summary.json`. A Claude writer's cost is tokens × list price × 0.5, the Batch API rate.
 
 | Writer | Thinking | Succeeded | Errored | Schema-invalid | Runaways (#156) | Reasoning tokens | Input tokens | Output tokens | Cost |
 |---|---|---|---|---|---|---|---|---|---|
@@ -86,7 +87,7 @@ come from `summary.json`. Cost is tokens × list price × 0.5, the Batch API rat
 
 deepseek's cost is tokens × D-277's Wafer price at full rate, on OpenRouter credit.
 
-- **Routing:** every answer came from provider Anthropic with `is_byok: true` (`writer_pilot.routing_problem` found no
+- **Claude routing:** every Claude answer came from provider Anthropic with `is_byok: true` (`writer_pilot.routing_problem` found no
   break), so the spend is on the Claude credit.
 - **Runaways:** no Claude writer had one, meaning no answer ended with `finish_reason: length` (the deepseek failure in
   #156).

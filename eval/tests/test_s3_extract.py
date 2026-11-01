@@ -282,3 +282,17 @@ def test_shards_split_the_unanswered_passages_and_merge_back(tmp_path: Path) -> 
     assert len(s3._unanswered(tmp_path, deepseek)) == 9 - 1 - len(part)
     with pytest.raises(wp.PilotError, match="shard 3"):
         s3.shard(tmp_path, deepseek, 3, 3)
+
+
+def test_a_shards_share_does_not_move_when_others_answer(tmp_path: Path) -> None:
+    chunks = s3.passage_chunks(PASSAGES * 3)
+    wp.write_chunks(tmp_path, chunks)
+    deepseek = s3.writers()["deepseek"]
+    _, before = s3.shard(tmp_path, deepseek, 2, 3)
+    other, part = s3.shard(tmp_path, deepseek, 0, 3)
+    wp._append(
+        tmp_path / f"{other.name}.results.jsonl",
+        [_record(c.custom_id, 100, 50, is_byok=False) for c in part],
+    )
+    _, after = s3.shard(tmp_path, deepseek, 2, 3)
+    assert after == before

@@ -13,7 +13,9 @@ transport from its addendum ``PREREGISTRATION_S3_WRITERS_SYNC`` (D-290):
   submitted to OpenRouter's Batch API in parts of 500 and fetched with its routing
   check (``is_byok`` true, provider Anthropic). deepseek gets the engine's body
   unrewritten, posted one passage at a time to the sync API (``writer_pilot.run_sync``,
-  D-278, D-290), and stops at the first answer whose ``is_byok`` is not false.
+  D-278, D-290), and stops at the first answer whose ``is_byok`` is not false. With
+  ``--shards N`` that runs as N parallel shards, each with its own results file
+  (owner, 2026-11-01: "Allow 8 shards").
 - **Estimate.** Printed before every submit (D-258). Input is the o200k tokens of the
   unit plus the per-request overhead Claude billed in #117's pilot; output is a linear
   fit of completion tokens on chunk tokens, capped at the largest answer seen. The fit
@@ -247,7 +249,14 @@ def shard(
     """
     if not 0 <= index < count:
         raise wp.PilotError(f"shard {index} is not in 0..{count - 1}")
-    chunks = [c for i, c in enumerate(_unanswered(out, writer)) if i % count == index]
+    # The modulo runs over every passage, so a shard's share never depends on when it
+    # starts: a rerun of one shard cannot overlap another's.
+    open_ids = {c.custom_id for c in _unanswered(out, writer)}
+    chunks = [
+        c
+        for i, c in enumerate(wp.read_chunks(out))
+        if i % count == index and c.custom_id in open_ids
+    ]
     part = wp.Writer(
         f"{writer.name}.shard{index}",
         writer.price,
