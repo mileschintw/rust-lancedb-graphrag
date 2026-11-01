@@ -29,7 +29,7 @@ def test_each_arm_runs_on_one_of_the_two_full_stores() -> None:
     ]
 
 
-def test_the_small_store_is_run_cs_store_and_the_merged_store_is_s1s() -> None:
+def test_the_small_store_chunks_as_run_c_and_the_merged_store_as_s1() -> None:
     config = load_corpus("multihop_rag_confirm_dev")
     run_c = load_corpus("multihop_rag_full_dev")
     s1 = load_corpus("multihop_rag_s2x_dev")
@@ -37,10 +37,22 @@ def test_the_small_store_is_run_cs_store_and_the_merged_store_is_s1s() -> None:
     assert config.store_chunking["fullmerged"] == s1.store_chunking["merged"]
 
 
-def test_it_reads_run_cs_documents_questions_and_split() -> None:
+def test_it_reads_the_documents_questions_and_split_of_run_c() -> None:
     own, run_c = _toml("multihop_rag_confirm_dev"), _toml("multihop_rag_full_dev")
     for section in ("documents", "questions", "split", "preflight"):
         assert own[section] == run_c[section], section
+
+
+def test_the_merged_overlay_keeps_s1s_excerpt_cap() -> None:
+    """D-273: merged chunks run past the base 512-character excerpt cap."""
+    overlays = repo_root() / "config"
+
+    def retrieval(name: str) -> dict:
+        text = (overlays / f"config.{name}.toml").read_text(encoding="utf-8")
+        return tomllib.loads(text)["engine"]["retrieval"]
+
+    assert retrieval(FULL_MERGED_STORE.name) == retrieval("eval-s1")
+    assert retrieval(FULL_MERGED_STORE.name) == {"excerpt_max_chars": 2048}
 
 
 def test_it_is_pre_registered_for_no_run() -> None:
