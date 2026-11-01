@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from lancet_eval.arms import ExternalPipeline
-from lancet_eval.reader_request import (  # ReaderPrice: for the S2 constant (RUN-S2.md)
+from lancet_eval.reader_request import (
     ReaderDeclaration,
-    ReaderPrice,  # noqa: F401
+    ReaderPrice,
 )
 
 
@@ -812,6 +812,148 @@ PREREGISTRATION_S1_MERGED_GRAPH = StagePreRegistration(
         "reference pairing, because the lever comparison pairs every family arm with "
         "the constant's reference. Numbers as PREREGISTRATION_S1 (D-262, D-264). "
         "Written 2026-10-30, before any S1 data."
+    ),
+)
+
+
+# v1.1 S2 (D-252, D-254 to D-260, D-265; experiments/v1.1/EXPERIMENT-S2.md): S1's
+# winning arm, read by deepseek in S1 and carried into S2 (D-254, Q9), against the same
+# packed prompts read by Haiku 5.5 (Claude batch) and Sonnet 5.5 (sync, D-280), on the
+# levers-dev pool of 100 (90 G, 10 null), 5 answers per question and arm (D-274: the
+# carried answer is deepseek's first). Direction-finding: the harness computes the
+# paired differences, null guards and cost per answered question, and the choice is
+# applied by hand in EXPERIMENT-S2.md (D-252). Added in one commit by RUN-S2.md step 4,
+# after the pilot and before the run of record's replay-init (D-73).
+PREREGISTRATION_S2 = ReplayStagePreRegistration(
+    replay_source_arm="small/hybrid+rerank+metadata",
+    reference_arm="small/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=(
+                "small/hybrid+rerank+metadata@haiku-5.5",
+                "small/hybrid+rerank+metadata@sonnet-5.5",
+            ),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=("small/hybrid+rerank+metadata@opus-5.5",),
+    test="paired_sign_flip_permutation_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=(
+        "small/hybrid+rerank+metadata@haiku-5.5",
+        "small/hybrid+rerank+metadata@sonnet-5.5",
+    ),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Applied by hand in EXPERIMENT-S2.md, never by code (D-252). Candidates: "
+        "deepseek (the carried reference arm), haiku-5.5 and sonnet-5.5. A Claude "
+        "reader is eligible iff its null guard passes; a failed or not-evaluable "
+        "guard removes it. deepseek is the guard's reference, has no guard of its "
+        "own and stays eligible (D-270a). Every arm answers each question 5 times; a "
+        "question's score is its mean answer_usable over the 5, and every test is "
+        "the exact sign-flip permutation on the per-question mean differences "
+        "(D-274). Reader choice: the eligible reader with the lowest cost per "
+        "answered question (sync list price x tokens over all 5 answers, "
+        "reader_comparison, D-257) is the starting pick and wins, unless a dearer "
+        "eligible reader is significantly better on answer_usable than it: every "
+        "pair of eligible readers is tested on its own population "
+        "(reader_comparison pairs), Holm runs once over all those pairs at alpha "
+        "0.05, and a dearer reader whose pair with the pick Holm rejects with a "
+        "positive delta is significantly better. Then the pick steps up to the "
+        "cheapest such reader and the check repeats against the readers dearer "
+        "than it; the pick no dearer reader beats wins (D-275, amending D-270b). A "
+        "pick of the cheapest reads 'no larger difference detected', not equivalence: "
+        "the smallest detectable effect is about 0.084 (8.4 points). opus-5.5 is a "
+        "descriptive arm, run unconditionally beside the other two: reported with "
+        "its paired delta and cost per answered question, outside the winner rule "
+        "and the Holm family (D-267). Default-model switch "
+        "(D-245): Lancet's default generation model may change from deepseek to "
+        "haiku-5.5 iff the haiku-5.5 row is not significantly worse (Holm over this "
+        "family, m = 2, alpha 0.05, does not reject it with a negative delta; "
+        "D-268), its point estimate is at least -0.03, its null guard passes, and "
+        "its cost per answered question is below deepseek's; a separate product "
+        "decision with its own reading. p-values are reported, not used, except in "
+        "the reader choice's and that switch's Holm tests"
+    ),
+    provenance=(
+        "v1.1 S2. D-252 (direction-finding reader rule: highest point estimate wins "
+        "unless a cheaper reader is within 2 points, null guard on every candidate; "
+        "D-245 read as a "
+        "paired Haiku vs deepseek comparison with a point estimate of at least -3 "
+        "points), D-245 (default-model switch rule), D-254 (replay path; the "
+        "deepseek arm is carried, not re-run), D-255 and D-260 (request rewrite and "
+        "the per-reader thinking table: Haiku 5.5 off, Sonnet 5.5 between_tools, "
+        "Opus 5.5 on at effort low), D-257 (reader arms, replay clauses, cost per "
+        "answered question at sync list price; no evidence Hits@4), D-265 (clauses "
+        "by reader target), D-237 (dev pool of 100, no held-out read), D-267 (Opus "
+        "a descriptive arm, run unconditionally; supersedes D-252's 'Opus only if "
+        "Sonnet minus Haiku is at least +5 points'; owner 2026-10-31: '是，無條件跑 "
+        "(Recommended)'), "
+        "D-268 (Holm-adjusted p for D-245; owner: 'Holm 調整後 (Recommended)'), "
+        "D-269 (numbers as D-262 and D-264; Opus over OpenRouter at list price; "
+        "owner: '沿用 + 查牌價 (Recommended)'), D-270 (three readings of D-252; "
+        "owner: '照草稿 (Recommended)'), D-274 (5 replicates per question and arm, "
+        "the sign-flip permutation on per-question means, a paired t cross-check, "
+        "the bootstrap over questions; supersedes the sign test; owner: '全部 "
+        "K=5'), D-275 (the cheapest eligible reader unless a dearer one is "
+        "significantly better after Holm; amends D-270b; owner: '預設最便宜，顯著才"
+        "換 (Recommended)'), D-277 (deepseek priced at Wafer's wafer/us price, "
+        "0.0448/0.30, as D-271 and config.toml record it; owner: "
+        "'改用 Wafer 實際價 (Recommended)'), D-278 (deepseek's replicates through "
+        "OpenRouter's sync API with D-271's full pin; owner: '改走同步 API "
+        "(Recommended)'). Prices, USD per MTok: Haiku 5.5 0.10/0.50 "
+        "and Sonnet 5.5 2/10 (decisions 2026-10-30); Opus 5.5 4/20, read "
+        "2026-10-31 from https://platform.claude.com/docs/en/about-claude/pricing "
+        "(D-269). Sonnet 5.5 is read over OpenRouter's sync API with "
+        "between_tools, BYOK, since the Batch API refuses between_tools; D-260's "
+        "native fallback is dropped (D-280; owner: '同步＋between_tools，pilot 驗證 "
+        "(Recommended)'). Written 2026-10-31, before any S2 data."
+    ),
+    replicates=5,
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+    readers=(
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="between_tools",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
     ),
 )
 

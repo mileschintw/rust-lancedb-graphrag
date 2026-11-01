@@ -3,8 +3,6 @@
 # `batch submit`/`fetch` write the reader arms. [documents], [questions],
 # [document_subset], [split] and [stores] are copied from multihop_rag_s1_dev.toml, so
 # score reads the same question pool and document map (a test pins this).
-# DRAFT: the placeholder arm label stands for S1's winner until RUN-S2.md step 1
-# replaces it here and in the constant; until then this corpus does not load.
 [documents]
 map_corpus = "multihop_rag"
 source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
@@ -26,10 +24,10 @@ distractor_count = 25
 [arms]
 # The carried deepseek arm, then its reader arms (D-257); Opus 5.5 is descriptive (D-267).
 arms = [
-  "S1_WINNER_UNSET",
-  "S1_WINNER_UNSET@haiku-5.5",
-  "S1_WINNER_UNSET@sonnet-5.5",
-  "S1_WINNER_UNSET@opus-5.5",
+  "small/hybrid+rerank+metadata",
+  "small/hybrid+rerank+metadata@haiku-5.5",
+  "small/hybrid+rerank+metadata@sonnet-5.5",
+  "small/hybrid+rerank+metadata@opus-5.5",
 ]
 
 [stores.small]
