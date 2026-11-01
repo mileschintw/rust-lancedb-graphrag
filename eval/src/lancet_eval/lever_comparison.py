@@ -1537,8 +1537,15 @@ def _reader_declarations(
 
 
 def _reader_price(ctx: _Ctx, arm: str) -> tuple[ReaderPrice, str]:
-    """The sync list price of an arm's reader, and where it is declared."""
+    """The sync list price of an arm's reader, and where it is declared.
+
+    The carried deepseek arm's is the constant's ``reference_price`` when it declares
+    one (D-277), else the engine's list price.
+    """
     if not is_reader_arm(arm):
+        declared = getattr(ctx.prereg, "reference_price", None)
+        if declared is not None:
+            return declared, "preregistration"
         return (
             ReaderPrice(
                 GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M

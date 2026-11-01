@@ -203,6 +203,14 @@ class FetchResult:
     pending: tuple[str, ...]
 
 
+#: The engine's deepseek list price (`measure`), the price a deepseek replicate is
+#: estimated and costed at when the pre-registration declares no `reference_price`
+#: (D-277), like the carried arm (D-257).
+DEEPSEEK_PRICE = ReaderPrice(
+    GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
+)
+
+
 @dataclass(frozen=True)
 class _Run:
     journal: Path
@@ -216,6 +224,8 @@ class _Run:
     replicates: int = 1
     #: The carried deepseek arm (the constant's ``replay_source_arm``).
     source_arm: str | None = None
+    #: D-277: deepseek's price, the constant's ``reference_price`` or the list price.
+    reference_price: ReaderPrice = DEEPSEEK_PRICE
 
 
 #: One request's unit: a question and its replicate (D-274).
@@ -261,6 +271,7 @@ def _load_run(run: Path) -> _Run:
         config.preregistration_token,
         int(getattr(prereg, "replicates", 1)),
         getattr(prereg, "replay_source_arm", None) or None,
+        getattr(prereg, "reference_price", None) or DEEPSEEK_PRICE,
     )
 
 
@@ -564,7 +575,7 @@ def _pack(
                     )
                     continue
                 request = (
-                    deepseek_request(body)
+                    deepseek_request(body, run.reference_price)
                     if declaration is None
                     else rewrite_pack_body(body, declaration)
                 )
@@ -588,11 +599,6 @@ def _pack(
     return [packed[qid] for qid in qids]
 
 
-#: The engine's deepseek list price (`measure`), the price a deepseek replicate is
-#: estimated and costed at, like the carried arm (D-257).
-DEEPSEEK_PRICE = ReaderPrice(
-    GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
-)
 #: The share of list price a deepseek replicate is estimated and spent at: 1, since
 #: no batch discount on OpenRouter credit is established (D-274; the Claude readers'
 #: half price is BYOK's, `BATCH_PRICE_FACTOR`).
@@ -604,8 +610,11 @@ def batch_factor(arm: str) -> float:
     return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_BATCH_FACTOR
 
 
-def deepseek_request(pack_body: str) -> ReaderRequest:
-    """A deepseek replicate's request (D-274): the ``pack`` body, nothing rewritten.
+def deepseek_request(
+    pack_body: str, price: ReaderPrice = DEEPSEEK_PRICE
+) -> ReaderRequest:
+    """A deepseek replicate's request (D-274): the ``pack`` body, nothing rewritten,
+    estimated at `price` (the constant's ``reference_price``, D-277).
 
     Raises:
         ReaderRequestError: If the body is not a JSON object, or does not carry the
@@ -625,7 +634,7 @@ def deepseek_request(pack_body: str) -> ReaderRequest:
         slug=str(body.get("model")),
         target="openrouter",
         thinking="off",
-        price=DEEPSEEK_PRICE,
+        price=price,
     )
     return ReaderRequest(
         reader=declaration, body=body, body_json=pack_body, rewritten_fields=()

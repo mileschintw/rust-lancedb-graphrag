@@ -579,10 +579,15 @@ class ReplayStagePreRegistration(StagePreRegistration):
             (K). Above 1, a question's score is the mean of its K answers, and the test
             must be ``REPLICATE_TEST``: the exact sign-flip permutation on the
             per-question mean differences.
+        reference_price: D-277: the sync price, USD per million tokens, of the
+            carried deepseek reader, at which its cost per answered question (D-257)
+            and its replicates' spend are read. None reads the engine's list price
+            (``measure.GENERATION_LIST_*``), as before D-277.
     """
 
     replay_source_arm: str
     replicates: int = 1
+    reference_price: ReaderPrice | None = None
 
     def __post_init__(self) -> None:
         if self.replicates < 1:
