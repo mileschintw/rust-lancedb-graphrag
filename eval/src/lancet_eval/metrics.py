@@ -7,7 +7,9 @@ import math
 import re
 import string
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
@@ -98,21 +100,87 @@ def extract_final_answer(answer: str | None) -> str | None:
     return norm or None
 
 
+AnswerRule = Literal["d70", "d276"]
+# D-276 is the answer rule; D-70 stays selectable so a re-read of a v1.0 run of record
+# reproduces the report written under it (`answer_rule`).
+_ANSWER_RULE: ContextVar[AnswerRule] = ContextVar("answer_rule", default="d276")
+
+
+@contextmanager
+def answer_rule(rule: AnswerRule) -> Iterator[None]:
+    """Scores `gold_contained` (and so `answer_usable`) under `rule` inside the block.
+
+    `"d276"` is the default. `"d70"` is the whole-token rule without D-276's folds,
+    the rule v1.0's recorded reports were written under.
+
+    Raises:
+        ValueError: If `rule` is neither.
+    """
+    if rule not in ("d70", "d276"):
+        raise ValueError(f"unknown answer rule {rule!r}; known: d70, d276")
+    token = _ANSWER_RULE.set(rule)
+    try:
+        yield
+    finally:
+        _ANSWER_RULE.reset(token)
+
+
+# D-276: words ending in "s" that are not plurals, so folding never shortens them.
+_NOT_PLURAL = frozenset({"news", "series", "species", "always", "perhaps", "whereas"})
+# D-276: the separators of a list answer, read on the raw gold before normalisation
+# drops its commas.
+_LIST_SEPARATOR = re.compile(r"\s*(?:,|;|&|\band\b)\s*", re.IGNORECASE)
+
+
+def _fold_plural(token: str) -> str:
+    """D-276: a normalised token's singular, by suffix; short tokens stay as they are.
+
+    `-ies` becomes `-y`, `-es` after s/x/z/ch/sh is dropped, and any other final `s`
+    is dropped, except after `s`, `u` or `i` (`class`, `bus`, `this`) and in
+    `_NOT_PLURAL`. Tokens of three letters or fewer are kept (`yes`, `has`, `nos`).
+    """
+    if len(token) <= 3 or not token.endswith("s") or token in _NOT_PLURAL:
+        return token
+    if token.endswith("ies") and len(token) > 4:
+        return token[:-3] + "y"
+    if token.endswith(("ses", "xes", "zes", "ches", "shes")):
+        return token[:-2]
+    if token.endswith(("ss", "us", "is")):
+        return token
+    return token[:-1]
+
+
+def _folded_tokens(text: str) -> list[str]:
+    return [_fold_plural(t) for t in squad_normalize(text).split()]
+
+
+def _contains_span(needle: list[str], haystack: list[str]) -> bool:
+    span = len(needle)
+    return bool(needle) and any(
+        haystack[i : i + span] == needle for i in range(len(haystack) - span + 1)
+    )
+
+
 def gold_contained(gold: str, text: str) -> bool:
-    """Whole-token containment of `squad_normalize(gold)` in `squad_normalize(text)`.
+    """Whole-token containment of the normalised gold in the normalised text.
 
     Token-boundary aware, so a gold of "no" never matches inside "not" or
-    "know" (D-70) the way a raw substring check would.
+    "know" (D-70) the way a raw substring check would. D-276 adds two folds, applied
+    to every arm: each token is folded to its singular (`_fold_plural`) on both
+    sides, and a list gold (items separated by commas, semicolons, `&` or `and`)
+    also matches when every item is contained on its own, in any order. Both folds
+    only turn misses into hits. Under `answer_rule("d70")` neither fold applies.
     """
-    gold_tokens = squad_normalize(gold).split()
-    text_tokens = squad_normalize(text).split()
-    if not gold_tokens:
-        return False
-    span = len(gold_tokens)
-    return any(
-        text_tokens[i : i + span] == gold_tokens
-        for i in range(len(text_tokens) - span + 1)
-    )
+    if _ANSWER_RULE.get() == "d70":
+        return _contains_span(
+            squad_normalize(gold).split(), squad_normalize(text).split()
+        )
+    text_tokens = _folded_tokens(text)
+    if _contains_span(_folded_tokens(gold), text_tokens):
+        return True
+    items = [_folded_tokens(i) for i in _LIST_SEPARATOR.split(gold)]
+    items = [i for i in items if i]
+    return len(items) > 1 and all(_contains_span(i, text_tokens) for i in items)
 
 
 def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:

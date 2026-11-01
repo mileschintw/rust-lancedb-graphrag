@@ -25,6 +25,7 @@ import pytest
 
 from lancet_eval import thresholds
 from lancet_eval.config import repo_root
+from lancet_eval.metrics import answer_rule
 from lancet_eval.unpark_gates import main
 
 _PHASE_DIR = (
@@ -149,6 +150,16 @@ def _rereads(tmp_path_factory: pytest.TempPathFactory) -> dict[str, dict[str, An
         )
         results[stage] = json.loads(out.with_suffix(".json").read_text("utf-8"))
     return results
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _d70_answer_rule() -> Any:
+    """The recorded drives were read under D-70; D-276's folds would move them.
+
+    Module scope, so it is set before the module-scoped `_rereads` reads the drives.
+    """
+    with answer_rule("d70"):
+        yield
 
 
 @pytest.mark.parametrize("stage", list(_RECORDED))
