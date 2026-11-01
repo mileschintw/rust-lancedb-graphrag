@@ -490,11 +490,13 @@ def submit_batch(
     out: Path,
     *,
     echo: Callable[[str], None] = print,
+    limit: int | None = None,
 ) -> list[str]:
     """Submits every chunk in batches of ``BATCH_PART``, in chunk order.
 
     The manifest is written after each part, so a rerun after a failed submit sends
     only the parts it lacks, and a writer whose parts are all submitted is refused.
+    ``limit`` submits at most that many parts this call (a staged spend).
 
     Raises:
         PilotError: For deepseek, which has no batch (D-278), or if every part was
@@ -513,7 +515,8 @@ def submit_batch(
     if len(manifest["batches"]) >= len(parts):
         raise PilotError(f"{path}: this writer's batches are already submitted")
     submitted = []
-    for part in parts[len(manifest["batches"]) :]:
+    todo = parts[len(manifest["batches"]) :]
+    for part in todo[:limit] if limit is not None else todo:
         batch_id = client.submit(part)
         manifest["batches"].append({
             "batch_id": batch_id,
@@ -538,10 +541,12 @@ def fetch_batch(
     *,
     echo: Callable[[str], None] = print,
 ) -> bool:
-    """Writes the results once every batch has finished; False while one processes.
+    """Writes the results once every submitted batch has finished; False while one
+    processes.
 
-    A request no batch returned a result for gets an ``errored`` line, with its
-    batch's error when the batch failed whole.
+    A request of a submitted batch that returned no result for it gets an ``errored``
+    line, with its batch's error when the batch failed whole. Chunks of parts not yet
+    submitted get no line.
     """
     path = _manifest_path(out, writer)
     if not path.is_file():
@@ -560,21 +565,20 @@ def fetch_batch(
         records += [result_record(r, batch_id) for r in results]
         errors[batch_id] = getattr(results, "error", None)
     returned = {r["custom_id"] for r in records}
-    expected = [c.custom_id for c in read_chunks(out)]
-    first_batch = manifest["batches"][0]["batch_id"] if manifest["batches"] else ""
+    chunks = read_chunks(out)
     batch_of = {}
     for part in manifest["batches"]:
-        for cid in expected:
-            if part["first"] <= cid <= part["last"]:
-                batch_of[cid] = part["batch_id"]
+        for c in chunks:
+            if part["first"] <= c.custom_id <= part["last"]:
+                batch_of[c.custom_id] = part["batch_id"]
     records += [
         {
             "custom_id": cid,
             "status": "errored",
-            "batch_id": batch_of.get(cid, first_batch),
-            "error": errors.get(batch_of.get(cid, "")) or "no batch returned a result",
+            "batch_id": batch_id,
+            "error": errors.get(batch_id) or "no batch returned a result",
         }
-        for cid in expected
+        for cid, batch_id in batch_of.items()
         if cid not in returned
     ]
     _append(out / f"{writer.name}.results.jsonl", records)
@@ -830,8 +834,12 @@ def canary(writer: str, out: Path = DEFAULT_OUT) -> None:
 
 
 @app.command()
-def submit(writer: str, out: Path = DEFAULT_OUT) -> None:
-    """Paid: one OpenRouter batch of every chunk for a Claude writer."""
+def submit(
+    writer: str,
+    out: Path = DEFAULT_OUT,
+    parts: int | None = typer.Option(None, help="Submit at most this many batches."),
+) -> None:
+    """Paid: OpenRouter batches of every chunk for a Claude writer."""
     w = _writer(writer)
     out = _out(out)
     chunks = read_chunks(out)
@@ -839,7 +847,7 @@ def submit(writer: str, out: Path = DEFAULT_OUT) -> None:
     client = batch_client.OpenRouterBatchClient(
         os.environ.get("OPENROUTER_API_KEY", "")
     )
-    submit_batch(w, chunks, client, out, echo=typer.echo)
+    submit_batch(w, chunks, client, out, echo=typer.echo, limit=parts)
 
 
 @app.command()

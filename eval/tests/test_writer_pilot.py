@@ -300,6 +300,21 @@ def test_fetch_waits_for_every_batch_and_fills_gaps(
     assert results["d000-c003"]["batch_id"] == "batch-2"
 
 
+def test_staged_submit_and_fetch_of_the_first_part(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(wp, "BATCH_PART", 2)
+    chunks = _chunks(5)
+    wp.write_chunks(tmp_path, chunks)
+    client = FakeBatch()
+    wp.submit_batch(wp.WRITERS[wp.SONNET], chunks, client, tmp_path, limit=1)
+    assert [len(p) for p in client.submitted] == [2]
+    client._results = {"batch-1": BatchResults([])}
+    assert wp.fetch_batch(wp.WRITERS[wp.SONNET], client, tmp_path, echo=print)
+    results = wp.read_results(tmp_path / "sonnet-5.5.results.jsonl")
+    assert sorted(results) == ["d000-c000", "d000-c001"]
+    wp.submit_batch(wp.WRITERS[wp.SONNET], chunks, client, tmp_path)
+    assert [len(p) for p in client.submitted] == [2, 2, 1]
+
+
 def test_deepseek_has_no_batch(tmp_path: Path) -> None:
     with pytest.raises(wp.PilotError, match="D-278"):
         wp.submit_batch(wp.WRITERS[wp.DEEPSEEK], _chunks(1), FakeBatch(), tmp_path)
