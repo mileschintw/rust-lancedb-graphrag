@@ -1,8 +1,12 @@
 Follow `relay:work` and `project.md`; this brief holds only what is specific to this lane.
-User's go-ahead: "你等等把計畫好的session跟備用的worker都開完之後" (2026-11-01): spare workers for the unattended night.
+User's go-ahead: "Confirm and start" (2026-11-01), confirming #146's plan relayed from side session local_31cb9ac6 (owner there: "可以，就這麼做"), whose free prep step (2) is "fix #128 so paper retrieval metrics (Hits@10, MRR@10) can be compared".
 Depends on: none
 Waits for (same section): none
 
-- **Lane:** key `spare-2`. A spare worker, parked. On `GO #spare-2`, reread this brief: the coordinator will have replaced this paragraph with a concrete task (a follow-up issue, a CI fix for a lane, or a read-only audit). Until then do nothing.
-
-- **Main checkout `D:/Repos/lancet` is one at a time.** Only the lane the coordinator names may use it. Its order tonight: lane 143 (running), then lane 149, then lane 148. Do free work in your own worktree, then write `blocked` "waiting for main checkout" and wait for the coordinator's "main checkout is yours". When you are done with it, leave it on `main`, clean, and say so in your status.
+- **Lane:** key `spare-2`, now #128. The issue body is the spec, plus one addition from the owner's #146 plan: chunk-ID retrieval metrics (Hits@10, MRR@10, recall/nDCG) must become evaluable on non-v1.0 stores (merged, the full 609-document stores), not only "not evaluable". Build each store's gold chunk set from the question's evidence text against that store's own chunks (the `gold_contained` matching rule, D-276 folds), per arm, and read each arm's own chunk size. Where a store has no chunk text available, report not evaluable as #125 does.
+- **Branch** from origin/main (68f0009c or later) in your own worktree. Free work only; no paid calls; never use the main checkout `D:/Repos/lancet` (spare-1 holds it for #163, then #146's prep lane).
+- **Files:** `eval/src/lancet_eval/score.py`, `comparison.py`, gold-chunk loading, tests. Do not touch `thresholds.py` constants or any run directory under `eval/runs/` (re-score in tests on copies only).
+- **Check:** re-scoring the v1.0 lever run must keep every recorded figure unchanged (the slow test, see #152 for its existing D-276 drift; do not fix #152 here). Show one merged-store run's new Hits@10/MRR@10 in the report.
+- **Rules:** no keys or env values in records; prefix commands with `PYTHONUTF8=1`; eval-only, skip cargo and Go.
+- **Finish:** push, write `done`; I open the PR and merge on green (owner's standing rule).
+- **Closes:** #128
