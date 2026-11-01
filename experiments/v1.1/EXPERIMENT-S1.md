@@ -104,4 +104,27 @@ rule uses point estimates, not p-values.
 
 ## Result
 
-Not run yet.
+**Keep small; the graph stays out.** S1's configuration is the v1.0 store with no graph: S2 replays
+`small/hybrid+rerank+metadata`.
+
+- Run: `eval/runs/2026-10-31-s1-multihop_rag_s1_dev`, pre-registrations `PREREGISTRATION_S1` and
+  `PREREGISTRATION_S1_MERGED_GRAPH`, driven on `main` at `971094f5` on 2026-10-31. Dev only; no held-out read.
+- Chunking (`lever-comparison.json`, `merged/hybrid+rerank+metadata` against `small/hybrid+rerank+metadata`):
+  evaluable, 90 of 90 G pairs (coverage 1.0), n_pos 4, n_neg 5, delta -1.1 points, 95% CI [-7.8, +5.6] (unadjusted,
+  estimation only), Holm p = 1.0. `n_pos > n_neg` fails, so small is kept. Means: merged 0.8667, small 0.8778.
+- Graph on the chosen store (small, `small/hybrid+graph+rerank+metadata` in `lever-comparison.json`): evaluable,
+  90 of 90 pairs, n_pos 2, n_neg 10, delta -8.9 points, 95% CI [-16.7, -2.2], raw p 0.039, Holm p 0.077. The net gain
+  is -8, below the +5 needed (`ceil(0.05 × 90)`), so the graph stays out. Means: graph-on 0.7889, graph-off 0.8778.
+- Merged-store graph, read for the record only, since merged was not adopted (`lever-comparison-merged-graph.json`):
+  evaluable, 90 of 90 pairs, n_pos 2, n_neg 5, delta -3.3 points, 95% CI [-8.9, +2.2], Holm p 0.45.
+- Null guards (D-264): all three comparisons' guards are evaluable and pass, 10 null pairs each, b = 0, c = 0.
+- Counts: 100 of 100 records per arm for all four arms, all `success`, 0 error records; no `Drive stopped early`.
+  Six units on the small arms (one of them twice) and two on the merged arms failed with an empty answer and
+  succeeded on retry.
+  The context export holds 400 rows, equal to the 400 `success` records.
+- Store: `data/lancedb-eval-s1` and schema `lancet_eval_s1`, 346 documents, 3,953 structure-merge 256/25 chunks,
+  generation `lance-693`, 24,187 graph entities, 0 extraction failures. Both preflights passed (v1.0 stack 11 of 11,
+  S1 stack 12 of 12).
+- Spend: observed $0.67 (small drive $0.2069, merged drive $0.4602), plus a few cents for the two preflights. The
+  merged drive cost more than the $0.25 estimate; its excerpts are longer than the small store's.
+- Every `lancet-eval` command ran with `PYTHONUTF8=1` (#84).

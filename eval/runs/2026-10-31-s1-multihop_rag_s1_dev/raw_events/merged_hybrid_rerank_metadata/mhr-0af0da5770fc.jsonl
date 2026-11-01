@@ -1,0 +1,12 @@
+{"seq": 0, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ReformulateQuery\",\"sequence_ordinal\":1}"}
+{"seq": 1, "event": "node_completed", "data": "{\"duration_ms\":0,\"node_name\":\"ReformulateQuery\",\"outputs_summary\":\"\"}"}
+{"seq": 2, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ExtractGraphContext\",\"sequence_ordinal\":4}"}
+{"seq": 3, "event": "node_completed", "data": "{\"duration_ms\":342,\"node_name\":\"ExtractGraphContext\",\"outputs_summary\":\"\"}"}
+{"seq": 4, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"RetrieveHybrid\",\"sequence_ordinal\":7}"}
+{"seq": 5, "event": "node_completed", "data": "{\"duration_ms\":518,\"node_name\":\"RetrieveHybrid\",\"outputs_summary\":\"\"}"}
+{"seq": 6, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"AssemblePrompt\",\"sequence_ordinal\":10}"}
+{"seq": 7, "event": "node_completed", "data": "{\"duration_ms\":11,\"node_name\":\"AssemblePrompt\",\"outputs_summary\":\"\"}"}
+{"seq": 8, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"GenerateAnswer\",\"sequence_ordinal\":13}"}
+{"seq": 9, "event": "node_completed", "data": "{\"duration_ms\":3099,\"node_name\":\"GenerateAnswer\",\"outputs_summary\":\"\"}"}
+{"seq": 10, "event": "answer_chunk", "data": "{\"chunk_text\":\"No. The TechCrunch article on Meta's moderation bias discusses suppression of Palestinian voices through content moderation and shadowbanning [1][2][3][4][5][6][7][8], while the TechCrunch article on Norway's push to extend the ban on Meta's tracking ads addresses unlawful user tracking under data protection rules. The evidence provided does not include the Norway article, so I cannot compare its content directly. The two articles address different issues: one is about content moderation bias, the other about data privacy and tracking. Therefore, they do not suggest the same kind of issue.\\nAnswer: No\",\"is_final\":true}"}
+{"seq": 11, "event": "truncation", "data": {"truncated": true, "unwritten_frames": 2}}

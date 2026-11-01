@@ -1,0 +1,12 @@
+{"seq": 0, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ReformulateQuery\",\"sequence_ordinal\":1}"}
+{"seq": 1, "event": "node_completed", "data": "{\"duration_ms\":0,\"node_name\":\"ReformulateQuery\",\"outputs_summary\":\"\"}"}
+{"seq": 2, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ExtractGraphContext\",\"sequence_ordinal\":4}"}
+{"seq": 3, "event": "node_completed", "data": "{\"duration_ms\":340,\"node_name\":\"ExtractGraphContext\",\"outputs_summary\":\"\"}"}
+{"seq": 4, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"RetrieveHybrid\",\"sequence_ordinal\":7}"}
+{"seq": 5, "event": "node_completed", "data": "{\"duration_ms\":606,\"node_name\":\"RetrieveHybrid\",\"outputs_summary\":\"\"}"}
+{"seq": 6, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"AssemblePrompt\",\"sequence_ordinal\":10}"}
+{"seq": 7, "event": "node_completed", "data": "{\"duration_ms\":12,\"node_name\":\"AssemblePrompt\",\"outputs_summary\":\"\"}"}
+{"seq": 8, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"GenerateAnswer\",\"sequence_ordinal\":13}"}
+{"seq": 9, "event": "node_completed", "data": "{\"duration_ms\":2265,\"node_name\":\"GenerateAnswer\",\"outputs_summary\":\"\"}"}
+{"seq": 10, "event": "answer_chunk", "data": "{\"chunk_text\":\"The individual is Sam Bankman-Fried. Evidence [1], [2], [3], [4], [5], [6], [7], and [8] all identify Sam Bankman-Fried as the FTX founder on trial for fraud and conspiracy charges. The Verge articles [1], [2], [3], [4], [5], [6] describe his trial for seven counts of wire fraud and conspiracy, and his alleged misappropriation of customer funds. TechCrunch [8] reports his trial is imminent and that he pleaded not guilty. The question also mentions a desire to establish a board with experts for a company mentioned by Cnbc | World Business News Leader, but the provided evidence does not include any such statement or CNBC article. The prosecution's allegation of fraud for personal gain is supported by Fortune [7], which describes the government's claim that he stole customer funds for his lifestyle and political donations. The evidence is consistent across all sources, so the answer is clear.\\nAnswer: Sam Bankman-Fried\",\"is_final\":true}"}
+{"seq": 11, "event": "truncation", "data": {"truncated": true, "unwritten_frames": 2}}
