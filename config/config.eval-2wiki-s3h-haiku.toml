@@ -1,0 +1,12 @@
+# S3 held-out grid overlay (#163, D-291, LANCET_ENV=eval-2wiki-s3h-haiku), for the engine
+# only. The eval-2wiki store with the graph read from the s3h_haiku graph table set
+# (entities__s3h_haiku, entity_edges__s3h_haiku), which import_graph_extractions builds
+# from haiku's extraction of the 6,119 passages (#145). Every other table is the store's
+# own and is never written. The gateway and the harness keep LANCET_ENV=eval-2wiki.
+
+[engine]
+lancedb_path = "./data/lancedb-eval-2wiki"
+
+[engine.graph]
+ingest_extraction = false
+table_set = "s3h_haiku"
