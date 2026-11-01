@@ -104,11 +104,22 @@ notices. Every replay clause is zero tolerance.
 The first two are per record (``provenance_failures``); ``replay_run_failures``
 checks all ten over every reader-arm record, from inputs its caller loads, since the
 target-dependent clauses need the reader's declaration.
+
+D-274: a deepseek replicate, replicate 2 or later of the carried engine arm, is a
+replay record too (``is_replay_record``): a new deepseek answer to the carried row's
+``pack`` body, sent unrewritten through an OpenRouter batch on OpenRouter credit. Its
+clauses are the ten above, read for that request: ``body_hash`` is the hash of the
+``pack`` body itself and ``rewritten_fields`` is empty; ``model`` is the body's
+``model``; ``is_byok`` must be False; ``provider`` must be the body's pinned provider
+(its ``order`` entry's name before any ``/``, matched without case) and the body must
+carry the D-271 pin (``deepseek_pin_problem``); the body must turn reasoning off
+(``effort: none`` or ``enabled: false``) and ``reasoning_tokens`` must be 0.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Container, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
@@ -226,8 +237,34 @@ def _external_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
     return failures
 
 
+def is_replay_record(record: RunRecord) -> bool:
+    """Whether a record is a replay record: a reader arm's, or a deepseek replicate
+    (replicate 2 or later of an engine arm, D-274)."""
+    return is_reader_arm(record.graph_arm) or record.replicate > 1
+
+
+def deepseek_pin_problem(body: Mapping[str, object]) -> str | None:
+    """Why a deepseek ``pack`` body lacks the D-271 provider pin, or None.
+
+    The pin is one provider in ``order``, ``allow_fallbacks`` false and a
+    ``max_price`` object, so a deepseek replicate is answered by the provider S1's
+    were, at a capped price.
+    """
+    provider = body.get("provider")
+    if not isinstance(provider, Mapping):
+        return "D-271: the pack body has no provider object"
+    order = provider.get("order")
+    if not isinstance(order, list) or len(order) != 1 or not isinstance(order[0], str):
+        return f"D-271: the pack body's provider order is {order!r}, not one provider"
+    if provider.get("allow_fallbacks") is not False:
+        return "D-271: the pack body's provider allows fallbacks"
+    if not isinstance(provider.get("max_price"), Mapping):
+        return "D-271: the pack body's provider has no max_price"
+    return None
+
+
 def _replay_record_failures(record: RunRecord) -> list[ProvenanceFailure]:
-    """The per-record replay clauses of a reader arm's record (D-257)."""
+    """The per-record replay clauses of a replay record (D-257, D-274)."""
     details: dict[str, list[str]] = {}
 
     def fail(code: str, detail: str) -> None:
@@ -351,7 +388,7 @@ def provenance_failures(
         ValueError: If the record's arm label is unknown.
     """
     label = record.graph_arm
-    if is_reader_arm(label):
+    if is_replay_record(record):
         return _replay_record_failures(record)
     spec = resolve_arm(label)
     if is_external_arm(spec.label):
@@ -615,6 +652,69 @@ def _prompt_failure(pack_body: str, base_row: ContextExportRow | None) -> str | 
     return None
 
 
+#: A deepseek ``pack`` body's ``reasoning`` values that turn reasoning off.
+_REASONING_OFF = ({"effort": "none"}, {"enabled": False})
+
+
+def _deepseek_failures(replay: ReplayProvenance) -> list[tuple[str, str]]:
+    """The request clauses of a deepseek replicate (D-274), in ``REPLAY_CODES`` order.
+
+    Its request is the ``pack`` body unrewritten, so each clause reads that body.
+    """
+    try:
+        body = json.loads(replay.pack_body)
+    except ValueError as exc:
+        return [("body_hash", f"the pack body is unreadable: {exc}")]
+    if not isinstance(body, dict):
+        return [("body_hash", "the pack body is not a JSON object")]
+    found: list[tuple[str, str]] = []
+    sent = hashlib.sha256(replay.pack_body.encode("utf-8")).hexdigest()
+    if replay.sent_body_sha256 != sent:
+        found.append((
+            "body_hash",
+            f"sent body hash {replay.sent_body_sha256!r} != the pack body's {sent!r}",
+        ))
+    if replay.rewritten_fields:
+        found.append((
+            "rewritten_fields",
+            f"rewritten fields {replay.rewritten_fields!r}; a deepseek replicate "
+            "rewrites none",
+        ))
+    if replay.model != body.get("model"):
+        found.append((
+            "model",
+            f"model {replay.model!r} != the pack body's {body.get('model')!r}",
+        ))
+    if replay.is_byok is not False:
+        found.append((
+            "is_byok",
+            f"is_byok is {replay.is_byok!r}, expected False (OpenRouter credit)",
+        ))
+    pin = deepseek_pin_problem(body)
+    if pin is not None:
+        found.append(("provider", pin))
+    else:
+        pinned = str(body["provider"]["order"][0]).partition("/")[0]
+        if (replay.provider or "").casefold() != pinned.casefold():
+            found.append((
+                "provider",
+                f"provider {replay.provider!r}, expected the pinned {pinned!r}",
+            ))
+    if body.get("reasoning") not in _REASONING_OFF:
+        found.append((
+            "reasoning_tokens",
+            f"the pack body's reasoning {body.get('reasoning')!r} does not turn "
+            "reasoning off",
+        ))
+    elif replay.reasoning_tokens != 0:
+        found.append((
+            "reasoning_tokens",
+            f"{replay.reasoning_tokens} reasoning tokens from a body that turns "
+            "reasoning off, expected 0",
+        ))
+    return found
+
+
 def _target_failures(
     replay: ReplayProvenance, declaration: ReaderDeclaration
 ) -> list[tuple[str, str]]:
@@ -692,7 +792,7 @@ def replay_run_failures(
 
     for rec in records:
         label = rec.graph_arm
-        if not is_reader_arm(label):
+        if not is_replay_record(rec):
             continue
         qid = rec.question_id
         for failure in _replay_record_failures(rec):
@@ -715,6 +815,10 @@ def replay_run_failures(
         prompt = _prompt_failure(replay.pack_body, export_rows.get((qid, base)))
         if prompt is not None:
             fail("prompt", label, qid, prompt)
+        if not is_reader_arm(label):
+            for code, detail in _deepseek_failures(replay):
+                fail(code, label, qid, detail)
+            continue
         reader = arm_reader(label)
         declaration = readers.get(reader) if reader is not None else None
         if declaration is None:

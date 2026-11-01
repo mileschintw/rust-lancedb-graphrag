@@ -550,6 +550,12 @@ class StagePreRegistration(LeverPreRegistration):
     readers: tuple[tuple[str, ReaderDeclaration], ...] = ()
 
 
+#: D-274: the test of a replay stage with more than one replicate: the exact two-sided
+#: sign-flip permutation on the per-question mean differences (stats.
+#: exact_signflip_p_integer), with a paired t-test beside it as a cross-check.
+REPLICATE_TEST = "paired_sign_flip_permutation_exact_two_sided"
+
+
 @dataclass(frozen=True, kw_only=True)
 class ReplayStagePreRegistration(StagePreRegistration):
     """v1.1 S2 (D-254, D-257): a stage that replays one earlier arm to Claude readers.
@@ -569,11 +575,25 @@ class ReplayStagePreRegistration(StagePreRegistration):
     Attributes:
         replay_source_arm: The canonical label of the S1 arm S2 replays (S1's winner,
             written in EXPERIMENT-S1.md › Result).
+        replicates: D-274: how many independent answers every arm gives each question
+            (K). Above 1, a question's score is the mean of its K answers, and the test
+            must be ``REPLICATE_TEST``: the exact sign-flip permutation on the
+            per-question mean differences.
     """
 
     replay_source_arm: str
+    replicates: int = 1
 
     def __post_init__(self) -> None:
+        if self.replicates < 1:
+            raise ThresholdError(
+                f"replicates must be at least 1, got {self.replicates}"
+            )
+        if self.replicates > 1 and self.test != REPLICATE_TEST:
+            raise ThresholdError(
+                f"{self.replicates} replicates need test {REPLICATE_TEST!r} (D-274), "
+                f"not {self.test!r}"
+            )
         source = self.replay_source_arm
         labels = (
             self.reference_arm,

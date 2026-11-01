@@ -220,6 +220,18 @@ class RunRecord(BaseModel):
             "fields are the final attempt. Empty when the work unit ran once."
         ),
     )
+    replicate: int = Field(
+        default=1,
+        ge=1,
+        exclude_if=lambda value: value == 1,
+        description=(
+            "D-274: which of a question's K independent answers under this arm the "
+            "record is, from 1. A record is one unit per (question, arm, "
+            "replicate). Only an S2 replay run has more than one; the field is "
+            "left out of the JSON at 1, so every earlier journal reads and writes "
+            "unchanged."
+        ),
+    )
 
 
 def first_attempt_view(record: RunRecord) -> RunRecord:

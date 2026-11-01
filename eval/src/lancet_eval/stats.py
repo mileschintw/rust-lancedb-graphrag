@@ -125,6 +125,95 @@ def exact_signflip_p(n_pos: int, n_neg: int) -> Fraction:
     return Fraction(tail, 2**nd)
 
 
+def exact_signflip_p_integer(diffs: Sequence[int]) -> Fraction:
+    """Exact two-sided paired sign-flip permutation p of integer differences (D-274).
+
+    Every difference keeps its size and takes either sign with probability 1/2. The
+    p-value is `P(|S| >= |sum(diffs)|)` over the `2^n` sign vectors, counted exactly
+    by a pass over the reachable sums, so it carries no seed. With K replicates per
+    question the caller passes K times each per-question mean difference, an integer
+    for 0/1 outcomes. On 0/+-1 differences this is `exact_signflip_p`.
+
+    Args:
+        diffs: The paired differences, scaled to integers.
+
+    Returns:
+        The two-sided p-value as an exact `Fraction`; `1` when every difference is 0.
+    """
+    sizes = [abs(d) for d in diffs if d != 0]
+    if not sizes:
+        return Fraction(1)
+    observed = abs(sum(diffs))
+    ways: dict[int, int] = {0: 1}
+    for size in sizes:
+        step: dict[int, int] = {}
+        for total, count in ways.items():
+            step[total + size] = step.get(total + size, 0) + count
+            step[total - size] = step.get(total - size, 0) + count
+        ways = step
+    tail = sum(count for total, count in ways.items() if abs(total) >= observed)
+    return Fraction(tail, 2 ** len(sizes))
+
+
+def paired_t_p(diffs: Sequence[float]) -> float | None:
+    """Two-sided paired t-test p of the differences' mean against 0 (D-274).
+
+    A cross-check beside `exact_signflip_p_integer`, never the test a decision reads.
+
+    Returns:
+        None with fewer than two differences; 1 when every difference is 0, and 0
+        when they are all equal and not 0 (no spread to scale the mean by).
+    """
+    n = len(diffs)
+    if n < 2:
+        return None
+    mean = math.fsum(diffs) / n
+    var = math.fsum((d - mean) ** 2 for d in diffs) / (n - 1)
+    if var == 0.0:
+        return 1.0 if mean == 0.0 else 0.0
+    return t_two_sided_p(mean / math.sqrt(var / n), n - 1)
+
+
+def t_two_sided_p(t: float, df: int) -> float:
+    """`P(|T| >= |t|)` for Student's t with `df` degrees of freedom."""
+    return _betainc(df / 2.0, 0.5, df / (df + t * t))
+
+
+def _betainc(a: float, b: float, x: float) -> float:
+    """The regularized incomplete beta function `I_x(a, b)` (continued fraction)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    front = math.exp(
+        math.lgamma(a + b)
+        - math.lgamma(a)
+        - math.lgamma(b)
+        + a * math.log(x)
+        + b * math.log1p(-x)
+    )
+    if x > (a + 1.0) / (a + b + 2.0):
+        return 1.0 - _betainc(b, a, 1.0 - x)
+    # Lentz's method for the continued fraction of I_x(a, b).
+    tiny = 1e-300
+    c, d = 1.0, 1.0 - (a + b) * x / (a + 1.0)
+    d = 1.0 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 300):
+        for numerator in (
+            m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m)),
+            -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1)),
+        ):
+            d = 1.0 + numerator * d
+            d = 1.0 / (d if abs(d) > tiny else tiny)
+            c = 1.0 + numerator / c
+            c = c if abs(c) > tiny else tiny
+            h *= d * c
+        if abs(d * c - 1.0) < 1e-15:
+            break
+    return front * h / a
+
+
 def holm_stepdown(
     ps: Sequence[float], alpha: float = 0.05
 ) -> tuple[list[bool], list[float]]:

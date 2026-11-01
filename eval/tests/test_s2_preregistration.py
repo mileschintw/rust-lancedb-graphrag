@@ -182,7 +182,10 @@ def test_the_numbers_are_s1s() -> None:
     s1 = thresholds.PREREGISTRATION_S1
     s2 = build_draft()
     arm_fields = {"reference_arm", "families", "descriptive_arms", "null_guard_arms"}
-    own = {"default_rule", "provenance", "readers", "replay_source_arm"}
+    own = {"default_rule", "provenance", "readers", "replay_source_arm", "replicates"}
+    # D-274: replicates replace the sign test with the sign-flip permutation.
+    assert s2.test == thresholds.REPLICATE_TEST and s2.replicates == 5
+    own.add("test")
     for field in dataclasses.fields(s2):
         if field.name not in arm_fields | own:
             assert getattr(s2, field.name) == getattr(s1, field.name), field.name
@@ -222,7 +225,12 @@ def test_score_and_compare_levers_read_opus_as_a_descriptive_reader(
     import replay_fixture as rf
     from test_reader_comparison import OPUS_ARM, _compare, _group, _s2, _score
 
-    s2, gold, qs = _s2(tmp_path, monkeypatch, prereg=build_draft(rf.BASE))
+    # The fixture run holds one answer per question and arm, so the draft is read at
+    # one replicate (D-274's K = 5 path is test_replicates.py's).
+    prereg = dataclasses.replace(
+        build_draft(rf.BASE), replicates=1, test="paired_sign_flip_exact_two_sided"
+    )
+    s2, gold, qs = _s2(tmp_path, monkeypatch, prereg=prereg)
     _score(s2, gold)
     payload = _compare(s2, gold)
 

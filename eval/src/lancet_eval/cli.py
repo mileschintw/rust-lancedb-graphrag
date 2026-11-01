@@ -892,7 +892,7 @@ def replay_init_command(
 
 batch_app = typer.Typer(
     name="batch",
-    help="S2 reader arms over a batch API: submit and fetch (D-254).",
+    help="S2 batch arms over a batch API: submit and fetch (D-254, D-274).",
     no_args_is_help=True,
 )
 app.add_typer(batch_app, name="batch")
@@ -906,15 +906,21 @@ def batch_submit_command(
     ],
     arm: Annotated[
         str,
-        typer.Option("--arm", help="The reader arm (<arm>@<reader>)"),
+        typer.Option(
+            "--arm",
+            help=(
+                "The reader arm (<arm>@<reader>), or the carried deepseek arm for its "
+                "replicates 2 to K (D-274)"
+            ),
+        ),
     ],
     limit: Annotated[
         int | None,
         typer.Option(
             "--limit",
             help=(
-                "Submit only the first N questions (a pilot run only: replay-init "
-                "--pilot)"
+                "Submit only the first N questions, every replicate of each (a pilot "
+                "run only: replay-init --pilot)"
             ),
         ),
     ] = None,
@@ -922,14 +928,16 @@ def batch_submit_command(
         bool,
         typer.Option(
             "--retry-errors",
-            help="Resubmit only the questions whose request errored or expired",
+            help="Resubmit only the answers whose request errored or expired",
         ),
     ] = False,
 ) -> None:
     """Pack, rewrite and submit one batch of a reader arm (D-254, D-255).
 
-    Prints a cost estimate first (D-258: it never refuses) and writes the manifest
-    under <run>/batches before the submit. In a run of record it refuses --limit and
+    With K replicates (D-274) it sends K answers per question, or answers 2 to K of
+    the carried deepseek arm, its pack body unrewritten. Prints a cost estimate first
+    (D-258: it never refuses) and writes the manifest under <run>/batches before the
+    submit. In a run of record it refuses --limit and
     refuses unless the S2 pre-registration passes D-73 against the journal (#109). A
     paid call.
     """
@@ -969,7 +977,7 @@ def batch_fetch_command(
     ],
     arms: Annotated[
         list[str] | None,
-        typer.Option("--arm", help="Fetch only this reader arm (repeatable)"),
+        typer.Option("--arm", help="Fetch only this batch arm (repeatable)"),
     ] = None,
 ) -> None:
     """Journal every finished batch through generate_from_context render (D-254).
