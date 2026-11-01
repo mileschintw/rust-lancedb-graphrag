@@ -4,6 +4,8 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
 
 ## Handover
 
+- **UNATTENDED from 2026-11-01 02:15 -0800 (mode `unattended`).** User: "全部接受，同意 force-push / 同時預算現在不用拿給我看了，只要是在合理範圍我們的credit可支付的情況下都直接同意 / 需要的話，也可以跟之前一樣，先進行唯獨audit並依據結果進行修補跟merge。/ 我接下來要進入無人值守了…可以現在就直接進行的就晚上一起平行執行，我早上起來看結果". Scope: #117, #143, #145, #147, #148, #149 (and spares). Merge right: open PR + merge on green for every in-scope lane, freeze PRs included. Spend pre-approved within per-lane ceilings (117: Claude $20/OR $1; 143: $15; 145: Claude $60/OR $1.50; 148: Claude $40/OR $1.50; 149: Claude $70/OR $3; OpenRouter balance ~$7 shared, stop below $1). Main checkout order: 143 → 149 → 148 (hand over with "main checkout is yours"). Opus is an S3 writer (145 amends its unmerged freeze; force-push approved). Read-only audits allowed before paid runs. Claude credit expires 2026-11-03: Claude work first.
+
 - **Coordinator:** title "S2 程式碼準備提醒", worktree D:/Repos/lancet/.claude/worktrees/vigorous-elgamal-87e693, id local_e5497074-397c-4170-ba22-60a6e066d35b, mode **normal** (the unattended run closed 2026-10-31 06:02 -0700; normal since the user's next message).
 - **Standing instructions:**
   1. **PRs, from 2026-10-31 on:** when a lane is `done`, open its PR without asking. Merge once `ci` passes, with `--match-head-commit` at the sha `ready` prints. The user's words: "我還沒要睡，等我要睡會跟你說無人值守，同時先預設只要做完就開PR，CI過就merge" (2026-10-31). Paid calls, store rebuilds and held-out reads still wait for the user. The user will say when to switch to unattended. A failed check gets one rerun, then a question to the user. Before this, each PR needed the user's yes per lane. (2) After each merge, delete that lane's `engine/target` (user's "清 lane 7、8、9 的 target (Recommended)", 2026-10-29 21:20 -0700); never the main checkout's. (3) After each merge, fast-forward the main checkout's `main` to origin (new worktrees cut from it). (4) Sessions start only in a turn the user typed; an answer to AskUserQuestion inside an event turn is refused by the app. While run-s01 is active, do not fast-forward the main checkout after merges.
@@ -74,6 +76,11 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
+| 147 | #147 | local_104e6592-6081-4db7-9dff-6b240ae49211 | started 2026-11-01 (unattended): metric fix (yes/no split, guess-adjusted, evidence split as reported secondaries) + D-IDs for principles 1-9; free | — |
+| 148 | #148 | local_4b47d05b-1a55-4b82-a4da-a3b9193706f8 | started 2026-11-01 (unattended): MHR writer grid on S1 subset; freeze PR → Claude extraction tonight (ceiling Claude $40, OpenRouter $1.50); graph import + reading after main checkout (3rd) | — |
+| 149 | #149 | local_0c64611e-c641-4167-b6c3-364ca0fdeead | started 2026-11-01 (unattended): B 2Wiki hybrid readers + C full-MHR fresh split, store, readers; freeze PR(s) → main checkout (2nd, after 143) → Claude readers tonight (ceiling Claude $70, OpenRouter $3) | — |
+| spare-1 | none | local_5e0dd332-9421-44e7-84a5-e5c0a705ec0d | parked spare (rewrite brief before GO) | GO #spare-1 |
+| spare-2 | none | local_945630cc-9acd-4111-b020-a38a766b222f | parked spare (rewrite brief before GO) | GO #spare-2 |
 | 145 | #145 | local_b792b8dc-3864-43f1-8564-58de4475b13b | started 2026-11-01 on the user's "Start S3 prep": 2Wiki fetch + license + D-243 split + writer prereg freeze (free) → freeze PR → "continue" → extend #117 script after #117 merges → estimate → owner's yes → Claude batches by the morning of 2026-11-02. Opus only if the owner adds it after #117 | — |
 | 117 | #117 | local_cb4d73f6-3280-45c7-beb4-29ac541d651d | started 2026-11-01 on the user's "Start #117": writer pilot in its own worktree (never the main checkout); thinking per the confirmed ruling (Haiku off, Sonnet effort low, batch); free work done (2951e977); **paid gate approved 2026-11-01, user: "Approve, in stages"**: canaries → 4 Haiku + Sonnet batch 1 → project Sonnet from batch 1, continue if ≤ $15 else ask → deepseek sync; ceilings Claude $20, OpenRouter $1; batches by the morning of 2026-11-02 | — |
 | 143 | #143 | local_ed178c0c-c52d-4b0d-adfc-1716596a661f | started 2026-11-01 on the user's "好，執行三個 reader K=2 跟補跑deepseek": exploratory merged-store reader run, K=2 (Haiku, Sonnet sync, Opus, + deepseek replicate 2), ~$7, ceiling $15. Freeze PR #144 merged 639ee82f (first CI fail: ruff line length, fixed by amending to c767bff1); "continue" sent. Flow: freeze PR → coordinator merges → "continue" → paid run in main checkout → record PR (merge on green, standing instruction 1) | — |
@@ -108,6 +115,9 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #143 | now (lane 143) | — | none | exploratory merged-store readers: `multihop_rag_s2x_dev.toml`, new prereg constant in `thresholds.py`, run dir, `EXPLORE-S2-MERGED.md` | limited: paid ~$7 (approved) |
 | #145 | now (lane 145) | — | #117 (script, step 4 only) | 2Wiki corpus config + split, writer prereg constant in `thresholds.py`, #117 script extension, `RUN-S3-EXTRACT.md` | limited: paid, owner's yes on estimate; by the morning of 2026-11-02 |
 | #146 | after S3 | — | none | full-MultiHop-RAG confirmation stage: new split + prereg, full store, `answer_usable` yes/no fix; files set at design (user: "Add to roadmap") | limited: held-out budget, store rebuild, paid |
+| #147 | now (lane 147) | — | none | `score.py`, `lever_comparison.py`, `PLAN.md` › Decisions | free |
+| #148 | now (lane 148) | — | #117 (script) | `multihop_rag_s3m_dev.toml`, prereg constant, extraction import path, `EXPLORE-S3-MHR-WRITERS.md` | limited: paid (pre-approved, ceilings) |
+| #149 | now (lane 149) | — | #145 (2Wiki pin/split, part B) | 2Wiki + full-MHR corpus configs, fresh split file, prereg constants, `EXPLORE-B/C` docs | limited: paid (pre-approved), store builds (approved) |
 | #139 | 2 | — | none | `comparison.py` › reader table `batch_spend` for sync arms (Sonnet printed at half; S2 Result states the true ~$7.02) | free; not urgent |
 | #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
 | #117 | after S2 submit | — | none | writer pilot: Haiku/Sonnet subset extraction (30-50 docs), cost and quality, no store; BYOK check (user: "是，排在 S2 後 (Recommended)") | limited: paid, before the credit expires 2026-11-03 |
@@ -191,3 +201,7 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 ## Deadlines
 
 - **Claude API credit expires 2026-11-03.** All S2 paid runs must be submitted by the morning of 2026-11-02, because a batch can take up to 24 h. This came from the user's forked side session local_244b32c4-288f-4944-bd22-5a71f3d65265 (2026-10-30). It is relayed and not yet confirmed by the user here. Suggested order: #50 now → #53 the moment #50 merges (target: merged Sunday 2026-11-01). In parallel, the user runs the S1 store build, the S0 LlamaIndex live checks, and S0/S1 in the main checkout (paid; ask with a cost estimate). Sunday: the S2 pilot (`batch submit --limit N`); if Sonnet `between_tools` fails over OpenRouter, use the native Anthropic batch API (Q4, D-260). By Monday morning: the real S2 arms. #54 merges before the report. Critical path: #50 → #53; it takes priority over other work.
+
+## Unattended log
+
+- 2026-11-01 02:15 -0800: round started. Running: 117 (deepseek extraction), 143 (S2X paid run, holds main checkout), 145 (amending freeze for Opus). Started: 147, 148, 149, spare-1, spare-2 (parked). Session folders: to confirm.
