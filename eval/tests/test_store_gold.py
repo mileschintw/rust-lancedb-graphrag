@@ -18,6 +18,8 @@ from lancet_eval.store_gold import (
     load_chunk_text_dump,
     load_store_gold,
     reads_gold_chunk_table,
+    unmatched_units,
+    write_ranked_ids,
 )
 
 FACT_A = "The committee approved the budget on Tuesday."
@@ -79,13 +81,14 @@ def test_a_fact_matches_the_ranked_chunks_that_contain_it() -> None:
     assert sets == {"q1": [frozenset({"m:1"}), frozenset({"m:3"})]}
 
 
-def test_an_empty_or_unmatched_fact_keeps_its_unit_as_an_empty_set() -> None:
+def test_an_unmatched_fact_keeps_its_unit_and_an_empty_fact_has_none() -> None:
     texts = {"m:1": FACT_A}
     sets = build_store_gold_sets(
         {"q1": _gold(facts=(FACT_A, "", FACT_B))}, {"q1": ["m:1"]}, texts
     )
-    # Three evidence entries, as the gold-chunk table's evidence_index counts them.
-    assert sets["q1"] == [frozenset({"m:1"}), frozenset(), frozenset()]
+    # The gold-chunk table's probe writes no row for an empty fact.
+    assert sets["q1"] == [frozenset({"m:1"}), frozenset()]
+    assert unmatched_units(_gold(facts=(FACT_A, "", FACT_B))) == [frozenset()] * 2
 
 
 def test_a_ranked_chunk_missing_from_the_dump_refuses() -> None:
@@ -180,3 +183,46 @@ def test_chunk_ids_lists_one_stores_ranked_ids_and_its_generation(tmp_path) -> N
     lines = out.read_text("utf-8").splitlines()
     assert [json.loads(line)["chunk_id"] for line in lines] == ["m:2", "m:1", "m:3"]
     assert CliRunner().invoke(app, [*args, "--store", "full"]).exit_code == 1
+
+
+def test_chunk_ids_refuses_mixed_index_generations(tmp_path) -> None:
+    a = _record("merged/hybrid+rerank+metadata", ["m:1"])
+    b = _record("merged/hybrid+rerank+metadata", ["m:2"], "q2")
+    b = b.model_copy(update={"index_generation": "other"})
+    with pytest.raises(StoreGoldError, match="a dump pins exactly one"):
+        write_ranked_ids([a, b], "merged", tmp_path / "ids.jsonl")
+
+
+def test_the_cli_refuses_a_store_named_twice(tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+
+    for command in ("score", "compare-levers"):
+        result = CliRunner().invoke(
+            app,
+            [command, "--run", str(tmp_path), "--chunk-text", "merged=a.jsonl"]
+            + ["--chunk-text", "merged=b.jsonl"],
+        )
+        assert result.exit_code == 2, command
+        assert "twice" in result.output, command
+
+
+def test_score_passes_each_chunk_text_dump_by_store(monkeypatch, tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval import score
+    from lancet_eval.cli import app
+
+    seen: dict[str, object] = {}
+
+    def fake_score(**kwargs):  # type: ignore[no-untyped-def]
+        seen.update(kwargs)
+        raise score.ScoreError("stop here")
+
+    monkeypatch.setattr(score, "score_run", fake_score)
+    result = CliRunner().invoke(
+        app, ["score", "--run", str(tmp_path), "--chunk-text", "full=f.jsonl"]
+    )
+    assert result.exit_code == 1
+    assert seen["chunk_text"] == {"full": Path("f.jsonl")}

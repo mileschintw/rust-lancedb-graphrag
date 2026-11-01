@@ -46,7 +46,6 @@ from typing import Any
 from lancet_eval import answer_kinds, gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval.arms import (
-    STORE_PREFIXES,
     arm_reader,
     canonical_arm,
     in_registry_order,
@@ -120,6 +119,7 @@ from lancet_eval.store_gold import (
     coverage_inputs,
     load_store_gold,
     reads_gold_chunk_table,
+    store_chunking_by_name,
 )
 from lancet_eval.strata import STRATUM_TYPES
 from lancet_eval.thresholds import (
@@ -1463,12 +1463,12 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
             "evidence_hits_at_4": None
             if is_reader_arm(arm)
             else _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
-            "context_tokens_mean": _mean({
-                r.question_id: tokens(r) or 0.0 for r in recs
-            }),
-            "prompt_tokens_mean": _mean({
-                r.question_id: _prompt_tokens_value(r) or 0.0 for r in recs
-            }),
+            "context_tokens_mean": _mean(
+                {r.question_id: tokens(r) or 0.0 for r in recs}
+            ),
+            "prompt_tokens_mean": _mean(
+                {r.question_id: _prompt_tokens_value(r) or 0.0 for r in recs}
+            ),
             "label": LABEL_DESCRIPTIVE,
         })
     return rows
@@ -1905,7 +1905,7 @@ def _load_inputs(
     population = population_label(config.split_role)
     # #128: only an arm on the v1.0 store reads the gold-chunk table, so a run with
     # none (a full-corpus store's fresh questions) needs no row in it.
-    reads_v1 = any(reads_gold_chunk_table(a) for a in config.arms)
+    reads_v1 = any(map(reads_gold_chunk_table, config.arms))
     problems = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
@@ -2037,10 +2037,7 @@ def build_lever_comparison(
         pops={},
         export=_load_export(run),
         readers=_reader_declarations(prereg, sorted(arm_set)),
-        store_chunking={
-            STORE_PREFIXES[prefix]: chunking
-            for prefix, chunking in config.store_chunking.items()
-        },
+        store_chunking=store_chunking_by_name(config),
         replicates=replicates,
         units=units,
     )

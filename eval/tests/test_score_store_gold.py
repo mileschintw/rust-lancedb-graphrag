@@ -101,3 +101,84 @@ def test_a_dump_missing_a_ranked_chunk_refuses(
             gold_chunks_path=gold,
             chunk_text={"merged": dump},
         )
+
+
+def test_coverage_reads_the_merged_store_chunk_size(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    # No gold fact fits a two-token merged chunk, so the merged arms' coverage has no
+    # value (at the run-wide 500 characters every fact would fit).
+    run, gold, _ = _build_s1(tmp_path, monkeypatch)
+    toml = tmp_path / "repo" / "eval" / "corpora" / "levers_split.toml"
+    text = toml.read_text(encoding="utf-8")
+    merged = "chunk_size = 256\nchunk_overlap = 25"
+    assert merged in text
+    toml.write_text(text.replace(merged, "chunk_size = 2\nchunk_overlap = 1"), "utf-8")
+    dims = {
+        d.name: d
+        for d in score_run(run_dir=run, no_judge=True, gold_chunks_path=gold).dimensions
+    }
+    # A four-arm metric reads the questions every arm can score, so every arm's cell
+    # counts the ten questions the merged arms cannot.
+    for arm in S1_ARMS:
+        cell = dims[f"coverage_at_4__{arm_slug(arm)}"]
+        assert cell.score is None, arm
+        assert cell.detail["n_unscorable"] == 10, arm
+
+
+def test_a_merged_question_with_no_record_scores_as_a_miss(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold, _ = _build_s1(tmp_path, monkeypatch)
+    journal = run / "journal.jsonl"
+    lines = journal.read_text("utf-8").splitlines(keepends=True)
+    gap = '"question_id":"lv-g000"'
+    kept = [
+        line
+        for line in lines
+        if not (gap in line.replace(" ", "") and '"merged/' in line)
+    ]
+    assert len(kept) == len(lines) - 2
+    journal.write_text("".join(kept), "utf-8")
+    dump = _dump(tmp_path / "merged.jsonl", run)
+    scores = _scores(
+        score_run(
+            run_dir=run,
+            no_judge=True,
+            gold_chunks_path=gold,
+            chunk_text={"merged": dump},
+        )
+    )
+    small = scores[f"paper_hits_at_10_script_faithful__{arm_slug(SMALL_OFF)}"]
+    merged = scores[f"paper_hits_at_10_script_faithful__{arm_slug(MERGED_OFF)}"]
+    assert merged == pytest.approx(small - 0.1)
+
+
+def test_a_reference_arm_with_no_gold_sets_drops_the_deltas(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    import dataclasses
+
+    from levers_fixture import TOKEN
+    from test_s1_store_arms import _prereg
+
+    from lancet_eval import thresholds
+
+    run, gold, _ = _build_s1(tmp_path, monkeypatch)
+    prereg = _prereg()
+    family = dataclasses.replace(prereg.families[0], arms=(SMALL_OFF, MERGED_ON))
+    monkeypatch.setattr(
+        thresholds,
+        TOKEN,
+        dataclasses.replace(
+            prereg,
+            reference_arm=MERGED_OFF,
+            families=(family,),
+            null_guard_arms=(SMALL_OFF,),
+        ),
+        raising=False,
+    )
+    scores = _scores(score_run(run_dir=run, no_judge=True, gold_chunks_path=gold))
+    assert f"paper_hits_at_10__{arm_slug(SMALL_OFF)}" in scores
+    assert not any(name.startswith("paper_hits_at_10_delta__") for name in scores)
+    assert f"answer_usable_p4__{arm_slug(SMALL_OFF)}" in scores

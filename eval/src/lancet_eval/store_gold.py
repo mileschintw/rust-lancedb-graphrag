@@ -58,7 +58,19 @@ def reads_gold_chunk_table(label: str) -> bool:
     """
     if is_external_arm(label) or is_reader_arm(label):
         return False
+    return _on_v1_store(label)
+
+
+def _on_v1_store(label: str) -> bool:
     return arm_store(label) in (None, V1_STORE.name)
+
+
+def store_chunking_by_name(config: object) -> dict[str, StoreChunking]:
+    """A corpus's `[stores.<prefix>]` chunking, keyed by store name (#125)."""
+    return {
+        STORE_PREFIXES[prefix]: chunking
+        for prefix, chunking in getattr(config, "store_chunking", {}).items()
+    }
 
 
 def ranked_chunk_ids(rec: RunRecord) -> list[str]:
@@ -110,10 +122,11 @@ def build_store_gold_sets(
 ) -> GoldSets:
     """One store's gold sets: per question, one chunk-ID set per evidence entry.
 
-    The sets follow `evidence_list` order, as the gold-chunk table's `evidence_index`
-    does, so `min(len(gold), 10)` counts the same units. An entry's set holds the
-    question's ranked chunks whose text contains its fact (`gold_contained`); an empty
-    fact, or one no ranked chunk contains, gets an empty set that never matches.
+    One set per non-empty evidence fact, in `evidence_list` order, the units the
+    gold-chunk table's probe writes (it skips an empty fact), so `min(len(gold), 10)`
+    counts the same units. A set holds the question's ranked chunks whose text
+    contains its fact (`gold_contained`); a fact no ranked chunk contains gets an empty
+    set that never matches.
 
     Args:
         gold_map: The corpus's gold questions by ID.
@@ -136,14 +149,23 @@ def build_store_gold_sets(
             continue
         candidates = list(dict.fromkeys(ids))
         out[qid] = [
-            frozenset(c for c in candidates if fact and gold_contained(fact, texts[c]))
-            for fact in (_fact(entry) for entry in gold.evidence_list)
+            frozenset(c for c in candidates if gold_contained(fact, texts[c]))
+            for fact in _facts(gold)
         ]
     return out
 
 
-def _fact(entry: object) -> str:
-    return str(entry.get("fact", "")).strip() if isinstance(entry, dict) else ""
+def unmatched_units(gold: GoldQuestion) -> list[frozenset[str]]:
+    """A question's units, none matching any chunk: for a question never ranked."""
+    return [frozenset() for _ in _facts(gold)]
+
+
+def _facts(gold: GoldQuestion) -> list[str]:
+    facts = (
+        str(e.get("fact", "")).strip() if isinstance(e, dict) else ""
+        for e in gold.evidence_list
+    )
+    return [f for f in facts if f]
 
 
 @dataclass(frozen=True)
@@ -159,7 +181,7 @@ class StoreGold:
 
     def _table(self, arm: str) -> GoldSets | None:
         store = arm_store(arm)
-        return self.v1 if store in (None, V1_STORE.name) else self.stores.get(store)
+        return self.v1 if _on_v1_store(arm) else self.stores.get(store or "")
 
     def sets(self, arm: str, question_id: str) -> list[frozenset[str]] | None:
         """An arm's gold sets for a question; None when it has none (not evaluable).

@@ -85,7 +85,6 @@ from lancet_eval.measure import (
 )
 from lancet_eval.arms import (
     LEGACY_ARM_LABELS,
-    STORE_PREFIXES,
     arm_slug,
     arm_store,
     canonical_arm,
@@ -129,6 +128,8 @@ from lancet_eval.store_gold import (
     coverage_inputs,
     load_store_gold,
     reads_gold_chunk_table,
+    store_chunking_by_name,
+    unmatched_units,
 )
 from lancet_eval.stats import (
     BOOTSTRAP_B,
@@ -656,7 +657,7 @@ def _load_split_inputs(
         raise ScoreError(f"Could not read the gold-chunk table {path}: {exc}") from exc
     # #128: only an arm on the v1.0 store reads the gold-chunk table, so a run with
     # none (a full-corpus store's fresh questions) needs no row in it.
-    reads_v1 = any(reads_gold_chunk_table(a) for a in config.arms)
+    reads_v1 = any(map(reads_gold_chunk_table, config.arms))
     problems: list[str] = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
@@ -1067,10 +1068,7 @@ def _four_arm_dimensions(
     p4_ids = list(pop.question_ids)
     n_excluded = float(n_g - len(p4_ids))
     chunk_size = int(config.chunk_size)
-    store_chunking = {
-        STORE_PREFIXES[prefix]: chunking
-        for prefix, chunking in getattr(config, "store_chunking", {}).items()
-    }
+    store_chunking = store_chunking_by_name(config)
     readers = _readers_of(config) if any(map(is_reader_arm, arms)) else None
 
     def spend(rec: RunRecord) -> float:
@@ -1409,8 +1407,8 @@ def _four_arm_dimensions(
                 no_ranking += 1
             ids = _record_ranking_ids(rec) if valid and rec is not None else []
             # A dump-built store holds only the questions its arm ranked (#128); a
-            # question it never ranked scores as an empty ranking either way.
-            sets = gold_sets.sets(arm, qid) or []
+            # question it never ranked keeps its units, none of which can match.
+            sets = gold_sets.sets(arm, qid) or unmatched_units(gold_map[qid])
             scores[qid] = paper_question_scores(ids, sets, id_matcher)
         for name, key, kind in (
             ("paper_hits_at_4_script_faithful", "hit4", "wilson"),
@@ -2346,10 +2344,7 @@ def score_run(
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
     # #125, #128: each store-prefixed arm's own chunking, by store name.
-    store_chunking = {
-        STORE_PREFIXES[prefix]: chunking
-        for prefix, chunking in getattr(config, "store_chunking", {}).items()
-    }
+    store_chunking = store_chunking_by_name(config)
 
     # D-274: every replicate has passed the replay clauses above and passes the
     # provenance scan below; report.json reads each unit's first replicate, and the
@@ -2718,10 +2713,7 @@ def score_run(
                 elif cached_entry.error is not None:
                     judge_errors += 1
             else:
-                if (
-                    stage_spend_cap is not None
-                    and accumulated_judge_spend >= stage_spend_cap
-                ):
+                if stage_spend_cap is not None and accumulated_judge_spend >= stage_spend_cap:
                     cap_stopped = True
                     break
 
@@ -3768,18 +3760,15 @@ def score_run(
 
     record_corpora = {r.corpus for r in records if r.corpus}
     records_corpus = next(iter(record_corpora)) if len(record_corpora) == 1 else None
-    corpus_disagreement = records_corpus is None or (
-        header_corpus is not None and header_corpus != records_corpus
+    corpus_disagreement = (
+        records_corpus is None
+        or (header_corpus is not None and header_corpus != records_corpus)
     )
 
     effective_partial = True
     missing_units_note: str | None = None
 
-    if (
-        header_partial is False
-        and not corpus_disagreement
-        and records_corpus is not None
-    ):
+    if header_partial is False and not corpus_disagreement and records_corpus is not None:
         is_complete, missing = completeness_comparison(journal_path, records_corpus)
         if is_complete:
             effective_partial = False
@@ -3812,7 +3801,9 @@ def score_run(
         )
     if fallback_note:
         final_notes = (
-            f"{final_notes} {fallback_note}".strip() if final_notes else fallback_note
+            f"{final_notes} {fallback_note}".strip()
+            if final_notes
+            else fallback_note
         )
     if missing_units_note:
         final_notes = (
