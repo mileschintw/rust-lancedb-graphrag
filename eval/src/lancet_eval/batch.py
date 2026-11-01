@@ -76,6 +76,12 @@ pin (D-271: one ``order`` entry, ``allow_fallbacks: false`` and a ``max_price``,
 checks. A reader arm's export row is appended once per question, whatever its
 replicates; the deepseek arm's is the carried row. With K at 1 every request, manifest
 and record is as before.
+
+D-280: a reader declared ``between_tools`` on OpenRouter (Sonnet 5.5) takes the same
+sync path, since the Batch API refuses ``between_tools``: its rewritten body goes to
+the sync API one request at a time, and each record's ``is_byok`` is its own reply's.
+A sync chunk whose answers break ``is_byok``, the provider or ``reasoning_tokens``
+stops the run (``SYNC_STOP_CODES``).
 """
 
 from __future__ import annotations
@@ -184,8 +190,12 @@ client_factory: ClientFactory = batch_client.client_for
 chat_client_factory: Callable[[], batch_client.OpenRouterChatClient] = (
     batch_client.chat_client
 )
-#: The manifest target of deepseek's sync replicates (D-278).
+#: The manifest target of the sync path: deepseek's replicates (D-278) and a
+#: `between_tools` reader (D-280).
 SYNC_TARGET = "openrouter-sync"
+#: The clauses a sync chunk is stopped on (#133 L5, D-280): where it was routed, who
+#: paid, and whether a reader that must not think did.
+SYNC_STOP_CODES = frozenset({"is_byok", "provider", "reasoning_tokens"})
 
 
 class BatchError(ValueError):
@@ -616,9 +626,25 @@ DEEPSEEK_PRICE_FACTOR = 1.0
 SYNC_CHUNK = 20
 
 
-def price_factor(arm: str) -> float:
-    """The share of list price a request of `arm` is billed at."""
-    return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_PRICE_FACTOR
+def price_factor(arm: str, *, sync: bool = False) -> float:
+    """The share of list price a request of `arm` is billed at: the Batch API's half
+    for a batched reader, full price through the sync API (D-278, D-280)."""
+    if not is_reader_arm(arm):
+        return DEEPSEEK_PRICE_FACTOR
+    return 1.0 if sync else BATCH_PRICE_FACTOR
+
+
+def sync_reader(declaration: ReaderDeclaration) -> bool:
+    """Whether a reader goes through the sync API rather than a batch (D-280).
+
+    OpenRouter's Batch API refuses ``thinking: {type: "between_tools"}`` (the S2
+    pilot's Sonnet 5.5 batch failed whole on it, #138), so an OpenRouter reader
+    declared ``between_tools`` is sent one request at a time to the sync API, with
+    its ``provider.only`` pin and ``thinking`` kept.
+    """
+    return (
+        declaration.target == "openrouter" and declaration.thinking == "between_tools"
+    )
 
 
 def deepseek_request(
@@ -792,8 +818,11 @@ def submit(
     packed = [by_qid[qid] for qid, _ in units]
     reader = packed[0].request.reader
 
-    if declaration is None:
-        spent = DEEPSEEK_PRICE_FACTOR * sum(
+    # D-278: deepseek's replicates go through the sync API; D-280: so does a
+    # `between_tools` reader. The other readers go through a batch.
+    sync = declaration is None or sync_reader(declaration)
+    if sync:
+        spent = price_factor(label, sync=True) * sum(
             tokens_usd(r.workflow_meta, reader.price)
             for r in held.values()
             if r.replay is not None and r.workflow_meta is not None
@@ -807,10 +836,8 @@ def submit(
             "This is a pilot run (replay-init --pilot): its records are never the S2 "
             "result; start the run of record with a fresh replay-init."
         )
-    echo(cost_estimate(packed, base, reader, spent, price_factor(label)))
+    echo(cost_estimate(packed, base, reader, spent, price_factor(label, sync=sync)))
 
-    # D-278: deepseek's replicates go through the sync API, the readers through a batch.
-    sync = declaration is None
     chat = chat_client_factory() if sync else None
     client = None if sync else client_factory(reader.target)
     path = _new_manifest_path(run_dir, label)
@@ -885,7 +912,8 @@ def _submit_sync(
     base_errors: Sequence[RunRecord],
     echo: Callable[[str], None],
 ) -> SubmitResult:
-    """Sends deepseek's replicates one at a time through the sync API (D-278).
+    """Sends an arm's requests one at a time through the sync API: deepseek's
+    replicates (D-278) or a `between_tools` reader's answers (D-280).
 
     Every `SYNC_CHUNK` requests are rendered and journalled as `fetch` journals a
     batch, under the manifest's sync ID, so a rerun after a crash sends only the
@@ -898,8 +926,8 @@ def _submit_sync(
     for rec in base_errors:
         journal.append(rec)
     echo(
-        f"{len(units)} deepseek request(s) go through the sync chat-completions API "
-        f"one at a time (D-278), journalled every {SYNC_CHUNK}."
+        f"{len(units)} request(s) of {label} go through the sync chat-completions API "
+        f"one at a time (D-278, D-280), journalled every {SYNC_CHUNK}."
     )
     pairs = list(zip(units, packed, strict=True))
     for start in range(0, len(pairs), SYNC_CHUNK):
@@ -925,13 +953,14 @@ def _submit_sync(
             if r.graph_arm == label
             and r.session_id == batch_id
             and custom_id(r.question_id, r.replicate, state.replicates) in sent
-            and routing_failures(r, state.readers)
+            and routing_failures(r, state.readers, SYNC_STOP_CODES)
         ]
         if misrouted:
             _routing_summary(state, {label: {batch_id}}, echo)
             raise BatchError(
-                f"{len(misrouted)} deepseek answer(s) of the last {len(chunk)} break "
-                "is_byok or the provider; stopped before sending more (#133). "
+                f"{len(misrouted)} answer(s) of the last {len(chunk)} break is_byok, "
+                "the provider or reasoning_tokens; stopped before sending more "
+                "(#133, D-280). "
                 "They stay recorded and score will refuse them: tell the owner before "
                 f"any rerun. {path.name} stays 'syncing'; a rerun sends only the rest"
             )

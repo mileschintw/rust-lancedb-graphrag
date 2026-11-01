@@ -42,10 +42,8 @@ read the run offline.
   must reach (success plus error). If an arm is short of its count, stop and tell the user, with the counts and every
   `error` line. With every count met, go on, and name every `error` line in the run report.
 - **Held-out budget** (D-237): S2 reads only the dev pool. `replay-init` refuses a non-dev source run or corpus.
-- **Keys.** `OPENROUTER_API_KEY` must be set. A Sonnet arm on the native target also needs `ANTHROPIC_API_KEY`, which
-  `.env.example` does not list. It is billed to the organisation the key belongs to, so it must be a key of the
-  organisation that holds the Claude credit; ask the user to confirm that before step 3's native re-pilot. Never print
-  a key or write it to a file.
+- **Keys.** `OPENROUTER_API_KEY` must be set. Every arm goes through OpenRouter: D-280 drops the native Sonnet target,
+  so no `ANTHROPIC_API_KEY` is needed. Never print a key or write it to a file.
 - **Run directories.** In step 0, fix three paths and tell the user each one:
   - `<S1_RUN>`: the S1 run of record named in EXPERIMENT-S1.md › Result.
   - `<PILOT_RUN>` = `eval/runs/<YYYY-MM-DD>-s2-pilot`. `.gitignore` ignores it, and it is never committed.
@@ -61,12 +59,13 @@ Every arm answers each question 5 times (K = 5, D-274), so every figure below is
 arm's first answer is S1's, carried; its other 4 are new requests.
 
 Sync list prices from `PREREGISTRATION_S2` (USD per M tokens, in / out): Haiku 5.5 0.10 / 0.50, Sonnet 5.5 2 / 10,
-Opus 5.5 4 / 20. The Claude readers' Batch API bills half, over BYOK on Claude credit. S1's answers used about 3,500
-prompt tokens and 300 completion tokens (merged store; about 2,700 to 3,000 on the small store). So one batch request
-costs about $0.00025 with Haiku and $0.005 with Sonnet. Opus thinks at effort low; its estimate allows 1,000 reasoning
+Opus 5.5 4 / 20. Haiku's and Opus's Batch API bills half, over BYOK on Claude credit. Sonnet goes through OpenRouter's
+sync API instead, since the Batch API refuses `between_tools` (D-280): over BYOK on Claude credit too, at full list
+price. S1's answers used about 3,500 prompt tokens and 300 completion tokens (merged store; about 2,700 to 3,000 on the
+small store). So one request costs about $0.00025 with Haiku (batch) and $0.01 with Sonnet (sync). Opus thinks at effort low; its estimate allows 1,000 reasoning
 tokens a request, about $0.02. The ceiling assumes every request uses the engine's caps: 8,192 tokens of evidence
 plus about 500 of policy and question, and 2,048 completion tokens, reasoning included. That is at most $0.00095 for
-Haiku, $0.019 for Sonnet and $0.038 for Opus.
+Haiku, $0.038 for Sonnet (sync, full price) and $0.038 for Opus.
 
 deepseek's replicates run on OpenRouter credit, pinned to wafer/us under D-271's cap ($0.07 / $0.45 per M tokens).
 They go through sync `/chat/completions`, since deepseek-v4-flash-0731 has no batch variant (D-278), so there is no
@@ -84,17 +83,16 @@ outside it, about $1.40 (ceiling about $3.40) more on OpenRouter credit.
 
 | Step | Claude credit (BYOK) | Claude ceiling | OpenRouter credit | OpenRouter ceiling |
 |---|---|---|---|---|
-| 2 Pilot readers, 5 questions × 5 answers × 3 readers | about $0.63 | about $1.44 | – | – |
+| 2 Pilot readers, 5 questions × 5 answers × 3 readers (Sonnet sync) | about $0.76 | about $1.92 | – | – |
 | 2 Pilot deepseek, 5 questions × 4 answers | – | – | about $0.01 | about $0.06 |
-| 3 Native Sonnet re-pilot, only if needed | about $0.13 | about $0.47 | – | – |
 | 6 Haiku 5.5 arm, 100 questions × 5 | about $0.13 | about $0.47 | – | – |
-| 6 Sonnet 5.5 arm, 100 questions × 5 | about $2.50 | about $9.47 | – | – |
+| 6 Sonnet 5.5 arm, 100 questions × 5, sync (D-280) | about $5.00 | about $18.93 | – | – |
 | 6 Opus 5.5 arm, 100 questions × 5 (descriptive, D-267) | about $10.00 | about $18.93 | – | – |
 | 6 deepseek replicates 2 to 5, 100 questions × 4, sync (D-278) | – | – | about $0.08 | about $1.10 |
 | 7.1 Sonnet judge, at most 1,800 requests | about $2.20 to $2.35 | about $6.31 | – | – |
 | 7.1 gpt-4o-mini judge, at most 1,800 requests | – | – | about $0.14 to $0.15 | about $0.39 |
 | BYOK fee, inside the free allowance | – | – | about $0 | about $0 |
-| **Total, without the native re-pilot** | **about $15.50** | **about $36.60** | **about $0.25** | **about $1.55** |
+| **Total** | **about $18.15** | **about $46.55** | **about $0.25** | **about $1.55** |
 
 The judges' lower figures are the audit's; `judge-answers --estimate-only` prints the higher ones, since it allows 80
 output tokens a verdict. Claude credit stays far below the $200 of Claude credit (PLAN.md › Budget sketch).
@@ -177,7 +175,7 @@ OpenRouter credit about $0.01, ceiling about $0.06). The pilot checks what the c
 - `reasoning_tokens`;
 - the model the response names;
 - whether Anthropic accepts the strict output schema, for every reader (#108);
-- whether Sonnet's `between_tools` passes through OpenRouter (D-260);
+- whether Sonnet's `between_tools` passes through OpenRouter's sync API with no thinking shown (D-260, D-280);
 - the replicate path (D-274): 5 answers per question, each its own request and record;
 - the deepseek path (D-274, D-278): whether OpenRouter's sync chat-completions API takes the engine's own deepseek
   body with its wafer/us pin and cap, and which provider name, `is_byok` and reasoning count its responses report.
@@ -212,6 +210,12 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <PILOT_RUN> --arm <WINNER> --limit 5
    ```
 
+   Sonnet's (the second) is not a batch either (D-280): the Batch API refuses `between_tools`, so its 25 requests go
+   one at a time through OpenRouter's sync API, BYOK, with `provider.only: ["anthropic"]` and `between_tools` kept,
+   in the foreground and journalled every 20, like deepseek's below; it needs no fetch and ends with a
+   `Routing (<WINNER>@sonnet-5.5): …` line. It stops with `stopped before sending more` if an answer is not BYOK, not
+   from Anthropic, or shows reasoning tokens: stop and tell the user, with the line.
+
    The last one is deepseek's, and it is not a batch (D-278): after its estimate it sends its 20 requests one at a
    time through OpenRouter's sync chat-completions API and journals them every 20, in the foreground, so it needs no
    fetch. It ends with a `Routing (<WINNER>): …` line. It refuses before any request if the packed body lacks D-271's
@@ -220,7 +224,7 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
    answers stay recorded and `score` refuses them, so stop and tell the user, with the line. If it is interrupted,
    rerunning the same command sends only the answers that hold no record yet.
 
-3. Fetch the three reader batches (deepseek's answers are already journalled). The test batch on 2026-10-25 took
+3. Fetch the Haiku and Opus batches (Sonnet's and deepseek's answers are already journalled). The test batch on 2026-10-25 took
    10.9 minutes, and a batch may take up to 24 hours. Rerun this command about every 10 minutes until it reports
    `0 batch(es) still pending`. A fetch is free and re-runnable. Each fetch ends with one `Routing (<arm>): …` line per
    arm it journalled; a count above 0 means `score` will refuse those records.
@@ -257,12 +261,12 @@ print(len(failures), 'replay clause failure(s)')
 "
 ```
 
-## Step 3: read the pilot and settle Sonnet's target
+## Step 3: read the pilot
 
 Read the lines from steps 2.4 and 2.5. All 25 requests of each reader (replicates 1 to 5 of five questions) and all
 20 of deepseek (replicates 2 to 5) must be `success`, step 2.5 must print `0 replay clause failure(s)`, and:
 
-| Field | Haiku 5.5 | Sonnet 5.5, OpenRouter | Opus 5.5 | deepseek, replicates 2 to 5 |
+| Field | Haiku 5.5 | Sonnet 5.5, OpenRouter sync (D-280) | Opus 5.5 | deepseek, replicates 2 to 5 |
 |---|---|---|---|---|
 | model | `anthropic/claude-haiku-5.5` exactly | `anthropic/claude-sonnet-5.5` exactly | `anthropic/claude-opus-5.5` exactly | the `pack` body's model, `deepseek/deepseek-v4-flash-0731` |
 | provider | `Anthropic` | `Anthropic` | `Anthropic` | the pinned provider, `Wafer` (matched without case to `wafer` of `wafer/us`) |
@@ -277,22 +281,9 @@ Read the lines from steps 2.4 and 2.5. All 25 requests of each reader (replicate
   (`batch_errored`, or `batch_unreadable_response` for a reply that may have been billed): stop and tell the user,
   with the lines. A provider name other than `Wafer` fails the `provider` clause even when the route was wafer/us; the owner
   decides whether that clause's name match changes (D-274).
-- **Sonnet's `reasoning_tokens` is above 0, or is -1:** OpenRouter dropped `between_tools`, and Sonnet goes native
-  (D-260). The same holds if a Sonnet request was refused for its `thinking` field. To switch:
-  1. In the working tree's `PREREGISTRATION_S2` and in EXPERIMENT-S2.md › The constant, change the `sonnet-5.5` row
-     to `slug="claude-sonnet-5-5"`, `target="anthropic"`. In EXPERIMENT-S2.md › Readers, mark the native target as
-     chosen, citing the pilot.
-  2. Delete `<PILOT_RUN>`.
-  3. Re-run step 2 for Sonnet only (2.1, the Sonnet line of 2.2, then 2.3 to 2.5), with `ANTHROPIC_API_KEY` set.
-     Ask the user first: about $0.13, ceiling about $0.47.
-
-  On the native target, the Sonnet lines must show:
-  - the model `claude-sonnet-5-5`;
-  - the provider `api.anthropic.com`;
-  - `is_byok` `None`;
-  - `reasoning_tokens` 0;
-  - content block types without `thinking` or `redacted_thinking` (D-265).
-- **Every row holds:** Sonnet stays on OpenRouter.
+- **Sonnet's `reasoning_tokens` is above 0, or is -1**, a Sonnet request was refused for its `thinking` field, or its
+  submit stopped with `stopped before sending more`: OpenRouter's sync API did not keep Sonnet from thinking. Stop and
+  ask the owner, with the lines (D-280). There is no native fallback any more: D-280 drops D-260's native target.
 
 Write the pilot's lines and the decision into the run report. Then delete `<PILOT_RUN>`. Its records cannot enter the
 run of record.
@@ -338,16 +329,17 @@ included. These are its replicate-1 answers.
 
 ## Step 6: batch arms (Paid)
 
-Ask once for steps 6.1 to 6.3: **about $12.75, ceiling about $30.00** (Claude credit about $12.65, ceiling about
-$28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The three reader batches run in parallel
-(D-267): a pending batch blocks only another submit of its own arm. deepseek's answers go through the sync API instead
-(D-278), one request at a time in the foreground.
+Ask once for steps 6.1 to 6.3: **about $15.25, ceiling about $39.45** (Claude credit about $15.15, ceiling about
+$38.35; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The Haiku and Opus batches run in parallel
+(D-267): a pending batch blocks only another submit of its own arm. Sonnet's answers (D-280) and deepseek's (D-278) go
+through the sync API instead, one request at a time in the foreground.
 
-1. Submit the three reader arms, one after the other, without waiting, then deepseek's. Read each cost estimate line
-   as it prints; Opus's prints low (*No mid-run cap*). Each reader sends 500 requests (100 questions × 5 answers);
-   deepseek sends 400 (answers 2 to 5) as in step 2.2: in the foreground, journalled every 20, ending with a
-   `Routing (<WINNER>): …` line. If it stops with `stopped before sending more`, stop and tell the user; if it is
-   interrupted, rerun the same command, which sends only the answers that hold no record yet.
+1. Submit the Haiku and Opus arms, one after the other, without waiting, then Sonnet's, then deepseek's. Read each
+   cost estimate line as it prints; Opus's prints low (*No mid-run cap*). Each reader sends 500 requests (100
+   questions × 5 answers); deepseek sends 400 (answers 2 to 5). Sonnet's and deepseek's run as in step 2.2: in the
+   foreground, journalled every 20, each ending with a `Routing (<arm>): …` line. If one stops with `stopped before
+   sending more`, stop and tell the user; if one is interrupted, rerun the same command, which sends only the answers
+   that hold no record yet.
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@haiku-5.5
@@ -365,7 +357,7 @@ $28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The thre
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>
    ```
 
-2. Fetch the three reader arms (deepseek's answers are already journalled), about every 10 minutes, until it reports
+2. Fetch the Haiku and Opus arms (Sonnet's and deepseek's answers are already journalled), about every 10 minutes, until it reports
    `0 batch(es) still pending`. A `Routing (<arm>): …` line above 0 means `score` will refuse those records: tell the
    user before the other arms' fetches.
 
@@ -376,8 +368,8 @@ $28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The thre
 3. Count (*Count after each*). Each of the four arms must reach 500, `<WINNER>` included (its 100 carried answers
    and 400 new ones); `score` checks only the first answer of each, so this count is the completeness check for the
    other four. For each arm whose `error` lines show an expired or errored request, resubmit only those (`<ARM>` is
-   `<WINNER>@haiku-5.5`, `<WINNER>@sonnet-5.5`, `<WINNER>@opus-5.5` or `<WINNER>`; for `<WINNER>` the retry goes
-   through the sync API again and needs no fetch), then repeat 6.2 and the count:
+   `<WINNER>@haiku-5.5`, `<WINNER>@sonnet-5.5`, `<WINNER>@opus-5.5` or `<WINNER>`; for `<WINNER>@sonnet-5.5` and
+   `<WINNER>` the retry goes through the sync API again and needs no fetch), then repeat 6.2 and the count:
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <ARM> --retry-errors
@@ -430,10 +422,6 @@ Claude credit about $2.20 to $2.35, ceiling about $6.31; gpt-4o-mini on OpenRout
 ceiling about $0.39).
 Every replicate is judged, up to 90 G questions × 4 arms × 5 answers a judge; a line that repeats is asked once.
 
-If step 3 moved the Sonnet reader to the native target because OpenRouter dropped `between_tools`, the Sonnet judge
-(still on OpenRouter) thinks too: its spend runs above the estimate, up to the ceiling, which caps output tokens
-reasoning included. Say so when you ask.
-
 Then run it with `OPENROUTER_API_KEY` set:
 
 ```bash
@@ -452,7 +440,7 @@ Write the choice into EXPERIMENT-S2.md › Result:
 - the run directory name;
 - the winning reader, and whether D-245's switch rule holds;
 - each arm's batch IDs (from `<S2_RUN>/batches/`);
-- the actual batch spend per arm (the OpenRouter activity page and, for a native arm, the Anthropic console), next to
+- the actual spend per arm (the OpenRouter activity page), next to
   this guide's estimates.
 
 Commit `<S2_RUN>` and the filled Result on the run lane's own branch, never on `main`. The coordinator opens and merges

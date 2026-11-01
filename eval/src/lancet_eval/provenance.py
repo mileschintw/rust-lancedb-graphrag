@@ -873,11 +873,14 @@ ROUTING_CODES = frozenset({"is_byok", "provider"})
 
 
 def routing_failures(
-    record: RunRecord, readers: Mapping[str, ReaderDeclaration]
+    record: RunRecord,
+    readers: Mapping[str, ReaderDeclaration],
+    codes: Container[str] = ROUTING_CODES,
 ) -> list[str]:
     """The ``is_byok`` and ``provider`` details of one replay record with a ``replay``
     block (#133 L5): what ``batch fetch`` reports per arm before ``score`` refuses.
-    Empty for any other record, or a reader arm with no declaration."""
+    ``codes`` widens the clauses read (the sync path adds ``reasoning_tokens``,
+    D-280). Empty for any other record, or a reader arm with no declaration."""
     replay = record.replay
     if replay is None or not is_replay_record(record):
         return []
@@ -888,7 +891,7 @@ def routing_failures(
         if declaration is None:
             return []
         found = _target_failures(replay, declaration)
-    return [detail for code, detail in found if code in ROUTING_CODES]
+    return [detail for code, detail in found if code in codes]
 
 
 def is_zero_tolerance(code: str) -> bool:
