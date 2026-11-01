@@ -133,6 +133,10 @@ prediction 4 holds for Sonnet and Opus only. The run decides nothing.
   | Sonnet 5.5 | 0.676 | 0.934 | 0.678 | 0.537 |
   | Opus 5.5 | 0.721 | 0.954 | 0.723 | 0.537 |
 
+  The better constant is `Yes`: 287 of the 534 yes/no G questions have a gold Yes and 247 a gold No, so a constant
+  `Yes` scores 0.537 by question (#165, `constant_baseline`), against 0.661 on the D-237 dev pool of S1, S2 and S2X.
+  The table's 0.538 counts answers, so a K = 2 reader's error records shift it.
+
 - Evidence split (`evidence_split`), usable / abstention. The context holds every gold fact for 276 of the 882 G
   questions (194 yes/no, 82 open), and only part of them for 606 (340 yes/no, 266 open):
 
@@ -165,7 +169,33 @@ prediction 4 holds for Sonnet and Opus only. The run decides nothing.
      (0.853 → 0.763), more than 8. Haiku rises (0.693 → 0.708).
 - Read with care: the delta's interval treats the 882 questions as the population and ignores the per-question
   sampling of K; Sonnet and Opus give one answer per question, so their per-question values are noisier than
-  deepseek's mean of two.
+  deepseek's mean of two. Read by exact sign-flip permutation as well (#168, `paired_ci`; method in
+  EXPLORE-B-2WIKI-READERS.md › Result), the intervals barely move: Opus 5.5 +5.0, p 0.00031, permutation [+2.3, +7.7]
+  against bootstrap [+2.4, +7.8]; Haiku 5.5 -5.6, p 2.5e-05, [-8.1, -3.0]; Sonnet 5.5 +1.5, p 0.28, [-1.1, +4.2].
+  Paired with one deepseek replicate (K = 1 on both sides), Opus reads +5.0 [+2.2, +7.8] (r1) and +4.9 [+2.0, +7.8]
+  (r2, 879 questions).
+- MultiHop-RAG's official scorer (#166). `qa_evaluate.py` (yixuantt/MultiHop-RAG at `c1c1287a`) counts an answer
+  correct when its lower-cased text, split on whitespace, shares any token with the lower-cased gold. It has no
+  abstention case. On an answerable question an "Insufficient information" answer shares no token with a Yes, No or
+  entity gold, so it scores 0, exactly as `answer_usable` scores it. Run on this run's answers and on S2's
+  (`official_scorer`, which runs the official file's own `main`), scoring the `Answer:` line:
+
+  | Reader | C: `answer_usable` | C: official | S2: `answer_usable` | S2: official | abstentions the official scorer passes |
+  |---|---|---|---|---|---|
+  | deepseek | 0.763 | 0.756 | 0.853 | 0.824 | 0 of 243 (C), 0 of 49 (S2) |
+  | Haiku 5.5 | 0.708 | 0.703 | 0.693 | 0.684 | 0 of 301, 0 of 84 |
+  | Sonnet 5.5 | 0.778 | 0.743 | 0.791 | 0.749 | 0 of 121, 0 of 75 |
+  | Opus 5.5 | 0.813 | 0.795 | 0.824 | 0.804 | 0 of 93, 0 of 64 |
+
+  - The two disagree only on token matching, never on abstention. The official scorer splits on whitespace without
+    stripping punctuation, so it fails `Yes, both report $26.3 billion` against `Yes` (the token is `yes,`) and
+    `Google` against the gold `Google.`. Those are 4 to 31 of a reader's answers. It passes 3 of Haiku's answers that
+    name part of the gold (`New Zealand` for `New Zealand All Blacks`).
+  - Sonnet 5.5 writes `Yes, …` most often, so on C it falls below deepseek under the official scorer (0.743 against
+    0.756), against 0.778 and 0.763 under `answer_usable`. The order of the other readers is unchanged.
+  - Fed the whole answer, which the official file scores when it finds no `The answer to the question is "…"`, it
+    passes 9 to 37% of a reader's abstentions, because the explanation shares a word such as "the" with the gold.
+  - The official scorer credits the null questions' `Insufficient information`: 657 of 667 null answers on C.
 - Spend, from each record's usage at the declared prices (Haiku and Opus at the batch rate, Sonnet and deepseek at
   the sync price). The OpenRouter activity page was not read.
 
