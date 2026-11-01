@@ -13,6 +13,7 @@ import dataclasses
 import json
 from pathlib import Path
 
+import httpx
 import levers_fixture as fx
 import pytest
 import replay_fixture as rf
@@ -117,7 +118,7 @@ def test_fetch_prints_per_arm_routing_mismatches(
 
 # ---- D-277: deepseek's price is declared in the pre-registration -------------------
 
-WAFER = ReaderPrice(input_per_mtok=0.0434, output_per_mtok=0.30)
+WAFER = ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30)
 
 
 def test_the_deepseek_row_and_replicates_read_the_declared_price(
@@ -147,7 +148,7 @@ def test_the_deepseek_row_and_replicates_read_the_declared_price(
 
     lines: list[str] = []
     batch.submit(run=run, arm=rf.BASE, echo=lines.append)
-    assert any("$0.0434/$0.3 per MTok" in line for line in lines)
+    assert any("$0.0448/$0.3 per MTok" in line for line in lines)
     batch.submit(run=run, arm=rf.READER_ARM, echo=lambda _: None)
     batch.fetch(run=run, echo=lambda _: None)
     score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
@@ -156,7 +157,7 @@ def test_the_deepseek_row_and_replicates_read_the_declared_price(
     ]
     deepseek = next(r for r in group["readers"] if r["arm"] == rf.BASE)
     assert deepseek["price"] == {
-        "input_per_mtok": 0.0434,
+        "input_per_mtok": 0.0448,
         "output_per_mtok": 0.30,
         "source": "preregistration",
     }
@@ -325,3 +326,44 @@ def test_a_crashed_sync_run_resumes_with_only_the_unrecorded_replicates(
     assert len(rest.posts) == n - 3
     assert len(_deepseek_units(run)) == n
     assert batch.fetch(run=run, echo=lambda _: None).pending == ()
+
+
+def test_a_misrouted_sync_chunk_stops_the_run(
+    sync_run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import batch_client
+
+    run, *_ = sync_run
+    posts = _Posts()
+
+    def elsewhere(url, *, content, headers, timeout):  # type: ignore[no-untyped-def]
+        res = posts(url, content=content, headers=headers, timeout=timeout)
+        data = res.json()
+        data["provider"] = "DeepInfra"
+        return httpx.Response(200, json=data, request=res.request)
+
+    monkeypatch.setattr(batch_client.httpx, "post", elsewhere)
+    with pytest.raises(batch.BatchError, match="stopped before sending more"):
+        batch.submit(run=run, arm=rf.BASE, echo=lambda _: None)
+    assert len(posts.posts) == batch.SYNC_CHUNK
+
+
+def test_a_sync_read_timeout_is_not_retried(
+    sync_run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import batch_client
+
+    run, *_ = sync_run
+    posts = _Posts()
+
+    def slow(url, *, content, headers, timeout):  # type: ignore[no-untyped-def]
+        if not posts.posts:
+            posts.posts.append((url, content))
+            raise httpx.ReadTimeout("slow", request=httpx.Request("POST", url))
+        return posts(url, content=content, headers=headers, timeout=timeout)
+
+    monkeypatch.setattr(batch_client.httpx, "post", slow)
+    batch.submit(run=run, arm=rf.BASE, echo=lambda _: None)
+    (timed_out,) = [r for r in _deepseek_units(run).values() if r.outcome == "error"]
+    assert timed_out.error_type == batch.RESULT_ERRORS["unreadable"]
+    assert timed_out.error_type not in batch.RETRYABLE

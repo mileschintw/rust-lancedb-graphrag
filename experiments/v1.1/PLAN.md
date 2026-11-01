@@ -474,9 +474,9 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   ($0.0137 / $1.28 per M tokens, `measure.GENERATION_LIST_*`). At S1's tokens that put deepseek within about 3% of
   Haiku 5.5, so the starting pick would hang on tokenizer and answer-length noise, and that price lay outside
   `PREREGISTRATION_S2`, where D-73 could not freeze it. D-271 pins deepseek to Wafer's wafer/us endpoint, so S2 prices
-  it there: $0.0434 in / $0.30 out per M tokens, read 2026-10-31 from OpenRouter's endpoints API for
-  `deepseek/deepseek-v4-flash-0731` (D-271 quotes the owner's figure of $0.0448 in; the API lists $0.0434 the same
-  day). It is the constant's `reference_price` (a field of `ReplayStagePreRegistration`), read by `compare-levers`
+  it there: $0.0448 in / $0.30 out per M tokens, the Wafer price D-271 and `config/config.toml` record (the
+  owner's OpenRouter stats, 2026-10-31). OpenRouter's endpoints API listed $0.0434 in for wafer/us the same day; the
+  3% difference cannot move the starting pick, and the recorded figure is the one D-271 was decided on. It is the constant's `reference_price` (a field of `ReplayStagePreRegistration`), read by `compare-levers`
   for the deepseek reader row and by `batch submit` for the deepseek replicates' estimate; without it both keep the
   list price, so earlier runs read as before. `measure.py`'s v1.0 constants are unchanged.
 - **D-278 deepseek's S2 replicates go through OpenRouter's sync API** (owner: "改走同步 API (Recommended)",

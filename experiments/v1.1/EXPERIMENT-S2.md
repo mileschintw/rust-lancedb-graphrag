@@ -165,7 +165,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "K=5'), D-275 (the cheapest eligible reader unless a dearer one is "
         "significantly better after Holm; amends D-270b; owner: '預設最便宜，顯著才"
         "換 (Recommended)'), D-277 (deepseek priced at Wafer's wafer/us price, "
-        "0.0434/0.30, read 2026-10-31 from OpenRouter's endpoints API; owner: "
+        "0.0448/0.30, as D-271 and config.toml record it; owner: "
         "'改用 Wafer 實際價 (Recommended)'), D-278 (deepseek's replicates through "
         "OpenRouter's sync API with D-271's full pin; owner: '改走同步 API "
         "(Recommended)'). Prices, USD per MTok: Haiku 5.5 0.10/0.50 "
@@ -176,7 +176,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "claude-sonnet-5-5 (D-260). Written 2026-10-31, before any S2 data."
     ),
     replicates=5,
-    reference_price=ReaderPrice(input_per_mtok=0.0434, output_per_mtok=0.30),
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
     readers=(
         (
             "haiku-5.5",
@@ -214,7 +214,7 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 
 | Reader | Slug | Target | Thinking | Sync list price, USD per MTok (in / out) |
 |---|---|---|---|---|
-| deepseek (reference, `reference_price`, D-277) | `deepseek/deepseek-v4-flash-0731` | OpenRouter, pinned to wafer/us (D-271) | off: `reasoning: {effort: none}` | 0.0434 / 0.30, Wafer's wafer/us price |
+| deepseek (reference, `reference_price`, D-277) | `deepseek/deepseek-v4-flash-0731` | OpenRouter, pinned to wafer/us (D-271) | off: `reasoning: {effort: none}` | 0.0448 / 0.30, Wafer's wafer/us price (D-271) |
 | Haiku 5.5 | `anthropic/claude-haiku-5.5` | OpenRouter | off: `reasoning: {enabled: false}` | 0.10 / 0.50 |
 | Sonnet 5.5 | `anthropic/claude-sonnet-5.5` | OpenRouter (else native `claude-sonnet-5-5`) | `between_tools` | 2 / 10 |
 | Opus 5.5, descriptive (D-267) | `anthropic/claude-opus-5.5` | OpenRouter (D-269) | on, effort low | 4 / 20 (D-269) |
@@ -226,8 +226,8 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 - The Batch API bills half the list price. Cost per answered question is computed at the sync list price above, times
   the tokens, for every reader including deepseek (D-257), over all 5 answers of each question (D-274). The actual
   batch spend is reported separately.
-- deepseek's price is the one D-271 pins it to, Wafer's wafer/us endpoint, read 2026-10-31 from OpenRouter's endpoints
-  API for `deepseek/deepseek-v4-flash-0731` ($0.0434 / $0.30 per M tokens), not D-257's 2026-10-09 list price
+- deepseek's price is the one D-271 pins it to, Wafer's wafer/us endpoint ($0.0448 / $0.30 per M tokens, as D-271 and
+  `config/config.toml` record it; OpenRouter's endpoints API listed $0.0434 in on 2026-10-31), not D-257's 2026-10-09 list price
   ($0.0137 / $1.28, `measure.GENERATION_LIST_*`). It is the constant's `reference_price`, so D-73 freezes it (D-277).
 - deepseek's replicates 2 to 5 (D-274) are the `pack` body unrewritten, sent through the sync API at full price, with no
   batch discount (D-278). Their records must show the body's model, the
@@ -317,8 +317,8 @@ readers' own noise is not known before the run: if it is well above deepseek's, 
   `replay-init --pilot` (#109). Only a pilot run takes `batch submit --limit`.
 - D-258: no mid-run cap; each submit prints a cost estimate and never refuses.
 - No prompt caching (D-256).
-- Four batch arms: the three readers and deepseek's replicates 2 to 5 (D-274). Each arm counts 500 records when it is
-  complete; `score` checks replicate 1 only, so the run guide counts every replicate.
+- Four submitted arms: the three readers by batch, and deepseek's replicates 2 to 5 by the sync API (D-274, D-278).
+  Each arm counts 500 records when it is complete; `score` checks replicate 1 only, so the run guide counts every replicate.
 
 ## Decisions (D-267 to D-270, D-274, D-275)
 

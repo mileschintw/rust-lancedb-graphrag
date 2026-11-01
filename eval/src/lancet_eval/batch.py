@@ -616,7 +616,7 @@ DEEPSEEK_PRICE_FACTOR = 1.0
 SYNC_CHUNK = 20
 
 
-def batch_factor(arm: str) -> float:
+def price_factor(arm: str) -> float:
     """The share of list price a request of `arm` is billed at."""
     return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_PRICE_FACTOR
 
@@ -697,7 +697,7 @@ def cost_estimate(
     """The D-258 estimate printed before a submit; it never refuses.
 
     Each request is priced at the reader's sync list price times `rate`
-    (`batch_factor`), with the deepseek record's token counts as the expected usage
+    (`price_factor`), with the deepseek record's token counts as the expected usage
     and the body's `max_completion_tokens` as the output bound.
     """
     price = declaration.price
@@ -807,7 +807,7 @@ def submit(
             "This is a pilot run (replay-init --pilot): its records are never the S2 "
             "result; start the run of record with a fresh replay-init."
         )
-    echo(cost_estimate(packed, base, reader, spent, batch_factor(label)))
+    echo(cost_estimate(packed, base, reader, spent, price_factor(label)))
 
     # D-278: deepseek's replicates go through the sync API, the readers through a batch.
     sync = declaration is None
@@ -889,7 +889,8 @@ def _submit_sync(
 
     Every `SYNC_CHUNK` requests are rendered and journalled as `fetch` journals a
     batch, under the manifest's sync ID, so a rerun after a crash sends only the
-    replicates that hold no record yet. The manifest ends `fetched`; one left
+    replicates that hold no record yet. A chunk with a misrouted answer stops the
+    run there (#133 L5). The manifest ends `fetched`; one left
     `syncing` is not pending, since every answer it got is already journalled.
     """
     batch_id = str(manifest["batch_id"])
@@ -915,6 +916,24 @@ def _submit_sync(
             _journal_batch(run_dir, _load_run(run_dir), label, part, results)
         except (KeyError, TypeError) as exc:
             raise BatchError(f"manifest {path} is malformed: {exc!r}") from exc
+        # #133 L5: a misroute stops the run before the rest of the arm is spent.
+        state = _load_run(run_dir)
+        sent = {ids[u] for u, _ in chunk}
+        misrouted = [
+            r
+            for r in state.records
+            if r.graph_arm == label
+            and r.session_id == batch_id
+            and custom_id(r.question_id, r.replicate, state.replicates) in sent
+            and routing_failures(r, state.readers)
+        ]
+        if misrouted:
+            _routing_summary(state, {label: {batch_id}}, echo)
+            raise BatchError(
+                f"{len(misrouted)} deepseek answer(s) of the last {len(chunk)} break "
+                "is_byok or the provider; stopped before sending more (#133). "
+                f"{path.name} stays 'syncing'; a rerun sends only the rest"
+            )
     manifest.update(state="fetched", fetched_at=time.time())
     _write_manifest(path, manifest)
     _routing_summary(_load_run(run_dir), {label: {batch_id}}, echo)

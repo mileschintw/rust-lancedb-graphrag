@@ -458,7 +458,8 @@ class OpenRouterChatClient:
     ``allow_fallbacks: false``, ``max_price``) routes the request. A request that
     fails comes back as a result, never a refusal, so the others still run:
     ``errored`` for a transport failure or an HTTP or API error (nothing billed), and
-    ``unreadable`` for a reply ``openrouter_output`` cannot read (probably billed).
+    ``unreadable`` for a reply ``openrouter_output`` cannot read or a read timeout
+    after the request was sent (probably billed, so ``--retry-errors`` leaves it).
     """
 
     def __init__(self, api_key: str, *, url: str = OPENROUTER_CHAT_URL) -> None:
@@ -483,6 +484,12 @@ class OpenRouterChatClient:
                 content=request.body_json.encode("utf-8"),
                 headers=self._headers,
                 timeout=_TIMEOUT_S,
+            )
+        except httpx.ReadTimeout as exc:
+            # Sent, but the reply never came: it may have been answered and billed,
+            # so it is not retried by default (`unreadable`, like a garbled reply).
+            return BatchResult(
+                cid, "unreadable", error=f"no reply within {_TIMEOUT_S} s: {exc!r}"
             )
         except httpx.HTTPError as exc:
             return BatchResult(cid, "errored", error=f"transport failure: {exc!r}")
