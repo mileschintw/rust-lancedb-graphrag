@@ -33,7 +33,8 @@ use arrow_array::{Array, BinaryArray, Int32Array, RecordBatch, StringArray};
 use engine::client::{OpenRouterClient, OpenRouterEmbeddingConfig};
 use engine::config::{load_settings, EffectiveRagSettings};
 use engine::db::{DatabaseManager, GraphTableSet};
-use engine::graph::extraction::{RecordedExtractions, MIN_CHUNK_CONTENT_LENGTH};
+use engine::graph::extraction::MIN_CHUNK_CONTENT_LENGTH;
+use engine::graph::recorded_extraction::RecordedExtractions;
 use engine::ingest::{
     chunk_ingestion_job, extract_and_persist_entities, ChunkSettings, IngestionJob,
 };

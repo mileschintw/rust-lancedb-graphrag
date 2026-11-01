@@ -29,6 +29,7 @@ pub mod extraction;
 pub mod index;
 pub mod no_extraction;
 pub mod paths;
+pub mod recorded_extraction;
 pub mod seeding;
 
 #[cfg(test)]

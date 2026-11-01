@@ -2232,7 +2232,8 @@ mod snapshot_graph_index {
 #[tokio::test]
 async fn recorded_extractions_parse_like_live_answers_and_refuse_the_rest() {
     use crate::generation::GenerationErrorKind;
-    use crate::graph::extraction::{ExtractionGenerator, ExtractionRequest, RecordedExtractions};
+    use crate::graph::extraction::{ExtractionGenerator, ExtractionRequest};
+    use crate::graph::recorded_extraction::RecordedExtractions;
 
     let ok = r#"{"entities":[{"name":"OpenAI","entity_type":"org"}],"relations":[]}"#;
     let bad_confidence = r#"{"entities":[],"relations":[{"source":"a","target":"b","relation_type":"r","confidence":1.5}]}"#;
