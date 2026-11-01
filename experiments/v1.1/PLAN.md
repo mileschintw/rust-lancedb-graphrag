@@ -422,7 +422,7 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   replicates) is the starting pick, and it wins unless a dearer candidate is significantly better on `answer_usable`
   than it. Significance: every pair of candidates is tested with D-274's test on that pair's population (the
   `reader_comparison` pairs), Holm runs once over all those pairs (m = the number of candidate pairs, 3 with three
-  candidates) at alpha 0.05, and a dearer reader is significantly better when Holm rejects its pair with the starting
+  candidates) at alpha 0.05, and a dearer reader is significantly better when Holm rejects its pair with the current
   pick with a positive delta. When one is, the pick steps up to the cheapest such reader and the check repeats
   against the readers dearer than it; the pick no dearer candidate is significantly better than wins. So a dearer
   reader that beats a cheaper one is never passed over for that cheaper one. The pairs' raw p-values are in

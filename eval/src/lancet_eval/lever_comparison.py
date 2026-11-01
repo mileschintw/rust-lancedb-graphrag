@@ -929,7 +929,7 @@ def _unit_state(ctx: _Ctx, qid: str, label: str) -> str:
         return _record_state(ctx.by_key.get((qid, label)))
     recs = ctx.recs(qid, label)
     states = {_record_state(r) for r in recs}
-    if len(recs) < ctx.replicates or "failure" in states:
+    if len(recs) != ctx.replicates or "failure" in states:
         return "failure"
     return "provenance" if "provenance" in states else "ok"
 
