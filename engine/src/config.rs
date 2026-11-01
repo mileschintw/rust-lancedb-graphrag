@@ -2194,6 +2194,10 @@ mod tests {
                 "config/config.eval-2wiki.toml",
                 include_str!("../../config/config.eval-2wiki.toml"),
             ),
+            (
+                "config/config.eval-full-merged.toml",
+                include_str!("../../config/config.eval-full-merged.toml"),
+            ),
         ] {
             assert!(
                 !graph_of(raw).ingest_extraction,

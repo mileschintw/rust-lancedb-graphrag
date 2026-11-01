@@ -23,6 +23,11 @@ variable "eval_2wiki_db_url" {
   default = "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval_2wiki"
 }
 
+variable "eval_full_merged_db_url" {
+  type    = string
+  default = "postgres://postgres:postgres@127.0.0.1:5432/lancet?sslmode=disable&search_path=lancet_eval_full_merged"
+}
+
 env "local" {
   src = "file://db/schema.hcl"
   url = var.db_url
@@ -55,5 +60,12 @@ env "eval-full" {
 env "eval-2wiki" {
   src = "file://db/schema.eval-2wiki.hcl"
   url = var.eval_2wiki_db_url
+  dev = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
+}
+
+// #146: the 609 MultiHop-RAG documents in merged chunks, schema.eval.hcl renamed.
+env "eval-full-merged" {
+  src = "file://db/schema.eval-full-merged.hcl"
+  url = var.eval_full_merged_db_url
   dev = "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable"
 }

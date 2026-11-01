@@ -734,7 +734,7 @@ def test_get_eval_store_names_both_stores_and_refuses_others() -> None:
 
     assert get_eval_store("eval") is V1_STORE
     assert get_eval_store("eval-s1") is S1_STORE
-    with pytest.raises(EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki"):
+    with pytest.raises(EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki, eval-full-merged"):
         get_eval_store("eval-s2")
 
 
@@ -1024,7 +1024,11 @@ def test_s1_reseed_without_the_stores_entry_deletes_nothing(
 
 @pytest.mark.parametrize(
     ("store", "schema"),
-    [("eval-full", "lancet_eval_full"), ("eval-2wiki", "lancet_eval_2wiki")],
+    [
+        ("eval-full", "lancet_eval_full"),
+        ("eval-2wiki", "lancet_eval_2wiki"),
+        ("eval-full-merged", "lancet_eval_full_merged"),
+    ],
 )
 def test_the_149_stores_have_an_atlas_env_and_the_eval_schema_renamed(
     store: str, schema: str
