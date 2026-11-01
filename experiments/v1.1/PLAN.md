@@ -388,6 +388,34 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   passages cut and v1.0 passages whole; 2,048 removes that difference.
   The v1.0 arm (`config.toml`, `config.eval.toml`) stays at 512, which its 55-token chunks never reach. Applies to every
   arm run under `LANCET_ENV=eval-s1`; no re-seed is needed, since excerpts are cut at query time.
+- **D-276 Answer normalisation and a dual-judge secondary** (owner: "正規化＋裁判當次要 (Recommended)" and
+  "gpt-4o-mini＋Sonnet 雙裁判", 2026-10-31; #124). Amends D-70's `answer_usable` for v1.1, applied to every arm.
+  - *Normalisation (primary).* `gold_contained` keeps D-70's whole-token containment ("no" never matches "not") and
+    adds two folds. Each token folds to its singular on both sides (`-ies` to `-y`; `-es` dropped after s, x, z, ch,
+    sh; a final `s` dropped except after s, u or i; tokens of three letters or fewer and a few non-plurals such as
+    "news" kept). A list gold, with items separated by commas, semicolons, `&` or "and", also matches when every item
+    is contained on its own, in any order. Both folds only turn misses into hits. S1's three artifact cases: "Travis
+    Kelce and Taylor Swift" and "sportsbook" now match; "no lack of functionality" for a "no" gold still matches,
+    since the folds are lexical, and is left to the judges. `final_answer_em` (exact equality) and the null guard's
+    abstention predicate (`is_abstention`, equality with "insufficient information") are unchanged.
+    `metrics.answer_rule("d70")` keeps the old rule selectable: v1.0's recorded reports were written under D-70, and
+    their re-read guards pin it.
+  - *Dual judge (secondary).* `lancet-eval judge-answers --run <dir>` asks `openai/gpt-4o-mini` (the v1.0 judge) and
+    Claude Sonnet 5.5 over OpenRouter BYOK whether each G record's extracted final line is equivalent to the gold.
+    Each judge sees only the question, the gold answer and the line, never the arm, so one verdict serves every arm
+    that wrote the same line. It writes `answer-judge.json`: per-arm rates for the primary and both judges, and
+    every record where the three disagree, for the owner to review. A cost estimate is printed first (D-258). The
+    judges decide nothing; the primary stays `answer_usable`.
+  - *Same-family exception.* The v1.0 rule that a judge is never the generator (`score.py`) stays for v1.0 scoring.
+    The Sonnet judge is allowed for this secondary only, because the dual-judge design measures self-preference:
+    Sonnet's verdicts on Claude readers' lines are compared with gpt-4o-mini's, a family distinct from every S2
+    reader.
+  - *S0 and S1 re-scored* (in memory, 2026-10-31; nothing under `eval/runs/` rewritten). S0: no `answer_usable`
+    value changes on either arm (224 of 308 G each), so its reading stands. S1: six records turn usable (the order
+    and plural cases). Small graph-off 0.8778 to 0.9000, merged graph-off 0.8667 to 0.8778, small graph-on 0.7889
+    to 0.8111, merged graph-on 0.8333 to 0.8444. Chunking delta -1.1 to -2.2 points (n_pos 4 to 3, n_neg 5), so
+    small is still kept; small-store graph delta -8.9 points both ways and merged-store graph -3.3 points both ways;
+    every null guard passes. No S0 or S1 decision changes.
 
 ## Model access
 

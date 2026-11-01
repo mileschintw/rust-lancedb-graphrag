@@ -1116,6 +1116,41 @@ def export_context_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("judge-answers")
+def judge_answers_command(
+    run: Annotated[
+        Path,
+        typer.Option("--run", "-r", help="Run directory whose final lines to judge"),
+    ],
+    estimate_only: Annotated[
+        bool,
+        typer.Option(
+            "--estimate-only", help="Print the cost estimate and stop; no paid call"
+        ),
+    ] = False,
+) -> None:
+    """Judge every G record's final line with gpt-4o-mini and Sonnet 5.5 (D-276).
+
+    The secondary beside the normalised answer_usable: each judge sees only the
+    question, the gold answer and the line. Prints a cost estimate first (D-258: it
+    never refuses), then writes answer-judge.json in the run directory. A paid call
+    unless --estimate-only.
+    """
+    from rich.markup import escape
+
+    from lancet_eval.answer_judge import AnswerJudgeError, judge_answers
+
+    try:
+        judge_answers(
+            run,
+            estimate_only=estimate_only,
+            echo=lambda line: console.print(escape(line)),
+        )
+    except AnswerJudgeError as exc:
+        console.print(f"[bold red]Answer judge refused:[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("check-prompt-parity")
 def check_prompt_parity_command(
     run: Annotated[

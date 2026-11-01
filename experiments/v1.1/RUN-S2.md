@@ -314,6 +314,27 @@ read the result by EXPERIMENT-S2.md › Decision rule:
 
 Ignore `default_decisions`. S2 is applied by hand.
 
+### Step 7.1: answer judges (Paid, D-276)
+
+The secondary: gpt-4o-mini and Sonnet 5.5 judge whether each G record's final line is equivalent to the gold. Each
+sees only the question, the gold answer and the line. It decides nothing. Print the estimate first, free:
+
+```bash
+uv run --project eval lancet-eval judge-answers --run <S2_RUN> --estimate-only
+```
+
+Ask the user, with that estimate (about $0.5 for one run of 90 G questions × 4 arms, most of it Sonnet; lines that
+repeat across arms are asked once). Then run it with `OPENROUTER_API_KEY` set:
+
+```bash
+uv run --project eval lancet-eval judge-answers --run <S2_RUN>
+```
+
+It writes `<S2_RUN>/answer-judge.json` and caches each verdict in `<S2_RUN>/answer-judge-cache.json`, so a rerun asks
+only the requests that failed. If it prints `judge request(s) failed`, run it again, at most twice, and name what is
+left in the run report. Report each judge's per-arm rate beside the primary in EXPERIMENT-S2.md › Result, and give the
+owner the `disagreements` list to review.
+
 ## Step 8: record
 
 Write the choice into EXPERIMENT-S2.md › Result:

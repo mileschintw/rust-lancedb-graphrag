@@ -136,3 +136,8 @@ rule uses point estimates, not p-values.
   run in memory on 2026-10-31 left every other block byte-identical, the `answer_usable` families and null guards
   included, and left `coverage_at_4` unchanged (merged 0.5648 against small 0.5593): no gold fact exceeds either
   store's chunk. The run directory was not rewritten.
+- Re-scored under D-276's normalisation (2026-10-31, in memory; the run directory was not rewritten): six records turn
+  usable, the word-order case (mhr-f0d081eaba78 on both small arms) and the plural case (mhr-ad4eee299dc7 on all four
+  arms). Means: small graph-off 0.9000, merged graph-off 0.8778, small graph-on 0.8111, merged graph-on 0.8444.
+  Chunking: n_pos 3, n_neg 5, delta -2.2 points, so small is still kept. Small-store graph: delta -8.9 points, so the
+  graph still stays out. Merged-store graph: -3.3 points. All three null guards pass. No decision changes.
