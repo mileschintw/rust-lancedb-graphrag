@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lancet_eval import preregistration
 from lancet_eval.config import V1_STORE, EvalStore, store_for_settings
 from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records
@@ -375,7 +376,14 @@ def build_rows(
     get `answer_usable` populated — `final_answer`/`final_answer_missing`
     still are, so a null question's abstention can still be read off the raw
     text.
+
+    Raises:
+        DiagnosticError: If `corpus_name` reads a column of a reader-grid run plan:
+            its runs are not read for their answers before the analysis plan (D-291).
     """
+    blinded = preregistration.blinded_corpus_problem(corpus_name)
+    if blinded is not None:
+        raise DiagnosticError(blinded)
     questions = load_sample_questions(corpus_name)
     document_map = load_document_map(corpus_name, store)
     mapped_titles = {entry.title for entry in document_map.entries.values()}

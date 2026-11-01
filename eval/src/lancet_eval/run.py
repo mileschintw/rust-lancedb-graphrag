@@ -246,7 +246,9 @@ def rerank_tripwire_for(config: CorpusConfig) -> RerankTripwire | None:
     if not token:
         return None
     try:
-        prereg = preregistration.resolve(token)
+        prereg = preregistration.resolve(
+            token, getattr(config, "preregistration_column", None)
+        )
     except preregistration.PreregistrationError:
         return None
     return RerankTripwire.from_preregistration(prereg)
@@ -396,7 +398,7 @@ def _enforce_preregistered_arm_set(config: CorpusConfig) -> None:
                 "refusing to drive"
             )
         return
-    prereg = preregistration.resolve(token)
+    prereg = preregistration.resolve_corpus(config)
     fixed = {canonical_arm(label) for label in preregistration.arms_of(prereg)}
     if listed != fixed:
         raise gitcheck.PreregistrationError(

@@ -5,7 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from lancet_eval.arms import ExternalPipeline
+from lancet_eval.arms import (
+    READERS,
+    ExternalPipeline,
+    canonical_arm,
+    is_closed_book_arm,
+    is_reader_arm,
+)
 from lancet_eval.reader_request import (
     ReaderDeclaration,
     ReaderPrice,
@@ -757,6 +763,266 @@ class WriterTransportAddendum:
         if unknown:
             raise ThresholdError(f"{unknown} are not writers of {self.amends}")
         return frozen | dict(self.transports)
+
+
+#: The transports a reader-grid cell may run on (D-291). The reference reader
+#: (deepseek) answers its first replicate in the engine drive and the others through
+#: OpenRouter's sync API (D-278); a column with no drive (closed-book) sends every
+#: replicate through the sync API. Claude readers run on OpenRouter's Batch API.
+GRID_TRANSPORTS = ("engine_drive_then_openrouter_sync", "openrouter_batch")
+#: A cell's tier: ``core`` runs; ``optional`` runs only if credit allows.
+GRID_TIERS = ("core", "optional")
+#: The name a grid cell gives the reference reader, the one the source arm carries.
+GRID_REFERENCE_READER = "deepseek"
+_GRAPH_SOURCE_BASE = "hybrid+graph+rerank+metadata"
+
+
+@dataclass(frozen=True, kw_only=True)
+class GridColumn:
+    """D-291: one context column of a reader grid.
+
+    Attributes:
+        source_arm: The store-prefixed arm whose context every reader of the column
+            reads: the deepseek drive's arm, or the closed-book arm (no drive).
+        graph_writer: For a graph column, the writer whose graph side tables the
+            drive reads (``[engine.graph] table_set``); None for any other column.
+    """
+
+    source_arm: str
+    graph_writer: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ColumnRunPlan:
+    """D-291: one column of a ``ReaderGridRunPlan``, as the replay harness reads it.
+
+    It has the attributes ``replay-init``, ``batch`` and the drive read from a replay
+    pre-registration (reference and source arm, reader arms, readers, K, the reference
+    price, the drive's tripwire) and no Holm family: every arm is descriptive until an
+    analysis plan is frozen. ``score`` and ``compare-levers`` never see one:
+    ``preregistration.resolve`` hands it out only for a corpus that names a column.
+
+    Attributes:
+        plan: The name of the frozen run-plan constant.
+        column: The column's name in it.
+        graph_writer: The column's graph writer, or None.
+        reference_arm, replay_source_arm: The column's source arm.
+        descriptive_arms: The column's reader arms, one per Claude-reader cell.
+        readers, replicates, reader_replicates, reference_price: The plan's, for
+            those readers.
+        rerank_degrade_tripwire_rate, rerank_degrade_tripwire_min_calls,
+        rerank_consecutive_degrade_halt: The plan's drive guards; None for a column
+            with no drive (closed-book).
+        families: Always empty: a run plan names no Holm family.
+    """
+
+    plan: str
+    column: str
+    graph_writer: str | None
+    reference_arm: str
+    replay_source_arm: str
+    descriptive_arms: tuple[str, ...]
+    readers: tuple[tuple[str, ReaderDeclaration], ...]
+    replicates: int
+    reader_replicates: tuple[tuple[str, int], ...]
+    reference_price: ReaderPrice
+    rerank_degrade_tripwire_rate: float | None
+    rerank_degrade_tripwire_min_calls: int | None
+    rerank_consecutive_degrade_halt: int | None
+    families: tuple[FamilySpec, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReaderGridRunPlan:
+    """v1.1 S3 (D-291, #163): which cells of a reader grid run, frozen before any runs.
+
+    A grid crosses context columns with readers. The run plan fixes the cells, each
+    reader's K, transport and thinking, and the drive's guards; it fixes no analysis
+    (no primary metric, no Holm family, no decision rule). Under D-291 no run of the
+    plan is scored until a separate analysis constant is frozen. A corpus names the
+    plan's constant in ``[preregistration] token`` and one column in ``column``;
+    ``preregistration.resolve`` hands the harness that column's ``ColumnRunPlan``.
+
+    Attributes:
+        benchmark: The benchmark the questions come from.
+        split_file: The repo path of the split the questions are drawn from.
+        split_sha256: That file's LF-normalised sha256 (``split.lf_sha256``).
+        population: Which of the split's questions every cell reads.
+        question_count: How many questions, so how many records per replicate.
+        columns: ``(column name, GridColumn)`` pairs.
+        readers: ``(reader name, ReaderDeclaration)`` pairs for the Claude readers.
+        replicates: K of the reference reader, and the most any reader gives.
+        reader_replicates: ``(reader name, K)`` pairs for readers below ``replicates``.
+        reference_price: The reference reader's sync price (D-277).
+        cells: ``(column, reader, tier)`` triples; ``deepseek`` names the reference
+            reader, and the tier is one of ``GRID_TIERS``. Every column has its
+            deepseek cell.
+        transports: ``(reader, transport)`` pairs out of ``GRID_TRANSPORTS``, one per
+            reader, ``deepseek`` included.
+        rerank_degrade_tripwire_rate: The drive's O10 rerank tripwire rate.
+        rerank_degrade_tripwire_min_calls: Its minimum attempts.
+        rerank_consecutive_degrade_halt: Its consecutive-degrade halt.
+        blinding_rule: What may not be read before the analysis plan is frozen.
+        order_rule: The order the cells are submitted in.
+        report_rule: What each run records.
+        provenance: Where the values come from.
+    """
+
+    benchmark: str
+    split_file: str
+    split_sha256: str
+    population: str
+    question_count: int
+    columns: tuple[tuple[str, GridColumn], ...]
+    readers: tuple[tuple[str, ReaderDeclaration], ...]
+    replicates: int
+    reader_replicates: tuple[tuple[str, int], ...]
+    reference_price: ReaderPrice
+    cells: tuple[tuple[str, str, str], ...]
+    transports: tuple[tuple[str, str], ...]
+    rerank_degrade_tripwire_rate: float
+    rerank_degrade_tripwire_min_calls: int
+    rerank_consecutive_degrade_halt: int
+    blinding_rule: str
+    order_rule: str
+    report_rule: str
+    provenance: str
+
+    def __post_init__(self) -> None:
+        if len(self.split_sha256) != 64 or not set(self.split_sha256) <= _LOWER_HEX:
+            raise ThresholdError("split_sha256 must be 64 lower-case hex digits")
+        if self.question_count < 1:
+            raise ThresholdError(
+                f"question_count must be positive, not {self.question_count}"
+            )
+        if self.replicates < 1:
+            raise ThresholdError(
+                f"replicates must be at least 1, not {self.replicates}"
+            )
+        names = [name for name, _ in self.columns]
+        if not names or len(set(names)) != len(names):
+            raise ThresholdError(f"columns must be non-empty and unique, got {names}")
+        for name, column in self.columns:
+            _check_grid_column(name, column)
+        declared = {name for name, _ in self.readers}
+        stray = sorted(declared - set(READERS))
+        if stray:
+            raise ThresholdError(f"readers {stray} are not known readers {READERS}")
+        for name, k in self.reader_replicates:
+            if name not in declared or not 1 <= k <= self.replicates:
+                raise ThresholdError(
+                    f"reader_replicates entry ({name!r}, {k}) must name a declared "
+                    f"reader with K from 1 to replicates ({self.replicates})"
+                )
+        self._check_cells(set(names), declared)
+        transports = dict(self.transports)
+        wanted = sorted({GRID_REFERENCE_READER, *declared})
+        if sorted(transports) != wanted or len(self.transports) != len(wanted):
+            raise ThresholdError(f"transports name {sorted(transports)}, not {wanted}")
+        bad = {n: t for n, t in transports.items() if t not in GRID_TRANSPORTS}
+        if bad:
+            raise ThresholdError(f"unknown transports {bad}; known {GRID_TRANSPORTS}")
+        if transports[GRID_REFERENCE_READER] != GRID_TRANSPORTS[0]:
+            raise ThresholdError(
+                f"transports: {GRID_REFERENCE_READER} runs on {GRID_TRANSPORTS[0]}"
+            )
+        between = [n for n, d in self.readers if d.thinking == "between_tools"]
+        if between:
+            raise ThresholdError(
+                f"{between}: the Batch API refuses between_tools thinking (D-280)"
+            )
+
+    def _check_cells(self, columns: set[str], declared: set[str]) -> None:
+        seen: set[tuple[str, str]] = set()
+        for column, reader, tier in self.cells:
+            if column not in columns:
+                raise ThresholdError(f"cell ({column!r}, {reader!r}) names no column")
+            if reader != GRID_REFERENCE_READER and reader not in declared:
+                raise ThresholdError(
+                    f"cell ({column!r}, {reader!r}) names an undeclared reader"
+                )
+            if tier not in GRID_TIERS:
+                raise ThresholdError(
+                    f"cell ({column!r}, {reader!r}): tier {tier!r} not in {GRID_TIERS}"
+                )
+            if (column, reader) in seen:
+                raise ThresholdError(f"cell ({column!r}, {reader!r}) is listed twice")
+            seen.add((column, reader))
+        without = sorted(c for c in columns if (c, GRID_REFERENCE_READER) not in seen)
+        if without:
+            raise ThresholdError(
+                f"columns {without} have no {GRID_REFERENCE_READER} cell: the source "
+                "arm is the reference reader's"
+            )
+
+    def column_plan(self, name: str, *, plan: str = "") -> ColumnRunPlan:
+        """The view of column ``name`` the replay harness reads.
+
+        A closed-book column has no drive, so its view carries no rerank tripwire.
+
+        Args:
+            name: A column of the plan.
+            plan: The name of the plan's constant, recorded in the view.
+
+        Raises:
+            ThresholdError: If the plan has no such column.
+        """
+        columns = dict(self.columns)
+        if name not in columns:
+            raise ThresholdError(
+                f"the run plan has no column {name!r}: {list(columns)}"
+            )
+        column = columns[name]
+        source = column.source_arm
+        readers = [
+            r for c, r, _ in self.cells if c == name and r != GRID_REFERENCE_READER
+        ]
+        declared = dict(self.readers)
+        drives = not is_closed_book_arm(source)
+        return ColumnRunPlan(
+            plan=plan,
+            column=name,
+            graph_writer=column.graph_writer,
+            reference_arm=source,
+            replay_source_arm=source,
+            descriptive_arms=tuple(f"{source}@{r}" for r in readers),
+            readers=tuple((r, declared[r]) for r in readers),
+            replicates=self.replicates,
+            reader_replicates=tuple(
+                (r, k) for r, k in self.reader_replicates if r in readers
+            ),
+            reference_price=self.reference_price,
+            rerank_degrade_tripwire_rate=(
+                self.rerank_degrade_tripwire_rate if drives else None
+            ),
+            rerank_degrade_tripwire_min_calls=(
+                self.rerank_degrade_tripwire_min_calls if drives else None
+            ),
+            rerank_consecutive_degrade_halt=(
+                self.rerank_consecutive_degrade_halt if drives else None
+            ),
+        )
+
+
+def _check_grid_column(name: str, column: GridColumn) -> None:
+    """Refuses a column whose source arm is not a canonical, non-reader arm, or whose
+    graph writer does not match a graph source arm."""
+    source = column.source_arm
+    try:
+        known = canonical_arm(source) == source and not is_reader_arm(source)
+    except ValueError:
+        known = False
+    if not known:
+        raise ThresholdError(
+            f"column {name!r}: source_arm {source!r} must be a canonical arm that is "
+            "not a reader arm"
+        )
+    is_graph = source.rpartition("/")[2] == _GRAPH_SOURCE_BASE
+    if is_graph != (column.graph_writer is not None):
+        raise ThresholdError(
+            f"column {name!r}: a graph source arm names its graph_writer, and no "
+            "other source arm does"
+        )
 
 
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
@@ -1695,5 +1961,171 @@ PREREGISTRATION_EXPLORE_B = ReplayStagePreRegistration(
                 price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
             ),
         ),
+    ),
+)
+
+
+# v1.1 S3 (#163, D-291; experiments/v1.1/RUN-S3-HELDOUT.md): S3's held-out reader grid
+# on 2Wiki. Four readers by six context columns over the 900 D-243 held-out questions;
+# which cells run, each reader's K, transport and thinking, and nothing about the
+# analysis, which a later constant freezes before any of these runs is scored. Added in
+# one commit before any cell runs (D-73).
+RUN_PLAN_S3_HELDOUT = ReaderGridRunPlan(
+    benchmark=(
+        "2WikiMultiHopQA as packaged by osunlp/HippoRAG_2 at revision "
+        "5ec05b38deecc3318bb432c69865959c56058990 (D-234, #145): 6,119 passages, one "
+        "document and one chunk each, in the eval-2wiki store"
+    ),
+    split_file="eval/corpora/twowiki/split.json",
+    split_sha256="0447b65e0a0c7be4f51ab5ad5ffe8c3a79dad7eb7bd7a7266bf94b079117b089",
+    population=(
+        "the 900 held-out questions of the D-243 split (seed 243), carried into "
+        "eval/corpora/twowiki/s3h_split.json (split sha256 "
+        "7590e2b3281dfa2c9299714d9c49fce3b0a5fa25c454e88f9eb1855883c88a07), every one "
+        "in G; 2Wiki's one held-out read (D-287)"
+    ),
+    question_count=900,
+    columns=(
+        ("closed-book", GridColumn(source_arm="twowiki/closed-book")),
+        ("hybrid", GridColumn(source_arm="twowiki/hybrid+rerank+metadata")),
+        (
+            "graph-deepseek",
+            GridColumn(
+                source_arm="twowiki/hybrid+graph+rerank+metadata",
+                graph_writer="deepseek",
+            ),
+        ),
+        (
+            "graph-haiku",
+            GridColumn(
+                source_arm="twowiki/hybrid+graph+rerank+metadata",
+                graph_writer="haiku-5.5",
+            ),
+        ),
+        (
+            "graph-sonnet",
+            GridColumn(
+                source_arm="twowiki/hybrid+graph+rerank+metadata",
+                graph_writer="sonnet-5.5",
+            ),
+        ),
+        (
+            "graph-opus",
+            GridColumn(
+                source_arm="twowiki/hybrid+graph+rerank+metadata",
+                graph_writer="opus-5.5",
+            ),
+        ),
+    ),
+    readers=(
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
+    ),
+    replicates=2,
+    reader_replicates=(("sonnet-5.5", 1), ("opus-5.5", 1)),
+    reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+    cells=(
+        ("closed-book", "deepseek", "core"),
+        ("closed-book", "haiku-5.5", "core"),
+        ("closed-book", "sonnet-5.5", "core"),
+        ("closed-book", "opus-5.5", "core"),
+        ("hybrid", "deepseek", "core"),
+        ("hybrid", "haiku-5.5", "core"),
+        ("hybrid", "sonnet-5.5", "core"),
+        ("hybrid", "opus-5.5", "core"),
+        ("graph-deepseek", "deepseek", "core"),
+        ("graph-deepseek", "haiku-5.5", "core"),
+        ("graph-deepseek", "sonnet-5.5", "core"),
+        ("graph-deepseek", "opus-5.5", "core"),
+        ("graph-haiku", "deepseek", "core"),
+        ("graph-haiku", "haiku-5.5", "core"),
+        ("graph-haiku", "sonnet-5.5", "optional"),
+        ("graph-haiku", "opus-5.5", "core"),
+        ("graph-sonnet", "deepseek", "core"),
+        ("graph-sonnet", "haiku-5.5", "core"),
+        ("graph-sonnet", "sonnet-5.5", "optional"),
+        ("graph-sonnet", "opus-5.5", "core"),
+        ("graph-opus", "deepseek", "core"),
+        ("graph-opus", "haiku-5.5", "core"),
+        ("graph-opus", "sonnet-5.5", "optional"),
+        ("graph-opus", "opus-5.5", "core"),
+    ),
+    transports=(
+        ("deepseek", "engine_drive_then_openrouter_sync"),
+        ("haiku-5.5", "openrouter_batch"),
+        ("sonnet-5.5", "openrouter_batch"),
+        ("opus-5.5", "openrouter_batch"),
+    ),
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    blinding_rule=(
+        "D-291: no run of this plan is scored or read for its answers (no score, "
+        "compare-levers, explore_readout or evidence_split, and no reading of a gold "
+        "or a reader answer) until a separate analysis constant (primary hypotheses, "
+        "decisional metric, Holm family) is frozen in its own commit; then every run "
+        "is scored once. Until then each run records its directory, counts, error "
+        "lines, batch IDs and spend only. The harness refuses: a corpus that reads a "
+        "column of this plan is refused by score, compare-levers and both readouts"
+    ),
+    order_rule=(
+        "First the closed-book and hybrid columns' Claude cells, as soon as their "
+        "context exists (closed-book-init; the hybrid drive and replay-init). Then the "
+        "graph columns once each writer's graph is imported into the eval-2wiki store "
+        "as its own graph table set (import_graph_extractions, #148's path; the "
+        "store's own tables are never written), Opus on graph-deepseek first. deepseek "
+        "cells go with their column. Every Claude batch is submitted before "
+        "2026-11-03 (Pacific), when the Claude credit expires. A cell may be left "
+        "partial or not run when the credit ends: core cells before optional ones, "
+        "and about $3 of the Claude credit is kept as margin"
+    ),
+    report_rule=(
+        "Per run: its directory under eval/runs/ (committed in full, files over 50 MB "
+        "gzipped), its corpus and column, the counts per arm and replicate, every "
+        "error line, the batch IDs, the thinking setting sent and the measured "
+        "reasoning_tokens (D-289), and the spend per arm from the records' usage at "
+        "the declared prices (Claude at the Batch API's half price, deepseek's sync "
+        "replicates at reference_price). No answer_usable or other score"
+    ),
+    provenance=(
+        "#163, owner 2026-11-01 (side session local_31cb9ac6, confirmed in the "
+        "coordinator session: 'Confirm', then 'Confirm and start'): '新規定我同意'; "
+        "'可以，就這樣，先不說死不跑，但先確認重要的一定要跑'. "
+        "Readers, slugs and prices as PREREGISTRATION_EXPLORE_B's; "
+        "thinking per the owner's rule (Haiku off, "
+        "Sonnet and Opus on at effort low) and D-289, every Claude cell on the Batch "
+        "API (so Sonnet not on D-280's between_tools sync path). K per D-283 "
+        "(deepseek and Haiku 2, Sonnet and Opus 1). deepseek's reference price is "
+        "D-277's. The drive's rerank tripwire is PREREGISTRATION_EXPLORE_B's. Writers' "
+        "graphs from #145's extraction (PREREGISTRATION_S3_WRITERS, "
+        "PREREGISTRATION_S3_WRITERS_SYNC). Held-out read: 2Wiki's one (D-287). "
+        "Written 2026-11-01, before any cell of the grid ran."
     ),
 )

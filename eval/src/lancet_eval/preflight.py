@@ -1297,7 +1297,7 @@ def canary_preregistration(corpus_config: Any) -> Any | None:
     if not token:
         return None
     try:
-        return resolve(token)
+        return resolve(token, getattr(corpus_config, "preregistration_column", None))
     except PreregistrationError:
         return None
 

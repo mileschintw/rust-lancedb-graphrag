@@ -51,7 +51,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lancet_eval import gitcheck, preregistration
+from lancet_eval import gitcheck, preregistration, thresholds
 from lancet_eval.arms import canonical_arm, is_reader_arm
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
@@ -164,18 +164,31 @@ def _export_rows(export: Path) -> dict[tuple[str, str], ContextExportRow]:
     return {(row.question_id, row.arm): row for row in rows}
 
 
-def _dev_corpus(name: str, which: str) -> CorpusConfig:
-    """Loads corpus ``name``; refuses one whose ``[split]`` role is not dev (D-237)."""
+def _replayable_corpus(name: str, which: str) -> CorpusConfig:
+    """Loads corpus ``name``; refuses one whose ``[split]`` role is not dev (D-237),
+    unless it reads a column of a reader-grid run plan (D-291), whose held-out read
+    the plan was frozen for: its token and column must resolve to that column."""
     try:
         config = load_corpus(name)
     except CorpusError as exc:
         raise ReplayError(f"the {which} {name!r} does not load: {exc}") from exc
-    if config.split_role != "dev":
+    if config.split_role != "dev" and not _reads_run_plan(config):
         raise ReplayError(
             f"D-237: the {which} {name!r} has [split] role {config.split_role!r}, not "
             "'dev'; replaying it to the readers would be a held-out read"
         )
     return config
+
+
+def _reads_run_plan(config: CorpusConfig) -> bool:
+    """Whether the corpus's token and column resolve to a run-plan column (D-291)."""
+    if config.preregistration_column is None:
+        return False
+    try:
+        view = preregistration.resolve_corpus(config)
+    except preregistration.PreregistrationError:
+        return False
+    return isinstance(view, thresholds.ColumnRunPlan)
 
 
 def is_pilot_run(header: Mapping[str, Any] | None) -> bool:
@@ -218,10 +231,12 @@ def require_d73(token: str | None, *, created_at: float | None = None) -> None:
         )
 
 
-def _declared_source_arm(token: str) -> str:
-    """The S1 arm the S2 constant ``token`` says a run of record replays."""
+def _declared_source_arm(config: CorpusConfig) -> str:
+    """The arm the corpus's constant says a run of record replays: S2's carried S1 arm,
+    or the source arm of a run-plan column (D-291)."""
+    token = config.preregistration_token
     try:
-        prereg = preregistration.resolve(token)
+        prereg = preregistration.resolve_corpus(config)
     except preregistration.PreregistrationError as exc:
         raise ReplayError(f"the S2 pre-registration: {exc}") from exc
     declared = getattr(prereg, "replay_source_arm", None)
@@ -325,8 +340,18 @@ def replay_init(
         )
     header = read_journal_header(source_journal) or {}
     source_corpus = str(header.get("corpus") or records[0].corpus)
-    _dev_corpus(source_corpus, "source run's corpus")
-    s2_config = _dev_corpus(corpus, "S2 corpus")
+    s2_config = _replayable_corpus(corpus, "S2 corpus")
+    if s2_config.preregistration_column is not None and source_corpus != corpus:
+        raise ReplayError(
+            f"D-291: the corpus {corpus!r} reads a column of a run plan, so its source "
+            f"run must be driven on that corpus, not on {source_corpus!r}"
+        )
+    source_config = _replayable_corpus(source_corpus, "source run's corpus")
+    if source_config.preregistration_column is not None and source_corpus != corpus:
+        raise ReplayError(
+            f"D-291: the source run was driven on {source_corpus!r}, a column of a run "
+            f"plan; it is carried only into that corpus, not into {corpus!r}"
+        )
     listed = {canonical_arm(label) for label in s2_config.arms}
     unlisted = [arm for arm in wanted if arm not in listed]
     if unlisted:
@@ -338,7 +363,7 @@ def replay_init(
         token = s2_config.preregistration_token
         if not token:
             raise ReplayError("D-73: the S2 corpus names no pre-registration")
-        declared = _declared_source_arm(token)
+        declared = _declared_source_arm(s2_config)
         if wanted != [declared]:
             raise ReplayError(
                 f"the S2 pre-registration's replay_source_arm is {declared!r}, but "

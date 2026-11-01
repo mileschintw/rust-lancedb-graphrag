@@ -2539,6 +2539,10 @@ def main(argv: list[str] | None = None) -> int:
     journal_path = run_dir / "journal.jsonl"
     if not journal_path.is_file():
         journal_path = run_dir / "journal.json"
+    gated_corpus = _read_journal_corpus(journal_path)
+    blinded = gated_corpus and preregistration.blinded_corpus_problem(gated_corpus)
+    if blinded:
+        parser.error(blinded)
 
     if is_heldout:
         return _main_heldout(args, run_dir, journal_path)

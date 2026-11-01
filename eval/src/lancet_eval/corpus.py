@@ -282,6 +282,13 @@ class CorpusConfig:
                 f"[preregistration] token in {toml_path} must be a non-empty string"
             )
         self.preregistration_token: str = token
+        # D-291: a corpus of a reader-grid run plan names the plan's column it reads.
+        column = prereg_sec.get("column")
+        if column is not None and (not isinstance(column, str) or not column.strip()):
+            raise CorpusError(
+                f"[preregistration] column in {toml_path} must be a non-empty string"
+            )
+        self.preregistration_column: str | None = column
         self.has_judge = "judge" in data
         if self.has_judge and token in NO_JUDGE_PREREGISTRATION_TOKENS:
             raise CorpusError(

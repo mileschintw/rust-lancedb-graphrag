@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from lancet_eval.journal import RunRecord
 
 RetrievalMode = Literal["dense_only", "bm25_only", "hybrid"]
-ArmKind = Literal["engine", "external"]
+ArmKind = Literal["engine", "external", "closed_book"]
 ArmLabel = Literal[
     "dense-only",
     "bm25-only",
@@ -67,6 +67,7 @@ ArmLabel = Literal[
     "hybrid+rerank+metadata",
     "hybrid+graph+rerank+metadata",
     "llamaindex",
+    "closed-book",
 ]
 
 #: The four 06.3.5 labels, in registry order. Judged-stage and calibration code that
@@ -85,20 +86,22 @@ class ArmSpec(BaseModel):
 
     Attributes:
         label: Canonical arm label.
-        retrieval_mode: Value of the request's ``retrieval_mode`` field, or
-            ``external`` for an arm whose retrieval runs outside Lancet.
+        retrieval_mode: Value of the request's ``retrieval_mode`` field,
+            ``external`` for an arm whose retrieval runs outside Lancet, or ``none``
+            for the closed-book arm, which retrieves nothing (D-291).
         disable_graph_context: Whether the request switches graph context off.
         legacy_aliases: Read-only lookup aliases (drives 1, 1b and 2 labels).
         levers: The 06.3.6 quality levers the arm names on its request, in the
             canonical ``LEVER_ORDER`` (D-136). Empty for the 06.3.5 arms.
-        kind: ``engine`` (driven through the gateway) or ``external`` (D-247: answered
-            by the generate-only bin over the arm's own context export).
+        kind: ``engine`` (driven through the gateway), ``external`` (D-247: answered
+            by the generate-only bin over the arm's own context export) or
+            ``closed_book`` (D-291: answered by the bin over rows with no evidence).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     label: ArmLabel
-    retrieval_mode: RetrievalMode | Literal["external"]
+    retrieval_mode: RetrievalMode | Literal["external", "none"]
     disable_graph_context: bool
     legacy_aliases: tuple[str, ...] = ()
     levers: tuple[LeverName, ...] = ()
@@ -112,7 +115,13 @@ class ArmSpec(BaseModel):
                 f"{self.retrieval_mode!r}; an external arm and only an external arm "
                 "has retrieval_mode 'external' (D-247)"
             )
-        if self.kind == "external" and (self.levers or self.legacy_aliases):
+        if (self.kind == "closed_book") != (self.retrieval_mode == "none"):
+            raise ValueError(
+                f"arm {self.label!r}: kind {self.kind!r} with retrieval_mode "
+                f"{self.retrieval_mode!r}; the closed-book arm and only it retrieves "
+                "nothing (D-291)"
+            )
+        if self.kind != "engine" and (self.levers or self.legacy_aliases):
             raise ValueError(
                 f"arm {self.label!r}: an external arm names no engine lever and no "
                 "legacy alias (D-247)"
@@ -239,6 +248,21 @@ EXTERNAL_ARMS: dict[str, ArmSpec] = {
     )
 }
 
+#: D-291 closed-book arm: the question alone, no evidence and no graph facts, answered
+#: by the engine's model-only prompt. It only appears store-prefixed
+#: (``twowiki/closed-book``), and only as a replay run's source arm; no drive sends it.
+CLOSED_BOOK_ARMS: dict[str, ArmSpec] = {
+    a.label: a
+    for a in (
+        ArmSpec(
+            label="closed-book",
+            retrieval_mode="none",
+            disable_graph_context=True,
+            kind="closed_book",
+        ),
+    )
+}
+
 _ALIAS: dict[str, str] = {
     al: a.label for a in ARM_REGISTRY.values() for al in a.legacy_aliases
 }
@@ -326,10 +350,11 @@ def _split_store(label: str) -> tuple[str | None, str]:
             f"unknown store prefix in arm label {label!r}; known prefixes: "
             f"{sorted(STORE_PREFIXES)} (D-251)"
         )
-    if base not in ARM_REGISTRY:
+    if base not in ARM_REGISTRY and base not in CLOSED_BOOK_ARMS:
         raise ValueError(
-            f"arm label {label!r}: a store prefix takes a registry label, not a legacy "
-            "alias, an external arm or an unknown label (D-251)"
+            f"arm label {label!r}: a store prefix takes a registry label or the "
+            "closed-book arm, not a legacy alias, an external arm or an unknown label "
+            "(D-251, D-291)"
         )
     return prefix, base
 
@@ -422,7 +447,7 @@ def resolve_arm(label: str) -> ArmSpec:
     label = _split_reader(label)[0]
     prefix, base = _split_store(label)
     if prefix is not None:
-        return ARM_REGISTRY[base]
+        return CLOSED_BOOK_ARMS.get(base) or ARM_REGISTRY[base]
     if label in ARM_REGISTRY:
         return ARM_REGISTRY[label]
     if label in EXTERNAL_ARMS:
@@ -444,7 +469,10 @@ def in_registry_order(labels: Iterable[str]) -> list[str]:
     Returns:
         The labels, sorted.
     """
-    position = {label: i for i, label in enumerate((*ARM_REGISTRY, *EXTERNAL_ARMS))}
+    position = {
+        label: i
+        for i, label in enumerate((*ARM_REGISTRY, *EXTERNAL_ARMS, *CLOSED_BOOK_ARMS))
+    }
     stores = list(STORE_PREFIXES)
 
     def key(label: str) -> tuple[int, int, int]:
@@ -500,6 +528,15 @@ def is_external_arm(label: str) -> bool:
     return label in EXTERNAL_ARMS
 
 
+def is_closed_book_arm(label: str) -> bool:
+    """Whether a label, or the base of a reader arm, is the closed-book arm (D-291);
+    an unknown label is not one."""
+    try:
+        return resolve_arm(label).kind == "closed_book"
+    except ValueError:
+        return False
+
+
 def is_legacy_label(label: str) -> bool:
     """Whether a label is one of the two read-only legacy aliases."""
     return label in _ALIAS
@@ -552,6 +589,10 @@ def request_fields(label: str) -> dict[str, object]:
     if spec.kind == "external":
         raise ValueError(
             f"arm {label!r} is an external arm: it sends no gateway request (D-247)"
+        )
+    if spec.kind == "closed_book":
+        raise ValueError(
+            f"arm {label!r} is the closed-book arm: it sends no gateway request (D-291)"
         )
     if is_legacy_label(label):
         return {"disable_graph_context": True} if spec.disable_graph_context else {}

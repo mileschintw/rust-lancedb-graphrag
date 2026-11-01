@@ -50,7 +50,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from lancet_eval import gitcheck
+from lancet_eval import gitcheck, preregistration
 from lancet_eval.arms import canonical_arm, judged_report_arms
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
@@ -289,6 +289,9 @@ def load_inputs(run_dir: Path | str, *, rehearsal: bool = False) -> StageInputs:
     if not isinstance(corpus, str) or not corpus:
         raise JudgeStageError("the journal header names no corpus")
     config = load_corpus_config(corpus)
+    blinded = preregistration.blinded_corpus_problem(corpus)
+    if blinded is not None:
+        raise JudgeStageError(blinded)
     if config.preregistration_token in NO_JUDGE_PREREGISTRATION_TOKENS:
         raise JudgeStageError(
             f"corpus {corpus!r} is pre-registered under {config.preregistration_token}"

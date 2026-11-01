@@ -31,6 +31,7 @@ from typing import Any
 
 import httpx
 
+from lancet_eval import preregistration
 from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.judge import DEFAULT_CHAT_ENDPOINT, _post_judge
@@ -219,6 +220,9 @@ def _items(run: Path) -> list[_Item]:
     corpus = str(header.get("corpus") or (records[0].corpus if records else ""))
     if not corpus:
         raise AnswerJudgeError(f"{journal} names no corpus")
+    blinded = preregistration.blinded_corpus_problem(corpus)
+    if blinded is not None:
+        raise AnswerJudgeError(blinded)
     gold = {q.question_id: q for q in load_sample_questions(corpus)}
     items: list[_Item] = []
     for rec in records:

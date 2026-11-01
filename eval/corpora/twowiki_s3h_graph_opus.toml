@@ -1,0 +1,58 @@
+# #163 (D-291): column `graph-opus` of RUN_PLAN_S3_HELDOUT, S3's held-out reader grid
+# on 2Wiki, over the 900 held-out questions of the D-243 split.
+# `run --arms twowiki/hybrid+graph+rerank+metadata` drives deepseek's first answer on
+# the eval-2wiki store with opus's graph (engine LANCET_ENV=eval-2wiki-s3h-opus,
+# graph table set s3h_opus); `replay-init` carries it into the run of record, and
+# `batch submit`/`fetch` write deepseek's second answer and the reader arms.
+#
+# No run of this corpus is scored or read for its answers before the grid's analysis
+# plan is frozen: score, compare-levers and both readouts refuse it (D-291). Run guide:
+# experiments/v1.1/RUN-S3-HELDOUT.md.
+#
+# The documents file and the questions file hold Wikipedia text, so they stay in
+# twowiki/.cache/ and are never committed (ATTRIBUTION.md): `python -m lancet_eval.twowiki
+# fetch`, then `python -m lancet_eval.twowiki_b` and `python -m lancet_eval.twowiki_h`
+# write them. The documents file is pinned by sha256.
+[documents]
+map_corpus = "twowiki"
+file = "twowiki/.cache/documents.jsonl"
+sha256 = "57d038e26b2bfc10bdd91afcde3a2df30a79bad583f9b9f4f2aa3002d744e822"
+source = "https://huggingface.co/datasets/osunlp/HippoRAG_2"
+license = "apache-2.0"
+count = 6119
+commit_documents = false
+chunk_size = 8192
+
+[questions]
+file = "twowiki/.cache/questions.heldout.jsonl"
+label_format = "multihop_rag"
+sample_seed = 243
+sample_size = 900
+
+[arms]
+# The column's source arm, then its reader arms (RUN_PLAN_S3_HELDOUT's cells, the
+# optional ones included).
+arms = [
+  "twowiki/hybrid+graph+rerank+metadata",
+  "twowiki/hybrid+graph+rerank+metadata@haiku-5.5",
+  "twowiki/hybrid+graph+rerank+metadata@sonnet-5.5",
+  "twowiki/hybrid+graph+rerank+metadata@opus-5.5",
+]
+
+# Ingested as given: fixed-size windows of 8,192 characters hold every passage (the
+# longest is 6,457) in one chunk, so no passage is split.
+[stores.twowiki]
+chunk_strategy = "fixed-size"
+chunk_size = 8192
+chunk_overlap = 0
+
+[split]
+file = "twowiki/s3h_split.json"
+role = "heldout"
+
+[preregistration]
+token = "RUN_PLAN_S3_HELDOUT"
+column = "graph-opus"
+
+[preflight]
+legacy_canaries = false
