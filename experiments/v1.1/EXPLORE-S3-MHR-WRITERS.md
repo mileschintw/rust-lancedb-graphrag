@@ -111,11 +111,13 @@ Written before the run. Each is checked once against the Result and never tuned 
 
 ## Result
 
-Run 2026-11-01 (#148), dev pool only, no held-out read. **Reading: open.** The Claude writers' graphs read below 0,
-but exactly 5 points below deepseek's, which is not within 5 points (below). It decides nothing: the graph stays out.
+Run 2026-11-01 (#148), dev pool only, no held-out read. **Reading: on the rule's boundary.** Both Claude writers'
+graphs read below 0 and exactly 5 points below deepseek's. Whether that is "within 5 points" decides the reading:
+"does not explain the loss" if 5 points apart is within, open if it is not (below). Neither is a finding, and it
+decides nothing: the graph stays out.
 
-**The loss does not reproduce on deepseek's re-extracted graph.** S1's -8.9 points came from the v1.0 graph. On the
-same store, deepseek's own re-extraction at the grid's granularity reads +1.7 points.
+**Direction: deepseek's re-extracted graph shows no loss.** S1's -8.9 points were read on the v1.0 graph. On the
+same store, deepseek's own re-extraction at the grid's granularity reads +1.7 points (p 0.654).
 
 ### Answers (`answer_usable`, K = 2, paired against the reference on the 90 G questions)
 
@@ -129,12 +131,17 @@ same store, deepseek's own re-extraction at the grid's granularity reads +1.7 po
 - Haiku's and Sonnet's figures are equal, but their answers are not. They differ on 14 questions. Each loses on 10
   questions, and 5 of those are the same questions for both.
 - **Rule.** The Claude deltas are -6/180 and deepseek's is +3/180, so they are exactly 5 points apart.
-  - "Within 5 points" is read as a distance on either side, with 5 points apart not within. That is the boundary
-    `s3m_reading`'s tests fixed before any S3M run (deepseek -9, Sonnet -4: open).
-  - The script first checked only the side above deepseek. It was corrected to the frozen text after this run's
-    numbers were in. That one-sided version would have read "does not explain".
-  - Either way, every p is above 0.25 and the gap is within the 10 to 13 points a significant difference needs, so
-    no reading here is a finding.
+  - "Within 5 points" is a distance, on either side of deepseek. The frozen text does not say whether exactly 5
+    points apart is within.
+  - Above deepseek, the tests written before any S3M run fixed it as not within (deepseek -9, Sonnet -4: open),
+    which the "explains" clause's "at least 5 points above" already implies. Below deepseek, where this run landed,
+    nothing fixed it before the data.
+  - `s3m_reading.verdict()` first checked only the side above deepseek, and read "does not explain". After this
+    run's numbers were in, it was made two-sided, keeping 5 points apart as not within on both sides, so the
+    script prints "open". An inclusive reading of "within" gives "does not explain the loss", and prediction 3
+    then holds. This Result reports both and picks neither.
+  - Either way, every p is above 0.25 and the 5-point gap is below the 10 to 13 points a significant difference
+    needs, so no reading here is a finding.
 - Read with `python -m lancet_eval.s3m_reading` → [s3m-writers/reading.json](s3m-writers/reading.json).
 
 ### Extraction (`writer_grid report` → [s3m-writers/summary.json](s3m-writers/summary.json))
@@ -172,12 +179,13 @@ same store, deepseek's own re-extraction at the grid's granularity reads +1.7 po
 ### Predictions
 
 1. **deepseek repeats S1: fails.** deepseek's delta is +1.7, not below 0.
-2. **Fewer junk entities: fails for every writer.** Each Claude writer extracts more dates per 1,000 entities than
+2. **Fewer junk entities: fails for every writer.** (Per 1,000 entities; deepseek's figures cover the 15,019 chunks
+   it answered, the Claude writers' all 15,264.) Each Claude writer extracts more dates per 1,000 entities than
    deepseek (Opus 5.5 is the exception, 14.3 against 14.8). Dates and publishers together are also higher:
    - grid: Haiku 28.7 and Sonnet 26.8 against deepseek 20.8;
    - pilot chunks: Haiku 28.2, Sonnet 24.5 and Opus 24.3 against deepseek 20.0.
-3. **The writer does not explain the loss: fails, at the boundary.** Both Claude deltas are below 0, but exactly 5
-   points from deepseek's, not within 5.
+3. **The writer does not explain the loss: on the boundary.** Both Claude deltas are below 0 and exactly 5 points
+   from deepseek's: it holds if 5 points apart is within, and fails if not (Rule, above).
 
 ### Runs and counts
 

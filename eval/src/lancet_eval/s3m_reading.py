@@ -158,9 +158,9 @@ def read_writer(
     return WriterReading(
         writer=writer,
         runs=runs,
-        all=compare(arm, reference, g),
-        yes_no=compare(arm, reference, yes_no),
-        open=compare(arm, reference, open_),
+        all=compare(arm, reference, g, k=runs),
+        yes_no=compare(arm, reference, yes_no, k=runs),
+        open=compare(arm, reference, open_, k=runs),
         null_guard=null_guard(arm, reference, nulls),
     )
 
@@ -175,8 +175,9 @@ def verdict(readings: Sequence[WriterReading]) -> str:
     eps = 1e-9
     if any(d >= -eps and d - base >= RULE_MARGIN - eps for d in claude):
         return "the writer explains the loss"
-    # "Within 5 points" is a distance either way; 5 points apart is not within (the
-    # boundary this module's tests fixed before any S3M run).
+    # "Within 5 points" is a distance either way; 5 points apart is taken as not within.
+    # The frozen text leaves that boundary open below deepseek, so a reading that lands
+    # on it reports both readings (EXPLORE-S3-MHR-WRITERS.md › Result).
     if all(d < -eps and abs(d - base) < RULE_MARGIN - eps for d in claude):
         return "the writer does not explain the loss"
     return "open"

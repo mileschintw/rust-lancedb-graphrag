@@ -27,6 +27,8 @@ impl GraphTableSet {
     /// # Errors
     /// Returns an error naming the value if it is empty, too long or has another character.
     pub fn new(name: &str) -> Result<Self, String> {
+        // 32 keeps `entity_edges__<set>` a short, readable table name; no store limit is
+        // nearer.
         let valid = !name.is_empty()
             && name.len() <= 32
             && name
@@ -153,16 +155,19 @@ impl DatabaseManager {
             .execute()
             .await
             .map_err(|error| format!("failed to list LanceDB tables: {error}"))?;
-        for (name, schema) in [
-            (set.entities(), entities_schema()),
-            (set.entity_edges(), entity_edges_schema()),
-        ] {
+        // Both names are checked before either table is created, so a refusal creates nothing.
+        for name in [set.entities(), set.entity_edges()] {
             if existing.contains(&name) {
                 return Err(format!(
                     "graph table set {}: {name} already exists",
                     set.name()
                 ));
             }
+        }
+        for (name, schema) in [
+            (set.entities(), entities_schema()),
+            (set.entity_edges(), entity_edges_schema()),
+        ] {
             self.connection
                 .create_empty_table(&name, schema)
                 .execute()
@@ -175,6 +180,9 @@ impl DatabaseManager {
     /// Drops a graph table set's two tables where they exist (a failed import's partial set).
     /// Only `entities__<set>` and `entity_edges__<set>` can be named, so the store's own tables
     /// are never dropped.
+    ///
+    /// # Errors
+    /// Returns an error if the tables cannot be listed or a table cannot be dropped.
     pub async fn drop_graph_table_set(&self, set: &GraphTableSet) -> Result<(), String> {
         let existing = self
             .connection
