@@ -69,7 +69,7 @@ def test_an_external_id_from_the_other_store_is_refused(
         score_run(run_dir=s0.run, no_judge=True, gold_chunks_path=s0.gold)
 
 
-def test_unset_keeps_the_v1_map_and_an_unknown_prefix_is_refused(
+def test_external_store_defaults_to_none_and_an_unknown_prefix_is_refused(
     s0: S0,  # noqa: F811
 ) -> None:
     assert load_corpus_config(fx.CORPUS).external_store is None
@@ -100,3 +100,14 @@ def test_compare_levers_reads_the_same_external_store(
     monkeypatch.setattr("lancet_eval.lever_comparison.load_document_map", load)
     with pytest.raises(LeverComparisonError, match="D-247"):
         build_lever_comparison(run, gold_chunks_path=gold)
+
+
+def test_a_non_string_external_store_is_refused(s0: S0) -> None:  # noqa: F811
+    path = corpus._repo_root() / "eval" / "corpora" / f"{fx.CORPUS}.toml"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(
+        text.replace("[documents]\n", '[documents]\nexternal_store = ["full"]\n'),
+        encoding="utf-8",
+    )
+    with pytest.raises(CorpusError, match="external_store"):
+        load_corpus_config(fx.CORPUS)

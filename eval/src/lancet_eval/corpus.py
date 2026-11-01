@@ -215,12 +215,16 @@ class CorpusConfig:
         self.commit_documents = bool(self.documents.get("commit_documents", False))
         self.documents_source = str(self.documents.get("source", ""))
         self.license = str(self.documents.get("license", "unspecified"))
-        # #164: the store prefix whose document map an external arm's IDs are checked
-        # against; unset keeps the v1.0 map.
+        # #164: `external_store` is the store prefix whose document map an external
+        # arm's IDs are checked against; unset keeps the v1.0 map. Held as the store
+        # name the prefix declares.
         self.external_store: str | None = None
         external_store = self.documents.get("external_store")
         if external_store is not None:
-            if external_store not in STORE_PREFIXES:
+            if (
+                not isinstance(external_store, str)
+                or external_store not in STORE_PREFIXES
+            ):
                 raise CorpusError(
                     f"[documents] external_store in {toml_path} is {external_store!r}; "
                     f"known store prefixes: {sorted(STORE_PREFIXES)}"

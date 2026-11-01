@@ -2007,10 +2007,9 @@ def build_lever_comparison(
     try:
         if any(is_external_arm(r.graph_arm) for r in records):
             # #164: the store `[documents] external_store` names, else the v1.0 store.
-            external_store = getattr(config, "external_store", None)
+            store = config.external_store
             doc_map = load_document_map(
-                config.name,
-                V1_STORE if external_store is None else get_eval_store(external_store),
+                config.name, V1_STORE if store is None else get_eval_store(store)
             )
             require_external_provenance(
                 records, journal, config, {*doc_map.entries, *doc_map.aliases}
