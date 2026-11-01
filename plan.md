@@ -42,6 +42,7 @@ Current state only. Done work moves to `plan-history.md` with a one-line pointer
   3. A3, chunk-ID secondaries scored against the small store's gold IDs for merged (0.0, delta -95.6 pt); `coverage_at_4` passes the small store's chunk_size. Bug.
   4. B, graph extraction junk entities: month names and publishers (TechCrunch, The Verge). This does not change S1's "graph out", but matters for any later graph work.
   5. D, power: S1 detects only about 10 pt or more; merged's "no difference" is uninformative. S2 design question: is 100 dev enough to separate readers.
+  **Issues opened 2026-10-31 after both compacts (user: "compact完了"):** A1 #123, A2 #124, A3 #125, B #126, D #127 (D also covers D-270b's 2-point margin, below the noise floor; S2's pool is fixed at the D-237 dev 100). Next: design questions one at a time.
   S1's conclusion (keep small, graph out) stands unless the discussion reopens it. After both compacts: open the issues (standing permission for follow-ups a review found; search for duplicates first), then walk the user through the design questions, one at a time, with options and a recommendation.
 - **Main checkout ff pending:** `D:/Repos/lancet` main cannot fast-forward to 16b9ebe5. The untracked S1 run dir `eval/runs/2026-10-31-s1-multihop_rag_s1_dev/` and `eval/corpora/multihop_rag/document_map.eval-s1.json` are now tracked on main (PR #122). Plan, as with S0: verify they are identical to main's copy, move the originals to a backup folder outside the repo, then ff. Ask the user before moving.
 - **Relay update pause (user, 2026-10-31 15:57 -0700: "等目前session都完成後，先不開始新任務。跟上次一樣，我需要更新relay。屆時會讓你重讀skill並compact，接著再繼續工作。").** Let the running sessions finish: lane 118 (PR, merge on green, as standing instruction 1 allows) and run-s1store (stopping the seed, then parking). Start nothing new and send no `GO rebuild` until the user says the relay update is done. Refined from side session local_9bef2093-1e50-4003-b2bc-8c88d7d1727a (user: "可以，但我說的是S1 worker也compact"). Order, after lane 118 merges and everything is idle:
@@ -102,6 +103,11 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
 | #117 | after S2 submit | — | none | writer pilot: Haiku/Sonnet subset extraction (30-50 docs), cost and quality, no store; BYOK check (user: "是，排在 S2 後 (Recommended)") | limited: paid, before the credit expires 2026-11-03 |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
+| #123 | S2 hold | — | none | A1 reader nondeterminism: `PLAN.md` new D-ID; `EXPERIMENT-S2.md`/`RUN-S2.md` replicate or noise-floor step; `lever_comparison.py` aggregation if chosen | limited: owner design decision |
+| #124 | S2 hold | — | none | A2 lexical scoring: `metrics.py` › `gold_contained`, `answer_usable`; new test; `PLAN.md` new D-ID; `EXPERIMENT-S2.md` metric | limited: owner design decision |
+| #125 | 1 | — | none | A3 bug: `lever_comparison.py` › `_Ctx` gold_sets/chunk_size, `_load_inputs`, secondary lambdas; two-store test; `EXPERIMENT-S1.md` › Result note | free |
+| #126 | S3 input | — | none | B graph junk entities: `engine/src/graph/extraction.rs`, `seeding.rs`; D-ID if behaviour changes | limited: owner decision (fix now or S3) |
+| #127 | S2 hold | — | none | D power and the D-270b 2-point margin: `PLAN.md` new D-ID; `EXPERIMENT-S2.md`; `RUN-S2.md`; `PREREGISTRATION_S2` (RUN-S2 step 4 only) | limited: owner design decision |
 
 S2 chain (spec #49, decisions D-254 to D-259 in PR #55, `decisions-2026-10-30.md`): #44 alone → #47 ∥ #51 → #50 (after #47) ∥ #52 (after #51) → #53 ∥ #54. Mechanical overlaps to name in briefs: `cli.py` (#52 `replay-init`, #53 `batch`), `generate_from_context.rs` (#47 then #50, sequential by blocking).
 
