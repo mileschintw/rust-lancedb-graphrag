@@ -372,6 +372,7 @@ def test_summary_counts_tokens_cost_junk_and_overlap() -> None:
     assert (s["answered"], s["valid"], s["missing"]) == (1, 1, 1)
     assert (s["entities"], s["relations"], s["dangling_relations"]) == (3, 2, 1)
     assert s["junk"] == {"date": 1, "publisher": 1}
+    assert s["ungrounded_entities"] == 3  # the chunk text is "xxx..."
     assert s["cost_usd"] == pytest.approx((300 * 2.0 + 120 * 10.0) * 0.5 / 1e6)
     assert s["entity_jaccard_vs_deepseek"] == pytest.approx(1.0)
     assert s["relation_pair_jaccard_vs_deepseek"] == pytest.approx(1.0)

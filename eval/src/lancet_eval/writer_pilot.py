@@ -678,6 +678,8 @@ def summarise(
 ) -> dict[str, Any]:
     """One writer's figures over the pilot's chunks (cost at list price x its factor).
 
+    An ungrounded entity's normalised name is not in the chunk's normalised text: a
+    paraphrase, or a name the writer brought from outside the chunk.
     ``reference`` (deepseek's results) adds the mean Jaccard overlap of normalised
     entity
     names on the chunks both answered validly.
@@ -686,7 +688,7 @@ def summarise(
     ok = invalid = missing = 0
     prompt = completion = reasoning = 0
     reasoning_missing = 0
-    entities = relations = dangling = 0
+    entities = relations = dangling = ungrounded = 0
     junk: dict[str, int] = {"date": 0, "publisher": 0}
     junk_names: dict[str, int] = {}
     byok: set[Any] = set()
@@ -711,6 +713,8 @@ def summarise(
         ok += 1
         names = {_norm(e["name"]) for e in data["entities"]}
         entities += len(data["entities"])
+        text = _norm(c.text)
+        ungrounded += sum(_norm(e["name"]) not in text for e in data["entities"])
         relations += len(data["relations"])
         dangling += sum(
             _norm(x["source"]) not in names or _norm(x["target"]) not in names
@@ -765,6 +769,7 @@ def summarise(
         "entities_per_chunk": entities / ok if ok else None,
         "relations_per_chunk": relations / ok if ok else None,
         "dangling_relations": dangling,
+        "ungrounded_entities": ungrounded,
         "junk": junk,
         "top_junk": sorted(junk_names.items(), key=lambda kv: -kv[1])[:10],
         "entity_jaccard_vs_deepseek": (
