@@ -734,7 +734,9 @@ def test_get_eval_store_names_both_stores_and_refuses_others() -> None:
 
     assert get_eval_store("eval") is V1_STORE
     assert get_eval_store("eval-s1") is S1_STORE
-    with pytest.raises(EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki, eval-full-merged"):
+    with pytest.raises(
+        EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki, eval-full-merged"
+    ):
         get_eval_store("eval-s2")
 
 

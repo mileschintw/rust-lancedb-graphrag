@@ -1,9 +1,9 @@
 # #146 prep: the confirmation stage's two full-corpus stores over the 1,000 fresh dev
 # questions (multihop_rag/fresh_split.json). `seed --store eval-full-merged` builds the
 # merged store from it, and `preflight` checks either store; eval-full is #149's store,
-# reused as it is (experiments/v1.1/RUN-CONFIRM.md). It is pre-registered for no run: a
-# dev run on it first adds a [preregistration] token. The held-out corpus is written
-# only when the run plan is frozen.
+# reused as it is. It is pre-registered for no run: a dev run on it first adds a
+# [preregistration] token. The held-out corpus is written only when the run plan is
+# frozen.
 [documents]
 # The same pinned file as multihop_rag_full_dev.toml (a test pins this): the 609 article
 # texts stay in the gitignored `.cache/` (ATTRIBUTION.md).
