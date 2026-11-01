@@ -192,3 +192,8 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 | 148 | #148 | local_4b47d05b-1a55-4b82-a4da-a3b9193706f8 | started 2026-11-01 (unattended): MHR writer grid on S1 subset; freeze PR → Claude extraction tonight (ceiling Claude $40, OpenRouter $1.50); graph import + reading after main checkout (3rd) | — |
 | #148 | now (lane 148) | — | #117 (script) | `multihop_rag_s3m_dev.toml`, prereg constant, extraction import path, `EXPLORE-S3-MHR-WRITERS.md` | limited: paid (pre-approved, ceilings) |
 - Merged freeze PR #154 (03fcb908) and PR #160 (76ee82d4). Claude ~$37.8 (Haiku $1.43, Sonnet $29.14, Opus spot $7.21), OpenRouter ~$2.03 extraction + phase 3. Reading: open / does not explain (deepseek +1.7, Haiku/Sonnet -3.3); verdict() went one-sided → two-sided after the data, both readings reported (owner to note).
+
+## Lane 146 (stopped 2026-11-01)
+
+| 146 | #146 (prep) | local_97bc85b5-3b3c-469c-8a5b-d7eb5514737a | started 2026-11-01 on "Confirm and start": full-corpus stores, LlamaIndex 609, run plan + prereg drafts (free) | main checkout after spare-1 |
+- Stopped: owner "Pause #146" (relayed "可以，先暫停"). Branch claude/lane-146-6286dc holds any drafts. Focus moves to S3 core (#163), a one-page results summary, then agentic retrieval / graph community summaries.
