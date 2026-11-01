@@ -382,7 +382,7 @@ not hold. S3's fixed reader is `deepseek/deepseek-v4-flash-0731`.
 
   | Arm | thinking | reasoning_tokens total | mean per record |
   |---|---|---|---|
-  | deepseek | reasoning off, temperature 0, as in S1 | 0 over the 400 new records (the 100 carried records hold no count) | 0.0 |
+  | deepseek | the engine's `pack` body unrewritten, temperature 0, as in S1 (D-278) | 0 over the 400 new records (the 100 carried records hold no count) | 0.0 |
   | Haiku 5.5 | off | 0 | 0.0 |
   | Sonnet 5.5 | `between_tools`, sync API (D-280) | 0 | 0.0 |
   | Opus 5.5 | on at effort low; it cannot be turned off (D-265) | 2,399 (14 of 500 records nonzero) | 4.8 |
