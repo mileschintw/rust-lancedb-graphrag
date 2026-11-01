@@ -124,7 +124,7 @@ from lancet_eval.measure import (
     compute_spend,
     tokens_usd,
 )
-from lancet_eval.provenance import deepseek_pin_problem
+from lancet_eval.provenance import deepseek_pin_problem, routing_failures
 from lancet_eval.reader_request import (
     ReaderDeclaration,
     ReaderPrice,
@@ -892,6 +892,8 @@ def fetch(
     wanted = {_batch_arm(a, state)[0] for a in arms or ()}
     successes = errors = 0
     pending: list[str] = []
+    #: #133 L5: the batches journalled this fetch, by arm, for the routing summary.
+    fetched: dict[str, set[str]] = {}
     for path in manifest_paths(run_dir):
         manifest = read_manifest(path)
         label = str(manifest.get("arm"))
@@ -925,6 +927,19 @@ def fetch(
         manifest.update(state="fetched", fetched_at=time.time())
         _write_manifest(path, manifest)
         state = _load_run(run_dir)
+        fetched.setdefault(label, set()).add(batch_id)
+    for label, batch_ids in fetched.items():
+        records = [
+            r
+            for r in state.records
+            if r.graph_arm == label and r.session_id in batch_ids and r.replay
+        ]
+        bad = [r for r in records if routing_failures(r, state.readers)]
+        echo(
+            f"Routing ({label}): {len(bad)} of {len(records)} billed record(s) this "
+            "fetch break is_byok or the provider"
+            + ("; score will refuse them (#133)" if bad else "")
+        )
     return FetchResult(successes, errors, tuple(pending))
 
 
