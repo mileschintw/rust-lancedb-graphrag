@@ -1,8 +1,8 @@
 # run-s1store status
 
-- state: blocked
+- state: parked
 - branch: main
 - head: aedd4723
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\run-s1store.md
-- time: 2026-10-31 18:19 -0700
-- doing: seed done 346/346, 0 extraction failures; 1.4 ok; 1.5 preflight FAIL corpus_generation (excerpt_max_chars 512 < S1 chunks); stack down
+- time: 2026-10-31 18:22 -0700
+- doing: waits for #120 (S1 excerpt_max_chars); then rerun 1.5 only, no re-seed; stack down
