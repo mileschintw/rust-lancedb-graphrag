@@ -95,7 +95,8 @@ def test_the_corpus_reads_the_fresh_dev_set_and_all_609_documents() -> None:
 
 
 @pytest.mark.skipif(
-    not CACHE.is_file(), reason="needs the cached corpus.json (lancet-eval corpus fetch)"
+    not CACHE.is_file(),
+    reason="needs the cached corpus.json (lancet-eval corpus fetch)",
 )
 def test_the_pinned_documents_file_holds_all_609_articles() -> None:
     assert lf_sha256(CACHE) == CORPUS_JSON_SHA256
@@ -108,7 +109,10 @@ def test_the_full_store_has_its_own_document_map() -> None:
 
     path = get_document_map_path(CORPUS, FULL_STORE)
     assert path == (
-        repo_root() / "eval" / "corpora" / "multihop_rag_full"
+        repo_root()
+        / "eval"
+        / "corpora"
+        / "multihop_rag_full"
         / "document_map.eval-full.json"
     )
 
