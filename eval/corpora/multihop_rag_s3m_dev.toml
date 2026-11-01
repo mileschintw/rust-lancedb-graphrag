@@ -1,0 +1,47 @@
+# #148, exploratory (S3M): S1's small-store graph arm, one graph per writer, at K = 2. It
+# decides nothing (experiments/v1.1/EXPLORE-S3-MHR-WRITERS.md). Each writer's graph is
+# read in its own runs against the v1.0 store with that writer's graph side tables; the
+# reference arm runs in runs of its own. [documents], [questions], [document_subset],
+# [split] and [preflight] are copied from multihop_rag_s1_dev.toml, and [stores] keeps
+# its small store only, so every run reads S1's question pool and document map (a test
+# pins this).
+[documents]
+map_corpus = "multihop_rag"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = true
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.diag.jsonl"
+label_format = "multihop_rag"
+sample_seed = 42
+sample_size = 100
+
+[document_subset]
+selection_algorithm = "referenced_plus_distractors"
+distractor_count = 25
+
+[arms]
+# S1's small-store pair. The graph-on arm is driven once per writer's graph.
+arms = [
+  "small/hybrid+rerank+metadata",
+  "small/hybrid+graph+rerank+metadata",
+]
+
+[stores.small]
+chunk_strategy = "structure-aware"
+chunk_size = 500
+chunk_overlap = 50
+
+[split]
+file = "multihop_rag/heldout_split.json"
+role = "dev"
+
+[preregistration]
+token = "PREREGISTRATION_S3M"
+
+[preflight]
+legacy_canaries = false
+arm_canaries = "multihop_rag/canary.arms.jsonl"
