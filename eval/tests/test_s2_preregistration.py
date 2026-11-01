@@ -225,7 +225,12 @@ def test_score_and_compare_levers_read_opus_as_a_descriptive_reader(
     import replay_fixture as rf
     from test_reader_comparison import OPUS_ARM, _compare, _group, _s2, _score
 
-    s2, gold, qs = _s2(tmp_path, monkeypatch, prereg=build_draft(rf.BASE))
+    # The fixture run holds one answer per question and arm, so the draft is read at
+    # one replicate (D-274's K = 5 path is test_replicates.py's).
+    prereg = dataclasses.replace(
+        build_draft(rf.BASE), replicates=1, test="paired_sign_flip_exact_two_sided"
+    )
+    s2, gold, qs = _s2(tmp_path, monkeypatch, prereg=prereg)
     _score(s2, gold)
     payload = _compare(s2, gold)
 

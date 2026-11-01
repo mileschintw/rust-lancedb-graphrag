@@ -165,6 +165,8 @@ class Endpoint:
         self.batches: dict[str, list[BatchRequest]] = {}
         self.gold = gold
         self.answers: dict[tuple[bool, str], str] = {}
+        #: (deepseek, custom_id) of the requests that come back errored.
+        self.errored: set[tuple[bool, str]] = set()
 
     def submit(self, requests: Sequence[BatchRequest]) -> str:
         batch_id = f"batch-{len(self.batches) + 1}"
@@ -180,6 +182,9 @@ class Endpoint:
             content = self.answers.get((deepseek, req.custom_id)) or fx._answer(
                 "ok" if qid in self.gold else "abstain", self.gold.get(qid, "")
             )
+            if (deepseek, req.custom_id) in self.errored:
+                out.append(BatchResult(req.custom_id, "errored", error="boom"))
+                continue
             out.append(
                 BatchResult(
                     req.custom_id,
@@ -269,7 +274,9 @@ def test_the_deepseek_arm_sends_replicates_2_to_k_unrewritten(s2) -> None:
     assert [r.custom_id for r in requests] == [
         f"{q}_r{k}" for q in _all(qs) for k in range(2, K + 1)
     ]
-    assert all(r.body_json == _pinned_body(r.custom_id[:-3]) for r in requests)
+    assert all(
+        r.body_json == _pinned_body(r.custom_id.rpartition("_r")[0]) for r in requests
+    )
     batch.fetch(run=run, echo=lambda _: None)
     units = _units(run, rf.BASE)
     assert sorted(units) == sorted((q, k) for q in _all(qs) for k in range(1, K + 1))
@@ -472,3 +479,59 @@ def test_one_replicate_reproduces_the_sign_test() -> None:
     vr = {"a": 0.0, "b": 1.0, "c": 1.0, "d": 0.0}
     assert replicate_p(vx, vr, 1) == float(exact_signflip_p(2, 1))
     assert float(exact_signflip_p(2, 1)) == sum(comb(3, k) for k in range(4)) / 8
+
+
+def test_a_question_with_a_failed_replicate_leaves_the_reader_rows(s2) -> None:
+    """Cost per answered question and the reader's usable share count only questions
+    whose every answer is ok, as the pairs do (D-274, D-275)."""
+    from lancet_eval.score import score_run
+
+    run, qs, gold, endpoint, _ = s2
+    endpoint.errored.add((False, f"{qs.g_ids[0]}_r3"))
+    _drive(run)
+    score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    (group,) = build_lever_comparison(run, gold_chunks_path=gold)["reader_comparison"][
+        "groups"
+    ]
+    n = len(qs.g_ids) - 1
+    assert group["population"]["n"] == n
+    rows = {r["arm"]: r for r in group["readers"]}
+    for arm in (rf.BASE, rf.READER_ARM):
+        usable = rows[arm]["answer_usable"]
+        assert (usable["n"], usable["n_answers"], usable["n_usable"]) == (
+            n,
+            n * K,
+            n * K,
+        )
+
+
+def test_the_deepseek_arm_refuses_a_pin_other_than_config_tomls(
+    s2, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, *_ = s2
+
+    def other(qid: str) -> str:
+        body = json.loads(_pinned_body(qid))
+        body["provider"]["order"] = ["sail-research"]
+        return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+
+    monkeypatch.setattr(batch, "bin_runner", PinnedBin(other))
+    with pytest.raises(batch.BatchError, match="config.toml"):
+        batch.submit(run=run, arm=rf.BASE, echo=lambda _: None)
+
+
+def test_a_deepseek_replicate_whose_body_keeps_reasoning_on_is_refused(s2) -> None:
+    run, *_ = s2
+    _drive(run)
+    path = run / "journal.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        data = json.loads(line)
+        if data.get("graph_arm") == rf.BASE and data.get("replicate") == 2:
+            body = json.loads(data["replay"]["pack_body"])
+            body["reasoning"] = {"effort": "high"}
+            data["replay"]["pack_body"] = json.dumps(body, separators=(",", ":"))
+            lines[i] = json.dumps(data)
+            break
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    assert "reasoning_tokens" in {f.code for f in _replay_failures(run)}

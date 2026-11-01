@@ -684,7 +684,9 @@ class _Ctx:
         n_pos, n_neg = p4_mod.discordant_counts(vx, vref)
         return n_pos, n_neg, replicate_p(vx, vref, self.replicates)
 
-    def t_check(self, vx: Mapping[str, float], vref: Mapping[str, float]) -> dict:  # type: ignore[type-arg]
+    def t_check(
+        self, vx: Mapping[str, float], vref: Mapping[str, float]
+    ) -> dict[str, float | None]:
         """D-274's paired t cross-check, as extra row fields; none before D-274."""
         if self.replicates == 1:
             return {}
@@ -919,6 +921,19 @@ def _record_state(rec: RunRecord | None) -> str:
     return "ok" if provenance.is_ok(rec) else "provenance"
 
 
+def _unit_state(ctx: _Ctx, qid: str, label: str) -> str:
+    """`_record_state` of a question under an arm. With K replicates (D-274), a
+    missing replicate or any failed one is `failure`, else any provenance failure is
+    `provenance`, so a question is `ok` exactly when `ctx.ok()` admits it."""
+    if ctx.replicates == 1:
+        return _record_state(ctx.by_key.get((qid, label)))
+    recs = ctx.recs(qid, label)
+    states = {_record_state(r) for r in recs}
+    if len(recs) < ctx.replicates or "failure" in states:
+        return "failure"
+    return "provenance" if "provenance" in states else "ok"
+
+
 def _exclusions(ctx: _Ctx, arm: str) -> dict[str, int]:
     """Why G questions are outside P_X: a partition of `|H_G| - |P_X|` (item 7).
 
@@ -939,7 +954,7 @@ def _exclusions(ctx: _Ctx, arm: str) -> dict[str, int]:
     }
     for qid in ctx.g_ids:
         rec = ctx.by_key.get((qid, label))
-        state = _record_state(rec)
+        state = _unit_state(ctx, qid, label)
         if state == "failure":
             out["own_failure"] += 1
         elif state == "provenance":
@@ -947,7 +962,7 @@ def _exclusions(ctx: _Ctx, arm: str) -> dict[str, int]:
             if rec is not None and carries_rerank_degraded(rec):
                 out["of_which_rerank_degrade"] += 1
         else:
-            ref_state = _record_state(ctx.by_key.get((qid, ref_label)))
+            ref_state = _unit_state(ctx, qid, ref_label)
             if ref_state == "failure":
                 out["reference_only_failure"] += 1
                 out["of_which_reference_own_failure"] += 1
@@ -1545,10 +1560,7 @@ def _reader_population(
     readers drop is counted under both.
     """
     states = {
-        arm: {
-            qid: _record_state(ctx.by_key.get((qid, canonical_arm(arm))))
-            for qid in ctx.g_ids
-        }
+        arm: {qid: _unit_state(ctx, qid, canonical_arm(arm)) for qid in ctx.g_ids}
         for arm in members
     }
     common = [qid for qid in ctx.g_ids if all(states[a][qid] == "ok" for a in members)]

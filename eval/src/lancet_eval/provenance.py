@@ -112,13 +112,14 @@ clauses are the ten above, read for that request: ``body_hash`` is the hash of t
 ``pack`` body itself and ``rewritten_fields`` is empty; ``model`` is the body's
 ``model``; ``is_byok`` must be False; ``provider`` must be the body's pinned provider
 (its ``order`` entry's name before any ``/``, matched without case) and the body must
-carry the D-271 pin (``deepseek_pin_problem``); ``reasoning_tokens`` must be 0 when
-the body turns reasoning off (``effort: none`` or ``enabled: false``).
+carry the D-271 pin (``deepseek_pin_problem``); the body must turn reasoning off
+(``effort: none`` or ``enabled: false``) and ``reasoning_tokens`` must be 0.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Container, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
@@ -660,8 +661,6 @@ def _deepseek_failures(replay: ReplayProvenance) -> list[tuple[str, str]]:
 
     Its request is the ``pack`` body unrewritten, so each clause reads that body.
     """
-    import json
-
     try:
         body = json.loads(replay.pack_body)
     except ValueError as exc:
@@ -701,7 +700,13 @@ def _deepseek_failures(replay: ReplayProvenance) -> list[tuple[str, str]]:
                 "provider",
                 f"provider {replay.provider!r}, expected the pinned {pinned!r}",
             ))
-    if body.get("reasoning") in _REASONING_OFF and replay.reasoning_tokens != 0:
+    if body.get("reasoning") not in _REASONING_OFF:
+        found.append((
+            "reasoning_tokens",
+            f"the pack body's reasoning {body.get('reasoning')!r} does not turn "
+            "reasoning off",
+        ))
+    elif replay.reasoning_tokens != 0:
         found.append((
             "reasoning_tokens",
             f"{replay.reasoning_tokens} reasoning tokens from a body that turns "

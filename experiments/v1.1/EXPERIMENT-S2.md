@@ -120,12 +120,15 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "the exact sign-flip permutation on the per-question mean differences "
         "(D-274). Reader choice: the eligible reader with the lowest cost per "
         "answered question (sync list price x tokens over all 5 answers, "
-        "reader_comparison, D-257) wins, unless a dearer eligible reader is "
-        "significantly better on answer_usable than it: each dearer eligible reader "
-        "is paired with the cheapest one on the common population "
-        "(reader_comparison), Holm runs over those pairs at alpha 0.05, and a pair "
-        "Holm rejects with a positive delta is significantly better; with more than "
-        "one such reader the cheapest of them wins (D-275, amending D-270b). A pick "
+        "reader_comparison, D-257) is the starting pick and wins, unless a dearer "
+        "eligible reader is significantly better on answer_usable than it: every "
+        "pair of eligible readers is tested on its own population "
+        "(reader_comparison pairs), Holm runs once over all those pairs at alpha "
+        "0.05, and a dearer reader whose pair with the pick Holm rejects with a "
+        "positive delta is significantly better. Then the pick steps up to the "
+        "cheapest such reader and the check repeats against the readers dearer "
+        "than it; the pick no dearer reader beats wins (D-275, amending D-270b). A "
+        "pick "
         "of the cheapest reads 'no larger difference detected', not equivalence: "
         "the smallest detectable effect is about 0.084 (8.4 points). opus-5.5 is a "
         "descriptive arm, run unconditionally beside the other two: reported with "
@@ -242,15 +245,18 @@ choice's and D-245's Holm tests.
 1. **Eligibility.** A Claude reader is a candidate only if its null guard passes (margin 0.10, pair fraction 0.80 on
    the 10 dev nulls). With 5 answers the guard pairs answer k of the reader with answer k of deepseek, so it counts 50
    null pairs: a net abstention drop of 6 or more of 50 fails (above 0.10), and fewer than 8 paired null questions is
-   not evaluable. A failed or not-evaluable guard removes that reader. deepseek is the guard's reference and has no
+   not evaluable. Only the pass or fail is read: the printed one-sided bound treats a question's 5 pairs as
+   independent. A failed or not-evaluable guard removes that reader. deepseek is the guard's reference and has no
    guard of its own; it stays a candidate (D-270a).
-2. **Reader choice (D-275, amending D-270b).** The candidate with the lowest cost per answered question wins, unless a
-   dearer candidate is significantly better on `answer_usable` than that cheapest one:
-   - each dearer candidate is paired with the cheapest on the common population (`reader_comparison` › `pairs`,
-     D-274's test);
-   - Holm runs over those pairs (m = the number of dearer candidates) at alpha 0.05, by hand from the pairs' `raw_p`;
-   - a pair Holm rejects with a positive delta is significantly better. With more than one such candidate, the
-     cheapest of them wins.
+2. **Reader choice (D-275, amending D-270b).** The candidate with the lowest cost per answered question is the
+   starting pick, and it wins unless a dearer candidate is significantly better on `answer_usable` than it:
+   - every pair of candidates is tested with D-274's test on that pair's own population (`reader_comparison` ›
+     `pairs`);
+   - Holm runs once over all those pairs (m = the number of candidate pairs, 3 with three candidates) at alpha 0.05,
+     by hand from the pairs' `raw_p`;
+   - a dearer candidate is significantly better when Holm rejects its pair with the pick and the delta favours it.
+     The pick then steps up to the cheapest such candidate, and the check repeats against the candidates dearer than
+     it. The pick no dearer candidate is significantly better than wins.
 
    Picking the cheapest reads "no larger difference detected" (see Smallest detectable effect), not equivalence.
    The winner becomes S3's fixed reader.

@@ -342,9 +342,11 @@ read the result by EXPERIMENT-S2.md › Decision rule:
   answer pairs (5 per null question);
 - `reader_comparison` for each reader's `answer_usable` (over all 5 answers; `n_answers`), paired differences and cost
   per answered question. Opus 5.5 is a descriptive row: report it, and leave it out of the choice (D-267);
-- D-275's reader choice: the eligible reader with the lowest cost per answered question, then each dearer eligible
-  reader's pair against it from `reader_comparison` › `pairs`, with Holm over those pairs computed by hand. Write
-  the Holm arithmetic into the Result.
+- D-275's reader choice: start from the eligible reader with the lowest cost per answered question, take every
+  pair of eligible readers from `reader_comparison` › `pairs`, run Holm over all of them by hand, and step up to a
+  dearer reader only when Holm rejects its pair with the current pick in its favour (EXPERIMENT-S2.md › Decision
+  rule 2). Write the Holm arithmetic into the Result. A null guard's pass or fail is read; its printed bound is not
+  (D-274).
 
 Ignore `default_decisions`. S2 is applied by hand.
 

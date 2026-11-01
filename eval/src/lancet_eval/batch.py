@@ -81,6 +81,7 @@ import hashlib
 import json
 import re
 import time
+import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -608,7 +609,8 @@ def deepseek_request(pack_body: str) -> ReaderRequest:
 
     Raises:
         ReaderRequestError: If the body is not a JSON object, or does not carry the
-            D-271 provider pin (``provenance.deepseek_pin_problem``).
+            D-271 provider pin (``provenance.deepseek_pin_problem``) with
+            ``config.toml``'s values (``configured_pin_problem``).
     """
     try:
         body = json.loads(pack_body)
@@ -616,7 +618,7 @@ def deepseek_request(pack_body: str) -> ReaderRequest:
         raise ReaderRequestError(f"unreadable pack body: {exc}") from exc
     if not isinstance(body, dict):
         raise ReaderRequestError("the pack body is not a JSON object")
-    problem = deepseek_pin_problem(body)
+    problem = deepseek_pin_problem(body) or configured_pin_problem(body)
     if problem is not None:
         raise ReaderRequestError(problem)
     declaration = ReaderDeclaration(
@@ -628,6 +630,37 @@ def deepseek_request(pack_body: str) -> ReaderRequest:
     return ReaderRequest(
         reader=declaration, body=body, body_json=pack_body, rewritten_fields=()
     )
+
+
+def configured_pin_problem(body: Mapping[str, Any]) -> str | None:
+    """Why a pinned deepseek body's pin is not D-271's as configured, or None.
+
+    D-271's values live in ``config/config.toml`` ``[openrouter]``
+    (``generation_provider_order`` and the ``generation_max_price_*`` caps); the
+    engine's ``pack`` body must carry exactly those, so a deepseek replicate goes to
+    the provider and under the cap the engine's own generation does.
+    """
+    from lancet_eval.config import repo_root
+
+    with (repo_root() / "config" / "config.toml").open("rb") as f:
+        openrouter = tomllib.load(f).get("openrouter", {})
+    caps = {
+        key: openrouter[f"generation_max_price_{key}"]
+        for key in ("prompt", "completion")
+        if f"generation_max_price_{key}" in openrouter
+    }
+    provider = body["provider"]
+    if provider["order"] != openrouter.get("generation_provider_order"):
+        return (
+            f"D-271: the pack body's provider order {provider['order']!r} is not "
+            f"config.toml's {openrouter.get('generation_provider_order')!r}"
+        )
+    if provider["max_price"] != caps:
+        return (
+            f"D-271: the pack body's max_price {provider['max_price']!r} is not "
+            f"config.toml's {caps!r}"
+        )
+    return None
 
 
 def _sha256(text: str) -> str:

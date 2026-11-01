@@ -406,7 +406,9 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   CI: the percentile bootstrap over questions, 10,000 resamples with seed 42, each question carrying its 5 answers
   (the bootstrap resamples the per-question means). The null guard pairs replicate k of the arm with replicate k of
   the reference, so its counts are 5 times the questions' and its net loss rate is the mean per-question abstention
-  drop; the 0.80 pair floor still counts questions. Written into `PREREGISTRATION_S2` as `replicates=5` and `test=
+  drop; the 0.80 pair floor still counts questions. Its pass or fail is read; the one-sided bound printed beside it
+  treats the 5 pairs of a question as independent, so it is too narrow and is not read. A question with a failed or
+  missing answer under an arm leaves that arm's reader row (cost and usable share) as it leaves its pairs. Written into `PREREGISTRATION_S2` as `replicates=5` and `test=
   "paired_sign_flip_permutation_exact_two_sided"` (`thresholds.REPLICATE_TEST`). Journals before S2 have no
   `replicate` field, read as replicate 1, and score and compare byte-identically (six committed runs re-scored in
   memory, 2026-10-31). `report.json` reads each unit's replicate 1; the 5-answer reading is `compare-levers`'.
@@ -417,11 +419,15 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   "預設最便宜，顯著才換 (Recommended)", 2026-10-31; #127). Amends D-270b (and D-252's "highest point estimate unless a
   cheaper reader is within 2 points"). The candidates are deepseek and the Claude readers whose null guard passes
   (D-270a). The candidate with the lowest cost per answered question (D-257, sync list price times tokens, over all 5
-  replicates) wins, unless a dearer candidate is significantly better on `answer_usable` than that cheapest one. Each
-  dearer candidate is paired with the cheapest on the common population (the `reader_comparison` pair, D-274's test);
-  Holm runs over those pairs (m = the number of dearer candidates, at most 2) at alpha 0.05, and a pair is
-  significantly better when Holm rejects it with a positive delta. If more than one dearer candidate is, the cheapest
-  of them wins. The pairs' raw p-values are in `lever-comparison.json`; Holm over them is applied by hand. The 2-point
+  replicates) is the starting pick, and it wins unless a dearer candidate is significantly better on `answer_usable`
+  than it. Significance: every pair of candidates is tested with D-274's test on that pair's population (the
+  `reader_comparison` pairs), Holm runs once over all those pairs (m = the number of candidate pairs, 3 with three
+  candidates) at alpha 0.05, and a dearer reader is significantly better when Holm rejects its pair with the starting
+  pick with a positive delta. When one is, the pick steps up to the cheapest such reader and the check repeats
+  against the readers dearer than it; the pick no dearer candidate is significantly better than wins. So a dearer
+  reader that beats a cheaper one is never passed over for that cheaper one. The pairs' raw p-values are in
+  `lever-comparison.json`; Holm over them is applied by hand. (The owner's words fix the rule; the step-up for more
+  than one dearer candidate and Holm over all candidate pairs are this lane's reading of them.) The 2-point
   margin was far below both the noise floor (about 4% flips) and the smallest detectable effect, so the
   old winner could be picked by noise. The pre-registration states the expected smallest detectable effect, about 8.4
   points at K = 5 and n = 90 (two-sided 0.05, power 0.8; #127), so picking the cheapest reads as "no larger difference
