@@ -16,6 +16,9 @@
 //!   --chunk-strategy structure-aware --chunk-size 500 --chunk-overlap 50
 //! ```
 //!
+//! `--check` stops after the counts line (documents, extractable chunks, chunks with a recorded
+//! answer) and writes nothing.
+//!
 //! `answers.jsonl` holds one `{"text": <chunk text>, "content": <answer>}` object a line.
 //! Needs `OPENROUTER_API_KEY` for the embeddings.
 
@@ -39,13 +42,19 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 struct Args {
     extractions: String,
     chunk_settings: ChunkSettings,
+    check: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut values: HashMap<String, String> = HashMap::new();
+    let mut check = false;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let key = match flag.as_str() {
+            "--check" => {
+                check = true;
+                continue;
+            }
             "--extractions" | "--chunk-strategy" | "--chunk-size" | "--chunk-overlap" => flag,
             other => return Err(format!("unknown argument: {other}")),
         };
@@ -70,6 +79,7 @@ fn parse_args() -> Result<Args, String> {
             size: number("--chunk-size")?,
             overlap: number("--chunk-overlap")?,
         },
+        check,
     })
 }
 
@@ -230,6 +240,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         jobs.len(),
         recorded.len()
     );
+    if args.check {
+        return Ok(());
+    }
 
     database.create_graph_table_set(&set).await?;
     let database = database.with_graph_table_set(set.clone()).await?;
