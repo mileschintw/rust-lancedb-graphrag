@@ -51,7 +51,12 @@ def test_the_no_lack_artifact_is_left_to_the_judge() -> None:
         ("Yes", "yesterday"),
         ("Taylor Swift and Travis Kelce", "taylor swift"),  # one item of two
         ("Taylor Swift and Travis Kelce", "taylor kelce and travis swift"),
-        ("not", "note"),  # a four-letter word keeps its final "e"
+        ("not", "note"),
+        ("Plane", "plan"),  # only a plural ending folds; a final "e" never drops
+        ("stripe", "strip"),
+        ("paste", "past"),
+        ("1990s", "1990"),  # a token with a digit never folds
+        ("$1,200", "1 of 200"),  # a comma inside a number does not split a list
         ("Johnson & Johnson", "johnson"),  # each item needs its own span
         ("class", "clas"),  # "ss" is not a plural ending
         ("news", "new"),  # nor are a few common words ending in "s"
@@ -75,6 +80,8 @@ def test_misses_that_stay_misses(gold: str, text: str) -> None:
         ("caches", "cache"),
         ("classes", "class"),
         ("cases", "case"),
+        ("movies", "movie"),
+        ("buses", "bus"),
         ("Johnson & Johnson", "johnson and johnson"),
         ("Bears", "the bear"),
         ("Taylor Swift and Travis Kelce", "it was travis kelce with taylor swift"),

@@ -34,7 +34,7 @@ import httpx
 from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.judge import DEFAULT_CHAT_ENDPOINT, _post_judge
-from lancet_eval.metrics import answer_usable, context_tokens, extract_final_answer
+from lancet_eval.metrics import answer_usable, context_tokens, final_answer_line
 
 PROMPT_VERSION = "answer-judge-v1"
 REPORT_FILE = "answer-judge.json"
@@ -201,7 +201,7 @@ def _items(run: Path) -> list[_Item]:
         question = gold.get(rec.question_id)
         if question is None or question.is_null or not question.gold_answer:
             continue
-        line = extract_final_answer(rec.answer) if rec.outcome == "success" else None
+        line = final_line(rec.answer) if rec.outcome == "success" else None
         items.append(
             _Item(
                 question=question,
@@ -212,6 +212,11 @@ def _items(run: Path) -> list[_Item]:
             )
         )
     return items
+
+
+def final_line(answer: str | None) -> str | None:
+    """The line the judges read: the final `Answer:` line as written (D-276)."""
+    return final_answer_line(answer)
 
 
 def _replicate(rec: RunRecord) -> int:
@@ -417,7 +422,13 @@ def _report(
             "judge": n,
             "arm": a,
             **c,
-            "rate": c["n_equivalent"] / c["n"] if c["n"] else None,
+            # Judged records only: a failed request is reported in n_error and is
+            # neither equivalent nor not.
+            "rate": (
+                c["n_equivalent"] / (c["n"] - c["n_error"])
+                if c["n"] > c["n_error"]
+                else None
+            ),
         }
         for (n, a), c in counts.items()
     ]

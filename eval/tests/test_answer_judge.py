@@ -83,6 +83,16 @@ def test_each_judge_sees_only_the_question_the_gold_and_the_line(run: Path) -> N
     assert sonnet["provider"] == {"only": ["anthropic"], "allow_fallbacks": False}
 
 
+def test_the_judge_reads_the_line_as_written(run: Path) -> None:
+    """The line as written: D-70's normalisation would drop "." and "," from numbers."""
+    answer = "Reasoning." + fx.NL + "**Answer:** $3.5 billion [1]"
+    assert aj.final_line(answer) == "$3.5 billion"
+    assert aj.final_line("no answer line") is None
+    stub = StubTransport()
+    aj.judge_answers(run, transport=stub)
+    assert any("Answer to judge: Paris" in json.dumps(c) for c in stub.calls)
+
+
 def test_one_call_per_judge_and_distinct_prompt_and_none_on_a_rerun(run: Path) -> None:
     stub = StubTransport()
     aj.judge_answers(run, transport=stub)
@@ -106,7 +116,7 @@ def test_the_report_holds_rates_and_every_disagreement(run: Path) -> None:
 
     (row,) = report["disagreements"]
     assert (row["question_id"], row["arm"]) == (WRONG_QID, "hybrid+rerank")
-    assert row["final_line"] == "wrong guess"
+    assert row["final_line"] == "Wrong guess"  # as written, not normalised
     assert row["verdicts"] == {
         "primary": False,
         "gpt-4o-mini": False,
@@ -183,6 +193,7 @@ def test_a_bad_reply_is_an_error_kept_out_of_the_cache(run: Path) -> None:
     report = json.loads((run / aj.REPORT_FILE).read_text(encoding="utf-8"))
     rates = {(r["judge"], r["arm"]): r for r in report["rates"]}
     assert rates[("gpt-4o-mini", "hybrid")]["n_error"] == 6
+    assert rates[("gpt-4o-mini", "hybrid")]["rate"] is None  # nothing was judged
     stub = StubTransport()
     aj.judge_answers(run, transport=stub)
     assert len(stub.calls) == 2 * 7  # errors were not cached, so they are asked again
@@ -233,7 +244,7 @@ def test_each_replicate_of_a_question_and_arm_is_judged(
     assert rates[("primary", "hybrid")]["n"] == 12  # 6 G questions x 2 replicates
     assert rates[("primary", "hybrid")]["n_equivalent"] == 6
     assert rates[("gpt-4o-mini", "hybrid")]["n_equivalent"] == 6
-    assert any("Answer to judge: lyon" in json.dumps(c) for c in stub.calls)
+    assert any("Answer to judge: Lyon" in json.dumps(c) for c in stub.calls)
     assert {
         d["replicate"] for d in report["disagreements"] if d["arm"] == "hybrid"
     } == {2}

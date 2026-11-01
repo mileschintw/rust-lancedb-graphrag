@@ -391,22 +391,27 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
 - **D-276 Answer normalisation and a dual-judge secondary** (owner: "正規化＋裁判當次要 (Recommended)" and
   "gpt-4o-mini＋Sonnet 雙裁判", 2026-10-31; #124). Amends D-70's `answer_usable` for v1.1, applied to every arm.
   - *Normalisation (primary).* `gold_contained` keeps D-70's whole-token containment ("no" never matches "not") and
-    adds two folds. Each token folds to a form it shares with its plural, on both sides (`-ies` to `-y`; `-es`
-    dropped after x, z, ch, sh; any other final `s` dropped except after s, u or i; then a final `e` dropped from a
-    result of five letters or more, so "house" and "houses" meet; tokens of three letters or fewer and a few
-    non-plurals such as "news" kept). A list gold, with items separated by commas, semicolons, `&` or "and", also
-    matches when every item is contained in a span of its own, in any order ("Johnson & Johnson" needs two
-    "johnson" tokens). Both folds only turn misses into hits. S1's three artifact cases: "Travis
+    adds two folds. A token also matches its plural or singular: a token of four letters or more ending in `s` (not
+    `ss`, `us` or `is`, holding no digit, and not a listed non-plural such as "news") may drop its `s`, drop `es`
+    after s, x, z, ch or sh, or turn `ies` into `y` ("houses"/"house", "boxes"/"box", "movies"/"movie"); nothing
+    else changes, so "plane" never meets "plan" and "1990s" never meets "1990". A list gold, with items separated by
+    commas (not inside a number such as "1,200"), semicolons, `&` or "and", also matches when every item is
+    contained in a span of its own, in any order ("Johnson & Johnson" needs two "johnson" tokens). Both folds only
+    turn misses into hits. Known looseness, left to the judges: the list fold reads "and" inside a name ("Barnes and
+    Noble") as a separator, and matches items under a negation ("neither Alice nor Bob"). S1's three artifact cases: "Travis
     Kelce and Taylor Swift" and "sportsbook" now match; "no lack of functionality" for a "no" gold still matches,
     since the folds are lexical, and is left to the judges. `final_answer_em` (exact equality) and the null guard's
-    abstention predicate (`is_abstention`, equality with "insufficient information") are unchanged.
+    abstention predicate (`is_abstention`, equality with "insufficient information") are unchanged. The
+    `gold_containment` diagnostics, which call `gold_contained` on the whole answer, take the folds too.
     `metrics.answer_rule("d70")` keeps the old rule selectable: v1.0's recorded reports were written under D-70, and
     their re-read guards pin it.
   - *Dual judge (secondary).* `lancet-eval judge-answers --run <dir>` asks `openai/gpt-4o-mini` (the v1.0 judge) and
     Claude Sonnet 5.5 over OpenRouter BYOK whether each G record's extracted final line is equivalent to the gold.
-    Each judge sees only the question, the gold answer and the line, never the arm, so one verdict serves every arm
-    that wrote the same line. It writes `answer-judge.json`: per-arm rates for the primary and both judges, and
-    every record where the three disagree, for the owner to review. A cost estimate is printed first (D-258). The
+    Each judge sees only the question, the gold answer and the line as written (citation markers removed, not
+    normalised), never the arm, so one verdict serves every arm that wrote the same line. Each replicate is judged.
+    It writes `answer-judge.json`: per-arm rates for the primary and both judges (a judge's rate over the records
+    it judged; failed requests are counted apart), and every record where the three disagree, for the owner to
+    review. A cost estimate is printed first (D-258). The
     judges decide nothing; the primary stays `answer_usable`.
   - *Same-family exception.* The v1.0 rule that a judge is never the generator (`score.py`) stays for v1.0 scoring.
     The Sonnet judge is allowed for this secondary only, because the dual-judge design measures self-preference:
