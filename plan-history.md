@@ -156,3 +156,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 
 - **Lane 124 merged (2026-10-31):** PR #131 at b5d4c7b8, merge 95d98ff0, closes #124. D-276: answer normalisation (plural folding, order-free lists), dual judge gpt-4o-mini + Sonnet 5.5 (`judge-answers`), S0 0 flips, S1 6 records flip, no decision change.
 - **Lane 123 merged (2026-10-31):** PR #132 at 5937b119, merge 7aa4c50c, closes #123 and #127. D-274 (K=5 replicates, RunRecord.replicate, exact permutation on per-question means, question bootstrap), D-275 (cheapest eligible reader unless a dearer one is significant after Holm). Old runs score byte-identically. Session local_7141a026 reused.
+- **Lane 134 merged (2026-10-31):** PR #135 at 4e5e5bb7, merge ad219cc2, closes #134 (RUN-S2 guide: git status rule, #108 via pilot, cost table by credit, PYTHONUTF8). Deepseek submit lines handed to lane 133.
