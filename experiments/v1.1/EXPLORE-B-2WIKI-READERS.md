@@ -103,6 +103,24 @@ the point estimates. The run decides nothing.
   | Sonnet 5.5 | 1 | 100 | 0.440 | 0.470 | +2.0 [-3.5, +7.5] (100) | 0 |
   | Opus 5.5 | 1 | 100 | 0.560 | 0.380 | +14.0 [+8.0, +20.5] (100) | 640 (6 per answer) |
 
+- The same paired differences read three ways (#168, `paired_ci`): the exact two-sided sign-flip permutation p, a
+  95% interval by inverting that test (20,000 seeded sign vectors), and the question-level percentile bootstrap above
+  (seed 42, 10,000 resamples). The bootstrap interval is the table's, so the +14.0 never rested on a normal
+  approximation. Opus 5.5 and Sonnet 5.5 give one answer per question (K = 1) against deepseek's mean of two
+  (K = 2); the `r1` and `r2` rows pair them with one deepseek replicate each, K = 1 on both sides:
+
+  | Comparison | n | delta | exact p | permutation 95% CI | bootstrap 95% CI | normal 95% CI |
+  |---|---|---|---|---|---|---|
+  | Opus 5.5 - deepseek | 100 | +14.0 | 1.5e-05 | [+7.5, +20.5] | [+8.0, +20.5] | [+7.6, +20.4] |
+  | Opus 5.5 - deepseek r1 | 100 | +14.0 | 0.00012 | [+7.0, +20.9] | [+8.0, +21.0] | [+7.2, +20.8] |
+  | Opus 5.5 - deepseek r2 | 99 | +14.1 | 0.00012 | [+7.1, +21.2] | [+8.1, +21.2] | [+7.2, +21.0] |
+  | Sonnet 5.5 - deepseek | 100 | +2.0 | 0.59 | [-3.4, +7.4] | [-3.5, +7.5] | [-3.4, +7.4] |
+  | Haiku 5.5 - deepseek | 100 | -3.5 | 0.25 | [-8.7, +1.8] | [-9.0, +1.5] | [-8.6, +1.6] |
+
+  The three intervals agree within 1 point, and Opus's lower bound stays above +7 points whichever deepseek
+  replicate it is paired with. The K difference widens the interval by under 1 point and does not move the delta.
+  Read with `python -m lancet_eval.paired_ci --journal <run>/journal.jsonl --corpus twowiki_s3b_dev`.
+
 - By 2Wiki question type, `answer_usable` (questions: 26 bridge-comparison, 25 comparison, 40 compositional, 9
   inference):
 
