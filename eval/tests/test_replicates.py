@@ -564,7 +564,13 @@ def test_a_reader_with_its_own_k_sends_that_many_answers(
 
 
 @pytest.mark.parametrize(
-    "own", [(("nobody", 1),), ((rf.READER, 0),), ((rf.READER, K + 1),)]
+    "own",
+    [
+        (("nobody", 1),),
+        ((rf.READER, 0),),
+        ((rf.READER, K + 1),),
+        ((rf.READER, 1), (rf.READER, 2)),
+    ],
 )
 def test_reader_replicates_names_a_declared_reader_within_k(
     own: tuple[tuple[str, int], ...],

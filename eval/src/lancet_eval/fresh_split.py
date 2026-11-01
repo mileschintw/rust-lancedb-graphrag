@@ -65,11 +65,19 @@ def question_id(raw: Mapping[str, Any]) -> str:
 
 
 def read_ids(path: Path) -> set[str]:
-    """The question IDs of one committed JSONL file, through the corpus adapter."""
+    """The question IDs of one committed JSONL file, read from each row's
+    ``question_id`` field alone (every committed MultiHop-RAG file carries one).
+
+    Raises:
+        ValueError: If a row has no ``question_id``.
+    """
     ids: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
-            ids.add(question_id(json.loads(line)))
+            qid = json.loads(line).get("question_id")
+            if not qid:
+                raise ValueError(f"{path.name}: a row has no question_id")
+            ids.add(str(qid))
     return ids
 
 

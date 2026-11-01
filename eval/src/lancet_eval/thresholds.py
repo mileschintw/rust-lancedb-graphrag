@@ -606,6 +606,9 @@ class ReplayStagePreRegistration(StagePreRegistration):
                 f"not {self.test!r}"
             )
         declared = {name for name, _ in self.readers}
+        named = [name for name, _ in self.reader_replicates]
+        if len(set(named)) != len(named):
+            raise ThresholdError(f"reader_replicates names a reader twice: {named}")
         for name, k in self.reader_replicates:
             if name not in declared or not 1 <= k <= self.replicates:
                 raise ThresholdError(

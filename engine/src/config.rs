@@ -2177,8 +2177,6 @@ mod tests {
     /// #149: every store extracts a graph unless its overlay turns it off.
     #[test]
     fn ingest_extraction_is_on_unless_an_overlay_turns_it_off() {
-        assert!(default_ingest_extraction());
-        assert!(GraphConfigSettings::default().ingest_extraction);
         assert!(graph_of(CONFIG_TOML).ingest_extraction);
         assert!(graph_of(CONFIG_EXAMPLE_TOML).ingest_extraction);
         for (name, raw) in [

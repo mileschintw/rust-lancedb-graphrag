@@ -63,8 +63,8 @@ Each prediction is read on the point estimates.
 Per reader:
 
 - `answer_usable` over all its answers, and its abstention rate (`metrics.is_abstention`);
-- both, split by 2Wiki question type and by evidence (complete, partial: `metrics.gold_contained` over the context,
-  as `evidence_split` reads it);
+- both, split by 2Wiki question type, by yes/no against open questions (#147), and by evidence (complete, partial:
+  `metrics.gold_contained` over the context, as `evidence_split` reads it);
 - the paired per-question difference against deepseek, with a bootstrap 95% interval;
 - `reasoning_tokens` (total and mean per record) and the spend.
 

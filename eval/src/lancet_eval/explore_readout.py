@@ -11,7 +11,7 @@ and its reader arms (error records left out, as in ``evidence_split``):
 - the paired difference against deepseek: the mean over the G questions both answered
   of (the reader's per-question mean minus deepseek's), with a bootstrap 95% interval
   (``stats.bootstrap_mean_ci``, seed 42, 10,000 resamples);
-- ``reasoning_tokens``, total and per answer.
+- ``reasoning_tokens``, total and per answer, over every answer (null ones too).
 
 The evidence and yes/no split is ``evidence_split``'s. It reads a run; it decides
 nothing. Run it as ``python -m lancet_eval.explore_readout --run <dir> --corpus <c>``.
@@ -49,6 +49,7 @@ class ReaderReadout:
     paired_delta: float | None
     paired_ci: tuple[float, float] | None
     reasoning_tokens: int
+    answers: int
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -68,11 +69,13 @@ def readout(
     null_abstain: dict[str, list[float]] = defaultdict(list)
     by_type: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     reasoning: dict[str, int] = defaultdict(int)
+    answered: dict[str, int] = defaultdict(int)
     for record in records:
         if record.outcome != "success":
             continue
         question = questions[record.question_id]
         reader = reader_of(record.graph_arm)
+        answered[reader] += 1
         if record.replay is not None:
             reasoning[reader] += record.replay.reasoning_tokens
         if question.is_null:
@@ -110,6 +113,7 @@ def readout(
                 paired_delta=delta,
                 paired_ci=ci,
                 reasoning_tokens=reasoning[reader],
+                answers=answered[reader],
             )
         )
     return out
@@ -131,7 +135,7 @@ def render_markdown(rows: Sequence[ReaderReadout]) -> str:
                 f"{r.paired_delta:+.3f} [{r.paired_ci[0]:+.3f}, {r.paired_ci[1]:+.3f}]"
                 f" (n={r.paired_n})"
             )
-        per_answer = r.reasoning_tokens / r.g_answers if r.g_answers else 0.0
+        per_answer = r.reasoning_tokens / r.answers if r.answers else 0.0
         lines.append(
             f"| {r.reader} | {r.g_questions} | {r.g_answers} | {r.answer_usable:.3f} "
             f"| {r.abstention:.3f} | {null} | {delta} "

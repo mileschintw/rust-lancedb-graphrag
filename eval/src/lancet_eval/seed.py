@@ -451,9 +451,9 @@ def _read_documents(path: Path, sha256: str | None) -> list[dict[str, Any]]:
     text = path.read_text(encoding="utf-8")
     if path.suffix == ".json":
         rows = json.loads(text)
-        if not isinstance(rows, list):
-            raise SeedError(f"{path} is not a JSON array of documents")
-        return [dict(row) for row in rows]
+        if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+            raise SeedError(f"{path} is not a JSON array of document objects")
+        return rows
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
