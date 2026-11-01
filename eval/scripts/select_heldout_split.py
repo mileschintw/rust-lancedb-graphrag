@@ -155,9 +155,9 @@ def build_outputs(root: Path) -> tuple[dict[str, str], str]:
         for qid in sorted(canary_ids)
     ]
     files = {
-        # #149's `heldout_ids` is never part of the D-105 split.
+        # #149's `heldout_ids` and `inputs` are never part of the D-105 split.
         "heldout_split.json": json.dumps(
-            split.model_dump(exclude={"heldout_ids"}), indent=2
+            split.model_dump(exclude={"heldout_ids", "inputs"}), indent=2
         )
         + "\n",
         "questions.heldout.jsonl": "".join(lines_by_id[i] + "\n" for i in heldout_all),

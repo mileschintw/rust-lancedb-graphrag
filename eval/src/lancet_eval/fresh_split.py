@@ -144,7 +144,9 @@ def write(repo: Path) -> str:
     dataset = json.loads((repo / DATASET_REL).read_text(encoding="utf-8"))
     split, rows = build(dataset, repo)
     (repo / SPLIT_REL).write_text(
-        json.dumps(split.model_dump(), indent=2) + "\n", encoding="utf-8", newline="\n"
+        json.dumps(split.model_dump(exclude={"inputs"}), indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     with open(repo / DEV_QUESTIONS_REL, "w", encoding="utf-8", newline="\n") as f:
         for row in rows:
