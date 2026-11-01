@@ -107,7 +107,8 @@ target-dependent clauses need the reader's declaration.
 
 D-274: a deepseek replicate, replicate 2 or later of the carried engine arm, is a
 replay record too (``is_replay_record``): a new deepseek answer to the carried row's
-``pack`` body, sent unrewritten through an OpenRouter batch on OpenRouter credit. Its
+``pack`` body, sent unrewritten through OpenRouter's sync API on OpenRouter credit
+(D-278); its ``batch_id`` is the sync run's ``sync-`` ID. Its
 clauses are the ten above, read for that request: ``body_hash`` is the hash of the
 ``pack`` body itself and ``rewritten_fields`` is empty; ``model`` is the body's
 ``model``; ``is_byok`` must be False; ``provider`` must be the body's pinned provider
@@ -770,8 +771,11 @@ def replay_run_failures(
 ) -> list[ProvenanceFailure]:
     """Checks every replay clause over every reader-arm record (D-257).
 
-    Engine and external records are skipped. An error record is checked by the
-    per-record clauses only.
+    Engine and external records are skipped. An error record with no ``replay``
+    block (nothing was billed) is checked by the per-record clauses only. One with a
+    block (a billed answer ``render`` rejected) is checked by the request and target
+    clauses too, so a misrouted request shows even when its answer did not render;
+    it has no reader export row, so ``row_hash`` and ``prompt`` are not read (#133).
 
     Args:
         records: The journal's records, one per question and arm.
@@ -798,23 +802,24 @@ def replay_run_failures(
         for failure in _replay_record_failures(rec):
             fail(failure.code, label, qid, failure.detail)
         replay = rec.replay
-        if rec.outcome != "success" or replay is None:
+        if replay is None:
             continue
-        base = reader_base_arm(label)
-        row_details = _replay_row_failures(
-            label,
-            source_row_sha256.get((qid, base)),
-            replay.export_row_sha256,
-            {
-                "base": export_rows.get((qid, base)),
-                "reader": export_rows.get((qid, label)),
-            },
-        )
-        if row_details:
-            fail("row_hash", label, qid, "; ".join(row_details))
-        prompt = _prompt_failure(replay.pack_body, export_rows.get((qid, base)))
-        if prompt is not None:
-            fail("prompt", label, qid, prompt)
+        if rec.outcome == "success":
+            base = reader_base_arm(label)
+            row_details = _replay_row_failures(
+                label,
+                source_row_sha256.get((qid, base)),
+                replay.export_row_sha256,
+                {
+                    "base": export_rows.get((qid, base)),
+                    "reader": export_rows.get((qid, label)),
+                },
+            )
+            if row_details:
+                fail("row_hash", label, qid, "; ".join(row_details))
+            prompt = _prompt_failure(replay.pack_body, export_rows.get((qid, base)))
+            if prompt is not None:
+                fail("prompt", label, qid, prompt)
         if not is_reader_arm(label):
             for code, detail in _deepseek_failures(replay):
                 fail(code, label, qid, detail)
@@ -860,6 +865,29 @@ def replay_run_failures(
             fail(code, label, qid, "; ".join(listed))
     found.sort(key=lambda item: (item[0], item[1], item[2].label))
     return [failure for _, _, failure in found]
+
+
+#: The replay clauses that show where a request was routed and who paid for it.
+ROUTING_CODES = frozenset({"is_byok", "provider"})
+
+
+def routing_failures(
+    record: RunRecord, readers: Mapping[str, ReaderDeclaration]
+) -> list[str]:
+    """The ``is_byok`` and ``provider`` details of one replay record with a ``replay``
+    block (#133 L5): what ``batch fetch`` reports per arm before ``score`` refuses.
+    Empty for any other record, or a reader arm with no declaration."""
+    replay = record.replay
+    if replay is None or not is_replay_record(record):
+        return []
+    if not is_reader_arm(record.graph_arm):
+        found = _deepseek_failures(replay)
+    else:
+        declaration = readers.get(arm_reader(record.graph_arm) or "")
+        if declaration is None:
+            return []
+        found = _target_failures(replay, declaration)
+    return [detail for code, detail in found if code in ROUTING_CODES]
 
 
 def is_zero_tolerance(code: str) -> bool:

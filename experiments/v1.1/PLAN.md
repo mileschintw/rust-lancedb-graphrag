@@ -468,6 +468,33 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
     to 0.8111, merged graph-on 0.8333 to 0.8444. Chunking delta -1.1 to -2.2 points (n_pos 4 to 3, n_neg 5), so
     small is still kept; small-store graph delta -8.9 points both ways and merged-store graph -3.3 points both ways;
     every null guard passes. No S0 or S1 decision changes.
+- **D-277 S2 prices deepseek at Wafer's wafer/us price, inside the pre-registration** (owner: "改用 Wafer 實際價
+  (Recommended)", 2026-10-31; #133, audit-s2 P1). Amends D-257's deepseek price for S2. D-275 starts from the reader
+  with the lowest cost per answered question, and deepseek was priced at D-257's 2026-10-09 OpenRouter list price
+  ($0.0137 / $1.28 per M tokens, `measure.GENERATION_LIST_*`). At S1's tokens that put deepseek within about 3% of
+  Haiku 5.5, so the starting pick would hang on tokenizer and answer-length noise, and that price lay outside
+  `PREREGISTRATION_S2`, where D-73 could not freeze it. D-271 pins deepseek to Wafer's wafer/us endpoint, so S2 prices
+  it there: $0.0448 in / $0.30 out per M tokens, the Wafer price D-271 and `config/config.toml` record (the
+  owner's OpenRouter stats, 2026-10-31). OpenRouter's endpoints API listed $0.0434 in for wafer/us the same day; the
+  3% difference cannot move the starting pick, and the recorded figure is the one D-271 was decided on. It is the constant's `reference_price` (a field of `ReplayStagePreRegistration`), read by `compare-levers`
+  for the deepseek reader row and by `batch submit` for the deepseek replicates' estimate; without it both keep the
+  list price, so earlier runs read as before. `measure.py`'s v1.0 constants are unchanged.
+- **D-278 deepseek's S2 replicates go through OpenRouter's sync API** (owner: "改走同步 API (Recommended)",
+  2026-10-31; #133, audit-s2 B1). Amends D-274's transport for deepseek; the Claude readers keep their batches.
+  D-274 sent deepseek's replicates 2 to 5 through an OpenRouter batch, which cannot work. OpenRouter's Batch API takes
+  only `only` and `allow_fallbacks` in its batch-level `provider` (`order`, `sort` and every other routing preference
+  are rejected), a `provider` inside a request body does not route the batch, and
+  `deepseek/deepseek-v4-flash-0731` has no batch variant (its only deepseek batch model is `deepseek-v4.1-flash`,
+  served by Sail Research and DeepInfra), so a batch submit returns 400 (checked 2026-10-31:
+  https://openrouter.ai/docs/batch-quickstart, https://openrouter.ai/docs/api/api-reference/batch/create-a-batch and
+  `GET /api/v1/models`). Each deepseek replicate is now the engine's `pack` body, unrewritten, posted alone to
+  `POST /api/v1/chat/completions`, so D-271's whole pin routes it (`order: ["wafer/us"]`, `allow_fallbacks: false`,
+  `max_price`) on the same model as S1's answer. `batch submit` on the deepseek arm prints the D-258 estimate first,
+  then sends one request at a time and journals every 20 (`batch.SYNC_CHUNK`) under a `sync-` ID, so a crash loses at
+  most 20 billed answers and a rerun sends only the replicates that hold no record. A failed request is a retryable
+  error record (`--retry-errors`). The replay clauses are unchanged: the body hash, nothing rewritten, the body's
+  model, `is_byok` false, the pinned provider, reasoning off with 0 tokens. Full price, no batch discount: about $0.08
+  of OpenRouter credit for 400 answers at D-277's Wafer price.
 
 ## Model access
 

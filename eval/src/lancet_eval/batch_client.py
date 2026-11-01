@@ -13,6 +13,11 @@ implementations exist, one per ``reader_request.Target``:
   with ``{custom_id, params}`` requests; ``GET /v1/messages/batches/{id}`` gives the
   processing status and, once ended, a ``results_url`` of JSON lines.
 
+deepseek's replicates take neither (D-278): ``OpenRouterChatClient`` posts each body
+to the sync chat-completions API, since the Batch API's ``provider`` takes only
+``only`` and ``allow_fallbacks`` and ``deepseek/deepseek-v4-flash-0731`` has no batch
+variant.
+
 Each request body is sent as the exact JSON text the rewrite produced
 (``reader_request.ReaderRequest.body_json``): the payload is assembled around that
 text and never re-serialised, so the body hash in the manifest is the hash of the
@@ -67,6 +72,7 @@ MISSING_REASONING_TOKENS = -1
 OPENROUTER_BATCHES_URL = "https://openrouter.ai/api/v1/batches"
 #: The Batch API's batch-level ``endpoint``: every body is a chat-completions body.
 OPENROUTER_ENDPOINT = "/v1/chat/completions"
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 ANTHROPIC_BATCHES_URL = "https://api.anthropic.com/v1/messages/batches"
 ANTHROPIC_VERSION = "2023-06-01"
 
@@ -440,6 +446,79 @@ def _anthropic_result(item: Mapping[str, Any]) -> BatchResult:
     return BatchResult(
         custom_id, "errored", error=_error_text(result.get("error") or result)
     )
+
+
+class OpenRouterChatClient:
+    """OpenRouter's sync chat-completions endpoint, for deepseek's replicates (D-278).
+
+    The Batch API cannot carry D-271's pin (its batch-level ``provider`` takes only
+    ``only`` and ``allow_fallbacks``, and a body's own ``provider`` does not route the
+    batch), and ``deepseek/deepseek-v4-flash-0731`` has no batch variant. Each body
+    is posted alone as the exact JSON text the manifest hashes, so its pin (``order``,
+    ``allow_fallbacks: false``, ``max_price``) routes the request. A request that
+    fails comes back as a result, never a refusal, so the others still run:
+    ``errored`` for a transport failure or an HTTP or API error (nothing billed), and
+    ``unreadable`` for a reply ``openrouter_output`` cannot read or a read timeout
+    after the request was sent (probably billed, so ``--retry-errors`` leaves it).
+    """
+
+    def __init__(self, api_key: str, *, url: str = OPENROUTER_CHAT_URL) -> None:
+        if not api_key.strip():
+            raise BatchClientError("OPENROUTER_API_KEY is not set")
+        self._url = url
+        self._headers = {
+            "Authorization": f"Bearer {api_key.strip()}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def endpoint(self) -> str:
+        return self._url
+
+    def complete(self, request: BatchRequest) -> BatchResult:
+        """Posts one body and reads its reply as a result."""
+        cid = request.custom_id
+        try:
+            res = httpx.post(
+                self._url,
+                content=request.body_json.encode("utf-8"),
+                headers=self._headers,
+                timeout=_TIMEOUT_S,
+            )
+        except httpx.ReadTimeout as exc:
+            # Sent, but the reply never came: it may have been answered and billed,
+            # so it is not retried by default (`unreadable`, like a garbled reply).
+            return BatchResult(
+                cid, "unreadable", error=f"no reply within {_TIMEOUT_S} s: {exc!r}"
+            )
+        except httpx.HTTPError as exc:
+            return BatchResult(cid, "errored", error=f"transport failure: {exc!r}")
+        if res.status_code >= 400:
+            return BatchResult(
+                cid, "errored", error=f"HTTP {res.status_code}: {res.text[:300]}"
+            )
+        try:
+            data = res.json()
+        except ValueError:
+            return BatchResult(cid, "unreadable", error="the reply is not JSON")
+        if not isinstance(data, dict):
+            return BatchResult(cid, "unreadable", error="the reply is not an object")
+        if data.get("error") is not None:
+            return BatchResult(cid, "errored", error=_error_text(data["error"]))
+        try:
+            output = openrouter_output(data)
+        except BatchClientError as exc:
+            return BatchResult(cid, "unreadable", error=str(exc))
+        return BatchResult(cid, "succeeded", output=output)
+
+
+def chat_client() -> OpenRouterChatClient:
+    """The real sync client, keyed from ``OPENROUTER_API_KEY`` (D-278).
+
+    Raises:
+        BatchClientError: If ``OPENROUTER_API_KEY`` is not set.
+    """
+    return OpenRouterChatClient(os.environ.get("OPENROUTER_API_KEY", ""))
 
 
 def client_for(target: Target) -> BatchClient:

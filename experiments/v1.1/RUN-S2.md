@@ -179,8 +179,8 @@ OpenRouter credit about $0.01, ceiling about $0.06). The pilot checks what the c
 - whether Anthropic accepts the strict output schema, for every reader (#108);
 - whether Sonnet's `between_tools` passes through OpenRouter (D-260);
 - the replicate path (D-274): 5 answers per question, each its own request and record;
-- the deepseek path (D-274): whether OpenRouter's batch endpoint takes the engine's own deepseek body with its
-  wafer/us pin, and which provider name, `is_byok` and reasoning count its responses report.
+- the deepseek path (D-274, D-278): whether OpenRouter's sync chat-completions API takes the engine's own deepseek
+  body with its wafer/us pin and cap, and which provider name, `is_byok` and reasoning count its responses report.
 
 It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pilot` takes `--limit` (#109).
 
@@ -212,11 +212,18 @@ It runs in `<PILOT_RUN>`, never in the run of record. Only a run made with `--pi
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <PILOT_RUN> --arm <WINNER> --limit 5
    ```
 
-   The last one is deepseek's: it refuses before any request if the packed body lacks D-271's pin (one `order` entry,
-   `allow_fallbacks: false`, a `max_price`).
+   The last one is deepseek's, and it is not a batch (D-278): after its estimate it sends its 20 requests one at a
+   time through OpenRouter's sync chat-completions API and journals them every 20, in the foreground, so it needs no
+   fetch. It ends with a `Routing (<WINNER>): …` line. It refuses before any request if the packed body lacks D-271's
+   pin, or carries values other than `config/config.toml`'s (one `order` entry, `allow_fallbacks: false`, a
+   `max_price`). If it stops with `stopped before sending more`, an answer broke `is_byok` or the provider: those
+   answers stay recorded and `score` refuses them, so stop and tell the user, with the line. If it is interrupted,
+   rerunning the same command sends only the answers that hold no record yet.
 
-3. Fetch. The test batch on 2026-10-25 took 10.9 minutes, and a batch may take up to 24 hours. Rerun this command
-   about every 10 minutes until it reports `0 batch(es) still pending`. A fetch is free and re-runnable.
+3. Fetch the three reader batches (deepseek's answers are already journalled). The test batch on 2026-10-25 took
+   10.9 minutes, and a batch may take up to 24 hours. Rerun this command about every 10 minutes until it reports
+   `0 batch(es) still pending`. A fetch is free and re-runnable. Each fetch ends with one `Routing (<arm>): …` line per
+   arm it journalled; a count above 0 means `score` will refuse those records.
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch fetch --run <PILOT_RUN>
@@ -266,8 +273,9 @@ Read the lines from steps 2.4 and 2.5. All 25 requests of each reader (replicate
   Stop and ask the owner for a new D-ID; run nothing more until it exists.
 - **Haiku or Opus fails any row**, or a model is a dated variant: stop and tell the user. Each needs an owner
   decision.
-- **deepseek fails any row**, or OpenRouter's batch endpoint refused its requests: stop and tell the user, with the
-  lines. A provider name other than `Wafer` fails the `provider` clause even when the route was wafer/us; the owner
+- **deepseek fails any row**, its submit stopped on a misrouted answer, or its requests came back as error records
+  (`batch_errored`, or `batch_unreadable_response` for a reply that may have been billed): stop and tell the user,
+  with the lines. A provider name other than `Wafer` fails the `provider` clause even when the route was wafer/us; the owner
   decides whether that clause's name match changes (D-274).
 - **Sonnet's `reasoning_tokens` is above 0, or is -1:** OpenRouter dropped `between_tools`, and Sonnet goes native
   (D-260). The same holds if a Sonnet request was refused for its `thinking` field. To switch:
@@ -331,12 +339,15 @@ included. These are its replicate-1 answers.
 ## Step 6: batch arms (Paid)
 
 Ask once for steps 6.1 to 6.3: **about $12.75, ceiling about $30.00** (Claude credit about $12.65, ceiling about
-$28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The four batch arms run in parallel (D-267): a
-pending batch blocks only another submit of its own arm.
+$28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The three reader batches run in parallel
+(D-267): a pending batch blocks only another submit of its own arm. deepseek's answers go through the sync API instead
+(D-278), one request at a time in the foreground.
 
-1. Submit the four arms, one after the other, without waiting. Read each cost estimate line as it prints; Opus's
-   prints low (*No mid-run cap*). Each reader sends 500 requests (100 questions × 5 answers); deepseek sends 400
-   (answers 2 to 5).
+1. Submit the three reader arms, one after the other, without waiting, then deepseek's. Read each cost estimate line
+   as it prints; Opus's prints low (*No mid-run cap*). Each reader sends 500 requests (100 questions × 5 answers);
+   deepseek sends 400 (answers 2 to 5) as in step 2.2: in the foreground, journalled every 20, ending with a
+   `Routing (<WINNER>): …` line. If it stops with `stopped before sending more`, stop and tell the user; if it is
+   interrupted, rerun the same command, which sends only the answers that hold no record yet.
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>@haiku-5.5
@@ -354,7 +365,9 @@ pending batch blocks only another submit of its own arm.
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <WINNER>
    ```
 
-2. Fetch every arm, about every 10 minutes, until it reports `0 batch(es) still pending`:
+2. Fetch the three reader arms (deepseek's answers are already journalled), about every 10 minutes, until it reports
+   `0 batch(es) still pending`. A `Routing (<arm>): …` line above 0 means `score` will refuse those records: tell the
+   user before the other arms' fetches.
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch fetch --run <S2_RUN>
@@ -363,7 +376,8 @@ pending batch blocks only another submit of its own arm.
 3. Count (*Count after each*). Each of the four arms must reach 500, `<WINNER>` included (its 100 carried answers
    and 400 new ones); `score` checks only the first answer of each, so this count is the completeness check for the
    other four. For each arm whose `error` lines show an expired or errored request, resubmit only those (`<ARM>` is
-   `<WINNER>@haiku-5.5`, `<WINNER>@sonnet-5.5`, `<WINNER>@opus-5.5` or `<WINNER>`), then repeat 6.2 and the count:
+   `<WINNER>@haiku-5.5`, `<WINNER>@sonnet-5.5`, `<WINNER>@opus-5.5` or `<WINNER>`; for `<WINNER>` the retry goes
+   through the sync API again and needs no fetch), then repeat 6.2 and the count:
 
    ```bash
    PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <S2_RUN> --arm <ARM> --retry-errors

@@ -80,7 +80,9 @@ class AnswerJudge:
     """One judge: its report name, OpenRouter slug, sync list price and body fields.
 
     `body` holds the fields this judge's request adds beside `model`, `messages`,
-    `max_tokens` and `response_format`.
+    `max_tokens` and `response_format`. `byok_provider`, when set, is the provider a
+    reply must name with `usage.is_byok` true: the judge runs on the owner's key, and a
+    reply that does not is refused (`byok_problem`).
     """
 
     name: str
@@ -88,6 +90,7 @@ class AnswerJudge:
     input_per_mtok: float
     output_per_mtok: float
     body: Mapping[str, Any] = field(default_factory=dict, hash=False, compare=False)
+    byok_provider: str | None = None
 
 
 #: The v1.0 judge. Price from OpenRouter's models API, read 2026-10-31.
@@ -109,6 +112,7 @@ SONNET = AnswerJudge(
         "provider": {"only": ["anthropic"], "allow_fallbacks": False},
         "thinking": {"type": "between_tools"},
     },
+    byok_provider="Anthropic",
 )
 JUDGES: tuple[AnswerJudge, ...] = (GPT_4O_MINI, SONNET)
 
@@ -184,6 +188,26 @@ def _parse(response: dict[str, Any]) -> tuple[bool | None, str, tuple[int, int]]
             tokens,
         )
     return data["equivalent"], str(data.get("rationale", ""))[:300], tokens
+
+
+def byok_problem(judge: AnswerJudge, response: Mapping[str, Any]) -> str | None:
+    """Why a reply of a BYOK judge was not billed to the owner's key, or None (#133).
+
+    The Sonnet judge must run on the owner's Anthropic key: a reply whose
+    `usage.is_byok` is not true, or that names another provider, was billed to
+    OpenRouter credit, so the run stops there.
+    """
+    if judge.byok_provider is None:
+        return None
+    usage = response.get("usage") or {}
+    is_byok, provider = usage.get("is_byok"), response.get("provider")
+    if is_byok is True and provider == judge.byok_provider:
+        return None
+    return (
+        f"BYOK: {judge.name} replied with is_byok {is_byok!r} from provider "
+        f"{provider!r}, expected True from {judge.byok_provider!r}; stopped, so no "
+        "more of it is billed to OpenRouter credit"
+    )
 
 
 def _items(run: Path) -> list[_Item]:
@@ -354,6 +378,9 @@ def judge_answers(
             verdict, note, tokens = _parse(response)
             usage[judge.name][0] += tokens[0]
             usage[judge.name][1] += tokens[1]
+            problem = byok_problem(judge, response)
+            if problem is not None:
+                raise AnswerJudgeError(problem)
             if verdict is None:
                 errors[key] = note
                 continue

@@ -182,7 +182,14 @@ def test_the_numbers_are_s1s() -> None:
     s1 = thresholds.PREREGISTRATION_S1
     s2 = build_draft()
     arm_fields = {"reference_arm", "families", "descriptive_arms", "null_guard_arms"}
-    own = {"default_rule", "provenance", "readers", "replay_source_arm", "replicates"}
+    own = {
+        "default_rule",
+        "provenance",
+        "readers",
+        "replay_source_arm",
+        "replicates",
+        "reference_price",
+    }
     # D-274: replicates replace the sign test with the sign-flip permutation.
     assert s2.test == thresholds.REPLICATE_TEST and s2.replicates == 5
     own.add("test")

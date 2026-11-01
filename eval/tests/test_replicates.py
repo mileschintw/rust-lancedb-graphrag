@@ -167,6 +167,8 @@ class Endpoint:
         self.answers: dict[tuple[bool, str], str] = {}
         #: (deepseek, custom_id) of the requests that come back errored.
         self.errored: set[tuple[bool, str]] = set()
+        #: deepseek requests sent through the sync API, in order (D-278).
+        self.sync_calls: list[BatchRequest] = []
 
     def submit(self, requests: Sequence[BatchRequest]) -> str:
         batch_id = f"batch-{len(self.batches) + 1}"
@@ -174,36 +176,36 @@ class Endpoint:
         return batch_id
 
     def results(self, batch_id: str) -> list[BatchResult]:
-        out = []
-        for req in self.batches[batch_id]:
-            body = json.loads(req.body_json)
-            deepseek = body["model"].startswith("deepseek/")
-            qid = req.custom_id.rpartition("_r")[0] or req.custom_id
-            content = self.answers.get((deepseek, req.custom_id)) or fx._answer(
-                "ok" if qid in self.gold else "abstain", self.gold.get(qid, "")
-            )
-            if (deepseek, req.custom_id) in self.errored:
-                out.append(BatchResult(req.custom_id, "errored", error="boom"))
-                continue
-            out.append(
-                BatchResult(
-                    req.custom_id,
-                    "succeeded",
-                    output=ReaderOutput(
-                        content=content,
-                        finish_reason="stop",
-                        prompt_tokens=500,
-                        completion_tokens=40,
-                        total_tokens=540,
-                        model=body["model"],
-                        provider="Wafer" if deepseek else "Anthropic",
-                        is_byok=not deepseek,
-                        reasoning_tokens=0,
-                        content_block_types=None,
-                    ),
-                )
-            )
-        return out
+        return [self.complete(req) for req in self.batches[batch_id]]
+
+    def complete(self, req: BatchRequest) -> BatchResult:
+        """One reply; deepseek's replicates come one at a time (D-278)."""
+        body = json.loads(req.body_json)
+        deepseek = body["model"].startswith("deepseek/")
+        qid = req.custom_id.rpartition("_r")[0] or req.custom_id
+        content = self.answers.get((deepseek, req.custom_id)) or fx._answer(
+            "ok" if qid in self.gold else "abstain", self.gold.get(qid, "")
+        )
+        if (deepseek, req.custom_id) in self.errored:
+            return BatchResult(req.custom_id, "errored", error="boom")
+        if deepseek:
+            self.sync_calls.append(req)
+        return BatchResult(
+            req.custom_id,
+            "succeeded",
+            output=ReaderOutput(
+                content=content,
+                finish_reason="stop",
+                prompt_tokens=500,
+                completion_tokens=40,
+                total_tokens=540,
+                model=body["model"],
+                provider="Wafer" if deepseek else "Anthropic",
+                is_byok=not deepseek,
+                reasoning_tokens=0,
+                content_block_types=None,
+            ),
+        )
 
 
 def _prereg() -> thresholds.ReplayStagePreRegistration:
@@ -233,6 +235,7 @@ def s2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-unty
     endpoint = Endpoint({q: a for q, _, a in qs.g})
     binary = PinnedBin()
     monkeypatch.setattr(batch, "client_factory", lambda target: endpoint)
+    monkeypatch.setattr(batch, "chat_client_factory", lambda: endpoint)
     monkeypatch.setattr(batch, "bin_runner", binary)
     return run, qs, gold, endpoint, binary
 
@@ -270,7 +273,10 @@ def test_a_reader_arm_sends_k_requests_per_question(s2) -> None:
 def test_the_deepseek_arm_sends_replicates_2_to_k_unrewritten(s2) -> None:
     run, qs, _, endpoint, _ = s2
     sent = batch.submit(run=run, arm=rf.BASE, echo=lambda _: None)
-    requests = endpoint.batches[sent.batch_id]
+    # D-278: one sync request per answer, no batch.
+    assert endpoint.batches == {}
+    assert sent.batch_id.startswith("sync-")
+    requests = endpoint.sync_calls
     assert [r.custom_id for r in requests] == [
         f"{q}_r{k}" for q in _all(qs) for k in range(2, K + 1)
     ]
@@ -320,9 +326,10 @@ def test_limit_takes_every_replicate_of_the_first_questions(
     replay_init(source_run=s1, arms=[rf.BASE], run=run, corpus=fx.CORPUS, pilot=True)
     endpoint = Endpoint({q: a for q, _, a in qs.g})
     monkeypatch.setattr(batch, "client_factory", lambda target: endpoint)
+    monkeypatch.setattr(batch, "chat_client_factory", lambda: endpoint)
     monkeypatch.setattr(batch, "bin_runner", PinnedBin())
-    sent = batch.submit(run=run, arm=rf.BASE, limit=2, echo=lambda _: None)
-    assert [r.custom_id for r in endpoint.batches[sent.batch_id]] == [
+    batch.submit(run=run, arm=rf.BASE, limit=2, echo=lambda _: None)
+    assert [r.custom_id for r in endpoint.sync_calls] == [
         f"{q}_r{k}" for q in qs.g_ids[:2] for k in range(2, K + 1)
     ]
 
