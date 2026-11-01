@@ -7,23 +7,25 @@ read the run offline.
 
 ## Rules for the whole run
 
-- **Main checkout only** (`D:\Repos\lancet`, Git Bash, repository root), on `main`.
+- **Main checkout only** (`D:\Repos\lancet`, Git Bash, repository root), on `main`, except while step 4.3 commits
+  the constant on its own branch.
 - **Two phases (D-73, #109).** Steps 1 to 3 run from the working tree: the constant is pasted in but not committed,
   and the pilot run (`replay-init --pilot`) skips the D-73 check. Step 4 commits the constant once. From step 5 on,
   the run of record's `replay-init` and every `batch submit` run the D-73 check on `PREREGISTRATION_S2` and refuse
   a dirty `eval/src/lancet_eval`, or a constant changed since the commit that added it, before any paid call. So from
   step 5 on, `git status --short -- eval/src/lancet_eval` must print nothing before each of them, and the constant is
   never edited again. The rest of the tree may show changes: `<S2_RUN>` appears as untracked from step 5, since
-  `.gitignore` keeps it so it can be committed (D-73 checks only `eval/src/lancet_eval`, as in RUN-S0-S1.md).
+  `.gitignore` un-ignores it (`!eval/runs/*-multihop_rag_s2_dev/`) so it can be committed (D-73 checks only
+  `eval/src/lancet_eval`, as in RUN-S0-S1.md).
 - **`PYTHONUTF8=1` on every command** (#84). This machine's console is cp950, and a non-ASCII error string would stop
   a Python snippet with `UnicodeEncodeError`. Every `uv run` command below starts with it; keep it when you copy one.
 - **Ask the user first, once per step**, before each step marked *Paid*. Ask in Traditional Chinese. Give the step
   number, its commands, the step's estimate and ceiling from this guide, and what it reads and writes. A yes covers
   that step's commands only. Run nothing on a guess.
 - **No mid-run cap** (D-258). Each `batch submit` prints a `Cost estimate (D-258, never refuses)` line and submits
-  right after it, in the same command, so read the line as it prints. Compare it with this guide's figure. If it is
-  above the step's ceiling, the submit has already gone: let it finish, and tell the user both figures before the
-  next submit. Opus's printed estimate counts no reasoning tokens, so it prints well below this guide's Opus row
+  right after it, in the same command, so read the line as it prints. Compare its `about` figure with this guide's
+  row for that arm (Prices behind the estimates). If it is above the row's ceiling, the submit has already gone:
+  let it finish, and tell the user both figures before the next submit. Opus's printed estimate counts no reasoning tokens, so it prints well below this guide's Opus row
   (about $4 for step 6, against $10); that is expected.
 - **A non-zero exit stops the run.** Tell the user what failed, with the last lines of output. A `batch submit` that
   exits non-zero after printing its manifest path may have reached the endpoint. Never resubmit it: tell the user,
@@ -88,14 +90,15 @@ outside it, about $1.40 (ceiling about $3.40) more on OpenRouter credit.
 | 6 Sonnet 5.5 arm, 100 questions × 5 | about $2.50 | about $9.47 | – | – |
 | 6 Opus 5.5 arm, 100 questions × 5 (descriptive, D-267) | about $10.00 | about $18.93 | – | – |
 | 6 deepseek replicates 2 to 5, 100 questions × 4 | – | – | about $0.20 | about $1.10 |
-| 7.1 Sonnet judge, at most 1,800 requests | at most about $2.21 | about $6.31 | – | – |
-| 7.1 gpt-4o-mini judge, at most 1,800 requests | – | – | at most about $0.14 | about $0.39 |
+| 7.1 Sonnet judge, at most 1,800 requests | about $2.20 to $2.35 | about $6.31 | – | – |
+| 7.1 gpt-4o-mini judge, at most 1,800 requests | – | – | about $0.14 to $0.15 | about $0.39 |
 | BYOK fee, inside the free allowance | – | – | about $0 | about $0 |
 | **Total, without the native re-pilot** | **about $15.50** | **about $36.60** | **about $0.30 to $0.90** | **about $1.55** |
 
 The OpenRouter total's upper end allows deepseek at this guide's 3,500-token method (about $0.70 for step 6) instead
-of the printed $0.17. Claude credit stays far below the $200; OpenRouter credit's ceiling of about $1.55 leaves room
-inside $7.60, unless the BYOK fee falls outside the free allowance (about $3.40 more at the ceiling).
+of the $0.17 `batch submit` prints. The judges' lower figures are the audit's; `judge-answers --estimate-only` prints
+the higher ones, since it allows 80 output tokens a verdict. Claude credit stays far below the $200 of Claude credit
+(PLAN.md › Budget sketch).
 
 ## Step 0: blockers, prerequisites, build
 
@@ -274,7 +277,7 @@ Read the lines from steps 2.4 and 2.5. All 25 requests of each reader (replicate
      chosen, citing the pilot.
   2. Delete `<PILOT_RUN>`.
   3. Re-run step 2 for Sonnet only (2.1, the Sonnet line of 2.2, then 2.3 to 2.5), with `ANTHROPIC_API_KEY` set.
-     Ask the user first: about $0.13.
+     Ask the user first: about $0.13, ceiling about $0.47.
 
   On the native target, the Sonnet lines must show:
   - the model `claude-sonnet-5-5`;
@@ -291,16 +294,25 @@ run of record.
 
 1. In EXPERIMENT-S2.md, change the status line to "pre-registered <date>, before any S2 data" and write `<WINNER>`
    under Arms. Delete the `DRAFT` sentences from the corpus's header comment.
-2. Run step 1's check again. Every test must pass. The one skip is
-   `test_the_fill_snippet_inserts_the_draft_and_fills_the_corpus`, since the snippet has already run.
+2. Run step 1's check again. It must print `22 passed, 1 skipped`, as in step 1.
 3. Commit `thresholds.py`, the corpus and EXPERIMENT-S2.md as one commit with no other change. It is the commit that
    adds the name `PREREGISTRATION_S2` to `thresholds.py`, so D-73 dates the constant by it. The main checkout is on
    `main`, so:
    1. `git switch -c <run lane branch>`, carrying the working-tree changes over.
-   2. Commit the three files.
+   2. Commit the three files, and nothing else:
+
+      ```bash
+      git add eval/src/lancet_eval/thresholds.py eval/corpora/multihop_rag_s2_dev.toml experiments/v1.1/EXPERIMENT-S2.md
+      ```
+
+      ```bash
+      git commit -m "Pre-register S2: PREREGISTRATION_S2, S2 corpus and EXPERIMENT-S2 (D-73)"
+      ```
+
    3. Ask the user, then `git push -u origin HEAD`. The coordinator opens the PR and merges it to `main`.
    4. Once it is merged: `git switch main` and `git pull --ff-only`. Then
-      `git log --oneline -1 -- eval/src/lancet_eval/thresholds.py` must name that commit, and
+      `git log --oneline -1 -- eval/src/lancet_eval/thresholds.py` must print that commit's subject, "Pre-register
+      S2: ..." (its hash may differ after a squash merge), and
       `git status --short -- eval/src/lancet_eval` must print nothing.
 
    From here on the constant is never edited: any change makes D-73 refuse the run of record.
@@ -320,7 +332,7 @@ included. These are its replicate-1 answers.
 ## Step 6: batch arms (Paid)
 
 Ask once for steps 6.1 to 6.3: **about $12.85, ceiling about $30.00** (Claude credit about $12.65, ceiling about
-$28.90; OpenRouter credit, deepseek, about $0.20, ceiling about $1.10). The four batch arms run in parallel (D-267): a
+$28.90; OpenRouter credit, deepseek, about $0.20 (up to $0.70 by this guide's token method), ceiling about $1.10). The four batch arms run in parallel (D-267): a
 pending batch blocks only another submit of its own arm.
 
 1. Submit the four arms, one after the other, without waiting. Read each cost estimate line as it prints; Opus's
@@ -400,8 +412,9 @@ sees only the question, the gold answer and the line. It decides nothing. Print 
 PYTHONUTF8=1 uv run --project eval lancet-eval judge-answers --run <S2_RUN> --estimate-only
 ```
 
-Ask the user, with that estimate. This guide's figure: **about $2.35, ceiling about $6.70** (Sonnet on Claude credit
-at most about $2.21, ceiling about $6.31; gpt-4o-mini on OpenRouter credit at most about $0.14, ceiling about $0.39).
+Ask the user, with that estimate. This guide's figure: **about $2.35 to $2.50, ceiling about $6.70** (Sonnet on
+Claude credit about $2.20 to $2.35, ceiling about $6.31; gpt-4o-mini on OpenRouter credit about $0.14 to $0.15,
+ceiling about $0.39).
 Every replicate is judged, up to 90 G questions × 4 arms × 5 answers a judge; a line that repeats is asked once.
 
 If step 3 moved the Sonnet reader to the native target because OpenRouter dropped `between_tools`, the Sonnet judge
