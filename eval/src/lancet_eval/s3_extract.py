@@ -1,7 +1,8 @@
 """S3's writer extraction over the 2Wiki passages (#145), on #117's writer pilot.
 
 Run as ``python -m lancet_eval.s3_extract <command>``. Every choice the extraction
-depends on is ``thresholds.PREREGISTRATION_S3_WRITERS`` (D-73):
+depends on is ``thresholds.PREREGISTRATION_S3_WRITERS`` (D-73), with deepseek's
+transport from its addendum ``PREREGISTRATION_S3_WRITERS_SYNC`` (D-290):
 
 - **Units.** Each of the 6,119 passages is one request, ``twowiki.passage_unit`` (title
   and text), in file order, with no chunking and no length floor. ``custom_id`` is
@@ -10,20 +11,23 @@ depends on is ``thresholds.PREREGISTRATION_S3_WRITERS`` (D-73):
 - **Requests and transport.** #117's ``writer_pilot``: the engine's extraction body,
   rewritten per Claude writer (slug, BYOK pin, no temperature or top_p, its thinking),
   submitted to OpenRouter's Batch API in parts of 500 and fetched with its routing
-  check (``is_byok`` true, provider Anthropic). deepseek has no batch variant in the
-  pilot; its extraction is not run here.
+  check (``is_byok`` true, provider Anthropic). deepseek gets the engine's body
+  unrewritten, posted one passage at a time to the sync API (``writer_pilot.run_sync``,
+  D-278, D-290), and stops at the first answer whose ``is_byok`` is not false. With
+  ``--shards N`` that runs as N parallel shards, each with its own results file
+  (owner, 2026-11-01: "Allow 8 shards").
 - **Estimate.** Printed before every submit (D-258). Input is the o200k tokens of the
   unit plus the per-request overhead Claude billed in #117's pilot; output is a linear
   fit of completion tokens on chunk tokens, capped at the largest answer seen. The fit
   comes from the writer's own results here once it has some, else from #117's pilot
-  (Opus, absent from the pilot, borrows Sonnet's).
+  (Opus, absent from the pilot, borrows Sonnet's). deepseek is billed at full price.
 - **Report.** Per writer: requests, failures, schema-invalid answers, runaways
-  (``finish_reason: length``, #156), tokens including reasoning tokens, spend at the
-  batch price and routing breaks.
+  (``finish_reason: length``, #156), tokens including reasoning tokens, spend at its
+  billed price and routing breaks.
 
-Outputs go to ``experiments/v1.1/s3-extract``: ``chunks.jsonl`` and
-``<writer>.results.jsonl`` hold Wikipedia text and are gitignored; the batch manifests
-and ``summary.json`` are committed. No key or environment value is written.
+Outputs go to ``experiments/v1.1/s3-extract``: ``chunks.jsonl``, each writer's
+``<writer>.results.jsonl``, the batch manifests and ``summary.json``, all committed
+(owner, 2026-11-01). No key or environment value is written.
 """
 
 from __future__ import annotations
@@ -44,13 +48,19 @@ from lancet_eval import batch_client, twowiki
 from lancet_eval import writer_pilot as wp
 from lancet_eval.config import repo_root
 from lancet_eval.measure import BATCH_PRICE_FACTOR
-from lancet_eval.thresholds import PREREGISTRATION_S3_WRITERS
+from lancet_eval.thresholds import (
+    PREREGISTRATION_S3_WRITERS,
+    PREREGISTRATION_S3_WRITERS_SYNC,
+)
 
 PRE = PREREGISTRATION_S3_WRITERS
+#: Each writer's transport: the frozen constant's, with D-290's addendum applied.
+TRANSPORTS = PREREGISTRATION_S3_WRITERS_SYNC.transports_for(PRE)
 DEFAULT_OUT = Path("experiments") / "v1.1" / "s3-extract"
 PILOT_OUT = Path("experiments") / "v1.1" / "writer-pilot"
 #: The pilot writer whose token model a writer borrows before it has results here.
 PILOT_PROXY = {
+    "deepseek": "deepseek",
     "haiku-5.5": "haiku-5.5",
     "sonnet-5.5": "sonnet-5.5",
     "opus-5.5": "sonnet-5.5",
@@ -70,10 +80,11 @@ def passage_chunks(passages: Iterable[Mapping[str, Any]]) -> list[wp.PilotChunk]
 
 
 def writers() -> dict[str, wp.Writer]:
-    """The pre-registration's writers; the Claude ones billed at the batch price."""
+    """The pre-registration's writers, each billed at its transport's price."""
     out = {}
     for name, declaration in PRE.writers:
         if name == wp.DEEPSEEK:
+            # The engine's body, unrewritten, at full price on the sync API (D-290).
             out[name] = wp.Writer(name, declaration.price, 1.0)
         else:
             out[name] = wp.Writer(
@@ -220,7 +231,39 @@ def _writer(name: str) -> wp.Writer:
 
 
 def _results(out: Path, name: str) -> dict[str, dict[str, Any]]:
-    return wp.read_results(out / f"{name}.results.jsonl")
+    """A writer's answers, its shard files' included; a succeeded answer wins."""
+    merged = wp.read_results(out / f"{name}.results.jsonl")
+    for path in sorted(out.glob(f"{name}.shard*.results.jsonl")):
+        for cid, record in wp.read_results(path).items():
+            if record["status"] == "succeeded" or cid not in merged:
+                merged[cid] = record
+    return merged
+
+
+def shard(
+    out: Path, writer: wp.Writer, index: int, count: int
+) -> tuple[wp.Writer, list[wp.PilotChunk]]:
+    """One of `count` disjoint parts of the passages still without a succeeded answer,
+    and the writer that records it in its own ``<writer>.shard<index>.results.jsonl``,
+    so parallel runs never share a file (owner, 2026-11-01: "Allow 8 shards").
+    """
+    if not 0 <= index < count:
+        raise wp.PilotError(f"shard {index} is not in 0..{count - 1}")
+    # The modulo runs over every passage, so a shard's share never depends on when it
+    # starts: a rerun of one shard cannot overlap another's.
+    open_ids = {c.custom_id for c in _unanswered(out, writer)}
+    chunks = [
+        c
+        for i, c in enumerate(wp.read_chunks(out))
+        if i % count == index and c.custom_id in open_ids
+    ]
+    part = wp.Writer(
+        f"{writer.name}.shard{index}",
+        writer.price,
+        writer.price_factor,
+        writer.declaration,
+    )
+    return part, chunks
 
 
 def token_model(out: Path, writer: wp.Writer) -> tuple[TokenModel, str]:
@@ -242,7 +285,7 @@ def _print_estimate(
     model, source = token_model(out, writer)
     usd, prompt, completion = estimate(writer, chunks, model)
     typer.echo(
-        f"{writer.name}: {len(chunks)} passage(s) to {writer.declaration.slug} "  # type: ignore[union-attr]
+        f"{writer.name}: {len(chunks)} passage(s) to {_slug(writer)} "
         f"at {writer.price_factor} x ${writer.price.input_per_mtok}/"
         f"${writer.price.output_per_mtok} per MTok: about ${usd:.2f} "
         f"(~{prompt / 1e6:.2f}M input, ~{completion / 1e6:.2f}M output tokens; "
@@ -250,6 +293,12 @@ def _print_estimate(
         f"{model.intercept:.0f} + {model.slope:.2f} x unit, cap {model.cap})"
     )
     return usd
+
+
+def _slug(writer: wp.Writer) -> str:
+    if writer.declaration is not None:
+        return writer.declaration.slug
+    return dict(PRE.writers)[writer.name].slug
 
 
 def _pending(out: Path, writer: wp.Writer) -> list[wp.PilotChunk]:
@@ -278,6 +327,18 @@ def plan(out: Path = DEFAULT_OUT) -> None:
         if writer.declaration is not None:
             total += _print_estimate(out, writer, _pending(out, writer))
     typer.echo(f"Claude writers, not yet submitted: about ${total:.2f}")
+    deepseek = writers()[wp.DEEPSEEK]
+    _print_estimate(out, deepseek, _unanswered(out, deepseek))
+
+
+def _unanswered(out: Path, writer: wp.Writer) -> list[wp.PilotChunk]:
+    """The passages without a succeeded answer from `writer`."""
+    done = {
+        cid
+        for cid, r in _results(out, writer.name).items()
+        if r["status"] == "succeeded"
+    }
+    return [c for c in wp.read_chunks(out) if c.custom_id not in done]
 
 
 @app.command()
@@ -296,6 +357,30 @@ def submit(
         os.environ.get("OPENROUTER_API_KEY", "")
     )
     wp.submit_batch(w, wp.read_chunks(out), client, out, echo=typer.echo, limit=parts)
+
+
+@app.command()
+def deepseek(
+    out: Path = DEFAULT_OUT,
+    shard_index: int = typer.Option(0, "--shard", help="This run's shard."),
+    shards: int = typer.Option(1, help="Parallel runs, each with its own --shard."),
+) -> None:
+    """Paid: deepseek's extraction of the unanswered passages through the sync API.
+
+    Each run posts one passage at a time (D-290); with ``--shards N`` the owner allowed
+    N such runs in parallel, each on its own share of the unanswered passages and its
+    own results file. Each answer is journalled as it arrives, so a rerun sends only
+    the rest. A run stops at the first answer whose ``is_byok`` is not false.
+    """
+    if TRANSPORTS[wp.DEEPSEEK] != "openrouter_sync":
+        raise wp.PilotError(f"deepseek's transport is {TRANSPORTS[wp.DEEPSEEK]!r}")
+    out = _out(out)
+    base = writers()[wp.DEEPSEEK]
+    w, chunks = shard(out, base, shard_index, shards)
+    if shards == 1:
+        w = base
+    _print_estimate(out, base, chunks)
+    wp.run_sync(w, chunks, batch_client.chat_client(), out, echo=typer.echo)
 
 
 @app.command()

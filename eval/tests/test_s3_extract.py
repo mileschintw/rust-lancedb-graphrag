@@ -195,3 +195,104 @@ def test_pending_skips_the_submitted_parts(tmp_path: Path) -> None:
         json.dumps({"batches": [{"requests": 2}]}), encoding="utf-8"
     )
     assert [c.custom_id for c in s3._pending(tmp_path, writer)] == ["tw-0002"]
+
+
+# ---- deepseek through the sync API (D-290) ------------------------------------------
+
+
+def test_deepseek_alone_runs_on_the_sync_api() -> None:
+    assert s3.TRANSPORTS == {
+        "deepseek": "openrouter_sync",
+        "haiku-5.5": "openrouter_batch",
+        "sonnet-5.5": "openrouter_batch",
+        "opus-5.5": "openrouter_batch",
+    }
+    deepseek = s3.writers()["deepseek"]
+    assert deepseek.price_factor == 1.0
+    assert s3._slug(deepseek) == "deepseek/deepseek-v4-flash-0731"
+
+
+def test_deepseek_sends_the_engine_body_once_per_unanswered_passage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    chunks = s3.passage_chunks(PASSAGES)
+    wp.write_chunks(tmp_path, chunks)
+    wp._append(
+        tmp_path / "deepseek.results.jsonl",
+        [_record("tw-0000", 100, 50, is_byok=False, provider="Wafer")],
+    )
+    sent: list[str] = []
+
+    class FakeChat:
+        def complete(self, request):
+            sent.append(request.custom_id)
+            assert request.body_json == wp.deepseek_body(
+                chunks[int(request.custom_id[3:])].text
+            )
+            output = ReaderOutput(
+                content='{"entities": [], "relations": []}',
+                finish_reason="length" if request.custom_id == "tw-0002" else "stop",
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                model="deepseek/deepseek-v4-flash-0731",
+                provider="Wafer",
+                is_byok=False,
+                reasoning_tokens=0,
+                content_block_types=None,
+            )
+            return BatchResult(request.custom_id, "succeeded", output=output)
+
+    monkeypatch.setattr(s3.batch_client, "chat_client", FakeChat)
+    monkeypatch.setattr(
+        s3, "token_model", lambda out, w: (s3.TokenModel(100, 50, 0, 50), "test")
+    )
+    s3.deepseek(tmp_path, shard_index=0, shards=1)
+    assert sent == ["tw-0001", "tw-0002"]
+    summary = s3.summarise(
+        s3.writers()["deepseek"],
+        chunks,
+        wp.read_results(tmp_path / "deepseek.results.jsonl"),
+    )
+    assert summary["succeeded"] == 3
+    assert summary["runaways"] == ["tw-0002"]
+    assert summary["routing_breaks"] == []
+    assert summary["usd"] == pytest.approx((300 * 0.0448 + 150 * 0.30) / 1e6, abs=1e-4)
+
+
+def test_shards_split_the_unanswered_passages_and_merge_back(tmp_path: Path) -> None:
+    chunks = s3.passage_chunks(PASSAGES * 3)
+    wp.write_chunks(tmp_path, chunks)
+    deepseek = s3.writers()["deepseek"]
+    wp._append(
+        tmp_path / "deepseek.results.jsonl",
+        [_record("tw-0000", 100, 50, is_byok=False)],
+    )
+    parts = [s3.shard(tmp_path, deepseek, i, 3) for i in range(3)]
+    ids = [c.custom_id for _, part in parts for c in part]
+    assert sorted(ids) == [c.custom_id for c in chunks[1:]]
+    assert [w.name for w, _ in parts] == [f"deepseek.shard{i}" for i in range(3)]
+    writer, part = parts[1]
+    wp._append(
+        tmp_path / f"{writer.name}.results.jsonl",
+        [_record(c.custom_id, 100, 50, is_byok=False) for c in part],
+    )
+    merged = s3._results(tmp_path, "deepseek")
+    assert set(merged) == {"tw-0000"} | {c.custom_id for c in part}
+    assert len(s3._unanswered(tmp_path, deepseek)) == 9 - 1 - len(part)
+    with pytest.raises(wp.PilotError, match="shard 3"):
+        s3.shard(tmp_path, deepseek, 3, 3)
+
+
+def test_a_shards_share_does_not_move_when_others_answer(tmp_path: Path) -> None:
+    chunks = s3.passage_chunks(PASSAGES * 3)
+    wp.write_chunks(tmp_path, chunks)
+    deepseek = s3.writers()["deepseek"]
+    _, before = s3.shard(tmp_path, deepseek, 2, 3)
+    other, part = s3.shard(tmp_path, deepseek, 0, 3)
+    wp._append(
+        tmp_path / f"{other.name}.results.jsonl",
+        [_record(c.custom_id, 100, 50, is_byok=False) for c in part],
+    )
+    _, after = s3.shard(tmp_path, deepseek, 2, 3)
+    assert after == before
