@@ -2257,3 +2257,20 @@ async fn recorded_extractions_parse_like_live_answers_and_refuse_the_rest() {
         assert_eq!(err.kind, GenerationErrorKind::SchemaValidation, "{text}");
     }
 }
+
+#[tokio::test]
+async fn no_extraction_generator_yields_nothing_for_any_chunk() {
+    use super::extraction::{ExtractionGenerator, ExtractionRequest};
+    use super::no_extraction::NoExtractionGenerator;
+
+    let output = NoExtractionGenerator
+        .extract(ExtractionRequest {
+            chunk_id: "c1".into(),
+            document_id: "d1".into(),
+            chunk_text: "Alice founded Acme in 1999.".into(),
+        })
+        .await
+        .expect("the no-op generator never fails");
+    assert!(output.entities.is_empty());
+    assert!(output.relations.is_empty());
+}

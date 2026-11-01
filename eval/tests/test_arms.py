@@ -618,6 +618,20 @@ def test_a_store_prefixed_label_resolves_to_its_base_row_and_keeps_its_store(
     assert not is_legacy_label(label)
 
 
+@pytest.mark.parametrize(
+    ("prefix", "store"), [("full", "eval-full"), ("twowiki", "eval-2wiki")]
+)
+def test_the_149_store_prefixes_name_their_stores(prefix: str, store: str) -> None:
+    from lancet_eval.arms import arm_store
+    from lancet_eval.config import EVAL_STORES
+
+    label = f"{prefix}/hybrid+rerank+metadata"
+    assert canonical_arm(label) == label
+    assert request_fields(label) == request_fields("hybrid+rerank+metadata")
+    assert arm_store(label) == store
+    assert store in EVAL_STORES
+
+
 def test_the_two_stores_of_one_arm_are_two_arms() -> None:
     small, merged = "small/hybrid+rerank+metadata", "merged/hybrid+rerank+metadata"
     assert canonical_arm(small) != canonical_arm(merged)

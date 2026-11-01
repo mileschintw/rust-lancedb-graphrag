@@ -128,9 +128,9 @@ StoreOption = Annotated[
     typer.Option(
         "--store",
         help=(
-            "D-251: the eval store, eval (v1.0, the default) or eval-s1 (S1: "
-            "data/lancedb-eval-s1, schema lancet_eval_s1). With eval-s1 the "
-            "v1.0 path and schema are refused."
+            "D-251: the eval store, eval (v1.0, the default), eval-s1 (S1: "
+            "data/lancedb-eval-s1, schema lancet_eval_s1), eval-full or eval-2wiki "
+            "(#149). With any store but eval the v1.0 path and schema are refused."
         ),
     ),
 ]

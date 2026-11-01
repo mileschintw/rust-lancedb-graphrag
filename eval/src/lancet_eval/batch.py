@@ -92,7 +92,7 @@ import re
 import time
 import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -244,6 +244,8 @@ class _Run:
     source_arm: str | None = None
     #: D-277: deepseek's price, the constant's ``reference_price`` or the list price.
     reference_price: ReaderPrice = DEEPSEEK_PRICE
+    #: #149: a reader's own K, below ``replicates`` (``reader_replicates``).
+    reader_replicates: dict[str, int] = field(default_factory=dict)
 
 
 #: One request's unit: a question and its replicate (D-274).
@@ -290,6 +292,7 @@ def _load_run(run: Path) -> _Run:
         int(getattr(prereg, "replicates", 1)),
         getattr(prereg, "replay_source_arm", None) or None,
         getattr(prereg, "reference_price", None) or DEEPSEEK_PRICE,
+        dict(getattr(prereg, "reader_replicates", ())),
     )
 
 
@@ -397,8 +400,14 @@ def _latest_units(records: Iterable[RunRecord], arm: str) -> dict[Unit, RunRecor
 
 
 def _replicates_of(run: _Run, arm: str) -> range:
-    """The replicates a submit of `arm` sends: 1 to K, or 2 to K for the carried arm."""
-    return range(1 if is_reader_arm(arm) else 2, run.replicates + 1)
+    """The replicates a submit of `arm` sends: 1 to K, or 2 to K for the carried arm.
+
+    A reader with its own K (#149) sends 1 to that K.
+    """
+    if not is_reader_arm(arm):
+        return range(2, run.replicates + 1)
+    reader = arm.rpartition("@")[2]
+    return range(1, run.reader_replicates.get(reader, run.replicates) + 1)
 
 
 # ---- manifests --------------------------------------------------------------------

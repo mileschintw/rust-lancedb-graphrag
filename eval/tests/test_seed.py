@@ -734,7 +734,7 @@ def test_get_eval_store_names_both_stores_and_refuses_others() -> None:
 
     assert get_eval_store("eval") is V1_STORE
     assert get_eval_store("eval-s1") is S1_STORE
-    with pytest.raises(EvalConfigError, match="eval, eval-s1"):
+    with pytest.raises(EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki"):
         get_eval_store("eval-s2")
 
 
@@ -1020,3 +1020,109 @@ def test_s1_reseed_without_the_stores_entry_deletes_nothing(
     assert v1_canary.exists()
     assert s1_canary.exists()
     assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize(
+    ("store", "schema"),
+    [("eval-full", "lancet_eval_full"), ("eval-2wiki", "lancet_eval_2wiki")],
+)
+def test_the_149_stores_have_an_atlas_env_and_the_eval_schema_renamed(
+    store: str, schema: str
+) -> None:
+    """#149: each hybrid-only store has its Atlas env, its schema file is
+    schema.eval.hcl renamed, and its overlay builds no graph."""
+    import re
+    import tomllib
+
+    from lancet_eval.config import get_eval_store, repo_root
+
+    assert get_eval_store(store).pg_schema == schema
+    gateway = repo_root() / "gateway"
+    atlas = (gateway / "atlas.hcl").read_text(encoding="utf-8")
+    env_block = re.search(rf'env "{store}" \{{(.*?)\n\}}', atlas, re.S)
+    assert env_block is not None
+    var = store.replace("-", "_") + "_db_url"
+    assert f'src = "file://db/schema.{store}.hcl"' in env_block.group(1)
+    assert f"url = var.{var}" in env_block.group(1)
+    assert re.search(rf'variable "{var}" \{{[^}}]*search_path={schema}"', atlas)
+
+    v1 = (gateway / "db" / "schema.eval.hcl").read_text(encoding="utf-8")
+    own = (gateway / "db" / f"schema.{store}.hcl").read_text(encoding="utf-8")
+    renamed = re.sub(r"\blancet_eval\b", schema, v1)
+    assert own.splitlines()[0].startswith("// schema.eval.hcl with the schema renamed")
+    assert own.splitlines()[1:] == renamed.splitlines()[1:]
+
+    overlay = repo_root() / "config" / f"config.{store}.toml"
+    graph = tomllib.loads(overlay.read_text(encoding="utf-8"))["engine"]["graph"]
+    assert graph == {"ingest_extraction": False}
+
+
+def test_full_store_seed_reads_the_pinned_json_documents_file(
+    httpx_mock: HTTPXMock,
+    s1_repo: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#149: a corpus that names `[documents] file` seeds that file, here a cached
+    `.json` array pinned by sha256, with its store's chunking."""
+    import copy
+
+    from lancet_eval.config import FULL_STORE
+    from lancet_eval.corpus import load_corpus
+    from lancet_eval.split import lf_sha256
+
+    _write_subset(tmp_path, [_V1_ROW])
+    _write_full_overlay(tmp_path)
+    cache = _write_full_cache(tmp_path)
+    corpus = copy.copy(load_corpus("multihop_rag_full_dev"))
+    assert corpus.documents_sha256 is not None
+    corpus.documents_sha256 = lf_sha256(cache)
+    monkeypatch.setattr("lancet_eval.seed.load_corpus", lambda name: corpus)
+    _mock_seed_gateway(httpx_mock, uploads=2)
+
+    doc_map = seed_corpus(
+        "multihop_rag_full_dev",
+        settings=_s1_settings("./data/lancedb-eval-full", "lancet_eval_full"),
+        store=FULL_STORE,
+    )
+
+    assert sorted(e.corpus_id for e in doc_map.entries.values()) == ["Full 0", "Full 1"]
+    for body in _uploads(httpx_mock):
+        assert _form_field(body, "chunk_strategy") == "structure-aware"
+        assert _form_field(body, "chunk_size") == "500"
+        assert _form_field(body, "chunk_overlap") == "50"
+    corpora = tmp_path / "eval" / "corpora"
+    assert (corpora / "multihop_rag_full" / "document_map.eval-full.json").is_file()
+
+
+def test_full_store_seed_refuses_a_documents_file_off_its_pin(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    from lancet_eval.config import FULL_STORE
+
+    _write_full_overlay(tmp_path)
+    _write_full_cache(tmp_path)
+    with pytest.raises(SeedError, match="refusing to seed another document set"):
+        seed_corpus(
+            "multihop_rag_full_dev",
+            settings=_s1_settings("./data/lancedb-eval-full", "lancet_eval_full"),
+            store=FULL_STORE,
+        )
+    assert not [r for r in httpx_mock.get_requests() if r.url.path == "/documents"]
+
+
+def _write_full_overlay(root: Path) -> None:
+    (root / "config" / "config.eval-full.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval-full"\n', encoding="utf-8"
+    )
+
+
+def _write_full_cache(root: Path) -> Path:
+    rows = [
+        {**_V1_ROW, "title": f"Full {i}", "url": f"https://example.com/{i}"}
+        for i in range(2)
+    ]
+    cache = root / "eval" / "corpora" / "multihop_rag" / ".cache" / "corpus.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(rows), encoding="utf-8")
+    return cache

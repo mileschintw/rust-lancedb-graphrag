@@ -224,7 +224,12 @@ def test_store_checkpoint_sources_read_each_store_from_its_own_schema() -> None:
     assert {
         name: pg_schema_of(s.database_url)  # type: ignore[attr-defined]
         for name, s in sources.items()
-    } == {"eval": "lancet_eval", "eval-s1": "lancet_eval_s1"}
+    } == {
+        "eval": "lancet_eval",
+        "eval-s1": "lancet_eval_s1",
+        "eval-full": "lancet_eval_full",
+        "eval-2wiki": "lancet_eval_2wiki",
+    }
     assert sources["eval-s1"] is settings
 
 
@@ -292,7 +297,13 @@ def test_the_second_stores_drive_ends_with_a_complete_export(
     client = _correlated_gateway(httpx_mock)
     # The drive's default sources, one per store schema (`store_checkpoint_sources`).
     small, merged = _StoreEchoSource(), _StoreEchoSource()
-    by_schema = {"lancet_eval": small, "lancet_eval_s1": merged}
+    by_schema = {
+        "lancet_eval": small,
+        "lancet_eval_s1": merged,
+        # #149's stores: a source each, never read by this two-store journal.
+        "lancet_eval_full": _StoreEchoSource(),
+        "lancet_eval_2wiki": _StoreEchoSource(),
+    }
     monkeypatch.setattr(
         context_export_mod,
         "PostgresCheckpointSource",
@@ -354,6 +365,8 @@ def test_export_context_command_rebuilds_a_two_store_export(
     by_schema = {
         "lancet_eval": _source("trace-small-1", "trace-small-2"),
         "lancet_eval_s1": _source("trace-merged-1", "trace-merged-2"),
+        "lancet_eval_full": _source(),
+        "lancet_eval_2wiki": _source(),
     }
     monkeypatch.setattr(
         context_export_mod,

@@ -1,0 +1,3 @@
+# Wikipedia text (passages and the answers built from them): not committed.
+chunks.jsonl
+*.results.jsonl

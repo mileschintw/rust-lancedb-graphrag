@@ -1,0 +1,12 @@
+# 2WikiMultiHopQA evaluation overlay (LANCET_ENV=eval-2wiki, #149)
+# The 6,119 pinned 2Wiki passages (#145), ingested as given, for the exploratory run B
+# (experiments/v1.1/EXPLORE-B-2WIKI-READERS.md). It never shares state with any other eval
+# store. Its PostgreSQL schema is lancet_eval_2wiki, applied with Atlas env eval-2wiki.
+
+[engine]
+lancedb_path = "./data/lancedb-eval-2wiki"
+
+# B's arm is hybrid+rerank+metadata with no graph (#149), so the build extracts none: S3
+# builds its graphs from its own writers' extraction (#145).
+[engine.graph]
+ingest_extraction = false

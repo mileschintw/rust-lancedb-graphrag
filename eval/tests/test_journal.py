@@ -370,10 +370,11 @@ def test_every_committed_journal_parses_with_the_new_defaulted_fields() -> None:
                 except ValidationError as err:
                     pytest.fail(f"{path} holds a record the model refuses: {err}")
             parsed += 1
-            run_tags = ("-levers-", "-s0-", "-s1-", "-s2-", "-s3m-")
+            run_tags = ("-levers-", "-s0-", "-s1-", "-s2-", "-s3m-", "-explore-")
             if any(tag in path.parent.name for tag in run_tags):
-                # 06.3.6 lever sessions and the v1.1 S0/S1/S2/S3M runs (RUN-S0-S1.md,
-                # RUN-S2.md) drive lever arms, so they legitimately carry levers and
+                # 06.3.6 lever sessions, the v1.1 S0/S1/S2/S3M runs (RUN-S0-S1.md,
+                # RUN-S2.md) and #149's exploratory runs (RUN-EXPLORE-BC.md) drive lever
+                # arms, so they legitimately carry levers and
                 # rerank metadata.
                 continue
             if rec.snapshot is not None:

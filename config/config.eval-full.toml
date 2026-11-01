@@ -1,0 +1,13 @@
+# Full MultiHop-RAG evaluation overlay (LANCET_ENV=eval-full, #149)
+# All 609 MultiHop-RAG documents, chunked structure-aware 500/50 like the v1.0 store, for the
+# exploratory run C (experiments/v1.1/EXPLORE-C-MHR-FULL.md). It never shares state with the
+# v1.0 store (./data/lancedb-eval, schema lancet_eval) or the S1 store. Its PostgreSQL schema
+# is lancet_eval_full, applied with Atlas env eval-full.
+
+[engine]
+lancedb_path = "./data/lancedb-eval-full"
+
+# C's arm is hybrid+rerank+metadata, which never reads the graph, so the build extracts none:
+# no extraction call is made at ingest.
+[engine.graph]
+ingest_extraction = false

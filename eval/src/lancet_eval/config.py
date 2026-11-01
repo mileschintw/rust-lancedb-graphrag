@@ -83,7 +83,15 @@ class EvalStore:
 V1_STORE = EvalStore("eval", "./data/lancedb-eval", "lancet_eval")
 #: The v1.1 S1 merged-chunk store (D-251). It never touches the v1.0 store.
 S1_STORE = EvalStore("eval-s1", "./data/lancedb-eval-s1", "lancet_eval_s1")
-EVAL_STORES: dict[str, EvalStore] = {s.name: s for s in (V1_STORE, S1_STORE)}
+#: #149's hybrid-only stores, built with no graph: all 609 MultiHop-RAG documents
+#: (run C) and the 2Wiki passages (run B).
+FULL_STORE = EvalStore("eval-full", "./data/lancedb-eval-full", "lancet_eval_full")
+TWOWIKI_STORE = EvalStore(
+    "eval-2wiki", "./data/lancedb-eval-2wiki", "lancet_eval_2wiki"
+)
+EVAL_STORES: dict[str, EvalStore] = {
+    s.name: s for s in (V1_STORE, S1_STORE, FULL_STORE, TWOWIKI_STORE)
+}
 
 
 def get_eval_store(name: str) -> EvalStore:

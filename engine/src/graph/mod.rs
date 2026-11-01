@@ -27,6 +27,7 @@ pub(crate) mod bridge;
 pub mod context_strategy;
 pub mod extraction;
 pub mod index;
+pub mod no_extraction;
 pub mod paths;
 pub mod seeding;
 
