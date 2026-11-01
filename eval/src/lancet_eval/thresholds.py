@@ -626,8 +626,8 @@ class WriterPreRegistration:
     S3 compares graph writers (D-235). Each writer extracts every passage of the pinned
     2Wiki corpus once; the store builds, the reader runs and S3's analysis
     pre-registration (arms, K, Holm family, metrics) come later, in their own constant.
-    A writer added after the freeze (Opus 5.5, if the owner adds it) gets its own
-    constant of this type in its own commit, so a frozen one never changes.
+    A writer added after a constant reaches main gets its own constant of this type
+    in its own commit, so a frozen one never changes.
 
     Attributes:
         dataset: The Hugging Face dataset the passages come from.
