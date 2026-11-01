@@ -393,8 +393,9 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   - *Normalisation (primary).* `gold_contained` keeps D-70's whole-token containment ("no" never matches "not") and
     adds two folds. A token also matches its plural or singular: a token of four letters or more ending in `s` (not
     `ss`, `us` or `is`, holding no digit, and not a listed non-plural such as "news") may drop its `s`, drop `es`
-    after s, x, z, ch or sh, or turn `ies` into `y` ("houses"/"house", "boxes"/"box", "movies"/"movie"); nothing
-    else changes, so "plane" never meets "plan" and "1990s" never meets "1990". A list gold, with items separated by
+    after s, x, z, ch or sh when three letters or more remain, or turn `ies` into `y` ("houses"/"house",
+    "boxes"/"box", "movies"/"movie"); nothing else changes, so "plane" never meets "plan", "1990s" never meets
+    "1990", and "uses" never meets "US". A list gold, with items separated by
     commas (not inside a number such as "1,200"), semicolons, `&` or "and", also matches when every item is
     contained in a span of its own, in any order ("Johnson & Johnson" needs two "johnson" tokens). Both folds only
     turn misses into hits. Known looseness, left to the judges: the list fold reads "and" inside a name ("Barnes and

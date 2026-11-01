@@ -127,6 +127,8 @@ def answer_rule(rule: AnswerRule) -> Iterator[None]:
 
 # D-276: words ending in "s" that are not plurals, so they never fold.
 _NOT_PLURAL = frozenset({"news", "series", "species", "always", "perhaps", "whereas"})
+# D-276: the endings after which a plural adds "es" (boxes, matches, buses).
+_ES_AFTER = ("s", "x", "z", "ch", "sh")
 # D-276: the separators of a list answer, read on the raw gold before normalisation
 # drops its punctuation. A comma between digits ("1,200") separates nothing.
 _LIST_SEPARATOR = re.compile(r"\s*(?:(?<!\d),|,(?!\d)|;|&|\band\b)\s*", re.IGNORECASE)
@@ -138,9 +140,9 @@ def _singulars(token: str) -> frozenset[str]:
 
     A token of four letters or more ending in `s` (not `ss`, `us` or `is`, not in
     `_NOT_PLURAL`, and holding no digit) may drop its `s`, its `es` after s, x, z, ch
-    or sh, or turn `ies` into `y`: `houses` -> `house`, `boxes` -> `box`, `movies` ->
-    `movie`. Nothing else changes, so `plane` never meets `plan` and `1990s` never
-    meets `1990`.
+    or sh when three letters or more remain, or turn `ies` into `y`: `houses` ->
+    `house`, `boxes` -> `box`, `movies` -> `movie`. Nothing else changes, so `plane`
+    never meets `plan`, `1990s` never meets `1990`, and `uses` never meets `us`.
     """
     if (
         len(token) <= 3
@@ -151,8 +153,9 @@ def _singulars(token: str) -> frozenset[str]:
     ):
         return frozenset()
     forms = {token[:-1]}
-    if token.endswith("es") and token[:-2].endswith(("s", "x", "z", "ch", "sh")):
-        forms.add(token[:-2])
+    stem = token[:-2]
+    if token.endswith("es") and len(stem) >= 3 and stem.endswith(_ES_AFTER):
+        forms.add(stem)  # never shorter than three: "uses" is not the plural of "us"
     if token.endswith("ies") and len(token) > 4:
         forms.add(token[:-3] + "y")
     return frozenset(forms)

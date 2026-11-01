@@ -56,6 +56,7 @@ def test_the_no_lack_artifact_is_left_to_the_judge() -> None:
         ("stripe", "strip"),
         ("paste", "past"),
         ("1990s", "1990"),  # a token with a digit never folds
+        ("US", "it uses gas"),  # dropping "es" leaves at least three letters
         ("$1,200", "1 of 200"),  # a comma inside a number does not split a list
         ("Johnson & Johnson", "johnson"),  # each item needs its own span
         ("class", "clas"),  # "ss" is not a plural ending
