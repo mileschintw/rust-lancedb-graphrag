@@ -233,3 +233,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 13:24 -0800: lane 145 D-290 freeze (PREREGISTRATION_S3_WRITERS_SYNC, 76f326f8, additions only) → PR #161, checks running (standing rule: open PR, merge on green).
 - 2026-11-01 13:25 -0800: owner: "先不管，全都公開repo備份全文，以後真的有需要再下架就好" → commit full text to the public repo: lane 149 commits its run dirs (new PR, Refs #149); lane 145 commits s3-extract chunks + results in its extraction PR.
 - 2026-11-01 13:28 -0800: PR #161 (D-290) green, merged 1302bd5e; lane 145 got 'continue' for deepseek's sync extraction.
+- 2026-11-01 13:35 -0800: lane 145 deepseek sync run ~300/6,119, 0 runaways, ~$0.87 projected, ~3.8 h; stays sequential (D-290 request_rule says one request at a time; coordinator's shard suggestion withdrawn).
