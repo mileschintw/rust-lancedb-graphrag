@@ -196,7 +196,14 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 
 ## Metrics
 
-- **Primary:** `answer_usable` on the G population (90), paired per question against the carried deepseek arm.
+- **Primary:** `answer_usable` on the G population (90), paired per question against the carried deepseek arm, under
+  D-276's normalisation: D-70's whole-token containment, with singular and plural folded together and list answers
+  matched in any order, applied to every arm.
+- **Secondary (D-276):** a dual judge, `openai/gpt-4o-mini` and Claude Sonnet 5.5, each told only the question, the
+  gold answer and the extracted final line, never the arm. `lancet-eval judge-answers` reports per-arm judged rates
+  for both judges beside the primary, and lists every disagreement (judge against judge, judge against the primary)
+  for the owner. It decides nothing. Sonnet judging Claude readers is allowed for this secondary only (D-276); the
+  disagreements on Claude arms measure self-preference.
 - **Reported per reader:** paired differences, the null guard, and cost per answered question (`reader_comparison` in
   `lever-comparison.json`).
 - **Not reported:** evidence Hits@4. The context is identical across readers (D-257).
