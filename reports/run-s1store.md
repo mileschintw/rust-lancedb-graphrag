@@ -1,7 +1,7 @@
 # run-s1store 報告：S1 store build（第二次嘗試，停在付費 seed 前）
 
 - 位置：主 checkout `D:\Repos\lancet`，`main` @ `aedd4723`（= `origin/main`，含 PR #119 / #118）。沒有 lane 分支、沒有 commit、沒有 PR、沒有 PR body。
-- 狀態：**blocked，等使用者同意付費 seed**（見「重建：付費 seed 前的新估算」）。第一次嘗試的紀錄保留在後半部。
+- 狀態：**blocked，seed 與 1.4 都通過，1.5 preflight 有一項 FAIL（`corpus_generation`：excerpt 截斷）**，見「1.5 preflight」。stack 已停。
 - 未讀 held-out。沒碰 `data/lancedb-eval`、`lancet_eval` schema 或 `config/`。
 
 ## 使用者在本 session 的決定（原話）
@@ -69,9 +69,55 @@ stack 已停（8080、50051 已釋放）。OTel 匯出錯誤（4317 沒有 colle
 - **第一次已花**：約 $1.4-1.7（更正後，見上方「花費」）。加上這次預期，步驟 1 合計約 **$2.4-3.1**；指南原估 $2-3、上限約 $11。
 - 請到 OpenRouter activity page 核對第一次的實際花費（2026-10-31 15:14-15:56 PDT）。
 
+## 付費 seed 與 1.4、1.5（使用者：「跑 seed (Recommended)」）
+
+| 步驟 | 指令 | exit | 結果 |
+|---|---|---|---|
+| 1.2 重啟 | engine、gateway（同上） | 啟動成功，後來停止 | A2 再檢查**通過**：`document_count=0 ... graph_entities=0`；8080、50051 都在 listen |
+| 1.3 seed | `LANCET_ENV=eval-s1 PYTHONUTF8=1 uv run --project eval lancet-eval seed --corpus multihop_rag_s1_dev --store eval-s1` | **0** | 17:06-18:18 PDT（約 72 分鐘）；`Corpus 'multihop_rag_s1_dev' seeded successfully (346 documents mapped).` |
+| 1.4 chunking | `SELECT chunk_strategy, chunk_size, chunk_overlap, count(*) ... WHERE status = 'completed' GROUP BY 1, 2, 3;` | 0 | **一列：`structure-merge`、256、25、346** ✅ |
+| 1.4 未完成 | `SELECT id, status, error_message ... WHERE status <> 'completed';` | 0 | **0 列** ✅（不需要 pg-delete-extras） |
+| 1.5 preflight | `LANCET_ENV=eval-s1 PYTHONUTF8=1 uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev` | **1** | 11 PASS、**1 FAIL（`corpus_generation`）**，見下 |
+| 停 stack | TaskStop engine、gateway | — | 8080、50051 已釋放 |
+
+### Seed 結果
+
+- 文件：346 篇 indexed，PG 346 `completed`，0 `failed`、0 `queued`；沒有文件被重傳。
+- chunk：**3,953 個**（與 audit 模擬的 3,953 完全一致），346 篇全部 `chunk_strategy="structure-merge"`。
+- Extraction：`extraction call failed` **0 次**，`entity extraction failed for chunk` **0 次**，`EOF while parsing` 0 次，panic 0 次 → **圖譜覆蓋 3,953/3,953 chunk（100%）**；呼叫數 = 3,953（沒有重試）。
+- `dropping relation with unmapped entity endpoint`：4,988 次（已知的 relation 過濾，不是失敗）。
+- `inspect_lancedb --graph-population`：document 346、node 3,953、edge 3,607、**entity 24,187**、entity_edge 36,649、孤立 entity 3,337；最高 degree 是「Google」（551）。
+- `data/lancedb-eval-s1`：421 MB。`document_map.eval-s1.json`：346 筆，`index_generation = lance-693`。
+
+### 1.5 preflight
+
+| Check | 狀態 |
+|---|---|
+| drive_environment、store_isolation、arm_store | PASS |
+| **index_identity** | **PASS**（PG、LanceDB、document map 的 ID 一致） |
+| **store_chunking** | **PASS**（346 篇都是 structure-merge 256/25） |
+| canary_manifest、canary_floors | PASS（skipped，D-124） |
+| gateway_reachable、engine_reachable | PASS |
+| **corpus_generation** | **FAIL**：`Retrieved chunk excerpt arrived truncated (is_truncated=true)` |
+| arm_mode_canaries | PASS（6 個：3 rehearsal × 2 arm） |
+| openrouter_api | PASS |
+
+原因（只讀 code，沒有再打任何付費呼叫）：
+- `config/config.eval-s1.toml` 設 `excerpt_max_chars = 512`（與 `config.toml:102` 相同）。engine 在查詢時用 `bounded_unicode_excerpt`（`engine/src/prompt.rs:778`）把每個 retrieved chunk 截到 512 個字元，超過就設 `is_truncated=true`。
+- S1 的 chunk 是 256 token 的 structure-merge，約 1,000-1,300 個字元，幾乎每個都超過 512。v1.0 store 的 chunk 約 55 token，所以 512 夠用。
+- `preflight.py:556`（`corpus_generation`）只要有一個 retrieved chunk 被截斷就 FAIL。
+- **影響比 preflight 更大**：`metrics.py:211` `fact_matches_excerpt` 遇到 `is_truncated` 直接回 `UNDECIDABLE`，所以步驟 4 的 S1 評分幾乎所有 fact 比對都會變成 undecidable。
+- **store 本身沒問題**：excerpt 是查詢時才截，不存在 store 裡。修法是把 `config.eval-s1.toml` 的 `excerpt_max_chars` 調到大於 S1 最長 chunk 的字元數（例如 2,048，具體值要先量最長 chunk），重啟 engine 再跑一次 1.5，**不需要重新 seed**。`config/` 是我這個 lane 不能碰的路徑，也沒有找到現成 issue（`gh issue list --search "is_truncated OR excerpt_max_chars OR corpus_generation"` 沒結果）。
+
+### 花費（估算；以 OpenRouter activity page 為準）
+
+- 這次 seed：3,953 次 extraction 呼叫，0 次重試；embedding 約 0.85 M token。依先前的模型預期約 **$1.0-1.2**（price cap 下約 $1.4）。log 不記 token 用量，請核對 OpenRouter activity page 2026-10-31 17:06-18:18 PDT。
+- 1.5 preflight：1 個 probe 查詢 + 6 個 arm canary，約幾分錢（< $0.03）。
+- 第一次嘗試（更正後）約 $1.4-1.7。步驟 1 合計約 **$2.4-3.0**。
+
 ## 給 coordinator 的問題
 
-- 付費 seed 是否開始？預期約 $1.0-1.2（cap 價約 $1.4），上限約 $29.4（不含重試）。
+- 1.5 的 `corpus_generation` FAIL 怎麼處理？建議：開 issue 修 `config.eval-s1.toml` 的 `excerpt_max_chars`（含量測 S1 最長 chunk），合併後我重啟 stack 重跑 1.5（幾分錢，不用重新 seed）。
 
 # 第一次嘗試（d943d558，已中止）
 
