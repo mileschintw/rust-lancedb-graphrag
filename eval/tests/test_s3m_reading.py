@@ -69,6 +69,10 @@ def _reading(writer: str, delta: float | None) -> SimpleNamespace:
             "the writer does not explain the loss",
         ),
         ({"deepseek": -0.09, "sonnet-5.5": -0.04}, "open"),
+        # "Within 5 points" holds on either side of deepseek, 5 points excluded.
+        ({"deepseek": 0.02, "sonnet-5.5": -0.01}, "the writer does not explain the loss"),
+        ({"deepseek": 0.02, "sonnet-5.5": -0.04}, "open"),
+        ({"deepseek": 3 / 180, "haiku-5.5": -6 / 180, "sonnet-5.5": -6 / 180}, "open"),
         ({"sonnet-5.5": 0.05}, "open"),
     ],
 )

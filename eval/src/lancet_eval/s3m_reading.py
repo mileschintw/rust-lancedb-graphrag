@@ -16,7 +16,8 @@ cannot read them. This module pairs them across runs as `PREREGISTRATION_S3M` sa
   pairs, and is not evaluable below 0.80 of the nulls paired (D-264);
 - the reading rule: the writer explains the loss iff a Claude writer's delta is at
   least 0 and at least 5 points above deepseek's; does not iff every Claude writer's
-  delta is below 0 and within 5 points of deepseek's; else (or without deepseek) open.
+  delta is below 0 and within 5 points of deepseek's, either side, 5 excluded; else
+  (or without deepseek) open.
 
 Run it as ``python -m lancet_eval.s3m_reading --corpus multihop_rag_s3m_dev
 --reference <run> <run> --writer deepseek <run> <run> --writer haiku-5.5 <run> <run>
@@ -174,7 +175,9 @@ def verdict(readings: Sequence[WriterReading]) -> str:
     eps = 1e-9
     if any(d >= -eps and d - base >= RULE_MARGIN - eps for d in claude):
         return "the writer explains the loss"
-    if all(d < -eps and d - base < RULE_MARGIN - eps for d in claude):
+    # "Within 5 points" is a distance either way; 5 points apart is not within (the
+    # boundary this module's tests fixed before any S3M run).
+    if all(d < -eps and abs(d - base) < RULE_MARGIN - eps for d in claude):
         return "the writer does not explain the loss"
     return "open"
 
