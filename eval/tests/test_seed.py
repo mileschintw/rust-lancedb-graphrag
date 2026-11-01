@@ -1055,3 +1055,74 @@ def test_the_149_stores_have_an_atlas_env_and_the_eval_schema_renamed(
     overlay = repo_root() / "config" / f"config.{store}.toml"
     graph = tomllib.loads(overlay.read_text(encoding="utf-8"))["engine"]["graph"]
     assert graph == {"ingest_extraction": False}
+
+
+def test_full_store_seed_reads_the_pinned_json_documents_file(
+    httpx_mock: HTTPXMock,
+    s1_repo: tuple[Path, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#149: a corpus that names `[documents] file` seeds that file, here a cached
+    `.json` array pinned by sha256, with its store's chunking."""
+    import copy
+
+    from lancet_eval.config import FULL_STORE
+    from lancet_eval.corpus import load_corpus
+    from lancet_eval.split import lf_sha256
+
+    _write_subset(tmp_path, [_V1_ROW])
+    _write_full_overlay(tmp_path)
+    cache = _write_full_cache(tmp_path)
+    corpus = copy.copy(load_corpus("multihop_rag_full_dev"))
+    assert corpus.documents_sha256 is not None
+    corpus.documents_sha256 = lf_sha256(cache)
+    monkeypatch.setattr("lancet_eval.seed.load_corpus", lambda name: corpus)
+    _mock_seed_gateway(httpx_mock, uploads=2)
+
+    doc_map = seed_corpus(
+        "multihop_rag_full_dev",
+        settings=_s1_settings("./data/lancedb-eval-full", "lancet_eval_full"),
+        store=FULL_STORE,
+    )
+
+    assert sorted(e.corpus_id for e in doc_map.entries.values()) == ["Full 0", "Full 1"]
+    for body in _uploads(httpx_mock):
+        assert _form_field(body, "chunk_strategy") == "structure-aware"
+        assert _form_field(body, "chunk_size") == "500"
+        assert _form_field(body, "chunk_overlap") == "50"
+    corpora = tmp_path / "eval" / "corpora"
+    assert (corpora / "multihop_rag_full" / "document_map.eval-full.json").is_file()
+
+
+def test_full_store_seed_refuses_a_documents_file_off_its_pin(
+    httpx_mock: HTTPXMock, s1_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    from lancet_eval.config import FULL_STORE
+
+    _write_full_overlay(tmp_path)
+    _write_full_cache(tmp_path)
+    with pytest.raises(SeedError, match="refusing to seed another document set"):
+        seed_corpus(
+            "multihop_rag_full_dev",
+            settings=_s1_settings("./data/lancedb-eval-full", "lancet_eval_full"),
+            store=FULL_STORE,
+        )
+    assert not [r for r in httpx_mock.get_requests() if r.url.path == "/documents"]
+
+
+def _write_full_overlay(root: Path) -> None:
+    (root / "config" / "config.eval-full.toml").write_text(
+        '[engine]\nlancedb_path = "./data/lancedb-eval-full"\n', encoding="utf-8"
+    )
+
+
+def _write_full_cache(root: Path) -> Path:
+    rows = [
+        {**_V1_ROW, "title": f"Full {i}", "url": f"https://example.com/{i}"}
+        for i in range(2)
+    ]
+    cache = root / "eval" / "corpora" / "multihop_rag" / ".cache" / "corpus.json"
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(rows), encoding="utf-8")
+    return cache
