@@ -495,6 +495,29 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   error record (`--retry-errors`). The replay clauses are unchanged: the body hash, nothing rewritten, the body's
   model, `is_byok` false, the pinned provider, reasoning off with 0 tokens. Full price, no batch discount: about $0.08
   of OpenRouter credit for 400 answers at D-277's Wafer price.
+- **D-279 An OpenRouter batch row's `is_byok` is its batch's** (owner: "開 lane，batch 層 is_byok (Recommended)",
+  2026-10-31; #137). Amends D-265's source of `is_byok` for OpenRouter batches. The S2 pilot's Haiku 5.5 and Opus 5.5
+  batches (`batch-1793513172-NhwtnmeA5URdHsPsd9jp`, `batch-1793513183-UANxDGyr1uRrJb2Y8eEf`, both `completed` and
+  billed over BYOK) showed that each row of a finished batch's `results` carries its chat completion in
+  `response.body` beside a `status_code`, and that a row's `usage` reports token counts but no `is_byok` or cost: only
+  the batch-level `usage` reports `is_byok: true` (with `cost: 0` and the upstream cost). So every row of a batch takes
+  the batch-level `usage.is_byok`, and the `is_byok` clause reads that value; a batch that reports none, or false, fails
+  the clause on every row. The row's own `provider` (`Anthropic`) and `model` (the undated slug) are still checked per
+  row; the batch-level `model` is dated. A row with a non-2xx `status_code`, or no body, is an `errored` record, and a
+  batch that fails as a whole puts its `error.message` into each request's error record. D-278's sync replies report
+  `is_byok` per reply and are unchanged.
+- **D-280 Sonnet 5.5 reads S2 through OpenRouter's sync API, with `between_tools`** (owner: "同步＋between_tools，pilot
+  驗證 (Recommended)", 2026-10-31; #138). Amends D-260: the native Message Batches fallback is dropped. The S2 pilot's
+  Sonnet 5.5 batch (`batch-1793513178-DuI7z1ga0my7I5nYA8N2`) failed whole with "uses thinking.type: "between_tools",
+  which is not supported on the Batch API ... or use the sync API for this feature", and the owner has no
+  `ANTHROPIC_API_KEY` set for a native batch. So `batch submit` sends an OpenRouter reader declared `between_tools`
+  through D-278's sync path: the rewritten body, unchanged (BYOK, `provider: {only: ["anthropic"], allow_fallbacks:
+  false}`, `thinking: {type: "between_tools"}`), posted one request at a time to `/chat/completions`, the D-258 estimate
+  first, journalled every 20 and resumable. Each record's `is_byok` is its own sync reply's. The D-265 clauses stay as
+  they are and fail closed: `is_byok` true, provider `Anthropic`, 0 reasoning tokens; the sync path also stops after a
+  chunk whose answers break any of them, so a Sonnet that thinks stops the run early. The re-pilot checks this; if
+  Sonnet thinks, the run stops and the owner is asked. Full list price, no batch discount: about $5 for the 500
+  answers (ceiling about $19), on Claude credit. Haiku 5.5 and Opus 5.5 stay on the OpenRouter batch (#137, D-279).
 
 ## Model access
 

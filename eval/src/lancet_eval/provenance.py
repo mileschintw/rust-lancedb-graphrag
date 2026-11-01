@@ -91,8 +91,9 @@ notices. Every replay clause is zero tolerance.
 * **rewritten_fields**: the recorded field list is not the rewrite's;
 * **model**: the response's model is not the declared reader's slug;
 * **is_byok**: per the reader's ``target`` (#82, Q4). OpenRouter: the response does
-  not report the owner's own key. Native Anthropic: the record carries an
-  ``is_byok`` value, which that response never reports;
+  not report the owner's own key (for a batch row, the batch's ``usage.is_byok``,
+  which OpenRouter reports for the whole batch only; D-279). Native Anthropic: the
+  record carries an ``is_byok`` value, which that response never reports;
 * **provider**: the record's provider is not ``REPLAY_PROVIDERS[target]``: the
   provider OpenRouter routed to, or the native endpoint's host;
 * **reasoning_tokens**: a reader whose thinking is not ``on`` shows thinking (D-260:
@@ -872,11 +873,14 @@ ROUTING_CODES = frozenset({"is_byok", "provider"})
 
 
 def routing_failures(
-    record: RunRecord, readers: Mapping[str, ReaderDeclaration]
+    record: RunRecord,
+    readers: Mapping[str, ReaderDeclaration],
+    codes: Container[str] = ROUTING_CODES,
 ) -> list[str]:
     """The ``is_byok`` and ``provider`` details of one replay record with a ``replay``
     block (#133 L5): what ``batch fetch`` reports per arm before ``score`` refuses.
-    Empty for any other record, or a reader arm with no declaration."""
+    ``codes`` widens the clauses read (the sync path adds ``reasoning_tokens``,
+    D-280). Empty for any other record, or a reader arm with no declaration."""
     replay = record.replay
     if replay is None or not is_replay_record(record):
         return []
@@ -887,7 +891,7 @@ def routing_failures(
         if declaration is None:
             return []
         found = _target_failures(replay, declaration)
-    return [detail for code, detail in found if code in ROUTING_CODES]
+    return [detail for code, detail in found if code in codes]
 
 
 def is_zero_tolerance(code: str) -> bool:

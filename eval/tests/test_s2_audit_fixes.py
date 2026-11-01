@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import levers_fixture as fx
@@ -271,6 +272,10 @@ def test_deepseek_replicates_post_the_pinned_body_to_chat_completions(
 
 
 def _failures_k(run: Path, tr) -> list[provenance.ProvenanceFailure]:  # type: ignore[no-untyped-def]
+    return _clause_failures(run, tr._prereg())
+
+
+def _clause_failures(run: Path, prereg) -> list[provenance.ProvenanceFailure]:  # type: ignore[no-untyped-def]
     from lancet_eval.context_export import read_export
     from lancet_eval.journal import load_records, read_journal_header
     from lancet_eval.pairing import deduplicate_by_arm
@@ -285,7 +290,7 @@ def _failures_k(run: Path, tr) -> list[provenance.ProvenanceFailure]:  # type: i
         records,
         export_rows=rows,
         source_row_sha256=source_row_hashes(header),
-        readers=readers_of(tr._prereg()),
+        readers=readers_of(prereg),
     )
 
 
@@ -367,3 +372,98 @@ def test_a_sync_read_timeout_is_not_retried(
     (timed_out,) = [r for r in _deepseek_units(run).values() if r.outcome == "error"]
     assert timed_out.error_type == batch.RESULT_ERRORS["unreadable"]
     assert timed_out.error_type not in batch.RETRYABLE
+
+
+# ---- #138, D-280: the Sonnet reader through the sync API ---------------------------
+
+SONNET_ARM = f"{rf.BASE}@sonnet-5.5"
+
+
+class _SonnetPosts(_Posts):
+    """OpenRouter's sync replies to the Sonnet reader: BYOK, routed to Anthropic."""
+
+    def __init__(self, *, is_byok: Any = True, reasoning: int = 0, **kw: Any):
+        super().__init__(**kw)
+        self.is_byok, self.reasoning = is_byok, reasoning
+
+    def __call__(self, url, *, content, headers, timeout):  # type: ignore[no-untyped-def]
+        res = super().__call__(url, content=content, headers=headers, timeout=timeout)
+        data = res.json()
+        data["provider"] = "Anthropic"
+        data["usage"]["is_byok"] = self.is_byok
+        data["usage"]["completion_tokens_details"]["reasoning_tokens"] = self.reasoning
+        return httpx.Response(200, json=data, request=res.request)
+
+
+@pytest.fixture
+def sonnet_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
+    from test_batch import FakeBin
+
+    from lancet_eval import batch_client, thresholds
+    from lancet_eval.replay import replay_init
+
+    qs = fx.make_questions(4, 1)
+    root = tmp_path / "repo"
+    rf.write_corpora(root, qs, (SONNET_ARM,))
+    monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
+    prereg = rf.s2_prereg(readers=(("sonnet-5.5", rf.SONNET),), arm=SONNET_ARM)
+    monkeypatch.setattr(thresholds, fx.TOKEN, prereg, raising=False)
+    s1 = tmp_path / "s1"
+    rf.write_s1_run(s1, qs)
+    run = tmp_path / "s2"
+    replay_init(source_run=s1, arms=[rf.BASE], run=run, corpus=fx.CORPUS)
+    monkeypatch.setattr(batch, "bin_runner", FakeBin())
+    monkeypatch.setattr(batch, "SYNC_CHUNK", 2)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(batch, "chat_client_factory", batch_client.chat_client)
+
+    def no_batch(target):  # type: ignore[no-untyped-def]
+        raise AssertionError("a between_tools reader is never batched (D-280)")
+
+    monkeypatch.setattr(batch, "client_factory", no_batch)
+    return run, qs, prereg
+
+
+def _sonnet_records(run: Path) -> list:  # type: ignore[type-arg]
+    from lancet_eval.journal import load_records
+
+    return [r for r in load_records(run / "journal.jsonl") if r.graph_arm == SONNET_ARM]
+
+
+def test_the_sonnet_reader_posts_between_tools_to_the_sync_api(
+    sonnet_run, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import batch_client
+
+    run, qs, prereg = sonnet_run
+    posts = _SonnetPosts()
+    monkeypatch.setattr(batch_client.httpx, "post", posts)
+    lines: list[str] = []
+    sent = batch.submit(run=run, arm=SONNET_ARM, echo=lines.append)
+
+    n = len(qs.g_ids) + len(qs.nulls)
+    assert len(posts.posts) == sent.requests == n
+    assert {url for url, _ in posts.posts} == {batch_client.OPENROUTER_CHAT_URL}
+    body = json.loads(posts.posts[0][1])
+    assert body["provider"] == {"only": ["anthropic"], "allow_fallbacks": False}
+    assert body["thinking"] == {"type": "between_tools"}
+    assert lines[0].startswith("Cost estimate (D-258") and " 1.0 x $2.0/" in lines[0]
+    records = _sonnet_records(run)
+    assert len(records) == n and all(r.outcome == "success" for r in records)
+    assert all(r.replay is not None and r.replay.is_byok is True for r in records)
+    assert _clause_failures(run, prereg) == []
+    assert batch.read_manifest(sent.manifest_path)["target"] == batch.SYNC_TARGET
+
+
+@pytest.mark.parametrize("change", [{"is_byok": False}, {"reasoning": 12}])
+def test_a_sonnet_sync_chunk_off_byok_or_thinking_stops_the_run(
+    sonnet_run, monkeypatch: pytest.MonkeyPatch, change: dict[str, Any]
+) -> None:
+    from lancet_eval import batch_client
+
+    run, *_ = sonnet_run
+    posts = _SonnetPosts(**change)
+    monkeypatch.setattr(batch_client.httpx, "post", posts)
+    with pytest.raises(batch.BatchError, match="stopped before sending more"):
+        batch.submit(run=run, arm=SONNET_ARM, echo=lambda _: None)
+    assert len(posts.posts) == batch.SYNC_CHUNK

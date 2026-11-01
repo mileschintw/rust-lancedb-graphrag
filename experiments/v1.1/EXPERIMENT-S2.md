@@ -1,7 +1,7 @@
 # S2 Reader: pre-registration
 
 Status: **draft, not yet pre-registered.** RUN-S2.md step 1 pastes the constant below into `thresholds.py` with S1's
-winner filled in. It becomes the pre-registration when step 4, with Sonnet 5.5's target settled by the pilot, commits
+winner filled in. It becomes the pre-registration when step 4, after the pilot has checked every reader, commits
 it with this file on a clean tree before the run of record's `replay-init` (D-73, D-240, D-253).
 The **Result** section is filled in after the run and nothing above it changes.
 
@@ -20,13 +20,14 @@ winning arm into the S2 run, with their context export rows and row hashes (Q9):
 replicate 1. Its replicates 2 to 5 are new deepseek answers to the same packed prompts, the engine's `pack` body sent
 unrewritten, one request at a time, through OpenRouter's sync chat-completions API with D-271's full provider pin
 (D-278: the Batch API cannot carry `order` or `max_price`, and this model has no batch variant). Each Claude reader reads the same packed prompts,
-sent through a Claude batch (D-254), with only the declared fields rewritten (D-255), 5 times.
+with only the declared fields rewritten (D-255), 5 times: Haiku 5.5 and Opus 5.5 through a Claude batch on OpenRouter
+(D-254), Sonnet 5.5 through OpenRouter's sync API, since the Batch API refuses its `between_tools` (D-280).
 
 | Arm label | Reader | How it is read |
 |---|---|---|
 | `<S1 winner>` (reference) | `deepseek/deepseek-v4-flash-0731`, as in S1 | replicate 1 carried from the S1 run of record; replicates 2 to 5 by OpenRouter's sync API (D-278), pinned to wafer/us under the cap (D-271), on OpenRouter credit |
 | `<S1 winner>@haiku-5.5` | Haiku 5.5 | OpenRouter batch, BYOK |
-| `<S1 winner>@sonnet-5.5` | Sonnet 5.5 | OpenRouter batch, or the native Anthropic Message Batches API if the pilot says so (D-260) |
+| `<S1 winner>@sonnet-5.5` | Sonnet 5.5 | OpenRouter's sync API, BYOK, one request at a time: the Batch API refuses `between_tools` (D-280) |
 | `<S1 winner>@opus-5.5` (descriptive) | Opus 5.5 | OpenRouter batch, BYOK, in parallel with the other two (D-267) |
 
 The readers' sampling differs: deepseek at temperature 0, the Claude 5.5 readers at their default sampling (they take
@@ -71,7 +72,7 @@ checks it against the corpus and the readers table.
 ~~~python
 # v1.1 S2 (D-252, D-254 to D-260, D-265; experiments/v1.1/EXPERIMENT-S2.md): S1's
 # winning arm, read by deepseek in S1 and carried into S2 (D-254, Q9), against the same
-# packed prompts read by Haiku 5.5 and Sonnet 5.5 through Claude batches, on the
+# packed prompts read by Haiku 5.5 (Claude batch) and Sonnet 5.5 (sync, D-280), on the
 # levers-dev pool of 100 (90 G, 10 null), 5 answers per question and arm (D-274: the
 # carried answer is deepseek's first). Direction-finding: the harness computes the
 # paired differences, null guards and cost per answered question, and the choice is
@@ -171,9 +172,10 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
         "(Recommended)'). Prices, USD per MTok: Haiku 5.5 0.10/0.50 "
         "and Sonnet 5.5 2/10 (decisions 2026-10-30); Opus 5.5 4/20, read "
         "2026-10-31 from https://platform.claude.com/docs/en/about-claude/pricing "
-        "(D-269). Sonnet 5.5's target is openrouter unless the pilot (RUN-S2.md "
-        "step 3) shows between_tools does not pass; then anthropic, "
-        "claude-sonnet-5-5 (D-260). Written 2026-10-31, before any S2 data."
+        "(D-269). Sonnet 5.5 is read over OpenRouter's sync API with "
+        "between_tools, BYOK, since the Batch API refuses between_tools; D-260's "
+        "native fallback is dropped (D-280; owner: '同步＋between_tools，pilot 驗證 "
+        "(Recommended)'). Written 2026-10-31, before any S2 data."
     ),
     replicates=5,
     reference_price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
@@ -216,13 +218,15 @@ PREREGISTRATION_S2 = ReplayStagePreRegistration(
 |---|---|---|---|---|
 | deepseek (reference, `reference_price`, D-277) | `deepseek/deepseek-v4-flash-0731` | OpenRouter, pinned to wafer/us (D-271) | off: `reasoning: {effort: none}` | 0.0448 / 0.30, Wafer's wafer/us price (D-271) |
 | Haiku 5.5 | `anthropic/claude-haiku-5.5` | OpenRouter | off: `reasoning: {enabled: false}` | 0.10 / 0.50 |
-| Sonnet 5.5 | `anthropic/claude-sonnet-5.5` | OpenRouter (else native `claude-sonnet-5-5`) | `between_tools` | 2 / 10 |
+| Sonnet 5.5 | `anthropic/claude-sonnet-5.5` | OpenRouter, sync API (D-280) | `between_tools` | 2 / 10 |
 | Opus 5.5, descriptive (D-267) | `anthropic/claude-opus-5.5` | OpenRouter (D-269) | on, effort low | 4 / 20 (D-269) |
 
 - A reader declared `off` or `between_tools` must report `reasoning_tokens` = 0; a record that does not is a provenance
   failure (D-255, D-260). Opus at effort low is exempt.
 - On the native target, `is_byok` is null, the provider is `api.anthropic.com`, and the response must hold no
-  `thinking` or `redacted_thinking` block (D-265).
+  `thinking` or `redacted_thinking` block (D-265). No reader uses it: D-280 dropped D-260's native Sonnet fallback.
+- Sonnet 5.5 goes through OpenRouter's sync API at full list price, no batch discount (D-280); each record's `is_byok`
+  is its own reply's. The other two readers' batch rows take their batch's `is_byok` (D-279).
 - The Batch API bills half the list price. Cost per answered question is computed at the sync list price above, times
   the tokens, for every reader including deepseek (D-257), over all 5 answers of each question (D-274). The actual
   batch spend is reported separately.
@@ -317,7 +321,8 @@ readers' own noise is not known before the run: if it is well above deepseek's, 
   `replay-init --pilot` (#109). Only a pilot run takes `batch submit --limit`.
 - D-258: no mid-run cap; each submit prints a cost estimate and never refuses.
 - No prompt caching (D-256).
-- Four submitted arms: the three readers by batch, and deepseek's replicates 2 to 5 by the sync API (D-274, D-278).
+- Four submitted arms: Haiku 5.5 and Opus 5.5 by batch, Sonnet 5.5 (D-280) and deepseek's replicates 2 to 5 (D-274,
+  D-278) by the sync API.
   Each arm counts 500 records when it is complete; `score` checks replicate 1 only, so the run guide counts every replicate.
 
 ## Decisions (D-267 to D-270, D-274, D-275)

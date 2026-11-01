@@ -29,7 +29,10 @@ replay record need (``ReplayProvenance``), whatever the target:
 - OpenRouter: ``choices[0].message.content`` and ``finish_reason``; ``usage``'s
   token counts, ``usage.is_byok`` and
   ``usage.completion_tokens_details.reasoning_tokens``; the response's ``model`` and
-  ``provider``.
+  ``provider``. A batch row wraps that chat completion in ``response.body``, beside
+  its ``status_code``, and its usage reports no ``is_byok``: the batch-level
+  ``usage.is_byok`` is every row's (#137, D-279). A failed batch names why in one
+  batch-level ``error.message`` and returns no rows (``BatchResults.error``).
 - Anthropic: the text blocks of the message joined; ``stop_reason`` mapped to the
   chat-completions value (``end_turn`` → ``stop``, ``max_tokens`` → ``length``);
   ``input_tokens`` and ``output_tokens``; the message's ``model``; the endpoint host as
@@ -51,6 +54,7 @@ anything until the owner runs a submit.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -128,6 +132,19 @@ class BatchResult:
     status: ResultStatus
     output: ReaderOutput | None = None
     error: str | None = None
+
+
+class BatchResults(list[BatchResult]):
+    """A finished batch's results, with the batch-level error when it failed.
+
+    OpenRouter fails a whole batch with one ``error.message`` and no ``results``
+    (#137); ``error`` carries that message to the requests the batch returned
+    nothing for.
+    """
+
+    def __init__(self, items: Sequence[BatchResult] = (), *, error: str | None = None):
+        super().__init__(items)
+        self.error = error
 
 
 class BatchClient(Protocol):
@@ -280,6 +297,15 @@ def _openrouter_head(requests: Sequence[BatchRequest]) -> dict[str, Any]:
     return head
 
 
+def _batch_error(error: Any) -> str | None:
+    """A failed batch's own ``error.message`` (#137), as the endpoint wrote it."""
+    if error is None:
+        return None
+    if isinstance(error, dict) and isinstance(error.get("message"), str):
+        return error["message"]
+    return _error_text(error)
+
+
 def _error_text(error: Any) -> str:
     if isinstance(error, dict):
         inner = error.get("error", error)
@@ -341,10 +367,27 @@ class OpenRouterBatchClient:
         items = data.get("results") or []
         if not isinstance(items, list) or not all(isinstance(i, dict) for i in items):
             raise BatchClientError(f"OpenRouter batch {batch_id}: unreadable results")
-        return [_openrouter_result(item) for item in items]
+        usage = data.get("usage")
+        is_byok = usage.get("is_byok") if isinstance(usage, dict) else None
+        error = data.get("error")
+        return BatchResults(
+            [
+                _openrouter_result(item, is_byok if isinstance(is_byok, bool) else None)
+                for item in items
+            ],
+            error=_batch_error(error),
+        )
 
 
-def _openrouter_result(item: Mapping[str, Any]) -> BatchResult:
+def _openrouter_result(item: Mapping[str, Any], is_byok: bool | None) -> BatchResult:
+    """One row of an OpenRouter batch's ``results`` (#137).
+
+    A row is in the OpenAI batch output shape: ``{"id", "custom_id", "response":
+    {"status_code", "request_id", "body": <chat completion>}, "error"}``. A row with
+    an error, no ``response``, a non-2xx ``status_code`` or no ``body`` is
+    ``errored``. A row's usage reports no ``is_byok``; the batch's does, and it is
+    the row's (D-279).
+    """
     custom_id = str(item.get("custom_id"))
     status = item.get("status")
     if status in {"expired", "canceled", "cancelled"}:
@@ -353,15 +396,27 @@ def _openrouter_result(item: Mapping[str, Any]) -> BatchResult:
             "expired" if status == "expired" else "canceled",
             error=f"the request {status}",
         )
-    if item.get("error") is not None or not isinstance(item.get("response"), dict):
+    response = item.get("response")
+    if item.get("error") is not None or not isinstance(response, dict):
         return BatchResult(
             custom_id, "errored", error=_error_text(item.get("error") or "no response")
         )
+    code = response.get("status_code")
+    body = response.get("body")
+    if not isinstance(code, int) or not 200 <= code < 300:
+        detail = _error_text(body.get("error", body)) if isinstance(body, dict) else ""
+        return BatchResult(
+            custom_id, "errored", error=f"status_code {code!r} {detail}".strip()
+        )
+    if not isinstance(body, dict):
+        return BatchResult(custom_id, "errored", error="the response has no body")
     try:
-        output = openrouter_output(item["response"])
+        output = openrouter_output(body)
     except BatchClientError as exc:
         return BatchResult(custom_id, "unreadable", error=str(exc))
-    return BatchResult(custom_id, "succeeded", output=output)
+    return BatchResult(
+        custom_id, "succeeded", output=dataclasses.replace(output, is_byok=is_byok)
+    )
 
 
 class AnthropicBatchClient:

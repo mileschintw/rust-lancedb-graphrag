@@ -24,10 +24,15 @@ from typing import Any
 import levers_fixture as fx
 import pytest
 import replay_fixture as rf
-from test_batch import FakeBin
+from test_batch import FakeBin, openrouter_row
 
 from lancet_eval import batch, provenance, thresholds
-from lancet_eval.batch_client import BatchRequest, BatchResult, ReaderOutput
+from lancet_eval.batch_client import (
+    BatchRequest,
+    BatchResult,
+    _openrouter_result,
+    openrouter_output,
+)
 from lancet_eval.journal import RunRecord, load_records
 from lancet_eval.lever_comparison import build_lever_comparison, replicate_p
 from lancet_eval.pairing import deduplicate_by_arm
@@ -190,22 +195,21 @@ class Endpoint:
             return BatchResult(req.custom_id, "errored", error="boom")
         if deepseek:
             self.sync_calls.append(req)
-        return BatchResult(
+        row = openrouter_row(
             req.custom_id,
-            "succeeded",
-            output=ReaderOutput(
-                content=content,
-                finish_reason="stop",
-                prompt_tokens=500,
-                completion_tokens=40,
-                total_tokens=540,
-                model=body["model"],
-                provider="Wafer" if deepseek else "Anthropic",
-                is_byok=not deepseek,
-                reasoning_tokens=0,
-                content_block_types=None,
-            ),
+            content,
+            model=body["model"],
+            provider="Wafer" if deepseek else "Anthropic",
         )
+        if deepseek:
+            # A sync reply reports is_byok itself (D-278): OpenRouter credit.
+            reply = row["response"]["body"]
+            reply["usage"]["is_byok"] = False
+            return BatchResult(
+                req.custom_id, "succeeded", output=openrouter_output(reply)
+            )
+        # A batch row, read as the real client reads it (#137, D-279).
+        return _openrouter_result(row, True)
 
 
 def _prereg() -> thresholds.ReplayStagePreRegistration:
