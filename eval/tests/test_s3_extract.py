@@ -162,3 +162,36 @@ def test_fetch_writes_results_from_the_fake_batch(tmp_path: Path) -> None:
     assert wp.fetch_batch(writer, fake, tmp_path, echo=lambda _: None)
     results = wp.read_results(tmp_path / "haiku-5.5.results.jsonl")
     assert sorted(results) == ["tw-0000", "tw-0001", "tw-0002"]
+
+
+def test_a_missing_reasoning_count_is_counted_not_subtracted() -> None:
+    chunks = s3.passage_chunks(PASSAGES[:2])
+    results = {
+        "tw-0000": _record("tw-0000", 600, 100, reasoning_tokens=-1),
+        "tw-0001": _record("tw-0001", 600, 100, reasoning_tokens=5),
+    }
+    summary = s3.summarise(s3.writers()["sonnet-5.5"], chunks, results)
+    assert summary["reasoning_tokens"] == 5
+    assert summary["reasoning_missing"] == 1
+
+
+def test_a_refetch_keeps_earlier_succeeded_answers(tmp_path: Path) -> None:
+    path = tmp_path / "opus-5.5.results.jsonl"
+    good = _record("tw-0000", 600, 100)
+    path.write_text(json.dumps(good) + "\n", encoding="utf-8")
+    before = wp.read_results(path)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"custom_id": "tw-0000", "status": "expired"}) + "\n")
+    assert s3.keep_succeeded(path, before) == 1
+    assert wp.read_results(path)["tw-0000"] == good
+    assert s3.keep_succeeded(path, wp.read_results(path)) == 0
+
+
+def test_pending_skips_the_submitted_parts(tmp_path: Path) -> None:
+    wp.write_chunks(tmp_path, s3.passage_chunks(PASSAGES))
+    writer = s3.writers()["opus-5.5"]
+    assert len(s3._pending(tmp_path, writer)) == 3
+    (tmp_path / "opus-5.5.batch.json").write_text(
+        json.dumps({"batches": [{"requests": 2}]}), encoding="utf-8"
+    )
+    assert [c.custom_id for c in s3._pending(tmp_path, writer)] == ["tw-0002"]

@@ -175,10 +175,32 @@ def summarise(
         ),
         "prompt_tokens": prompt,
         "completion_tokens": completion,
-        "reasoning_tokens": sum(r.get("reasoning_tokens") or 0 for r in ok),
+        # batch_client writes -1 when OpenRouter leaves the count out.
+        "reasoning_tokens": sum(max(r.get("reasoning_tokens") or 0, 0) for r in ok),
+        "reasoning_missing": sum((r.get("reasoning_tokens") or 0) < 0 for r in ok),
         "usd": round(wp.usd(writer, prompt, completion), 4),
         "routing_breaks": [p for r in done if (p := wp.routing_problem(writer, r))],
     }
+
+
+def keep_succeeded(path: Path, before: Mapping[str, Mapping[str, Any]]) -> int:
+    """Restores each answer that succeeded before a re-fetch and does not now.
+
+    ``fetch_batch`` re-reads every submitted batch and appends all of it, and the latest
+    line per request wins; a staged writer's earlier batch fetched again after its
+    results expired would replace good answers with errors.
+
+    Returns:
+        How many earlier answers were appended again.
+    """
+    now = wp.read_results(path)
+    lost = [
+        r
+        for cid, r in before.items()
+        if r["status"] == "succeeded" and now.get(cid, {}).get("status") != "succeeded"
+    ]
+    wp._append(path, lost)
+    return len(lost)
 
 
 # ---- command line ----------------------------------------------------------------
@@ -283,7 +305,13 @@ def fetch(writer: str, out: Path = DEFAULT_OUT) -> None:
     client = batch_client.OpenRouterBatchClient(
         os.environ.get("OPENROUTER_API_KEY", "")
     )
-    wp.fetch_batch(w, client, _out(out), echo=typer.echo)
+    out = _out(out)
+    path = out / f"{w.name}.results.jsonl"
+    before = wp.read_results(path)
+    if wp.fetch_batch(w, client, out, echo=typer.echo):
+        kept = keep_succeeded(path, before)
+        if kept:
+            typer.echo(f"{w.name}: kept {kept} earlier succeeded answer(s)")
 
 
 @app.command()
