@@ -126,6 +126,70 @@
 
 - **更新**：native 探測取消。owner 選了「同步＋between_tools，pilot 驗證 (Recommended)」（D-280）：Sonnet 改走 OpenRouter BYOK 的 sync `/chat/completions`，保留 `between_tools`，由 lane 137 實作。重做 pilot 時，Sonnet 必須是 `reasoning_tokens` 0 而且沒有 thinking block，否則停下來詢問。Sonnet 的送出方式依 lane 137 更新後的 RUN-S2 進行。
 
+## 重做 pilot（GO #run-s2，main `ad8ed74f`，PR #140 已合併，D-279、D-280；2026-10-31 晚間至 11-01）
+
+- 刪掉舊的 `<PILOT_RUN>`，然後 `git pull`：main 已經在 `ad8ed74f`，工作樹乾淨。
+- 步驟 1 的片段：重新貼上，檢查結果 `22 passed, 1 skipped in 2.38s`。Sonnet 列是 `target="openrouter"`、`thinking="between_tools"`。
+- 2.1：`Carried 100 record(s) and 100 export row(s)`；計數為 `small/hybrid+rerank+metadata success 100`。
+- 2.2 各 arm 印出的估計：
+
+| arm | 送出方式 | ID | 印出的估計 | 印出的上限 |
+|---|---|---|---|---|
+| Haiku 5.5 | OpenRouter batch | `batch-1793515955-Jz1nthknguQCbIye7uPG` | about $0.0051 | $0.0159 |
+| Sonnet 5.5 | OpenRouter sync，BYOK（D-280） | `sync-small_hybrid_rerank_metadata_sonnet_5_5-1-1793515959` | about $0.2051（1.0 倍牌價） | $0.6356 |
+| Opus 5.5 | OpenRouter batch | `batch-1793516083-Yo9KpwRB2Trb4hh06pvg` | about $0.2051 | $0.6356 |
+| deepseek r2-r5 | sync | `sync-small_hybrid_rerank_metadata-1-1793516085` | about $0.0042 | $0.0145 |
+
+  Routing 行：Sonnet `0 of 25`、deepseek `0 of 20`。fetch（00:05）印出 Haiku `0 of 25`、Opus `0 of 25`，`Journalled 50 success and 0 error record(s); 0 batch(es) still pending`。四個 arm 印出上限的合計是 $1.30，低於 $1.50，所以沒有觸發停止條件。
+
+- 計數：`small/hybrid+rerank+metadata success 120`（100 筆搬入加 20 筆新的）；`@haiku-5.5 success 25`、`@opus-5.5 success 25`、`@sonnet-5.5 success 25`；沒有任何 `error` 行。
+- 2.4（依相同的值彙總）：
+
+```
+20 small/hybrid+rerank+metadata success deepseek/deepseek-v4-flash-0731 Wafer False 0 None
+25 small/hybrid+rerank+metadata@haiku-5.5 success anthropic/claude-haiku-5.5 Anthropic True 0 None
+25 small/hybrid+rerank+metadata@opus-5.5 success anthropic/claude-opus-5.5 Anthropic True 0 None
+25 small/hybrid+rerank+metadata@sonnet-5.5 success anthropic/claude-sonnet-5.5 Anthropic True 0 None
+```
+
+- 2.5：`0 replay clause failure(s)`。
+
+### 步驟 3 表格（重做 pilot）：每一列都通過
+
+| 欄位 | Haiku 5.5 | Sonnet 5.5（OpenRouter sync，D-280） | Opus 5.5 | deepseek r2-r5 |
+|---|---|---|---|---|
+| success | 25/25 | 25/25 | 25/25 | 20/20 |
+| model | `anthropic/claude-haiku-5.5` ✓ | `anthropic/claude-sonnet-5.5` ✓ | `anthropic/claude-opus-5.5` ✓ | `deepseek/deepseek-v4-flash-0731` ✓ |
+| provider | `Anthropic` ✓ | `Anthropic` ✓ | `Anthropic` ✓ | `Wafer` ✓ |
+| `is_byok` | `True` ✓（batch 層，D-279；batch usage `is_byok: true`） | `True` ✓（逐筆） | `True` ✓（batch 層） | `False` ✓ |
+| `reasoning_tokens` | 0 ✓ | **0 ✓**，content block 為 None（沒有 thinking block） | 0（effort low；豁免） | 0 ✓ |
+| #108 strict schema | 接受 | 接受 | 接受 | 接受 |
+| Sonnet `between_tools` | – | 走 sync 時通過，沒有思考（D-280 成立） | – | – |
+
+**判讀**：步驟 3 的每個條件都成立。#108 對三個 reader 都已回答（schema 被接受）。Sonnet 維持 OpenRouter sync，保留 `between_tools`（D-280）。
+
+### 實際花費（重做 pilot）
+
+- Haiku：upstream $0.008409（batch usage；BYOK，OpenRouter `cost` 0）。
+- Opus：upstream $0.32833（同上）。
+- Sonnet：依 journal 的 token 以 sync 牌價計算，114,670 in／11,892 out，約 $0.3483（BYOK，Claude credit）。
+- deepseek：49,436 in／6,027 out，以 Wafer 價格計算約 $0.0040（OpenRouter credit）。
+- **重做合計約 $0.689**（Claude credit 約 $0.685，OpenRouter 約 $0.004），在 $1.50 上限之內。
+- 加上第一次 pilot（約 $0.338 加不到 $0.015），**兩次 pilot 合計約 $1.03**。
+
+### 對步驟 6 的影響
+
+- Sonnet 走 sync，沒有 batch 折扣：每筆約 $0.0139，500 筆約 **$7.0**，高於指南原本 batch 估計的 $2.50。上限依 D-280 調整後的 RUN-S2 為準。
+- Opus 每筆約 $0.0131，500 筆約 $6.6。
+- Haiku 500 筆約 $0.17。
+- 每筆 prompt 約 4,600 tokens，高於指南假設的 3,500。
+
+### 收尾
+
+- 已依步驟 3 刪除 `<PILOT_RUN>`。
+- 步驟 1 的改動仍留在 main checkout 工作樹（` M thresholds.py`、` M multihop_rag_s2_dev.toml`），步驟 4 會用到。如果需要先 pull，請告訴我，我會還原。
+- 停在步驟 4 之前，狀態 blocked。
+
 ## 給 coordinator 的問題
 
 1. **#138 要 owner 給 D-ID**，選項見 issue：(1) Sonnet 改走 sync API 並保留 `between_tools`（約 $5，上限約 $18.9，要寫程式）；(2) Sonnet 走 batch，thinking 改 off（只改常數）；(3) Sonnet 走 batch，thinking 改 on 加 effort（只改常數）。常數還沒 commit，D-73 不受影響。
