@@ -115,6 +115,11 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #156 | before S3 writer scoring | — | none | deepseek extraction whitespace runaways to the 16,384 cap (1.3% of chunks, 48% of deepseek output tokens); pick a handling rule (cap + early stop, or exclude per writer) before #145/#148 compare writers (opened from #117's report) | free; design question for the morning |
 | #163 | now (lane spare-1) | — | none | S3 held-out reader grid on 2Wiki: blinding D-ID, run-plan freeze, staged Claude submits, no scoring | limited: Claude credit expires 2026-11-03 |
 | #164 | before S3 scoring | — | none | `score` always loads the v1.0 document map, so it refuses full-MHR and 2Wiki journals (#149 stores, #163 S3, #146); shares `score.py` with paused #128 (opened by lane 146) | free; needed before S3's analysis-plan scoring |
+| #165 | free, any time | — | none | recompute always-Yes baseline on MHR yes/no (lit-check gap a) | free |
+| #166 | free, any time | — | none | how MHR's official `qa_evaluate.py` scores insufficient-info answers (gap b) | free |
+| #167 | before S3 analysis-plan freeze | — | none | graph results by query type, temporal especially; name it in S3's analysis plan (gap c) | free |
+| #168 | free, any time | — | none | exact CI for 2Wiki Opus +14 (gap d) | free |
+| #169 | free, any time | — | none | precision of Haiku's extra relations vs deepseek (gap e; OpenRouter judge only) | free |
 | #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
 | #130 | 2 | — | none | `score.py` › external `generation_model` provenance clause reads today's config provider order; S0 run of record no longer re-scores (opened by lane 123). Lane 123 owns `score.py` now, so after lane 123 merges. Needed before Confirm re-scores S0 | free; propose after lane 123 |
@@ -248,3 +253,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 13:54 -0800: owner: "Allow 8 shards" — lane 145 reruns the rest of deepseek's sync extraction as 8 parallel shards; deviation from D-290 request_rule recorded in report/PR, no new constant.
 - 2026-11-01 14:06 -0800: owner "Pause #146": lane 146 stopped (history), spare-2 parked with #128 paused; #163 continues.
 - 2026-11-01 14:08 -0800: lane 145 deepseek shards 1,919/6,119, 16 runaways (0.8%), $0.36 so far, ~$1.13 projected.
+- 2026-11-01 14:26 -0800: owner "Do both": lit-check moved to reports/lit-check/ (records only); opened #165-#169 (verification gaps a-e).
