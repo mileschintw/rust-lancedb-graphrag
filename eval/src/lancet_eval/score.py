@@ -39,6 +39,7 @@ from lancet_eval.context_export import (
 )
 from lancet_eval.corpus import (
     NO_JUDGE_PREREGISTRATION_TOKENS,
+    CorpusError,
     load_corpus_config,
     load_sample_questions,
     sample_questions,
@@ -272,6 +273,18 @@ def require_external_provenance(
             f"D-247: external arm provenance failed {len(failures)} time(s) (zero "
             f"tolerance): {listed}{tail}"
         )
+
+
+def _refuse_blinded(corpus_name: str) -> None:
+    """D-291: refuses a run whose corpus reads a column of a reader-grid run plan."""
+    try:
+        config = load_corpus_config(corpus_name)
+    except CorpusError:
+        return
+    try:
+        preregistration.require_unblinded(config)
+    except preregistration.PreregistrationError as exc:
+        raise ScoreError(str(exc)) from exc
 
 
 def _p4_reference(config: Any) -> str:
@@ -2194,6 +2207,7 @@ def score_run(
         raise ScoreError(f"D-249: refusing to score: {exc}") from exc
 
     corpus_name = header_corpus or records[0].corpus
+    _refuse_blinded(corpus_name)
 
     # 1. Structural Guard: refuse mixed index_generation within one arm (D-247: an
     # external arm and a Lancet arm may share a journal, each with its own index).

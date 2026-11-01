@@ -890,6 +890,46 @@ def replay_init_command(
     )
 
 
+@app.command("closed-book-init")
+def closed_book_init_command(
+    run: Annotated[
+        Path,
+        typer.Option("--run", help="The new closed-book run directory"),
+    ],
+    corpus: Annotated[
+        str,
+        typer.Option(
+            "--corpus",
+            help="The closed-book column's corpus (a run-plan column, D-291)",
+        ),
+    ],
+) -> None:
+    """Start a closed-book column's run: one model-only row per question (D-291).
+
+    Writes an export row with no evidence for every corpus question, packed by the
+    engine bin with model-only answers allowed, and a journal header carrying their
+    hashes; no record. `batch submit` then sends deepseek's replicates 1 to K and each
+    reader's answers. Refuses a corpus that names no run-plan column or whose column is
+    not closed-book, and a failed D-73 or split gate. No paid call.
+    """
+    from rich.markup import escape
+
+    from lancet_eval.closed_book import closed_book_init
+    from lancet_eval.replay import ReplayError
+
+    try:
+        result = closed_book_init(run=run, corpus=corpus)
+    except ReplayError as exc:
+        console.print(
+            f"[bold red]Closed-book init refused:[/bold red] {escape(str(exc))}"
+        )
+        raise typer.Exit(code=1) from exc
+    console.print(
+        f"[green]Wrote {result.rows} closed-book export row(s) and the header of "
+        f"{result.journal_path}[/green]"
+    )
+
+
 batch_app = typer.Typer(
     name="batch",
     help="S2 batch arms over a batch API: submit and fetch (D-254, D-274).",

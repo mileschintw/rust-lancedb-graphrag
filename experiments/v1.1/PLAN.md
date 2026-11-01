@@ -575,6 +575,31 @@ the owner's budget answer.
   per writer beside the Claude writers' counts. The addendum constant `PREREGISTRATION_S3_WRITERS_SYNC`
   (`thresholds.py`) freezes this in its own commit; `PREREGISTRATION_S3_WRITERS` is unchanged. At D-277's Wafer price
   this costs about $1 of OpenRouter credit.
+- **D-291 S3's held-out reader grid: freeze the run plan first, score once after the analysis plan** (owner:
+  "新規定我同意"; "可以，就這樣，先不說死不跑，但先確認重要的一定要跑"; confirmed "Confirm and start", 2026-11-01;
+  #163). S3 reads 2Wiki's 900 D-243 held-out questions (its one held-out read, D-287) with four readers (deepseek,
+  Haiku 5.5, Sonnet 5.5, Opus 5.5) over six context columns (closed-book, hybrid, and graph with each of the four
+  writers' graphs), before the Claude credit expires on 2026-11-03. The work is split in two freezes:
+  1. **The run plan first.** `RUN_PLAN_S3_HELDOUT` (`thresholds.py`, type `ReaderGridRunPlan`), frozen in its own
+     commit before any cell runs, fixes the 24 cells, each reader's K, transport and thinking, and the drive's
+     guards, and no analysis. Every cell is descriptive until the analysis plan names it. Must-run cells (`core`):
+     every deepseek, Haiku and Opus cell, and Sonnet's closed-book, hybrid and graph-deepseek cells; Sonnet's other
+     three graph cells are `optional`, run if new credit arrives. Nothing is ruled out. Cells then run in stages,
+     and a partial cell is allowed.
+  2. **Blinding.** No held-out run of the plan is scored or read for its answers (no `score`, `compare-levers`,
+     readout or evidence split, and no reading of gold answers) until a separate analysis constant (primary
+     hypotheses, decisional metric, Holm family) is frozen in its own commit. Then every run is scored once. Run
+     directories and spend are recorded before then.
+  The harness enforces both. A corpus reads one column of the plan (`[preregistration] column`), and
+  `preregistration.resolve` refuses a run plan without one, so `score` and `compare-levers` refuse its runs.
+  `replay-init` replays a held-out corpus only when it names such a column (amending its D-237 dev-only gate for
+  this plan alone). The closed-book column asks the question with no evidence through the engine's own model-only
+  prompt (`allow_model_only_answers` on for those rows only). It has no drive: `lancet-eval closed-book-init`
+  writes its rows, and deepseek's replicates 1 to K go through the sync API. Readers keep each run's transports and
+  thinking per D-289 and the owner's rule: Claude cells on OpenRouter's Batch API over BYOK (Sonnet included, so
+  not D-280's `between_tools`), Haiku thinking off, Sonnet and Opus on at effort low. deepseek answers its first
+  replicate in the engine drive and the second through the sync API (D-278). K per D-283: deepseek and Haiku 2,
+  Sonnet and Opus 1. Run guide: [RUN-S3-HELDOUT.md](RUN-S3-HELDOUT.md).
 
 ## Model access
 

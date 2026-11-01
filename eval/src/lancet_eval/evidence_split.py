@@ -29,6 +29,7 @@ from lancet_eval.corpus import GoldQuestion, load_corpus
 from lancet_eval.journal import RunRecord, load_records
 from lancet_eval.metrics import answer_usable, gold_contained, is_abstention
 from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.preregistration import PreregistrationError, require_unblinded
 
 #: The reader of a base (carried) arm: the engine's generation model.
 BASE_READER = "deepseek"
@@ -191,8 +192,13 @@ def main(argv: Sequence[str] | None = None) -> None:
         "AFTER_ARM in that context export",
     )
     args = parser.parse_args(argv)
+    config = load_corpus(args.corpus)
+    try:
+        require_unblinded(config)
+    except PreregistrationError as exc:
+        raise SystemExit(str(exc)) from exc
     records, _ = deduplicate_by_arm(load_records(args.run / "journal.jsonl"))
-    questions = {q.question_id: q for q in load_corpus(args.corpus).questions}
+    questions = {q.question_id: q for q in config.questions}
     only = None
     if args.moved:
         export, before, after = args.moved

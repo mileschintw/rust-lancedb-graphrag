@@ -101,6 +101,7 @@ from lancet_eval.arms import (
     arm_reader,
     arm_slug,
     canonical_arm,
+    is_closed_book_arm,
     is_reader_arm,
     reader_base_arm,
 )
@@ -276,7 +277,7 @@ def _load_run(run: Path) -> _Run:
     except CorpusError as exc:
         raise BatchError(f"the run's corpus {corpus!r} does not load: {exc}") from exc
     try:
-        prereg = preregistration.resolve(config.preregistration_token)
+        prereg = preregistration.resolve_corpus(config)
         readers = preregistration.readers_of(prereg)
     except preregistration.PreregistrationError as exc:
         raise BatchError(f"the S2 pre-registration: {exc}") from exc
@@ -327,7 +328,7 @@ def _batch_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration | None]:
         arm = canonical_arm(label)
     except ValueError as exc:
         raise BatchError(str(exc)) from exc
-    if run.replicates > 1 and arm == run.source_arm:
+    if arm == run.source_arm and (run.replicates > 1 or is_closed_book_arm(arm)):
         return arm, None
     return _reader_arm(arm, run)
 
@@ -369,12 +370,17 @@ def _run_bin(
     rows: Sequence[ContextExportRow],
     levers: Sequence[str],
     results: Sequence[dict[str, Any]] | None = None,
+    *,
+    model_only: bool = False,
 ) -> list[dict[str, Any]]:
-    """Runs the bin; a bin failure is a refusal (``BatchError``)."""
+    """Runs the bin; a bin failure is a refusal (``BatchError``). ``model_only`` is
+    passed to the runner only when set (closed-book rows, D-291)."""
     args: list[Any] = [mode, rows, list(levers)]
     if results is not None:
         args.append(results)
     try:
+        if model_only:
+            return runner(*args, model_only=True)
         return runner(*args)
     except parity.PromptParityError as exc:
         raise BatchError(str(exc)) from exc
@@ -390,6 +396,29 @@ def _latest(records: Iterable[RunRecord], arm: str) -> dict[str, RunRecord]:
     return latest
 
 
+def _base_records(run: _Run, base_arm: str) -> dict[str, RunRecord]:
+    """The record each question's requests replay: ``_latest`` of the base arm.
+
+    The closed-book arm (D-291) has no drive and so no carried record. Each of its
+    export rows (``closed_book.closed_book_init``) stands in as a success with the
+    row's correlation ID, never journalled: every question is replayed, and deepseek's
+    replicates 1 to K are sent like a reader's.
+    """
+    if not is_closed_book_arm(base_arm):
+        return _latest(run.records, base_arm)
+    return {
+        qid: RunRecord(
+            corpus=run.corpus,
+            question_id=qid,
+            graph_arm=base_arm,
+            outcome="success",
+            correlation_id=row.correlation_id,
+        )
+        for (qid, arm), row in _export_rows(run.journal.parent).items()
+        if arm == base_arm
+    }
+
+
 def _latest_units(records: Iterable[RunRecord], arm: str) -> dict[Unit, RunRecord]:
     """The latest record of each question and replicate under `arm`."""
     latest: dict[Unit, RunRecord] = {}
@@ -402,10 +431,11 @@ def _latest_units(records: Iterable[RunRecord], arm: str) -> dict[Unit, RunRecor
 def _replicates_of(run: _Run, arm: str) -> range:
     """The replicates a submit of `arm` sends: 1 to K, or 2 to K for the carried arm.
 
-    A reader with its own K (#149) sends 1 to that K.
+    A reader with its own K (#149) sends 1 to that K. The closed-book arm (D-291)
+    carries no answer, so its deepseek replicates are 1 to K.
     """
     if not is_reader_arm(arm):
-        return range(2, run.replicates + 1)
+        return range(1 if is_closed_book_arm(arm) else 2, run.replicates + 1)
     reader = arm.rpartition("@")[2]
     return range(1, run.reader_replicates.get(reader, run.replicates) + 1)
 
@@ -567,6 +597,8 @@ def _pack(
     """One packed request per question; ``declaration`` None packs deepseek's."""
     rows = _export_rows(run.journal.parent)
     carried = source_row_hashes(run.header)
+    # D-291: a closed-book row names no lever and packs the model-only prompt.
+    closed_book = is_closed_book_arm(base_arm)
     problems: list[str] = []
     groups: dict[tuple[str, ...], list[ContextExportRow]] = {}
     for qid in qids:
@@ -574,17 +606,20 @@ def _pack(
         snapshot = base[qid].snapshot
         if row is None:
             problems.append(f"{qid}: no {base_arm!r} export row")
-        elif snapshot is None:
+        elif snapshot is None and not closed_book:
             problems.append(f"{qid}: the base record has no snapshot to read levers")
         elif export_row_sha256(row) != carried.get((qid, base_arm)):
             problems.append(f"{qid}: the base row differs from the carried row's hash")
         else:
-            groups.setdefault(tuple(snapshot.levers), []).append(row)
+            levers = () if snapshot is None else tuple(snapshot.levers)
+            groups.setdefault(levers, []).append(row)
     packed: dict[str, _Packed] = {}
     for levers, group in groups.items():
         lines = {
             (str(line.get("question_id")), str(line.get("arm"))): line
-            for line in _run_bin(runner, "pack", group, levers)
+            for line in _run_bin(
+                runner, "pack", group, levers, model_only=closed_book
+            )
         }
         for row in group:
             qid = row.question_id
@@ -739,7 +774,8 @@ def cost_estimate(
     expected = bound = 0.0
     for item in packed:
         meta = base[item.qid].workflow_meta
-        prompt = meta.prompt_tokens if meta else 0
+        # A closed-book stand-in (D-291) has no usage: about 4 characters a token.
+        prompt = meta.prompt_tokens if meta else len(item.request.body_json) // 4
         completion = meta.completion_tokens if meta else 0
         body = item.request.body
         max_out = int(body.get("max_completion_tokens", body.get("max_tokens", 0)))
@@ -787,7 +823,7 @@ def submit(
             f"{label} has a pending batch: {'; '.join(pending)}; fetch it first"
         )
     base_arm = reader_base_arm(label)
-    base = _latest(state.records, base_arm)
+    base = _base_records(state, base_arm)
     replicates = _replicates_of(state, label)
     held = {
         unit: rec
@@ -1114,7 +1150,7 @@ def _journal_batch(
         if r.graph_arm == label and r.session_id == batch_id
     }
     base_arm = reader_base_arm(label)
-    base = _latest(state.records, base_arm)
+    base = _base_records(state, base_arm)
     rows = _export_rows(run_dir)
     unknown = [
         cid
@@ -1184,6 +1220,7 @@ def _journal_batch(
                 reader_rows,
                 levers,
                 [render_line(unit_of[cid][0], label, out) for cid, out in group],
+                model_only=is_closed_book_arm(base_arm),
             )
             if line.get("arm") == label
         }

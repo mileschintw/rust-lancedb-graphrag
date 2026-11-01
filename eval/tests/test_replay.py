@@ -798,3 +798,80 @@ def test_a_stage_constant_with_an_undeclared_or_bad_reader_fails_closed(
     monkeypatch.setattr(thresholds, "S2_TEST_TOKEN", prereg, raising=False)
     with pytest.raises(preregistration.PreregistrationError, match=shown):
         preregistration.resolve("S2_TEST_TOKEN")
+
+
+# ---- D-291: a reader-grid run plan replays held-out ---------------------------------
+
+
+def _grid_plan() -> thresholds.ReaderGridRunPlan:
+    return thresholds.ReaderGridRunPlan(
+        benchmark="levers",
+        split_file="eval/corpora/levers/split.json",
+        split_sha256="a" * 64,
+        population="held-out",
+        question_count=15,
+        columns=(("c", thresholds.GridColumn(source_arm=rf.BASE)),),
+        readers=((rf.READER, rf.HAIKU),),
+        replicates=1,
+        reader_replicates=(),
+        reference_price=thresholds.ReaderPrice(0.0448, 0.30),
+        cells=(("c", "deepseek", "core"), ("c", rf.READER, "core")),
+        transports=(
+            ("deepseek", "engine_drive_then_openrouter_sync"),
+            (rf.READER, "openrouter_batch"),
+        ),
+        rerank_degrade_tripwire_rate=0.20,
+        rerank_degrade_tripwire_min_calls=50,
+        rerank_consecutive_degrade_halt=5,
+        blinding_rule="no score",
+        order_rule="any",
+        report_rule="run dirs",
+        provenance="test",
+    )
+
+
+def _grid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, column: bool = True):  # type: ignore[no-untyped-def]
+    """A held-out S2 corpus under a run plan, and a source run driven on it."""
+    qs = fx.make_questions(10, 5)
+    root = tmp_path / "repo"
+    rf.write_corpora(root, qs, s1_role="heldout", s2_role="heldout")
+    toml = root / "eval" / "corpora" / f"{fx.CORPUS}.toml"
+    if column:
+        toml.write_text(
+            toml.read_text(encoding="utf-8") + 'column = "c"\n', encoding="utf-8"
+        )
+    monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
+    monkeypatch.setattr(thresholds, fx.TOKEN, _grid_plan(), raising=False)
+    s1 = tmp_path / "s1"
+    rf.write_s1_run(s1, qs, arms=(rf.BASE,), corpus=fx.CORPUS)
+    return s1, qs
+
+
+def test_replay_init_carries_a_heldout_column_of_a_run_plan(
+    tmp_path, monkeypatch
+) -> None:
+    s1, qs = _grid(tmp_path, monkeypatch)
+    result = _init(s1, tmp_path / "s2")
+    assert result.records == len(qs.g_ids) + len(qs.nulls)
+    header = read_journal_header(tmp_path / "s2" / "journal.jsonl")
+    assert header[REPLAY_SOURCE_KEY]["arms"] == [rf.BASE]
+
+
+def test_a_heldout_corpus_without_a_column_is_still_refused(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _ = _grid(tmp_path, monkeypatch, column=False)
+    with pytest.raises(ReplayError, match="D-237"):
+        _init(s1, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_a_run_plan_replays_only_a_source_run_of_its_own_corpus(
+    tmp_path, monkeypatch
+) -> None:
+    s1, qs = _grid(tmp_path, monkeypatch)
+    other = tmp_path / "s1-other"
+    rf.write_s1_run(other, qs, arms=(rf.BASE,))
+    with pytest.raises(ReplayError, match="D-291"):
+        _init(other, tmp_path / "s2")
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()

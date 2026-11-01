@@ -33,6 +33,7 @@ from lancet_eval.evidence_split import BASE_READER, reader_of
 from lancet_eval.journal import RunRecord, load_records
 from lancet_eval.metrics import answer_usable, is_abstention
 from lancet_eval.pairing import deduplicate_by_arm
+from lancet_eval.preregistration import PreregistrationError, require_unblinded
 from lancet_eval.stats import bootstrap_mean_ci
 
 
@@ -186,8 +187,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--corpus", required=True)
     args = parser.parse_args(argv)
+    config = load_corpus(args.corpus)
+    try:
+        require_unblinded(config)
+    except PreregistrationError as exc:
+        raise SystemExit(str(exc)) from exc
     records, _ = deduplicate_by_arm(load_records(args.run / "journal.jsonl"))
-    questions = {q.question_id: q for q in load_corpus(args.corpus).questions}
+    questions = {q.question_id: q for q in config.questions}
     print(render_markdown(readout(records, questions)))
 
 

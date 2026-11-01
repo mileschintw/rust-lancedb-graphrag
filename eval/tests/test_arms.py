@@ -709,3 +709,44 @@ def test_judged_report_arms_keep_the_four_06_3_5_rows_for_a_legacy_corpus() -> N
         "small/hybrid",
         "merged/hybrid",
     ]
+
+
+def test_the_closed_book_arm_is_outside_the_engine_registry_and_takes_a_store() -> None:
+    """D-291: the closed-book column reads no context; only a store-prefixed label."""
+    from lancet_eval.arms import (
+        CLOSED_BOOK_ARMS,
+        arm_store,
+        in_registry_order,
+        is_closed_book_arm,
+        is_external_arm,
+    )
+
+    assert "closed-book" not in ARM_REGISTRY
+    spec = resolve_arm("twowiki/closed-book")
+    assert spec is CLOSED_BOOK_ARMS["closed-book"]
+    assert spec.kind == "closed_book"
+    assert spec.retrieval_mode == "none"
+    assert spec.levers == ()
+    assert canonical_arm("twowiki/closed-book") == "twowiki/closed-book"
+    assert canonical_arm("twowiki/closed-book@opus-5.5") == "twowiki/closed-book@opus-5.5"
+    assert arm_store("twowiki/closed-book@haiku-5.5") == "eval-2wiki"
+    assert is_closed_book_arm("twowiki/closed-book")
+    assert is_closed_book_arm("twowiki/closed-book@sonnet-5.5")
+    assert not is_closed_book_arm("twowiki/hybrid+rerank+metadata")
+    assert not is_closed_book_arm("no-such-arm")
+    assert not is_external_arm("twowiki/closed-book")
+    assert arm_slug("twowiki/closed-book") == "twowiki_closed_book"
+    assert in_registry_order([
+        "twowiki/closed-book",
+        "twowiki/hybrid+rerank+metadata",
+        "twowiki/closed-book@haiku-5.5",
+    ]) == [
+        "twowiki/hybrid+rerank+metadata",
+        "twowiki/closed-book",
+        "twowiki/closed-book@haiku-5.5",
+    ]
+
+
+def test_the_closed_book_arm_has_no_gateway_request() -> None:
+    with pytest.raises(ValueError, match="closed-book"):
+        request_fields("twowiki/closed-book")

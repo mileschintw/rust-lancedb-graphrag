@@ -24,6 +24,7 @@ fails parity too, reported as a differing prompt.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
@@ -85,16 +86,26 @@ def write_rows(rows: Sequence[ContextExportRow], path: Path) -> None:
             f.write(json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n")
 
 
+#: D-291: the engine setting that lets an empty-evidence row pack and render with the
+#: engine's model-only prompt (`[engine.workflow] allow_model_only_answers`).
+MODEL_ONLY_ENV = "LANCET_ENGINE__WORKFLOW__ALLOW_MODEL_ONLY_ANSWERS"
+
+
 def run_bin(
     mode: str,
     rows: Sequence[ContextExportRow],
     levers: Sequence[str],
     results: Sequence[dict[str, Any]] | None = None,
+    *,
+    model_only: bool = False,
 ) -> list[dict[str, Any]]:
     """Runs `generate_from_context <mode>` over `rows`; returns its output lines.
 
     `results` is the `render` mode's results file, one line per reader output
-    (`batch.render_line`); it is passed as `--results` only when given.
+    (`batch.render_line`); it is passed as `--results` only when given. `model_only`
+    (D-291, closed-book rows only) runs the bin with model-only answers allowed, so a
+    row with no evidence packs the engine's model-only prompt; every other call runs
+    under the configured setting.
 
     Raises `PromptParityError` when the bin exits non-zero, times out or writes a line
     that is not JSON.
@@ -117,10 +128,12 @@ def run_bin(
                     json.dumps(line, ensure_ascii=False) + "\n" for line in results
                 )
             cmd += ["--results", str(results_path)]
+        env = {**os.environ, MODEL_ONLY_ENV: "true"} if model_only else None
         try:
             res = subprocess.run(
                 cmd,
                 cwd=repo_root(),
+                env=env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
