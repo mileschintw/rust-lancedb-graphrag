@@ -196,6 +196,7 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
     4. Timing: the current Claude credit (expires 2026-11-03) covers S2 only; S3 uses the later credit. This grid is a main topic for the S3 grill round.
 
 ## Deadlines
+- **Next Claude credit ($200, expected next month) — standing ruling, relayed 2026-11-01 14:08 -0800 from side session local_44b9fe70 (owner: "可以，就這樣做"; awaiting confirmation here):** #146 stays paused as the credit fallback; no #146 prep (store, #128, LlamaIndex, run plan) until the credit has arrived and the owner picks #146. When it arrives, propose in this order: (1) if agentic retrieval / graph community summaries are built or in progress, spend first on evaluating them (multi-turn Claude calls); (2) if not started, start #146 and run agentic work in parallel; (3) leftover → S3's three optional Sonnet cells. Main line now: finish #163 (must-run cells), one-page results summary, then agentic retrieval / community summaries with a light dev-set eval.
 
 - **Claude API credit expires 2026-11-03.** All S2 paid runs must be submitted by the morning of 2026-11-02, because a batch can take up to 24 h. This came from the user's forked side session local_244b32c4-288f-4944-bd22-5a71f3d65265 (2026-10-30). It is relayed and not yet confirmed by the user here. Suggested order: #50 now → #53 the moment #50 merges (target: merged Sunday 2026-11-01). In parallel, the user runs the S1 store build, the S0 LlamaIndex live checks, and S0/S1 in the main checkout (paid; ask with a cost estimate). Sunday: the S2 pilot (`batch submit --limit N`); if Sonnet `between_tools` fails over OpenRouter, use the native Anthropic batch API (Q4, D-260). By Monday morning: the real S2 arms. #54 merges before the report. Critical path: #50 → #53; it takes priority over other work.
 
@@ -243,3 +244,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 13:44 -0800: PR #162 (149 run dirs) green, merged 68f0009c. Lane 145 deepseek sync running (~270/6,119, 1 runaway, ~$0.99 projected).
 - 2026-11-01 13:54 -0800: owner: "Allow 8 shards" — lane 145 reruns the rest of deepseek's sync extraction as 8 parallel shards; deviation from D-290 request_rule recorded in report/PR, no new constant.
 - 2026-11-01 14:06 -0800: owner "Pause #146": lane 146 stopped (history), spare-2 parked with #128 paused; #163 continues.
+- 2026-11-01 14:08 -0800: lane 145 deepseek shards 1,919/6,119, 16 runaways (0.8%), $0.36 so far, ~$1.13 projected.
