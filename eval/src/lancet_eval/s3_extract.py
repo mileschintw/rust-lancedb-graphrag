@@ -229,7 +229,32 @@ def _writer(name: str) -> wp.Writer:
 
 
 def _results(out: Path, name: str) -> dict[str, dict[str, Any]]:
-    return wp.read_results(out / f"{name}.results.jsonl")
+    """A writer's answers, its shard files' included; a succeeded answer wins."""
+    merged = wp.read_results(out / f"{name}.results.jsonl")
+    for path in sorted(out.glob(f"{name}.shard*.results.jsonl")):
+        for cid, record in wp.read_results(path).items():
+            if record["status"] == "succeeded" or cid not in merged:
+                merged[cid] = record
+    return merged
+
+
+def shard(
+    out: Path, writer: wp.Writer, index: int, count: int
+) -> tuple[wp.Writer, list[wp.PilotChunk]]:
+    """One of `count` disjoint parts of the passages still without a succeeded answer,
+    and the writer that records it in its own ``<writer>.shard<index>.results.jsonl``,
+    so parallel runs never share a file (owner, 2026-11-01: "Allow 8 shards").
+    """
+    if not 0 <= index < count:
+        raise wp.PilotError(f"shard {index} is not in 0..{count - 1}")
+    chunks = [c for i, c in enumerate(_unanswered(out, writer)) if i % count == index]
+    part = wp.Writer(
+        f"{writer.name}.shard{index}",
+        writer.price,
+        writer.price_factor,
+        writer.declaration,
+    )
+    return part, chunks
 
 
 def token_model(out: Path, writer: wp.Writer) -> tuple[TokenModel, str]:
@@ -326,20 +351,27 @@ def submit(
 
 
 @app.command()
-def deepseek(out: Path = DEFAULT_OUT) -> None:
+def deepseek(
+    out: Path = DEFAULT_OUT,
+    shard_index: int = typer.Option(0, "--shard", help="This run's shard."),
+    shards: int = typer.Option(1, help="Parallel runs, each with its own --shard."),
+) -> None:
     """Paid: deepseek's extraction of the unanswered passages through the sync API.
 
-    One passage at a time (D-290); each answer is journalled as it arrives, so a rerun
-    sends only the rest. Stops at the first answer whose ``is_byok`` is not false.
+    Each run posts one passage at a time (D-290); with ``--shards N`` the owner allowed
+    N such runs in parallel, each on its own share of the unanswered passages and its
+    own results file. Each answer is journalled as it arrives, so a rerun sends only
+    the rest. A run stops at the first answer whose ``is_byok`` is not false.
     """
     if TRANSPORTS[wp.DEEPSEEK] != "openrouter_sync":
         raise wp.PilotError(f"deepseek's transport is {TRANSPORTS[wp.DEEPSEEK]!r}")
     out = _out(out)
-    w = writers()[wp.DEEPSEEK]
-    _print_estimate(out, w, _unanswered(out, w))
-    wp.run_sync(
-        w, wp.read_chunks(out), batch_client.chat_client(), out, echo=typer.echo
-    )
+    base = writers()[wp.DEEPSEEK]
+    w, chunks = shard(out, base, shard_index, shards)
+    if shards == 1:
+        w = base
+    _print_estimate(out, base, chunks)
+    wp.run_sync(w, chunks, batch_client.chat_client(), out, echo=typer.echo)
 
 
 @app.command()

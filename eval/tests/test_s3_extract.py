@@ -247,7 +247,7 @@ def test_deepseek_sends_the_engine_body_once_per_unanswered_passage(
     monkeypatch.setattr(
         s3, "token_model", lambda out, w: (s3.TokenModel(100, 50, 0, 50), "test")
     )
-    s3.deepseek(tmp_path)
+    s3.deepseek(tmp_path, shard_index=0, shards=1)
     assert sent == ["tw-0001", "tw-0002"]
     summary = s3.summarise(
         s3.writers()["deepseek"],
@@ -258,3 +258,27 @@ def test_deepseek_sends_the_engine_body_once_per_unanswered_passage(
     assert summary["runaways"] == ["tw-0002"]
     assert summary["routing_breaks"] == []
     assert summary["usd"] == pytest.approx((300 * 0.0448 + 150 * 0.30) / 1e6, abs=1e-4)
+
+
+def test_shards_split_the_unanswered_passages_and_merge_back(tmp_path: Path) -> None:
+    chunks = s3.passage_chunks(PASSAGES * 3)
+    wp.write_chunks(tmp_path, chunks)
+    deepseek = s3.writers()["deepseek"]
+    wp._append(
+        tmp_path / "deepseek.results.jsonl",
+        [_record("tw-0000", 100, 50, is_byok=False)],
+    )
+    parts = [s3.shard(tmp_path, deepseek, i, 3) for i in range(3)]
+    ids = [c.custom_id for _, part in parts for c in part]
+    assert sorted(ids) == [c.custom_id for c in chunks[1:]]
+    assert [w.name for w, _ in parts] == [f"deepseek.shard{i}" for i in range(3)]
+    writer, part = parts[1]
+    wp._append(
+        tmp_path / f"{writer.name}.results.jsonl",
+        [_record(c.custom_id, 100, 50, is_byok=False) for c in part],
+    )
+    merged = s3._results(tmp_path, "deepseek")
+    assert set(merged) == {"tw-0000"} | {c.custom_id for c in part}
+    assert len(s3._unanswered(tmp_path, deepseek)) == 9 - 1 - len(part)
+    with pytest.raises(wp.PilotError, match="shard 3"):
+        s3.shard(tmp_path, deepseek, 3, 3)
