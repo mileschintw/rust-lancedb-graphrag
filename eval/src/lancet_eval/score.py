@@ -2184,6 +2184,12 @@ def score_run(
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
 
+    # D-274: every replicate has passed the replay clauses above and passes the
+    # provenance scan below; report.json reads each unit's first replicate, and the
+    # mean over a question's K answers is compare-levers' reading.
+    all_records = records
+    records = [r for r in records if r.replicate == 1]
+
     # Group records by the corpus's configured arm labels (D-101, D-120); a label that
     # cannot be attributed raises rather than being dropped.
     records_by_arm = _group_records_by_arm(records, config.arms)
@@ -2197,7 +2203,7 @@ def score_run(
         # a, b, c, d, f) means the plumbing is wrong for an unknown share of records,
         # so the report is refused, not counted as an exclusion. (e) keeps its
         # count-and-exclude rule and (g) is counted only. Legacy corpora never run this.
-        provenance_counts, failing = _provenance_scan(records)
+        provenance_counts, failing = _provenance_scan(all_records)
         if failing:
             listed = ", ".join(
                 f"{qid}/{arm}/{codes}"

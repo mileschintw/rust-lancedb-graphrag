@@ -60,6 +60,19 @@ result becomes one record under the resume key, with the base record's
 
 A fetch skips a request the journal already holds a record of from the same batch,
 then marks the manifest ``fetched``, so a re-run adds nothing.
+
+D-274 replicates: when the pre-registration declares ``replicates`` K above 1, every
+arm answers each question K times, each answer its own request and its own record
+(``RunRecord.replicate``, 1 to K), and ``custom_id`` is ``<question ID>_r<k>``. A
+reader arm submits replicates 1 to K. The carried deepseek arm already holds
+replicate 1 (S1's answer), so ``submit`` on that arm sends replicates 2 to K: the
+``pack`` body itself, unrewritten, through an OpenRouter batch. That body carries the
+engine's provider pin (D-271: one ``order`` entry, ``allow_fallbacks: false`` and a
+``max_price``), and a body without it is refused. Each such record carries a
+``replay`` block like a reader record's, which ``provenance.replay_run_failures``
+checks. A reader arm's export row is appended once per question, whatever its
+replicates; the deepseek arm's is the carried row. With K at 1 every request, manifest
+and record is as before.
 """
 
 from __future__ import annotations
@@ -103,9 +116,17 @@ from lancet_eval.journal import (
     load_records,
     read_journal_header,
 )
-from lancet_eval.measure import BATCH_PRICE_FACTOR, compute_spend
+from lancet_eval.measure import (
+    BATCH_PRICE_FACTOR,
+    GENERATION_LIST_INPUT_PRICE_PER_1M,
+    GENERATION_LIST_OUTPUT_PRICE_PER_1M,
+    compute_spend,
+    tokens_usd,
+)
+from lancet_eval.provenance import deepseek_pin_problem
 from lancet_eval.reader_request import (
     ReaderDeclaration,
+    ReaderPrice,
     ReaderRequest,
     ReaderRequestError,
     Target,
@@ -190,6 +211,19 @@ class _Run:
     records: list[RunRecord]
     arms: set[str]
     token: str
+    #: D-274: answers per question and arm (K); 1 before replicates.
+    replicates: int = 1
+    #: The carried deepseek arm (the constant's ``replay_source_arm``).
+    source_arm: str | None = None
+
+
+#: One request's unit: a question and its replicate (D-274).
+Unit = tuple[str, int]
+
+
+def custom_id(qid: str, replicate: int, replicates: int) -> str:
+    """A request's ``custom_id``: the question ID, or ``<qid>_r<k>`` with K above 1."""
+    return qid if replicates == 1 else f"{qid}_r{replicate}"
 
 
 def _listed(problems: Sequence[str]) -> str:
@@ -224,6 +258,8 @@ def _load_run(run: Path) -> _Run:
         load_records(journal),
         run_arms,
         config.preregistration_token,
+        int(getattr(prereg, "replicates", 1)),
+        getattr(prereg, "replay_source_arm", None) or None,
     )
 
 
@@ -245,6 +281,27 @@ def _require_record_ready(run: _Run, limit: int | None) -> None:
         require_d73(run.token, created_at=float(created_at))
     except ReplayError as exc:
         raise BatchError(str(exc)) from exc
+
+
+def _batch_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration | None]:
+    """A batch arm and its reader's declaration; None for the carried deepseek arm.
+
+    The carried arm is a batch arm only with replicates (D-274): its replicates 2 to K
+    are new deepseek answers, declared by each request's ``pack`` body
+    (``deepseek_request``). Without replicates it is refused as no reader arm.
+    """
+    try:
+        arm = canonical_arm(label)
+    except ValueError as exc:
+        raise BatchError(str(exc)) from exc
+    if run.replicates > 1 and arm == run.source_arm:
+        return arm, None
+    return _reader_arm(arm, run)
+
+
+def _target(declaration: ReaderDeclaration | None) -> Target:
+    """The endpoint a batch arm's requests go to: deepseek's is OpenRouter."""
+    return "openrouter" if declaration is None else declaration.target
 
 
 def _reader_arm(label: str, run: _Run) -> tuple[str, ReaderDeclaration]:
@@ -291,12 +348,27 @@ def _run_bin(
 
 
 def _latest(records: Iterable[RunRecord], arm: str) -> dict[str, RunRecord]:
-    """The latest record of each question under `arm`, in first-seen order."""
+    """The latest replicate-1 record of each question under `arm`, in first-seen
+    order: for the base arm, the carried record every replicate replays."""
     latest: dict[str, RunRecord] = {}
     for rec in records:
-        if rec.graph_arm == arm:
+        if rec.graph_arm == arm and rec.replicate == 1:
             latest[rec.question_id] = rec
     return latest
+
+
+def _latest_units(records: Iterable[RunRecord], arm: str) -> dict[Unit, RunRecord]:
+    """The latest record of each question and replicate under `arm`."""
+    latest: dict[Unit, RunRecord] = {}
+    for rec in records:
+        if rec.graph_arm == arm:
+            latest[(rec.question_id, rec.replicate)] = rec
+    return latest
+
+
+def _replicates_of(run: _Run, arm: str) -> range:
+    """The replicates a submit of `arm` sends: 1 to K, or 2 to K for the carried arm."""
+    return range(1 if is_reader_arm(arm) else 2, run.replicates + 1)
 
 
 # ---- manifests --------------------------------------------------------------------
@@ -362,7 +434,11 @@ def _pending(run: Path, arm: str) -> list[str]:
 
 
 def _base_error_records(
-    run: _Run, arm: str, base: Mapping[str, RunRecord], held: Mapping[str, RunRecord]
+    run: _Run,
+    arm: str,
+    base: Mapping[str, RunRecord],
+    held: Mapping[Unit, RunRecord],
+    replicates: range,
 ) -> list[RunRecord]:
     return [
         RunRecord(
@@ -375,33 +451,41 @@ def _base_error_records(
             "to replay",
             correlation_id=rec.correlation_id,
             index_generation=rec.index_generation,
+            replicate=k,
         )
         for qid, rec in base.items()
-        if rec.outcome == "error" and qid not in held
+        if rec.outcome == "error"
+        for k in replicates
+        if (qid, k) not in held
     ]
 
 
 def _select(
     arm: str,
     base: Mapping[str, RunRecord],
-    held: Mapping[str, RunRecord],
+    held: Mapping[Unit, RunRecord],
+    replicates: range,
     *,
     retry_errors: bool,
     limit: int | None,
-) -> list[str]:
+) -> list[Unit]:
+    """The units to send; ``limit`` takes every replicate of the first N questions."""
     if retry_errors:
         chosen = [
-            qid
+            (qid, k)
             for qid in base
-            if (rec := held.get(qid)) is not None
+            for k in replicates
+            if (rec := held.get((qid, k))) is not None
             and rec.outcome == "error"
             and rec.error_type in RETRYABLE
         ]
     else:
         chosen = [
-            qid
+            (qid, k)
             for qid, rec in base.items()
-            if rec.outcome == "success" and qid not in held
+            if rec.outcome == "success"
+            for k in replicates
+            if (qid, k) not in held
         ]
     if not chosen:
         successes = sum(r.outcome == "success" for r in held.values())
@@ -416,7 +500,10 @@ def _select(
             f"{final} a final error record (base error, or a billed answer that "
             "failed render)"
         )
-    return chosen[:limit] if limit is not None else chosen
+    if limit is None:
+        return chosen
+    first = set(list(dict.fromkeys(qid for qid, _ in chosen))[:limit])
+    return [unit for unit in chosen if unit[0] in first]
 
 
 @dataclass(frozen=True)
@@ -434,9 +521,11 @@ def _pack(
     base_arm: str,
     base: Mapping[str, RunRecord],
     run: _Run,
-    declaration: ReaderDeclaration,
+    declaration: ReaderDeclaration | None,
     runner: BinRunner,
+    custom_ids: Sequence[str],
 ) -> list[_Packed]:
+    """One packed request per question; ``declaration`` None packs deepseek's."""
     rows = _export_rows(run.journal.parent)
     carried = source_row_hashes(run.header)
     problems: list[str] = []
@@ -473,18 +562,22 @@ def _pack(
                         "assembled_prompt (engine config or levers changed)"
                     )
                     continue
-                request = rewrite_pack_body(body, declaration)
+                request = (
+                    deepseek_request(body)
+                    if declaration is None
+                    else rewrite_pack_body(body, declaration)
+                )
             except (KeyError, TypeError, ValueError, ReaderRequestError) as exc:
                 problems.append(f"{qid}: {exc}")
                 continue
             packed[qid] = _Packed(
                 qid, row, levers, body, request, export_row_sha256(row)
             )
-    if declaration.target == "anthropic":
+    if _target(declaration) == "anthropic":
         problems += [
-            f"{qid}: not a valid Anthropic custom_id"
-            for qid in qids
-            if not _ANTHROPIC_CUSTOM_ID.match(qid)
+            f"{cid}: not a valid Anthropic custom_id"
+            for cid in custom_ids
+            if not _ANTHROPIC_CUSTOM_ID.match(cid)
         ]
     if problems:
         raise BatchError(
@@ -492,6 +585,40 @@ def _pack(
             f"{_listed(problems)}"
         )
     return [packed[qid] for qid in qids]
+
+
+#: The engine's deepseek list price (`measure`), the price a deepseek replicate is
+#: estimated and costed at, like the carried arm (D-257).
+DEEPSEEK_PRICE = ReaderPrice(
+    GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
+)
+
+
+def deepseek_request(pack_body: str) -> ReaderRequest:
+    """A deepseek replicate's request (D-274): the ``pack`` body, nothing rewritten.
+
+    Raises:
+        ReaderRequestError: If the body is not a JSON object, or does not carry the
+            D-271 provider pin (``provenance.deepseek_pin_problem``).
+    """
+    try:
+        body = json.loads(pack_body)
+    except ValueError as exc:
+        raise ReaderRequestError(f"unreadable pack body: {exc}") from exc
+    if not isinstance(body, dict):
+        raise ReaderRequestError("the pack body is not a JSON object")
+    problem = deepseek_pin_problem(body)
+    if problem is not None:
+        raise ReaderRequestError(problem)
+    declaration = ReaderDeclaration(
+        slug=str(body.get("model")),
+        target="openrouter",
+        thinking="off",
+        price=DEEPSEEK_PRICE,
+    )
+    return ReaderRequest(
+        reader=declaration, body=body, body_json=pack_body, rewritten_fields=()
+    )
 
 
 def _sha256(text: str) -> str:
@@ -552,7 +679,7 @@ def submit(
         raise BatchError("--limit must be at least 1")
     run_dir = Path(run)
     state = _load_run(run_dir)
-    label, declaration = _reader_arm(arm, state)
+    label, declaration = _batch_arm(arm, state)
     pilot = is_pilot_run(state.header)
     if not pilot:
         _require_record_ready(state, limit)
@@ -563,13 +690,20 @@ def submit(
         )
     base_arm = reader_base_arm(label)
     base = _latest(state.records, base_arm)
-    held = _latest(state.records, label)
+    replicates = _replicates_of(state, label)
+    held = {
+        unit: rec
+        for unit, rec in _latest_units(state.records, label).items()
+        if unit[1] in replicates
+    }
     journal = Journal(state.journal)
-    base_errors = _base_error_records(state, label, base, held)
+    base_errors = _base_error_records(state, label, base, held, replicates)
     for rec in base_errors:
-        held[rec.question_id] = rec
+        held[(rec.question_id, rec.replicate)] = rec
     try:
-        qids = _select(label, base, held, retry_errors=retry_errors, limit=limit)
+        units = _select(
+            label, base, held, replicates, retry_errors=retry_errors, limit=limit
+        )
     except BatchError as exc:
         # Nothing to send, but the base errors still complete the arm.
         for rec in base_errors:
@@ -579,46 +713,74 @@ def submit(
                 f"{exc}; journalled {len(base_errors)} base error record(s)"
             ) from exc
         raise
-    packed = _pack(qids, base_arm, base, state, declaration, bin_runner)
+    ids = {unit: custom_id(*unit, state.replicates) for unit in units}
+    by_qid = {
+        item.qid: item
+        for item in _pack(
+            list(dict.fromkeys(qid for qid, _ in units)),
+            base_arm,
+            base,
+            state,
+            declaration,
+            bin_runner,
+            list(ids.values()),
+        )
+    }
+    packed = [by_qid[qid] for qid, _ in units]
+    reader = packed[0].request.reader
 
-    spent, _ = compute_spend(
-        list(held.values()), include_embeddings=False, readers=state.readers
-    )
+    if declaration is None:
+        spent = BATCH_PRICE_FACTOR * sum(
+            tokens_usd(r.workflow_meta, reader.price)
+            for r in held.values()
+            if r.replay is not None and r.workflow_meta is not None
+        )
+    else:
+        spent, _ = compute_spend(
+            list(held.values()), include_embeddings=False, readers=state.readers
+        )
     if pilot:
         echo(
             "This is a pilot run (replay-init --pilot): its records are never the S2 "
             "result; start the run of record with a fresh replay-init."
         )
-    echo(cost_estimate(packed, base, declaration, spent))
+    echo(cost_estimate(packed, base, reader, spent))
 
-    client = client_factory(declaration.target)
+    client = client_factory(reader.target)
     path = _new_manifest_path(run_dir, label)
     manifest: dict[str, Any] = {
         "arm": label,
         "reader": arm_reader(label),
-        "target": declaration.target,
+        "target": reader.target,
         "endpoint": client.endpoint,
-        "model": declaration.slug,
+        "model": reader.slug,
         "batch_id": None,
         "state": "submitting",
         "retry_errors": retry_errors,
         "partial": limit is not None,
         "created_at": time.time(),
         "requests": {
-            item.qid: {
+            ids[unit]: {
                 "levers": list(item.levers),
                 "body_sha256": _sha256(item.request.body_json),
                 "export_row_sha256": item.row_sha256,
                 "rewritten_fields": list(item.request.rewritten_fields),
                 "pack_body": item.pack_body,
+                # D-274: the unit, only once a question has more than one answer.
+                **(
+                    {"question_id": unit[0], "replicate": unit[1]}
+                    if state.replicates > 1
+                    else {}
+                ),
             }
-            for item in packed
+            for unit, item in zip(units, packed, strict=True)
         },
     }
     _write_manifest(path, manifest)
     try:
         batch_id = client.submit([
-            BatchRequest(item.qid, item.request.body_json) for item in packed
+            BatchRequest(ids[unit], item.request.body_json)
+            for unit, item in zip(units, packed, strict=True)
         ])
     except BatchClientError:
         manifest["state"] = "rejected"
@@ -684,7 +846,7 @@ def fetch(
     """
     run_dir = Path(run)
     state = _load_run(run_dir)
-    wanted = {_reader_arm(a, state)[0] for a in arms or ()}
+    wanted = {_batch_arm(a, state)[0] for a in arms or ()}
     successes = errors = 0
     pending: list[str] = []
     for path in manifest_paths(run_dir):
@@ -702,11 +864,11 @@ def fetch(
             continue
         if status != "submitted":
             continue
-        _, declaration = _reader_arm(label, state)
+        _, declaration = _batch_arm(label, state)
         batch_id = manifest.get("batch_id")
         if not isinstance(batch_id, str) or not batch_id:
             raise BatchError(f"manifest {path} is submitted but names no batch ID")
-        results = client_factory(declaration.target).results(batch_id)
+        results = client_factory(_target(declaration)).results(batch_id)
         if results is None:
             echo(f"{label}: batch {batch_id} is still processing")
             pending.append(batch_id)
@@ -732,8 +894,13 @@ def _journal_batch(
 ) -> tuple[int, int]:
     batch_id = str(manifest["batch_id"])
     requests: Mapping[str, Mapping[str, Any]] = manifest["requests"]
+    # D-274: a request names its unit; before replicates its custom_id is the qid.
+    unit_of: dict[str, Unit] = {
+        cid: (str(req.get("question_id", cid)), int(req.get("replicate", 1)))
+        for cid, req in requests.items()
+    }
     done = {
-        r.question_id
+        (r.question_id, r.replicate)
         for r in state.records
         if r.graph_arm == label and r.session_id == batch_id
     }
@@ -741,9 +908,9 @@ def _journal_batch(
     base = _latest(state.records, base_arm)
     rows = _export_rows(run_dir)
     unknown = [
-        qid
-        for qid in requests
-        if qid not in done and (qid not in base or (qid, base_arm) not in rows)
+        cid
+        for cid, (qid, _) in unit_of.items()
+        if unit_of[cid] not in done and (qid not in base or (qid, base_arm) not in rows)
     ]
     if unknown:
         raise BatchError(
@@ -752,9 +919,11 @@ def _journal_batch(
         )
     by_id = {r.custom_id: r for r in results if r.custom_id in requests}
     records: dict[str, RunRecord] = {}
-    to_render: dict[tuple[str, ...], list[tuple[str, ReaderOutput]]] = {}
+    # One render call per levers and replicate: render keys its lines by question.
+    to_render: dict[tuple[tuple[str, ...], int], list[tuple[str, ReaderOutput]]] = {}
 
-    def record_fields(qid: str) -> dict[str, Any]:
+    def record_fields(cid: str) -> dict[str, Any]:
+        qid, replicate = unit_of[cid]
         rec = base[qid]
         return {
             "corpus": state.corpus,
@@ -764,34 +933,36 @@ def _journal_batch(
             "index_generation": rec.index_generation,
             "session_id": batch_id,
             "partial": bool(manifest.get("partial")),
+            "replicate": replicate,
         }
 
-    for qid in requests:
-        if qid in done:
+    for cid in requests:
+        if unit_of[cid] in done:
             continue
-        result = by_id.get(qid)
+        result = by_id.get(cid)
         if result is None:
-            records[qid] = RunRecord(
-                **record_fields(qid),
+            records[cid] = RunRecord(
+                **record_fields(cid),
                 outcome="error",
                 error_type=NO_RESULT,
                 error=f"batch {batch_id} returned no result for this request",
             )
         elif result.output is None or result.status != "succeeded":
-            records[qid] = RunRecord(
-                **record_fields(qid),
+            records[cid] = RunRecord(
+                **record_fields(cid),
                 outcome="error",
                 error_type=RESULT_ERRORS.get(result.status, "batch_errored"),
                 error=result.error or f"the request {result.status}",
             )
         else:
-            levers = tuple(requests[qid]["levers"])
-            to_render.setdefault(levers, []).append((qid, result.output))
+            key = (tuple(requests[cid]["levers"]), unit_of[cid][1])
+            to_render.setdefault(key, []).append((cid, result.output))
 
-    new_rows: list[ContextExportRow] = []
-    for levers, group in to_render.items():
+    new_rows: dict[str, ContextExportRow] = {}
+    for (levers, _), group in to_render.items():
         reader_rows = [
-            rows[(qid, base_arm)].model_copy(update={"arm": label}) for qid, _ in group
+            rows[(unit_of[cid][0], base_arm)].model_copy(update={"arm": label})
+            for cid, _ in group
         ]
         lines = {
             str(line.get("question_id")): line
@@ -800,23 +971,24 @@ def _journal_batch(
                 "render",
                 reader_rows,
                 levers,
-                [render_line(qid, label, out) for qid, out in group],
+                [render_line(unit_of[cid][0], label, out) for cid, out in group],
             )
             if line.get("arm") == label
         }
-        for (qid, out), row in zip(group, reader_rows, strict=True):
-            replay = _replay(requests[qid], batch_id, out)
+        for (cid, out), row in zip(group, reader_rows, strict=True):
+            qid = unit_of[cid][0]
+            replay = _replay(requests[cid], batch_id, out)
             meta = WorkflowWireMeta(
                 prompt_tokens=out.prompt_tokens, completion_tokens=out.completion_tokens
             )
             line = lines.get(qid)
             if line is not None and line.get("outcome") == "success":
-                records[qid] = _success(record_fields(qid), line, replay, meta)
+                records[cid] = _success(record_fields(cid), line, replay, meta)
                 if (qid, label) not in rows:
-                    new_rows.append(row)
+                    new_rows.setdefault(qid, row)
             else:
-                records[qid] = RunRecord(
-                    **record_fields(qid),
+                records[cid] = RunRecord(
+                    **record_fields(cid),
                     outcome="error",
                     error_type=(
                         str(line.get("error_type")) if line else NO_RENDER_LINE
@@ -836,12 +1008,12 @@ def _journal_batch(
         ) as f:
             f.writelines(
                 json.dumps(row.model_dump(mode="json"), ensure_ascii=False) + "\n"
-                for row in new_rows
+                for row in new_rows.values()
             )
     journal = Journal(state.journal)
-    for qid in requests:
-        if qid in records:
-            journal.append(records[qid])
+    for cid in requests:
+        if cid in records:
+            journal.append(records[cid])
     written = list(records.values())
     return (
         sum(r.outcome == "success" for r in written),

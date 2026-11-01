@@ -107,7 +107,13 @@ from lancet_eval.score import (
 )
 from lancet_eval.seed import load_document_map
 from lancet_eval.split import HeldOutSplit, load_split
-from lancet_eval.stats import exact_signflip_p, holm_stepdown, percentile
+from lancet_eval.stats import (
+    exact_signflip_p,
+    exact_signflip_p_integer,
+    holm_stepdown,
+    paired_t_p,
+    percentile,
+)
 from lancet_eval.strata import STRATUM_TYPES
 from lancet_eval.thresholds import (
     COMMITTED_THRESHOLDS,
@@ -225,6 +231,31 @@ def sign_flip(
     """The discordant counts and the exact two-sided sign-flip p (1 when n_d = 0)."""
     n_pos, n_neg = p4_mod.discordant_counts(values_x, values_ref)
     return n_pos, n_neg, float(exact_signflip_p(n_pos, n_neg))
+
+
+def replicate_p(
+    values_x: Mapping[str, float], values_ref: Mapping[str, float], replicates: int
+) -> float:
+    """D-274's exact two-sided sign-flip permutation p on per-question mean differences.
+
+    Each difference is a mean over `replicates` 0/1 answers per arm, so `replicates`
+    times it is an integer (`stats.exact_signflip_p_integer`). On one replicate it is
+    `sign_flip`'s p.
+
+    Raises:
+        ValueError: If a scaled difference is not an integer (a value is not a mean
+            of `replicates` 0/1 answers).
+    """
+    scaled: list[int] = []
+    for key in sorted(values_x):
+        diff = (values_x[key] - values_ref[key]) * replicates
+        if abs(diff - round(diff)) > 1e-9:
+            raise ValueError(
+                f"{key}: difference {diff / replicates} is not a mean of "
+                f"{replicates} 0/1 answers"
+            )
+        scaled.append(round(diff))
+    return float(exact_signflip_p_integer(scaled))
 
 
 def _binom_cdf(k: int, n: int, p: float) -> float:
@@ -575,6 +606,11 @@ class _Ctx:
     readers: dict[str, ReaderDeclaration] | None = None
     # #125: each non-v1.0 store's chunking, by store name, from `[stores.<prefix>]`.
     store_chunking: Mapping[str, StoreChunking] | None = None
+    # D-274: K answers per question and arm, and each unit's records by replicate.
+    # `records` and `by_key` hold replicate 1, the record every table but the
+    # replicate-aware ones reads.
+    replicates: int = 1
+    units: dict[tuple[str, str], list[RunRecord]] | None = None
 
     @property
     def g_ids(self) -> list[str]:
@@ -594,14 +630,64 @@ class _Ctx:
         except KeyError as exc:
             raise LeverComparisonError(f"no {arm!r} record for {qid!r}") from exc
 
+    def all_records(self) -> list[RunRecord]:
+        """Every record, every replicate."""
+        if self.units is None:
+            return list(self.records)
+        return [r for unit in self.units.values() for r in unit]
+
+    def recs(self, qid: str, arm: str) -> list[RunRecord]:
+        """Every replicate of a unit, by replicate; the one record before D-274."""
+        if self.replicates == 1 or self.units is None:
+            return [self.rec(qid, arm)]
+        return self.units.get((qid, canonical_arm(arm)), [])
+
+    def ok(
+        self, base: Callable[[RunRecord], bool] = provenance.is_ok
+    ) -> Callable[[RunRecord], bool]:
+        """`base` lifted to a unit (D-274): its K replicates all present and `base`."""
+        if self.replicates == 1:
+            return base
+
+        def unit_ok(rec: RunRecord) -> bool:
+            recs = self.recs(rec.question_id, rec.graph_arm)
+            return len(recs) == self.replicates and all(base(r) for r in recs)
+
+        return unit_ok
+
     def pop(self, arm: str, *, null: bool = False) -> p4_mod.P4Population:
         """The pairwise population of `arm` against the reference (P_X or N_X)."""
         key = (canonical_arm(arm), null)
         if key not in self.pops:
             self.pops[key] = _pairwise(
-                self.records, self.split, self.reference, arm, null=null
+                self.records,
+                self.split,
+                self.reference,
+                arm,
+                null=null,
+                ok=self.ok(),
             )
         return self.pops[key]
+
+    def test(
+        self, vx: Mapping[str, float], vref: Mapping[str, float]
+    ) -> tuple[int, int, float]:
+        """The discordant counts and the family's two-sided p.
+
+        Before D-274 the exact sign-flip test on 0/1 values (`sign_flip`). With K
+        replicates, the exact sign-flip permutation on the per-question mean
+        differences, each times K so it is an integer (`replicate_p`).
+        """
+        if self.replicates == 1:
+            return sign_flip(vx, vref)
+        n_pos, n_neg = p4_mod.discordant_counts(vx, vref)
+        return n_pos, n_neg, replicate_p(vx, vref, self.replicates)
+
+    def t_check(self, vx: Mapping[str, float], vref: Mapping[str, float]) -> dict:  # type: ignore[type-arg]
+        """D-274's paired t cross-check, as extra row fields; none before D-274."""
+        if self.replicates == 1:
+            return {}
+        return {"paired_t_p": paired_t_p([vx[k] - vref[k] for k in sorted(vx)])}
 
     def delta(
         self, vx: Mapping[str, float], vref: Mapping[str, float]
@@ -684,12 +770,21 @@ def _values(
     arm: str,
     fn: Callable[[RunRecord], float | None],
 ) -> dict[str, float]:
-    """Per-question values of one arm over a population; None values are dropped."""
+    """Per-question values of one arm over a population; None values are dropped.
+
+    With K replicates (D-274) a question's value is the mean over the replicates that
+    have one.
+    """
     out: dict[str, float] = {}
     for qid in pop.question_ids:
-        value = fn(ctx.rec(qid, arm))
-        if value is not None:
-            out[qid] = float(value)
+        if ctx.replicates == 1:
+            value = fn(ctx.rec(qid, arm))
+            if value is not None:
+                out[qid] = float(value)
+            continue
+        values = [v for r in ctx.recs(qid, arm) if (v := fn(r)) is not None]
+        if values:
+            out[qid] = math.fsum(values) / len(values)
     return out
 
 
@@ -873,7 +968,7 @@ def _comparison_rows(ctx: _Ctx, family: Any, *, floor: float) -> list[dict[str, 
         n_pos = n_neg = None
         p = 1.0
         if ok and vx:
-            n_pos, n_neg, p = sign_flip(vx, vr)
+            n_pos, n_neg, p = ctx.test(vx, vr)
         pd = ctx.delta(vx, vr) if ok else None
         raw.append(p)
         evaluable.append(ok and bool(vx))
@@ -886,6 +981,7 @@ def _comparison_rows(ctx: _Ctx, family: Any, *, floor: float) -> list[dict[str, 
             "n_pos": n_pos,
             "n_neg": n_neg,
             "raw_p": p if ok else None,
+            **(ctx.t_check(vx, vr) if ok and vx else {}),
             "mean_arm": _mean(vx),
             "mean_reference": _mean(vr),
             "delta": None if pd is None else pd.delta,
@@ -930,25 +1026,43 @@ def _family_block(ctx: _Ctx, family: Any) -> dict[str, Any]:
 # ---- guards --------------------------------------------------------------------------
 
 
+def _guard_counts(
+    ctx: _Ctx, pop: p4_mod.P4Population, arm: str, against: str
+) -> tuple[int, int, int, int]:
+    """Guard 1's `b`, `c`, pair count and null count for `arm` against `against`.
+
+    Before D-274 each null pair is one question. With K replicates each question
+    gives K pairs, replicate k of the arm against replicate k of `against`, and the
+    pair and null counts are K times the questions', so the net loss rate is the mean
+    over questions of the per-question mean abstention drop, and the pair floor still
+    counts questions.
+    """
+    b = c = 0
+    for qid in pop.question_ids:
+        for h_rec, x_rec in zip(
+            ctx.recs(qid, against), ctx.recs(qid, arm), strict=True
+        ):
+            h, x = is_abstention(h_rec), is_abstention(x_rec)
+            if h and not x:
+                b += 1
+            elif x and not h:
+                c += 1
+    k = ctx.replicates
+    return b, c, len(pop.question_ids) * k, ctx.n_null * k
+
+
 def _null_guards(ctx: _Ctx, arms: Sequence[str]) -> list[NullGuard]:
     guards: list[NullGuard] = []
     prereg = ctx.prereg
     for arm in arms:
         pop = ctx.pop(arm, null=True)
-        b = c = 0
-        for qid in pop.question_ids:
-            h = is_abstention(ctx.rec(qid, ctx.reference))
-            x = is_abstention(ctx.rec(qid, arm))
-            if h and not x:
-                b += 1
-            elif x and not h:
-                c += 1
+        b, c, n_pairs, n_null = _guard_counts(ctx, pop, arm, ctx.reference)
         guards.append(
             evaluate_null_guard(
                 b,
                 c,
-                len(pop.question_ids),
-                ctx.n_null,
+                n_pairs,
+                n_null,
                 margin=float(prereg.null_guard_margin),
                 min_pair_fraction=float(prereg.null_guard_min_pair_fraction),
                 arm=arm,
@@ -1048,7 +1162,7 @@ def _answer_mix(ctx: _Ctx, arm: str) -> dict[str, Any]:
 
 
 def _descriptive_row(ctx: _Ctx, arm: str, against: str, label: str) -> dict[str, Any]:
-    pop = _pairwise(ctx.records, ctx.split, against, arm, ok=provenance.is_ok)
+    pop = _pairwise(ctx.records, ctx.split, against, arm, ok=ctx.ok())
     out: dict[str, Any] = {
         "row": f"{arm} - {against}",
         "label": label,
@@ -1134,7 +1248,7 @@ def _p_dec_line(ctx: _Ctx) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for arm in family.arms:
         vx, vr = _paired(ctx, pop, arm, fn)
-        n_pos, n_neg, p = sign_flip(vx, vr) if (ok and vx) else (None, None, 1.0)
+        n_pos, n_neg, p = ctx.test(vx, vr) if (ok and vx) else (None, None, 1.0)
         pd = ctx.delta(vx, vr) if ok else None
         raw.append(p)
         rows.append({
@@ -1186,12 +1300,12 @@ def _rerank_itt_line(
     arm = "hybrid+rerank"
     if arm not in family.arms:
         return None
-    pop = _pairwise(ctx.records, ctx.split, ctx.reference, arm, ok=_itt_ok)
+    pop = _pairwise(ctx.records, ctx.split, ctx.reference, arm, ok=ctx.ok(_itt_ok))
     fn = _primary_fn(ctx, family.primary)
     vx, vr = _paired(ctx, pop, arm, fn)
     floor = float(ctx.prereg.complete_case_floor)
     ok = coverage_floor_met(len(pop.question_ids), ctx.n_g, floor) and bool(vx)
-    n_pos, n_neg, p = sign_flip(vx, vr) if ok else (None, None, 1.0)
+    n_pos, n_neg, p = ctx.test(vx, vr) if ok else (None, None, 1.0)
     raw = [p if a == arm else (main[a]["raw_p"] or 1.0) for a in family.arms]
     evaluable = [ok if a == arm else bool(main[a]["evaluable"]) for a in family.arms]
     reject, adjusted = holm_fixed_m(raw, evaluable, family.alpha)
@@ -1462,17 +1576,30 @@ def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
     return 0.0 if meta is None else tokens_usd(meta, price)
 
 
+def _batch_usd(
+    ctx: _Ctx, arm: str, batch: Sequence[RunRecord], price: ReaderPrice
+) -> float:
+    """An arm's batch spend: a reader's at its declared price (`compute_spend`), the
+    deepseek replicates' (D-274) at the engine's list price, both at the batch rate."""
+    if is_reader_arm(arm):
+        return compute_spend(batch, readers=ctx.readers)[0]
+    return BATCH_PRICE_FACTOR * math.fsum(
+        tokens_usd(r.workflow_meta, price) for r in batch if r.workflow_meta
+    )
+
+
 def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any]:
     """One reader's `answer_usable` and cost over the group's common population."""
     price, source = _reader_price(ctx, arm)
-    recs = [ctx.rec(qid, arm) for qid in population]
+    # D-274: every replicate's answer is counted and costed.
+    recs = [r for qid in population for r in ctx.recs(qid, arm)]
     usable = _usable_value(ctx)
     n_usable = sum(int(usable(r) or 0) for r in recs)
     sync = sum(_sync_usd(r, price) for r in recs)
     label = canonical_arm(arm)
     batch = [
         r
-        for r in ctx.records
+        for r in ctx.all_records()
         if canonical_arm(r.graph_arm) == label and r.replay is not None
     ]
     return {
@@ -1484,10 +1611,11 @@ def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any
             "source": source,
         },
         "answer_usable": {
-            "n": len(recs),
-            "n_excluded": ctx.n_g - len(recs),
+            "n": len(population),
+            "n_excluded": ctx.n_g - len(population),
             "n_usable": n_usable,
             "mean": n_usable / len(recs) if recs else None,
+            **({"n_answers": len(recs)} if ctx.replicates > 1 else {}),
         },
         "cost": {
             "sync_usd": sync,
@@ -1499,7 +1627,7 @@ def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any
         },
         # #53 may land after this: an arm with no batch record yet reports "none".
         "batch_spend": {
-            "usd": _priced(lambda: compute_spend(batch, readers=ctx.readers)[0]),
+            "usd": _priced(lambda: _batch_usd(ctx, arm, batch, price)),
             "n_records": len(batch),
             "note": None,
         }
@@ -1509,9 +1637,9 @@ def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any
 
 
 def _reader_pair(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
-    pop = _pairwise(ctx.records, ctx.split, against, arm)
+    pop = _pairwise(ctx.records, ctx.split, against, arm, ok=ctx.ok())
     vx, vr = _paired(ctx, pop, arm, _usable_value(ctx), reference=against)
-    n_pos, n_neg, p = sign_flip(vx, vr) if vx else (0, 0, 1.0)
+    n_pos, n_neg, p = ctx.test(vx, vr) if vx else (0, 0, 1.0)
     pd = ctx.delta(vx, vr)
     return {
         "arm": arm,
@@ -1526,26 +1654,20 @@ def _reader_pair(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
         "n_pos": n_pos,
         "n_neg": n_neg,
         "raw_p": p,
+        **(ctx.t_check(vx, vr) if vx else {}),
         "p_label": LABEL_READER_P,
     }
 
 
 def _reader_guard(ctx: _Ctx, arm: str, against: str) -> dict[str, Any]:
-    pop = _pairwise(ctx.records, ctx.split, against, arm, null=True)
-    b = c = 0
-    for qid in pop.question_ids:
-        h = is_abstention(ctx.rec(qid, against))
-        x = is_abstention(ctx.rec(qid, arm))
-        if h and not x:
-            b += 1
-        elif x and not h:
-            c += 1
+    pop = _pairwise(ctx.records, ctx.split, against, arm, null=True, ok=ctx.ok())
+    b, c, n_pairs, n_null = _guard_counts(ctx, pop, arm, against)
     prereg = ctx.prereg
     guard = evaluate_null_guard(
         b,
         c,
-        len(pop.question_ids),
-        ctx.n_null,
+        n_pairs,
+        n_null,
         margin=float(prereg.null_guard_margin),
         min_pair_fraction=float(prereg.null_guard_min_pair_fraction),
         arm=arm,
@@ -1815,6 +1937,13 @@ def build_lever_comparison(
         raise LeverComparisonError(str(exc)) from exc
     if gates is None:
         gates = load_gates(run)
+    replicates = int(getattr(prereg, "replicates", 1))
+    units: dict[tuple[str, str], list[RunRecord]] | None = None
+    if replicates > 1:
+        units = {}
+        for r in sorted(records, key=lambda r: r.replicate):
+            units.setdefault((r.question_id, canonical_arm(r.graph_arm)), []).append(r)
+    records = [r for r in records if r.replicate == 1]
     ctx = _Ctx(
         records=records,
         by_key={(r.question_id, canonical_arm(r.graph_arm)): r for r in records},
@@ -1834,6 +1963,8 @@ def build_lever_comparison(
             STORE_PREFIXES[prefix]: chunking
             for prefix, chunking in config.store_chunking.items()
         },
+        replicates=replicates,
+        units=units,
     )
 
     families = [_family_block(ctx, f) for f in prereg.families]

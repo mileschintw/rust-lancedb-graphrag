@@ -419,9 +419,10 @@ def source_row_hashes(header: Mapping[str, Any] | None) -> dict[tuple[str, str],
 def require_replay_provenance(
     records: Sequence[RunRecord], journal_path: Path | str, token: str | None
 ) -> None:
-    """Refuses a run whose reader-arm records break a replay clause (D-257).
+    """Refuses a run whose replay records break a replay clause (D-257, D-274).
 
-    A run with no reader-arm record passes untouched. A pilot run with one is refused:
+    A run with no replay record (a reader arm's, or a deepseek replicate) passes
+    untouched. A pilot run with one is refused:
     its reader records are never the S2 result (#109). Otherwise the pre-registration
     ``token`` names must declare each reader, and every reader-arm record is checked
     against the run's context export, the header's carried row hashes and its
@@ -438,7 +439,7 @@ def require_replay_provenance(
     """
     from lancet_eval import provenance
 
-    if not any(is_reader_arm(r.graph_arm) for r in records):
+    if not any(provenance.is_replay_record(r) for r in records):
         return
     journal = Path(journal_path)
     header = read_journal_header(journal)

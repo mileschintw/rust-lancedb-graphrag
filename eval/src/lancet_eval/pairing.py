@@ -71,14 +71,15 @@ class PairedDeltaResult:
 
 
 def deduplicate_by_arm(records: list[RunRecord]) -> tuple[list[RunRecord], int]:
-    """Collapse records keyed on (question_id, graph_arm), keeping the later occurrence.
+    """Collapse records keyed on (question_id, graph_arm, replicate), keeping the later
+    occurrence. Every record before D-274 is replicate 1, so the key is the unit's.
 
     Returns:
         (deduplicated_records, collapsed_count)
     """
-    last_by_key: dict[tuple[str, str], RunRecord] = {}
+    last_by_key: dict[tuple[str, str, int], RunRecord] = {}
     for r in records:
-        key = (r.question_id, r.graph_arm)
+        key = (r.question_id, r.graph_arm, r.replicate)
         last_by_key[key] = r
 
     # Preserve order of the surviving records based on their last appearance
