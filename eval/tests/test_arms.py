@@ -619,7 +619,12 @@ def test_a_store_prefixed_label_resolves_to_its_base_row_and_keeps_its_store(
 
 
 @pytest.mark.parametrize(
-    ("prefix", "store"), [("full", "eval-full"), ("twowiki", "eval-2wiki")]
+    ("prefix", "store"),
+    [
+        ("full", "eval-full"),
+        ("twowiki", "eval-2wiki"),
+        ("fullmerged", "eval-full-merged"),
+    ],
 )
 def test_the_149_store_prefixes_name_their_stores(prefix: str, store: str) -> None:
     from lancet_eval.arms import arm_store

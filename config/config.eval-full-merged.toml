@@ -1,0 +1,17 @@
+# Full MultiHop-RAG merged-chunk evaluation overlay (LANCET_ENV=eval-full-merged, #146)
+# All 609 MultiHop-RAG documents, chunked structure-merge 256/25 like the S1 store, for the
+# merged column of #146's confirmation stage. It never shares state with the v1.0 store, the
+# S1 store or eval-full. Its PostgreSQL schema is
+# lancet_eval_full_merged, applied with Atlas env eval-full-merged.
+
+[engine]
+lancedb_path = "./data/lancedb-eval-full-merged"
+
+# The confirmation arms are hybrid+rerank+metadata, which never read the graph, so the build
+# extracts none: no extraction call is made at ingest.
+[engine.graph]
+ingest_extraction = false
+
+# D-273, as in config.eval-s1.toml: merged chunks run past the base 512-character excerpt cap.
+[engine.retrieval]
+excerpt_max_chars = 2048

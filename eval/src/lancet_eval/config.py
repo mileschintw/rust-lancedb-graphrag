@@ -89,8 +89,14 @@ FULL_STORE = EvalStore("eval-full", "./data/lancedb-eval-full", "lancet_eval_ful
 TWOWIKI_STORE = EvalStore(
     "eval-2wiki", "./data/lancedb-eval-2wiki", "lancet_eval_2wiki"
 )
+#: #146's merged-chunk counterpart of FULL_STORE: all 609 MultiHop-RAG documents,
+#: chunked as the S1 store is, with no graph.
+FULL_MERGED_STORE = EvalStore(
+    "eval-full-merged", "./data/lancedb-eval-full-merged", "lancet_eval_full_merged"
+)
 EVAL_STORES: dict[str, EvalStore] = {
-    s.name: s for s in (V1_STORE, S1_STORE, FULL_STORE, TWOWIKI_STORE)
+    s.name: s
+    for s in (V1_STORE, S1_STORE, FULL_STORE, TWOWIKI_STORE, FULL_MERGED_STORE)
 }
 
 
