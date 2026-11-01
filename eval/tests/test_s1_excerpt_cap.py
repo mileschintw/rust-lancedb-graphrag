@@ -27,7 +27,7 @@ def _retrieval_cap(path: Path) -> int | None:
 
 
 def _excerpt_max_chars(store: EvalStore | None) -> int:
-    """`excerpt_max_chars` as the engine layers it: config.toml, then `store`'s overlay."""
+    """The engine's layering of the cap: config.toml, then `store`'s overlay."""
     base = _retrieval_cap(repo_root() / "config" / "config.toml")
     assert base is not None, "excerpt_max_chars must be set in config.toml"
     if store is None:
