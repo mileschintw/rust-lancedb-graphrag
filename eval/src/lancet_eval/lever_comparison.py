@@ -48,7 +48,6 @@ from lancet_eval import p4 as p4_mod
 from lancet_eval.arms import (
     STORE_PREFIXES,
     arm_reader,
-    arm_store,
     canonical_arm,
     in_registry_order,
     is_external_arm,
@@ -57,7 +56,6 @@ from lancet_eval.arms import (
     resolve_arm,
 )
 from lancet_eval.batch import DEEPSEEK_PRICE_FACTOR
-from lancet_eval.config import V1_STORE
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
@@ -115,6 +113,13 @@ from lancet_eval.stats import (
     holm_stepdown,
     paired_t_p,
     percentile,
+)
+from lancet_eval.store_gold import (
+    StoreGold,
+    StoreGoldError,
+    coverage_inputs,
+    load_store_gold,
+    reads_gold_chunk_table,
 )
 from lancet_eval.strata import STRATUM_TYPES
 from lancet_eval.thresholds import (
@@ -596,7 +601,7 @@ class _Ctx:
     by_key: dict[tuple[str, str], RunRecord]
     split: HeldOutSplit
     gold_map: dict[str, GoldQuestion]
-    gold_sets: dict[str, list[frozenset[str]]]
+    gold_sets: StoreGold
     qtype_of: dict[str, str]
     prereg: Any
     reference: str
@@ -731,41 +736,25 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
     return [c.chunk_id for c in rec.snapshot.pre_truncation_ranking]
 
 
-def _chunk_id_scorable(rec: RunRecord) -> bool:
-    """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
+def _chunk_id_sets(ctx: _Ctx, rec: RunRecord) -> list[frozenset[str]] | None:
+    """The gold sets a record's chunk-ID metrics read; None when it has none.
+
+    Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
     not Lancet chunks, so its records have no value and leave every such pairing. A
-    reader arm (D-257) replays another arm's retrieval and has none either. The
-    gold-chunk table holds v1.0-store chunk IDs, so an arm on another store (D-251) is
-    not evaluable either, instead of scoring 0 (#125)."""
+    reader arm (D-257) replays another arm's retrieval and has none either. An arm on
+    another store (D-251) reads the sets built from that store's chunk text (#128),
+    and is not evaluable when the run has no dump of it (#125).
+    """
     if is_external_arm(rec.graph_arm) or is_reader_arm(rec.graph_arm):
-        return False
-    return arm_store(rec.graph_arm) in (None, V1_STORE.name)
-
-
-# D-251: `structure-merge` counts its chunk sizes in o200k tokens, the others in
-# characters (`corpus.CHUNK_STRATEGIES`).
-_TOKEN_SIZED_STRATEGIES = frozenset({"structure-merge"})
+        return None
+    return ctx.gold_sets.sets_for(rec)
 
 
 def _coverage_inputs(
     ctx: _Ctx, rec: RunRecord, gold: GoldQuestion
 ) -> tuple[GoldQuestion, int] | None:
-    """The gold question and character chunk size `recall_at_k` reads for `rec` (#125).
-
-    A record is scored against its own store's chunk size: the run-wide size is the
-    v1.0 store's. A token-sized store drops the gold facts longer than its size in
-    o200k tokens here and passes a character size no remaining fact exceeds. None when
-    no gold fact fits that store's chunk.
-    """
-    chunking = (ctx.store_chunking or {}).get(arm_store(rec.graph_arm) or "")
-    if chunking is None:
-        return gold, ctx.chunk_size
-    if chunking.chunk_strategy not in _TOKEN_SIZED_STRATEGIES:
-        return gold, chunking.chunk_size
-    facts = [f for f in gold.gold_facts if context_tokens([f]) <= chunking.chunk_size]
-    if not facts:
-        return None
-    return gold.model_copy(update={"gold_facts": facts}), max(map(len, facts))
+    """The gold question and character chunk size `recall_at_k` reads (#125)."""
+    return coverage_inputs(ctx.store_chunking, ctx.chunk_size, rec, gold)
 
 
 def _values(
@@ -816,13 +805,9 @@ def _usable_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
 
 def _hit4_value(ctx: _Ctx) -> Callable[[RunRecord], float | None]:
     return lambda r: (
-        float(
-            paper_question_scores(
-                _ranking_ids(r), ctx.gold_sets[r.question_id], id_matcher
-            )["hit4"]
-        )
-        if _chunk_id_scorable(r)
-        else None
+        None
+        if (sets := _chunk_id_sets(ctx, r)) is None
+        else float(paper_question_scores(_ranking_ids(r), sets, id_matcher)["hit4"])
     )
 
 
@@ -1361,13 +1346,10 @@ def _rerank_itt_line(
 def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
     def paper(key: str) -> Callable[[RunRecord], float | None]:
         def fn(r: RunRecord) -> float | None:
-            if not _chunk_id_scorable(r):
+            sets = _chunk_id_sets(ctx, r)
+            if sets is None:
                 return None
-            return float(
-                paper_question_scores(
-                    _ranking_ids(r), ctx.gold_sets[r.question_id], id_matcher
-                )[key]
-            )
+            return float(paper_question_scores(_ranking_ids(r), sets, id_matcher)[key])
 
         return fn
 
@@ -1400,9 +1382,9 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
         "paper_map_at_10": paper("ap"),
         "coverage_at_4": recall4,
         "all_gold_at_4": lambda r: (
-            float(all_gold_at_4(_ranking_ids(r), ctx.gold_sets[r.question_id]))
-            if _chunk_id_scorable(r)
-            else None
+            None
+            if (sets := _chunk_id_sets(ctx, r)) is None
+            else float(all_gold_at_4(_ranking_ids(r), sets))
         ),
         "final_answer_em": lambda r: float(
             final_answer_em(gold(r), r.answer or "").score or 0.0
@@ -1481,12 +1463,12 @@ def _context_rows(ctx: _Ctx) -> list[dict[str, Any]]:
             "evidence_hits_at_4": None
             if is_reader_arm(arm)
             else _mean({r.question_id: hit4(r) or 0.0 for r in recs}),
-            "context_tokens_mean": _mean(
-                {r.question_id: tokens(r) or 0.0 for r in recs}
-            ),
-            "prompt_tokens_mean": _mean(
-                {r.question_id: _prompt_tokens_value(r) or 0.0 for r in recs}
-            ),
+            "context_tokens_mean": _mean({
+                r.question_id: tokens(r) or 0.0 for r in recs
+            }),
+            "prompt_tokens_mean": _mean({
+                r.question_id: _prompt_tokens_value(r) or 0.0 for r in recs
+            }),
             "label": LABEL_DESCRIPTIVE,
         })
     return rows
@@ -1893,7 +1875,8 @@ def _load_inputs(
     run: Path,
     config: Any,
     gold_chunks_path: Path | str | None,
-) -> tuple[list[RunRecord], HeldOutSplit, dict[str, GoldQuestion], dict[str, Any]]:
+    chunk_text: Mapping[str, Path | str] | None = None,
+) -> tuple[list[RunRecord], HeldOutSplit, dict[str, GoldQuestion], StoreGold]:
     records, _ = deduplicate_by_arm(load_records(_journal_path(run)))
     if config.split_path is None:
         raise LeverComparisonError(
@@ -1920,6 +1903,9 @@ def _load_inputs(
     # #68: a dev-role corpus (S1, S2) reads the dev population, as `score` does.
     split = scope_split(on_disk, config.split_role, gold_map)
     population = population_label(config.split_role)
+    # #128: only an arm on the v1.0 store reads the gold-chunk table, so a run with
+    # none (a full-corpus store's fresh questions) needs no row in it.
+    reads_v1 = any(reads_gold_chunk_table(a) for a in config.arms)
     problems = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
@@ -1927,7 +1913,7 @@ def _load_inputs(
             problems.append(f"{qid}: not a {population} G question of the corpus")
         elif gold.question_type not in STRATUM_TYPES:
             problems.append(f"{qid}: question_type {gold.question_type!r}")
-        elif not gold_sets.get(qid):
+        elif reads_v1 and not gold_sets.get(qid):
             problems.append(f"{qid}: no gold-chunk row")
     for qid in split.heldout_null_ids:
         if qid not in gold_map:
@@ -1939,7 +1925,11 @@ def _load_inputs(
             f"{len(problems)} {population} question(s) cannot be scored: "
             + "; ".join(problems[:10])
         )
-    return records, split, gold_map, gold_sets
+    try:
+        store_gold = load_store_gold(gold_sets, records, gold_map, chunk_text)
+    except StoreGoldError as exc:
+        raise LeverComparisonError(f"#128: {exc}") from exc
+    return records, split, gold_map, store_gold
 
 
 def build_lever_comparison(
@@ -1950,6 +1940,7 @@ def build_lever_comparison(
     gates: Mapping[str, Any] | None = None,
     gold_chunks_path: Path | str | None = None,
     git_repo: Path | None = None,
+    chunk_text: Mapping[str, Path | str] | None = None,
 ) -> dict[str, Any]:
     """Builds the lever comparison of a scored run directory, in memory.
 
@@ -1966,6 +1957,9 @@ def build_lever_comparison(
         gold_chunks_path: The gold-chunk table; the committed post-reconcile table when
             None.
         git_repo: Repository the D-73 check queries; the live repository when None.
+        chunk_text: An `inspect_lancedb --chunk-text` dump per non-v1.0 store, by
+            store prefix or name; its arms' chunk-ID secondaries read gold sets built
+            from it (#128). A store with none is not evaluable.
 
     Returns:
         A JSON-serialisable payload.
@@ -2004,7 +1998,9 @@ def build_lever_comparison(
             f"pre-registered {sorted(preregistration.arms_of(prereg))}"
         )
     report = _load_report(run)
-    records, split, gold_map, gold_sets = _load_inputs(run, config, gold_chunks_path)
+    records, split, gold_map, gold_sets = _load_inputs(
+        run, config, gold_chunks_path, chunk_text
+    )
     # D-247: the external clauses are re-checked here, so a stale report.json never
     # lets an external arm that breaks one into a comparison.
     try:
@@ -2743,6 +2739,7 @@ def write_lever_comparison(
     *,
     gold_chunks_path: Path | str | None = None,
     git_repo: Path | None = None,
+    chunk_text: Mapping[str, Path | str] | None = None,
 ) -> dict[str, Any]:
     """Builds the comparison and writes `lever-comparison.json` and `.md` into the run.
 
@@ -2753,6 +2750,7 @@ def write_lever_comparison(
         run_dir: A run directory that `score --no-judge` has scored.
         gold_chunks_path: See `build_lever_comparison`.
         git_repo: See `build_lever_comparison`.
+        chunk_text: See `build_lever_comparison`.
 
     Returns:
         The payload that was written.
@@ -2762,7 +2760,7 @@ def write_lever_comparison(
     """
     run = Path(run_dir)
     payload = build_lever_comparison(
-        run, gold_chunks_path=gold_chunks_path, git_repo=git_repo
+        run, gold_chunks_path=gold_chunks_path, git_repo=git_repo, chunk_text=chunk_text
     )
     text_json = _dump_json(payload)
     text_md = render_markdown(payload)
