@@ -235,3 +235,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 13:28 -0800: PR #161 (D-290) green, merged 1302bd5e; lane 145 got 'continue' for deepseek's sync extraction.
 - 2026-11-01 13:35 -0800: lane 145 deepseek sync run ~300/6,119, 0 runaways, ~$0.87 projected, ~3.8 h; stays sequential (D-290 request_rule says one request at a time; coordinator's shard suggestion withdrawn).
 - 2026-11-01 13:42 -0800: lane 149 run dirs committed (lane-149-runs f59b7a8f, 86 files match sha256; no file >50 MB) → PR #162, checks running.
+- 2026-11-01 13:44 -0800: PR #162 (149 run dirs) green, merged 68f0009c. Lane 145 deepseek sync running (~270/6,119, 1 runaway, ~$0.99 projected).
