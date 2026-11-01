@@ -91,7 +91,8 @@ notices. Every replay clause is zero tolerance.
 * **rewritten_fields**: the recorded field list is not the rewrite's;
 * **model**: the response's model is not the declared reader's slug;
 * **is_byok**: per the reader's ``target`` (#82, Q4). OpenRouter: the response does
-  not report the owner's own key. Native Anthropic: the record carries an
+  not report the owner's own key (for a batch row, the batch's ``usage.is_byok``,
+  which OpenRouter reports for the whole batch only; D-279). Native Anthropic: the record carries an
   ``is_byok`` value, which that response never reports;
 * **provider**: the record's provider is not ``REPLAY_PROVIDERS[target]``: the
   provider OpenRouter routed to, or the native endpoint's host;

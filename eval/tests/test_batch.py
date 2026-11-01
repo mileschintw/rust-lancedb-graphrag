@@ -29,7 +29,7 @@ from lancet_eval.batch_client import (
     BatchRequest,
     BatchResult,
     OpenRouterBatchClient,
-    ReaderOutput,
+    _openrouter_result,
     _payload,
     anthropic_output,
     openrouter_output,
@@ -85,25 +85,53 @@ class FakeClient:
             if status != "succeeded":
                 out.append(BatchResult(qid, status, error=f"{status} by the fake"))  # type: ignore[arg-type]
                 continue
-            out.append(
-                BatchResult(
-                    qid,
-                    "succeeded",
-                    output=ReaderOutput(
-                        content=self.content.get(qid, f"Answer: {qid}"),
-                        finish_reason="stop",
-                        prompt_tokens=500,
-                        completion_tokens=40,
-                        total_tokens=540,
-                        model=rf.HAIKU.slug,
-                        provider="Anthropic",
-                        is_byok=True,
-                        reasoning_tokens=0,
-                        content_block_types=None,
-                    ),
-                )
-            )
+            # The row as OpenRouter returns it (#137), read by the real parser with
+            # the batch-level is_byok (D-279).
+            row = openrouter_row(qid, self.content.get(qid, f"Answer: {qid}"))
+            out.append(_openrouter_result(row, True))
         return out
+
+
+def openrouter_row(
+    custom_id: str,
+    content: str,
+    *,
+    model: str = rf.HAIKU.slug,
+    provider: str = "Anthropic",
+    status_code: int = 200,
+) -> dict[str, Any]:
+    """One row of a finished OpenRouter batch's ``results``, in the shape the S2
+    pilot's batches returned (2026-10-31): the chat completion sits in
+    ``response.body``, and its usage reports no ``is_byok`` (#137)."""
+    return {
+        "id": f"msg_{custom_id}",
+        "custom_id": custom_id,
+        "response": {
+            "status_code": status_code,
+            "request_id": None,
+            "body": {
+                "model": model,
+                "id": f"gen-batch-{custom_id}",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": "stop",
+                    }
+                ],
+                "service_tier": "batch",
+                "usage": {
+                    "prompt_tokens": 500,
+                    "completion_tokens": 40,
+                    "total_tokens": 540,
+                    "completion_tokens_details": {"reasoning_tokens": 0},
+                },
+                "provider": provider,
+            },
+        },
+        "error": None,
+    }
 
 
 class FakeBin:
@@ -673,18 +701,18 @@ def test_an_openrouter_response_with_null_content_keeps_its_usage() -> None:
 
 
 def test_a_response_that_cannot_be_read_is_unreadable_not_errored() -> None:
-    from lancet_eval.batch_client import _anthropic_result, _openrouter_result
+    from lancet_eval.batch_client import _anthropic_result
 
-    assert _openrouter_result({"custom_id": "q", "response": {}}).status == (
-        "unreadable"
-    )
+    row = openrouter_row("q", "x")
+    del row["response"]["body"]["choices"]
+    assert _openrouter_result(row, True).status == "unreadable"
     assert _anthropic_result({
         "custom_id": "q",
         "result": {"type": "succeeded", "message": {"content": "x"}},
     }).status == ("unreadable")
-    assert _openrouter_result({"custom_id": "q", "error": {"message": "x"}}).status == (
-        "errored"
-    )
+    assert _openrouter_result(
+        {"custom_id": "q", "error": {"message": "x"}}, True
+    ).status == ("errored")
 
 
 def test_retry_errors_leaves_billed_answers_render_rejected_or_unreadable(s2) -> None:
@@ -911,3 +939,103 @@ def test_the_batch_submit_command_refuses_limit_in_a_run_of_record(s2) -> None:
     assert result.exit_code == 1
     assert "pilot" in result.output
     assert client.batches == {}
+
+
+# ---- #137: the shape the S2 pilot's batches returned ------------------------------
+
+
+def _get_batch(monkeypatch, body: dict[str, Any]) -> None:  # type: ignore[no-untyped-def]
+    import httpx
+
+    def get(url, **kwargs):  # type: ignore[no-untyped-def]
+        return httpx.Response(200, json=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx, "get", get)
+
+
+def _finished(results: Any, *, is_byok: Any = True, **fields: Any) -> dict[str, Any]:
+    """A finished OpenRouter batch as `GET /api/v1/batches/{id}` returned it in the
+    pilot: the model is dated, and only the batch-level usage reports is_byok."""
+    return {
+        "id": "batch-1",
+        "object": "batch",
+        "endpoint": "/v1/chat/completions",
+        "model": "anthropic/claude-haiku-5.5-20261007",
+        "status": "completed",
+        "provider": "Anthropic",
+        "usage": {"prompt_tokens": 1000, "cost": 0, "is_byok": is_byok},
+        "error": None,
+        "results": results,
+        **fields,
+    }
+
+
+def test_an_openrouter_batch_row_is_read_from_response_body_with_the_batch_is_byok(
+    monkeypatch,
+) -> None:
+    rows = [openrouter_row("q1", "Answer: Yes"), openrouter_row("q2", "Answer: No")]
+    _get_batch(monkeypatch, _finished(rows))
+    results = OpenRouterBatchClient("k", url="https://fake.test/b").results("b1")
+    assert [r.status for r in results] == ["succeeded", "succeeded"]
+    out = results[0].output
+    assert out is not None
+    assert (out.content, out.model, out.provider, out.is_byok) == (
+        "Answer: Yes",
+        rf.HAIKU.slug,
+        "Anthropic",
+        True,
+    )
+    assert (out.prompt_tokens, out.completion_tokens, out.reasoning_tokens) == (
+        500,
+        40,
+        0,
+    )
+
+
+@pytest.mark.parametrize("is_byok", [False, None, "true"])
+def test_a_batch_not_reported_byok_gives_rows_that_fail_the_clause(
+    monkeypatch, is_byok: Any
+) -> None:
+    _get_batch(monkeypatch, _finished([openrouter_row("q1", "x")], is_byok=is_byok))
+    (result,) = OpenRouterBatchClient("k", url="https://fake.test/b").results("b1")
+    assert result.output is not None
+    assert result.output.is_byok == (False if is_byok is False else None)
+
+
+def test_a_non_2xx_row_and_a_row_without_body_are_errored(monkeypatch) -> None:
+    refused = openrouter_row("q1", "x", status_code=400)
+    refused["response"]["body"] = {
+        "error": {"type": "invalid_request", "message": "no"}
+    }
+    bodiless = openrouter_row("q2", "x")
+    del bodiless["response"]["body"]
+    _get_batch(monkeypatch, _finished([refused, bodiless]))
+    first, second = OpenRouterBatchClient("k", url="https://fake.test/b").results("b1")
+    assert first.status == "errored" and "400" in (first.error or "")
+    assert "invalid_request: no" in (first.error or "")
+    assert second.status == "errored" and "no body" in (second.error or "")
+
+
+def test_a_failed_batch_carries_its_message_into_every_error_record(
+    s2, monkeypatch
+) -> None:
+    run, qs, _, client, _ = s2
+    sent = batch.submit(run=run, arm=ARM, echo=lambda _: None)
+    message = (
+        "Batch request 'q' uses thinking.type: \"between_tools\", which is not "
+        "supported on the Batch API."
+    )
+    failed = _finished(None, is_byok=None, status="failed", error={"message": message})
+    failed["usage"] = None
+    _get_batch(monkeypatch, failed)
+    monkeypatch.setattr(
+        batch,
+        "client_factory",
+        lambda target: OpenRouterBatchClient("k", url="https://fake.test/b"),
+    )
+    result = batch.fetch(run=run, echo=lambda _: None)
+    assert result.errors == len(_all(qs))
+    for rec in _reader(run):
+        assert rec.session_id == sent.batch_id
+        assert rec.error_type == batch.NO_RESULT
+        assert message in (rec.error or "")

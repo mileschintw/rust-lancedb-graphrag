@@ -1089,6 +1089,8 @@ def _journal_batch(
             f"{_listed(unknown)}; the run no longer matches the manifest"
         )
     by_id = {r.custom_id: r for r in results if r.custom_id in requests}
+    # #137: a batch the endpoint failed as a whole names why in one message.
+    failed = getattr(results, "error", None)
     records: dict[str, RunRecord] = {}
     # One render call per levers and replicate: render keys its lines by question.
     to_render: dict[tuple[tuple[str, ...], int], list[tuple[str, ReaderOutput]]] = {}
@@ -1116,7 +1118,8 @@ def _journal_batch(
                 **record_fields(cid),
                 outcome="error",
                 error_type=NO_RESULT,
-                error=f"batch {batch_id} returned no result for this request",
+                error=f"batch {batch_id} returned no result for this request"
+                + (f": {failed}" if failed else ""),
             )
         elif result.output is None or result.status != "succeeded":
             records[cid] = RunRecord(
