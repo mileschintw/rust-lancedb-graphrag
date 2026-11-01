@@ -1,8 +1,8 @@
 # spare-1 status
 
-- state: working
+- state: review
 - branch: claude/lane-spare-1-c7ab76
-- head: 68f0009c
+- head: 79ace56d
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\spare-1.md
-- time: 2026-11-01 14:01 -0800
-- doing: #163: designing run-plan type, held-out replay gate, closed-book path; asked coordinator about scope
+- time: 2026-11-01 14:35 -0800
+- doing: still running: code review (2 subagents), full eval suite

@@ -119,7 +119,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #164 | before S3 scoring | — | none | `score` always loads the v1.0 document map, so it refuses full-MHR and 2Wiki journals (#149 stores, #163 S3, #146); shares `score.py` with paused #128 (opened by lane 146) | free; needed before S3's analysis-plan scoring |
 | #165 | now (lane verify) | — | none | recompute always-Yes baseline on MHR yes/no (lit-check gap a) | free |
 | #166 | now (lane verify) | — | none | how MHR's official `qa_evaluate.py` scores insufficient-info answers (gap b) | free |
-| #167 | before S3 analysis-plan freeze | — | none | graph results by query type, temporal especially; name it in S3's analysis plan (gap c) | free |
+| #167 | before S3 analysis-plan freeze | — | none | graph results by query type, temporal especially; name it in S3's analysis plan (gap c); plus check whether graph facts carry dates (comment 2026-11-01, owner: "Add comment"; <GRAPH_FACT> has no DocMeta in code) | free |
 | #168 | now (lane verify) | — | none | exact CI for 2Wiki Opus +14 (gap d) | free |
 | #169 | now (lane verify) | — | none | precision of Haiku's extra relations vs deepseek (gap e; OpenRouter judge only) | free |
 | #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
