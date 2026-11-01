@@ -384,6 +384,8 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   at least 25% above 1,489. This changes measurement only, so "change chunking and nothing else" holds: the cap
   (`citation_excerpt_max_chars`) shapes only the excerpts of `RetrievalSnapshot.retrieved_chunks` (RetrieveNode) and of
   the resolved citations (GenerateAnswerNode, after generation); the prompt is packed from the full evidence block text.
+  The judge reads citation excerpts under its own 1,500-character per-passage budget, so at 512 it would have seen S1
+  passages cut and v1.0 passages whole; 2,048 removes that difference.
   The v1.0 arm (`config.toml`, `config.eval.toml`) stays at 512, which its 55-token chunks never reach. Applies to every
   arm run under `LANCET_ENV=eval-s1`; no re-seed is needed, since excerpts are cut at query time.
 
