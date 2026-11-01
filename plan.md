@@ -232,3 +232,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 13:23 -0800: owner answers (AskUserQuestion here). #156: "可以重作空白的部分就好嗎？同時engine提早停我覺得也值得做，設定一個門檻，一直串流空白就重試" → retry only the runaway rows + engine early-stop on a whitespace-streak threshold, then retry. #152: "重記預期並註明 (Recommended)". 149 run dirs: owner asked for standard practice and loss risk (answer pending). Remaining Claude credit: "先不做決定".
 - 2026-11-01 13:24 -0800: lane 145 D-290 freeze (PREREGISTRATION_S3_WRITERS_SYNC, 76f326f8, additions only) → PR #161, checks running (standing rule: open PR, merge on green).
 - 2026-11-01 13:25 -0800: owner: "先不管，全都公開repo備份全文，以後真的有需要再下架就好" → commit full text to the public repo: lane 149 commits its run dirs (new PR, Refs #149); lane 145 commits s3-extract chunks + results in its extraction PR.
+- 2026-11-01 13:28 -0800: PR #161 (D-290) green, merged 1302bd5e; lane 145 got 'continue' for deepseek's sync extraction.
