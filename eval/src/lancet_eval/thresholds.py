@@ -1134,6 +1134,115 @@ PREREGISTRATION_S2X = ReplayStagePreRegistration(
 )
 
 
+# v1.1 S3 writers (#145, D-73): what the 2Wiki writer extraction fixes, frozen before
+# any extraction is paid for. It names the pinned passages, the extraction unit, the
+# engine's request body and each writer's model and thinking; S3's analysis
+# pre-registration (arms, K, Holm family, metrics) is a later constant. A writer added
+# after this freeze gets its own WriterPreRegistration constant in its own commit.
+PREREGISTRATION_S3_WRITERS = WriterPreRegistration(
+    dataset="osunlp/HippoRAG_2",
+    dataset_revision="5ec05b38deecc3318bb432c69865959c56058990",
+    passages_file="2wikimultihopqa_corpus.json",
+    passages_sha256="9d6e352952aafb18dab22bf8195039461321a44a949df902ae83bce134ad238a",
+    passage_count=6_119,
+    unit=(
+        "One request per passage, in file order, taken as given: the passage's title "
+        "and text joined by one newline (twowiki.passage_unit, HippoRAG 2's own form; "
+        "about 37% of the texts do not name their title). No chunking and no length "
+        "floor: the 41 units under the engine's 40-byte MIN_CHUNK_CONTENT_LENGTH are "
+        "extracted too, so every writer gets the same 6,119 requests"
+    ),
+    extraction_source="engine/src/graph/extraction.rs",
+    extraction_source_blob="54c926a6c07b4483eb394cb5ff4bf58dcd158dfb",
+    request_rule=(
+        "Every writer starts from the body OpenRouterExtractionGenerator::"
+        "build_request_payload builds for the unit: its system message, its user "
+        "message ('Extract entities and relationships:' and the unit), the strict "
+        "json_schema 'knowledge_graph_extraction' and max_completion_tokens 16,384 "
+        "(D-272). deepseek gets that body as the engine sends it: the model and "
+        "provider pin config.toml holds (D-271) and reasoning {effort: none}. Each "
+        "Claude writer gets it rewritten as S2's readers are (D-255, reader_request."
+        "rewrite_pack_body): its slug, provider {only: [anthropic], allow_fallbacks: "
+        "false} (BYOK, D-265), temperature and top_p removed, and reasoning per its "
+        "thinking. The message text is the same for every writer; no few-shot "
+        "example and no prompt caching (D-256)"
+    ),
+    writers=(
+        (
+            "deepseek",
+            ReaderDeclaration(
+                slug="deepseek/deepseek-v4-flash-0731",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+            ),
+        ),
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
+    ),
+    transports=(
+        ("deepseek", "openrouter_batch"),
+        ("haiku-5.5", "openrouter_batch"),
+        ("sonnet-5.5", "openrouter_batch"),
+        ("opus-5.5", "openrouter_batch"),
+    ),
+    report_rule=(
+        "Per writer and passage: the raw output and its usage (prompt, completion and "
+        "reasoning tokens, cost, provider, is_byok) are stored; no store is built in "
+        "this step. Per writer: its thinking setting and measured reasoning_tokens "
+        "(no zero requirement), tokens and spend, and the failed, expired and "
+        "schema-invalid outputs. A Claude writer's request must run BYOK (is_byok "
+        "true, provider Anthropic). Every paid batch is submitted only after the "
+        "owner's yes on its printed estimate (D-258)"
+    ),
+    provenance=(
+        "#145, owner 2026-11-01: 'Start S3 prep'. Writers: D-235 (deepseek, Haiku 5.5, "
+        "Sonnet 5.5), and Opus 5.5 added by the owner before this freeze merged "
+        "(2026-11-01, relayed by the coordinator: '全部接受，同意 force-push'). "
+        "Thinking: the lowest setting each model supports on the Batch API, "
+        "one rule for every writer, each setting and its measured reasoning_tokens "
+        "reported (owner 2026-11-01, relayed from a side session and confirmed to the "
+        "coordinator: '是說haiku也不用一定要開low effort吧？…就直接變成off, off, low, "
+        "low這樣？', 'Confirm'): deepseek off, Haiku 5.5 off, Sonnet 5.5 and Opus 5.5 "
+        "on at effort low, all on the Batch API. Sync list prices, USD per MTok: "
+        "deepseek 0.0448/0.30 (Wafer, D-277), Haiku 5.5 0.10/0.50 and Sonnet 5.5 2/10 "
+        "(decisions 2026-10-30), Opus 5.5 4/20 (D-269); OpenRouter's Batch API bills "
+        "Claude at half. "
+        "Dataset: D-234; revision, file sha256 and licence (Apache-2.0 at "
+        "github.com/Alab-NII/2wikimultihop) read 2026-11-01. Passage form: HippoRAG "
+        "2's main.py. Extraction source blob: engine/src/graph/extraction.rs at "
+        "639ee82f. Written 2026-11-01, before any 2Wiki extraction"
+    ),
+)
+
+
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single
 # freeze commit that also holds every frozen lever parameter (prompt sentences, rerank and
 # retrieve budgets, the graph-v2 precision variant, the unreported rerank-call cost ceiling,
