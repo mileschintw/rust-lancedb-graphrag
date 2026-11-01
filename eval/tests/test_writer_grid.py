@@ -194,3 +194,27 @@ def test_a_pilot_writer_without_its_reused_file_is_refused(tmp_path: Path) -> No
     wp.write_chunks(tmp_path, [_chunk("d000-c000")])
     with pytest.raises(wp.PilotError, match="plan --pilot"):
         wg.pending(wg.WRITERS["sonnet-5.5"], tmp_path)
+
+
+def test_shards_split_the_unanswered_chunks_and_results_merge_them(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path
+    chunks = [_chunk(f"d000-c{i:03d}") for i in range(5)]
+    wp.write_chunks(out, chunks)
+    (out / "deepseek.reused.jsonl").write_text("", encoding="utf-8")
+    ds = wg.WRITERS["deepseek"]
+    work = out / "deepseek"
+    work.mkdir()
+    done = _ok("d000-c000", byok=False)
+    (work / "deepseek.results.jsonl").write_text(json.dumps(done) + "\n", "utf-8")
+    parts = [wg.shard(ds, out, i, 2) for i in range(2)]
+    ids = [[c.custom_id for c in chunks] for _, chunks in parts]
+    assert ids == [["d000-c002", "d000-c004"], ["d000-c001", "d000-c003"]]
+    assert [w.name for w, _ in parts] == ["deepseek.shard0", "deepseek.shard1"]
+    row = _ok("d000-c003", byok=False)
+    shard1 = work / "deepseek.shard1.results.jsonl"
+    shard1.write_text(json.dumps(row) + "\n", "utf-8")
+    assert sorted(wg.results(ds, out)) == ["d000-c000", "d000-c003"]
+    with pytest.raises(wp.PilotError):
+        wg.shard(ds, out, 2, 2)

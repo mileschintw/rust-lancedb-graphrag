@@ -148,11 +148,40 @@ def results(writer: wp.Writer, out: Path) -> dict[str, dict[str, Any]]:
     """Every chunk's answer: reused or bought, a succeeded row winning over a failed
     one."""
     merged = wp.read_results(_reused_path(writer, out))
-    bought = wp.read_results(_work(writer, out) / f"{writer.name}.results.jsonl")
-    for cid, record in bought.items():
-        if record["status"] == "succeeded" or cid not in merged:
-            merged[cid] = record
+    work = _work(writer, out)
+    files = [work / f"{writer.name}.results.jsonl"]
+    files += sorted(work.glob(f"{writer.name}.shard*.results.jsonl"))
+    for path in files:
+        for cid, record in wp.read_results(path).items():
+            if record["status"] == "succeeded" or cid not in merged:
+                merged[cid] = record
     return merged
+
+
+def shard(
+    writer: wp.Writer, out: Path, index: int, count: int
+) -> tuple[wp.Writer, list[wp.PilotChunk]]:
+    """One of ``count`` disjoint parts of a sync writer's pending chunks still without a
+    succeeded answer, and the writer that records it in its own results file
+    (``<writer>.shard<index>.results.jsonl``), so parallel runs never share a file.
+    """
+    if not 0 <= index < count:
+        raise wp.PilotError(f"shard {index} is not in 0..{count - 1}")
+    done = {
+        cid for cid, r in results(writer, out).items() if r["status"] == "succeeded"
+    }
+    chunks = [
+        c
+        for i, c in enumerate(pending(writer, out))
+        if i % count == index and c.custom_id not in done
+    ]
+    part = wp.Writer(
+        f"{writer.name}.shard{index}",
+        writer.price,
+        writer.price_factor,
+        writer.declaration,
+    )
+    return part, chunks
 
 
 def submit(
@@ -243,15 +272,18 @@ def plan(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
 
 
 @app.command()
-def deepseek(out: Path = DEFAULT_OUT) -> None:
-    """Paid: deepseek's pending chunks through the sync API (D-278)."""
+def deepseek(
+    out: Path = DEFAULT_OUT,
+    shard_index: int = typer.Option(0, "--shard", help="This run's shard."),
+    shards: int = typer.Option(1, help="Parallel runs, each with its own --shard."),
+) -> None:
+    """Paid: one shard of deepseek's pending chunks, sync API (D-278)."""
     out = wp._out(out)
-    writer = WRITERS[wp.DEEPSEEK]
-    chunks = pending(writer, out)
-    typer.echo(wp.estimate(writer, chunks, _output_tokens(writer, out)))
-    wp.run_sync(
-        writer, chunks, batch_client.chat_client(), _work(writer, out), echo=typer.echo
-    )
+    base = WRITERS[wp.DEEPSEEK]
+    writer, chunks = shard(base, out, shard_index, shards)
+    typer.echo(wp.estimate(writer, chunks, _output_tokens(base, out)))
+    client = batch_client.chat_client()
+    wp.run_sync(writer, chunks, client, _work(base, out), echo=typer.echo)
 
 
 @app.command()
