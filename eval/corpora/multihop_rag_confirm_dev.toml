@@ -1,0 +1,50 @@
+# #146 prep: the confirmation stage's two full-corpus stores over the 1,000 fresh dev
+# questions (multihop_rag/fresh_split.json). `seed --store eval-full-merged` builds the
+# merged store from it, and `preflight` checks either store; eval-full is #149's store,
+# reused as it is (experiments/v1.1/RUN-CONFIRM.md). It is pre-registered for no run: a
+# dev run on it first adds a [preregistration] token. The held-out corpus is written
+# only when the run plan is frozen.
+[documents]
+# The same pinned file as multihop_rag_full_dev.toml (a test pins this): the 609 article
+# texts stay in the gitignored `.cache/` (ATTRIBUTION.md).
+map_corpus = "multihop_rag_full"
+file = "multihop_rag/.cache/corpus.json"
+sha256 = "20b61b5ab84de84a927420c5d265b7ec8d859ae49980699958a787ade9e4d28f"
+source = "https://huggingface.co/datasets/yixuantt/MultiHopRAG"
+license = "odc-by"
+count = 609
+commit_documents = false
+chunk_size = 500
+
+[questions]
+file = "multihop_rag/questions.fresh_dev.jsonl"
+label_format = "multihop_rag"
+sample_seed = 149
+sample_size = 1000
+
+[arms]
+# The confirmation grid's two chunking columns, each read by deepseek through the drive.
+arms = [
+  "full/hybrid+rerank+metadata",
+  "fullmerged/hybrid+rerank+metadata",
+]
+
+# Small: #149's eval-full chunking. Merged: S1's (multihop_rag_s2x_dev.toml).
+[stores.full]
+chunk_strategy = "structure-aware"
+chunk_size = 500
+chunk_overlap = 50
+
+[stores.fullmerged]
+chunk_strategy = "structure-merge"
+chunk_size = 256
+chunk_overlap = 25
+
+[split]
+file = "multihop_rag/fresh_split.json"
+role = "dev"
+
+# No canary, as in multihop_rag_full_dev.toml: the legacy canary rows are dev questions
+# of another split.
+[preflight]
+legacy_canaries = false
