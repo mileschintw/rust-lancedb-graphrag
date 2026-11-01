@@ -37,7 +37,12 @@ def _snippets() -> list[str]:
 
 def _commands() -> list[list[str]]:
     text = GUIDE.read_text(encoding="utf-8")
-    lines = re.findall(r"^\s*uv run --project eval lancet-eval (.+)$", text, re.M)
+    # Every uv command runs with PYTHONUTF8=1 (#84, the cp950 console).
+    bare = re.findall(r"^\s*uv run .*$", text, re.M)
+    assert not bare, f"commands without PYTHONUTF8=1: {bare}"
+    lines = re.findall(
+        r"^\s*PYTHONUTF8=1 uv run --project eval lancet-eval (.+)$", text, re.M
+    )
     return [shlex.split(line) for line in lines]
 
 
