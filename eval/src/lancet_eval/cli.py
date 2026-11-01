@@ -477,6 +477,31 @@ def resolve_run_dir(corpus: str, resume: bool, runs_root: Path | None = None) ->
     return root / f"{today}-{corpus}"
 
 
+def _parse_chunk_text(values: list[str] | None) -> dict[str, Path] | None:
+    """Parse repeatable ``--chunk-text STORE=PATH`` values (#128)."""
+    if not values:
+        return None
+    out: dict[str, Path] = {}
+    for value in values:
+        store, sep, path = value.partition("=")
+        if not sep or not store or not path:
+            raise typer.BadParameter(
+                f"--chunk-text takes STORE=PATH, a store prefix or name and a "
+                f"chunk-text dump (got {value!r})"
+            )
+        if store in out:
+            raise typer.BadParameter(f"--chunk-text names store {store!r} twice")
+        out[store] = Path(path)
+    return out
+
+
+_CHUNK_TEXT_HELP = (
+    "STORE=PATH (repeatable): an `inspect_lancedb --chunk-text` dump of the chunks "
+    "a non-v1.0 store's arms ranked. Those arms' chunk-ID metrics (Hits@k, MRR@10, "
+    "MAP@10) read gold sets built from it; without one they are not evaluable (#128)."
+)
+
+
 def _validate_stage_cap(value: float | None) -> float | None:
     """Reject a --stage-cap that cannot fire (WR-02, D-86).
 
@@ -1257,6 +1282,10 @@ def score_benchmark(
             ),
         ),
     ] = None,
+    chunk_text: Annotated[
+        list[str] | None,
+        typer.Option("--chunk-text", help=_CHUNK_TEXT_HELP),
+    ] = None,
 ) -> None:
     """Score journaled evaluation runs offline or with LLM judge."""
     # Usage errors are raised outside the try block so they keep exit code 2.
@@ -1282,6 +1311,7 @@ def score_benchmark(
             )
     elif calibration_key is not None:
         raise typer.BadParameter("--calibration-key only applies with --judged")
+    chunk_text_paths = _parse_chunk_text(chunk_text)
     try:
         from lancet_eval.score import score_run
 
@@ -1304,6 +1334,7 @@ def score_benchmark(
             stage_spend_cap=stage_cap,
             judged=judged,
             calibration_key=calibration_key,
+            chunk_text=chunk_text_paths,
         )
         md = render_markdown(report)
         console.print(md)
@@ -1565,6 +1596,39 @@ def compare_benchmark(
         line(f"Wrote {run / name}")
 
 
+@app.command("chunk-ids")
+def chunk_ids(
+    run: Annotated[
+        Path,
+        typer.Option("--run", "-r", help="Run directory holding journal.jsonl"),
+    ],
+    store: Annotated[
+        str,
+        typer.Option("--store", help="A non-v1.0 store prefix or name (merged, full)"),
+    ],
+    out: Annotated[
+        Path,
+        typer.Option("--out", help="JSONL file of the store's ranked chunk IDs"),
+    ],
+) -> None:
+    """List one store's ranked chunk IDs for `inspect_lancedb --chunk-text` (#128).
+
+    Offline and read-only. Dump their text with `inspect_lancedb --chunk-text OUT
+    --generation <printed generation> --lancedb-path <store>`, then pass the dump to
+    `score` and `compare-levers` as `--chunk-text STORE=DUMP`.
+    """
+    from lancet_eval.journal import load_records
+    from lancet_eval.store_gold import write_ranked_ids
+
+    journal = run / "journal.jsonl"
+    try:
+        generation = write_ranked_ids(load_records(journal), store, out)
+    except (OSError, ValueError) as exc:
+        console.print(f"[bold red]chunk-ids refused:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Wrote {out}; index_generation {generation}", markup=False)
+
+
 @app.command("compare-levers")
 def compare_levers(
     run: Annotated[
@@ -1575,6 +1639,10 @@ def compare_levers(
             help="Run directory that `score --no-judge` has scored (report.json)",
         ),
     ],
+    chunk_text: Annotated[
+        list[str] | None,
+        typer.Option("--chunk-text", help=_CHUNK_TEXT_HELP),
+    ] = None,
 ) -> None:
     """Write the no-judge lever comparison of a scored 06.3.6 run (D-150, D-158).
 
@@ -1588,8 +1656,9 @@ def compare_levers(
     def line(text: str, **kwargs: Any) -> None:
         console.print(text, markup=False, highlight=False, soft_wrap=True, **kwargs)
 
+    chunk_text_paths = _parse_chunk_text(chunk_text)
     try:
-        payload = write_lever_comparison(run)
+        payload = write_lever_comparison(run, chunk_text=chunk_text_paths)
     except Exception as exc:
         line(f"Compare-levers refused: {exc}", style="bold red")
         raise typer.Exit(code=1) from exc
