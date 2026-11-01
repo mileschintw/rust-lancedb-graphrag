@@ -118,6 +118,12 @@
 - 重做 pilot：owner 同意「同意，約 $0.6（上限 $1.5） (Recommended)」。拿到 GO 之後，刪除 `<PILOT_RUN>`，`git pull`，重跑步驟 1 的片段，再跑 2.1-2.5，不必再問一次。如果印出的估計會讓重做超過 $1.50，就停下來。
 - 依 coordinator 的要求，已經用 `git checkout --` 還原 main checkout 中步驟 1 的兩個檔案，`git status --short` 沒有輸出。
 
+## #138 native Sonnet 探測（owner：「先免費試原生 batch (Recommended)」）
+
+- **沒有執行**：`ANTHROPIC_API_KEY` 沒有設定。這個 shell 沒有，Windows 的 Process、User、Machine 環境變數都沒有，repo 和 `eval/` 底下也沒有 `.env`（只檢查有沒有，沒有印出值）。
+- 沒有花錢。main checkout 沒有改動，維持乾淨的 `f3f036ee`。步驟 1 的改動之前已經還原，所以這次沒有再貼回去。
+- 要執行的話：owner 必須在這個 session 繼承的環境裡設定 `ANTHROPIC_API_KEY`（必須是持有 Claude credit 的那個 org 的 key），之後 coordinator 再給 GO。
+
 ## 給 coordinator 的問題
 
 1. **#138 要 owner 給 D-ID**，選項見 issue：(1) Sonnet 改走 sync API 並保留 `between_tools`（約 $5，上限約 $18.9，要寫程式）；(2) Sonnet 走 batch，thinking 改 off（只改常數）；(3) Sonnet 走 batch，thinking 改 on 加 effort（只改常數）。常數還沒 commit，D-73 不受影響。
