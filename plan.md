@@ -77,7 +77,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
 | 148 | #148 | local_4b47d05b-1a55-4b82-a4da-a3b9193706f8 | started 2026-11-01 (unattended): MHR writer grid on S1 subset; freeze PR → Claude extraction tonight (ceiling Claude $40, OpenRouter $1.50); graph import + reading after main checkout (3rd) | — |
-| 149 | #149 | local_0c64611e-c641-4167-b6c3-364ca0fdeead | started 2026-11-01 (unattended): B 2Wiki hybrid readers + C full-MHR fresh split, store, readers; freeze PR(s) → main checkout (2nd, after 143) → Claude readers tonight (ceiling Claude $70, OpenRouter $3) | — |
 | spare-1 | none | local_5e0dd332-9421-44e7-84a5-e5c0a705ec0d | parked spare (rewrite brief before GO) | GO #spare-1 |
 | spare-2 | none | local_945630cc-9acd-4111-b020-a38a766b222f | parked spare (rewrite brief before GO) | GO #spare-2 |
 | 145 | #145 | local_b792b8dc-3864-43f1-8564-58de4475b13b | started 2026-11-01 on the user's "Start S3 prep": 2Wiki fetch + license + D-243 split + writer prereg freeze (free) → freeze PR → "continue" → extend #117 script after #117 merges → estimate → owner's yes → Claude batches by the morning of 2026-11-02. Opus only if the owner adds it after #117 | — |
@@ -112,7 +111,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #145 | now (lane 145) | — | #117 (script, step 4 only) | 2Wiki corpus config + split, writer prereg constant in `thresholds.py`, #117 script extension, `RUN-S3-EXTRACT.md` | limited: paid, owner's yes on estimate; by the morning of 2026-11-02 |
 | #146 | after S3 | — | none | full-MultiHop-RAG confirmation stage: new split + prereg, full store, `answer_usable` yes/no fix; files set at design (user: "Add to roadmap") | limited: held-out budget, store rebuild, paid |
 | #148 | now (lane 148) | — | #117 (script) | `multihop_rag_s3m_dev.toml`, prereg constant, extraction import path, `EXPLORE-S3-MHR-WRITERS.md` | limited: paid (pre-approved, ceilings) |
-| #149 | now (lane 149) | — | #145 (2Wiki pin/split, part B) | 2Wiki + full-MHR corpus configs, fresh split file, prereg constants, `EXPLORE-B/C` docs | limited: paid (pre-approved), store builds (approved) |
 | #139 | 2 | — | none | `comparison.py` › reader table `batch_spend` for sync arms (Sonnet printed at half; S2 Result states the true ~$7.02) | free; not urgent |
 | #152 | owner decision first | — | none | slow-tier v1.0 lever re-score test fails since D-276 (`gold_containment` drift); owner picks: keep pre-D-276 rule for v1.0 re-scores, or re-record the expectation with the drift stated (opened by lane 147) | free; design question for the morning |
 | #156 | before S3 writer scoring | — | none | deepseek extraction whitespace runaways to the 16,384 cap (1.3% of chunks, 48% of deepseek output tokens); pick a handling rule (cap + early stop, or exclude per writer) before #145/#148 compare writers (opened from #117's report) | free; design question for the morning |
@@ -226,3 +224,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 08:57 -0800: lane 149 C done and pushed on lane-149-record (c5124841; journal gzipped, >100 MB raw); B seed 5,601/6,119, ~15/min, ETA ~09:30, then B drive + readers (~$2). 149 Claude spend $28.34 so far. Lane 148 extraction pushed (4c8c8649), waits for main checkout.
 - 2026-11-01 09:57 -0800: lane 149 done: B and C recorded on lane-149-record (79a1a5aa); Claude $30.82, OpenRouter ~$1.50 → PR #159, checks running. Decided while unattended: run dirs NOT committed (retrieved article text in a public repo; sha256 manifest committed; dirs in data/lane149-runs/, gitignored) — owner to confirm. Main checkout handed to lane 148 (import + reading runs).
 - 2026-11-01 09:59 -0800: lane 148 OpenRouter ceiling raised $3 → $3.50 (spent $2.03; phase 3 est. ~$3.15 total; balance ~$19.79). Lane 149 finished, nothing left for it.
+- 2026-11-01 10:01 -0800: PR #159 (149 record) green, merged; lane 149 moved to history.
