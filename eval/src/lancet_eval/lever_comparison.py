@@ -56,6 +56,7 @@ from lancet_eval.arms import (
     reader_base_arm,
     resolve_arm,
 )
+from lancet_eval.batch import DEEPSEEK_BATCH_FACTOR
 from lancet_eval.config import V1_STORE
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
@@ -1579,11 +1580,12 @@ def _sync_usd(rec: RunRecord, price: ReaderPrice) -> float:
 def _batch_usd(
     ctx: _Ctx, arm: str, batch: Sequence[RunRecord], price: ReaderPrice
 ) -> float:
-    """An arm's batch spend: a reader's at its declared price (`compute_spend`), the
-    deepseek replicates' (D-274) at the engine's list price, both at the batch rate."""
+    """An arm's batch spend: a reader's at its declared price and the batch rate
+    (`compute_spend`); the deepseek replicates' (D-274) at the engine's list price and
+    `batch.DEEPSEEK_BATCH_FACTOR`."""
     if is_reader_arm(arm):
         return compute_spend(batch, readers=ctx.readers)[0]
-    return BATCH_PRICE_FACTOR * math.fsum(
+    return DEEPSEEK_BATCH_FACTOR * math.fsum(
         tokens_usd(r.workflow_meta, price) for r in batch if r.workflow_meta
     )
 

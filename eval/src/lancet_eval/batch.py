@@ -592,6 +592,15 @@ def _pack(
 DEEPSEEK_PRICE = ReaderPrice(
     GENERATION_LIST_INPUT_PRICE_PER_1M, GENERATION_LIST_OUTPUT_PRICE_PER_1M
 )
+#: The share of list price a deepseek replicate is estimated and spent at: 1, since
+#: no batch discount on OpenRouter credit is established (D-274; the Claude readers'
+#: half price is BYOK's, `BATCH_PRICE_FACTOR`).
+DEEPSEEK_BATCH_FACTOR = 1.0
+
+
+def batch_factor(arm: str) -> float:
+    """The share of list price a batch request of `arm` is billed at."""
+    return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_BATCH_FACTOR
 
 
 def deepseek_request(pack_body: str) -> ReaderRequest:
@@ -630,12 +639,13 @@ def cost_estimate(
     base: Mapping[str, RunRecord],
     declaration: ReaderDeclaration,
     spent: float,
+    rate: float = BATCH_PRICE_FACTOR,
 ) -> str:
     """The D-258 estimate printed before a submit; it never refuses.
 
-    Each request is priced at the reader's sync list price times
-    `BATCH_PRICE_FACTOR`, with the deepseek record's token counts as the expected
-    usage and the body's `max_completion_tokens` as the output bound.
+    Each request is priced at the reader's sync list price times `rate`
+    (`batch_factor`), with the deepseek record's token counts as the expected usage
+    and the body's `max_completion_tokens` as the output bound.
     """
     price = declaration.price
     expected = bound = 0.0
@@ -647,10 +657,10 @@ def cost_estimate(
         max_out = int(body.get("max_completion_tokens", body.get("max_tokens", 0)))
         expected += prompt * price.input_per_mtok + completion * price.output_per_mtok
         bound += prompt * price.input_per_mtok + max_out * price.output_per_mtok
-    factor = BATCH_PRICE_FACTOR / 1_000_000.0
+    factor = rate / 1_000_000.0
     return (
         f"Cost estimate (D-258, never refuses): {len(packed)} request(s) to "
-        f"{declaration.slug} at {BATCH_PRICE_FACTOR} x ${price.input_per_mtok}/"
+        f"{declaration.slug} at {rate} x ${price.input_per_mtok}/"
         f"${price.output_per_mtok} per MTok: about ${expected * factor:.4f} at the "
         f"deepseek arm's token counts, at most ${bound * factor:.4f} if every answer "
         f"reached its output limit. Spent on this arm so far: ${spent:.4f}."
@@ -730,7 +740,7 @@ def submit(
     reader = packed[0].request.reader
 
     if declaration is None:
-        spent = BATCH_PRICE_FACTOR * sum(
+        spent = DEEPSEEK_BATCH_FACTOR * sum(
             tokens_usd(r.workflow_meta, reader.price)
             for r in held.values()
             if r.replay is not None and r.workflow_meta is not None
@@ -744,7 +754,7 @@ def submit(
             "This is a pilot run (replay-init --pilot): its records are never the S2 "
             "result; start the run of record with a fresh replay-init."
         )
-    echo(cost_estimate(packed, base, reader, spent))
+    echo(cost_estimate(packed, base, reader, spent, batch_factor(label)))
 
     client = client_factory(reader.target)
     path = _new_manifest_path(run_dir, label)

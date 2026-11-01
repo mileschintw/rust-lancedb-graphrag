@@ -182,7 +182,10 @@ def test_the_numbers_are_s1s() -> None:
     s1 = thresholds.PREREGISTRATION_S1
     s2 = build_draft()
     arm_fields = {"reference_arm", "families", "descriptive_arms", "null_guard_arms"}
-    own = {"default_rule", "provenance", "readers", "replay_source_arm"}
+    own = {"default_rule", "provenance", "readers", "replay_source_arm", "replicates"}
+    # D-274: replicates replace the sign test with the sign-flip permutation.
+    assert s2.test == thresholds.REPLICATE_TEST and s2.replicates == 5
+    own.add("test")
     for field in dataclasses.fields(s2):
         if field.name not in arm_fields | own:
             assert getattr(s2, field.name) == getattr(s1, field.name), field.name

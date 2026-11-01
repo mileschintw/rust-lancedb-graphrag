@@ -388,6 +388,44 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   passages cut and v1.0 passages whole; 2,048 removes that difference.
   The v1.0 arm (`config.toml`, `config.eval.toml`) stays at 512, which its 55-token chunks never reach. Applies to every
   arm run under `LANCET_ENV=eval-s1`; no re-seed is needed, since excerpts are cut at query time.
+- **D-274 S2 reads K = 5 replicates per question and arm, tested by sign-flip permutation** (owner: "全部 K=5",
+  2026-10-31; #123). Supersedes the exact sign test for S2's comparisons (D-123 as D-269 carries it). The S1 dev run
+  showed the deepseek reader flipping `answer_usable` on about 4% of byte-identical prompts (3 of 68), at temperature
+  0, and the Claude 5.5 readers take no temperature, so resampling is the only noise control. Every S2 arm (deepseek,
+  Haiku 5.5, Sonnet 5.5, Opus 5.5) answers each of the 100 dev questions 5 times, each answer its own batch request
+  (`custom_id` `<question ID>_r<k>`) and its own journal record (`RunRecord.replicate`, 1 to 5; a unit is a question,
+  an arm and a replicate). The deepseek arm's replicate 1 is S1's carried answer; replicates 2 to 5 are new answers to
+  the same `pack` body, sent unrewritten through an OpenRouter batch, which carries D-271's pin (wafer/us,
+  `allow_fallbacks: false`, `max_price`); they are replay records with their own clauses (`provenance`: the body hash
+  is the `pack` body's, nothing rewritten, the body's model, `is_byok` false on OpenRouter credit, the pinned provider,
+  0 reasoning tokens when the body turns reasoning off). A question's score is the mean `answer_usable` over its 5
+  answers; a question enters a comparison only when all 5 answers of both arms are ok. Main test: the exact two-sided
+  sign-flip permutation test on the per-question mean differences (each times 5 is an integer, so the 2^n sign
+  vectors are counted exactly, with no seed; `stats.exact_signflip_p_integer`), Holm over the family as before. Cross
+  check: a paired t-test on the same differences, reported beside it (`paired_t_p`) and never read for a decision.
+  CI: the percentile bootstrap over questions, 10,000 resamples with seed 42, each question carrying its 5 answers
+  (the bootstrap resamples the per-question means). The null guard pairs replicate k of the arm with replicate k of
+  the reference, so its counts are 5 times the questions' and its net loss rate is the mean per-question abstention
+  drop; the 0.80 pair floor still counts questions. Written into `PREREGISTRATION_S2` as `replicates=5` and `test=
+  "paired_sign_flip_permutation_exact_two_sided"` (`thresholds.REPLICATE_TEST`). Journals before S2 have no
+  `replicate` field, read as replicate 1, and score and compare byte-identically (six committed runs re-scored in
+  memory, 2026-10-31). `report.json` reads each unit's replicate 1; the 5-answer reading is `compare-levers`'.
+  Evidence (owner's research, 2026-10-31): Miller 2024 (arXiv 2411.00640), Thinking Machines 2025 on batch
+  invariance, Atil et al. (arXiv 2408.04667), Bowyer et al. (arXiv 2503.01747). Cost: about $13 of Claude credit
+  (ceiling about $30, BYOK) and about $0.7 of OpenRouter credit for the deepseek replicates.
+- **D-275 S2 reader rule: the cheapest eligible reader, unless a dearer one is significantly better** (owner:
+  "預設最便宜，顯著才換 (Recommended)", 2026-10-31; #127). Amends D-270b (and D-252's "highest point estimate unless a
+  cheaper reader is within 2 points"). The candidates are deepseek and the Claude readers whose null guard passes
+  (D-270a). The candidate with the lowest cost per answered question (D-257, sync list price times tokens, over all 5
+  replicates) wins, unless a dearer candidate is significantly better on `answer_usable` than that cheapest one. Each
+  dearer candidate is paired with the cheapest on the common population (the `reader_comparison` pair, D-274's test);
+  Holm runs over those pairs (m = the number of dearer candidates, at most 2) at alpha 0.05, and a pair is
+  significantly better when Holm rejects it with a positive delta. If more than one dearer candidate is, the cheapest
+  of them wins. The pairs' raw p-values are in `lever-comparison.json`; Holm over them is applied by hand. The 2-point
+  margin was far below both the noise floor (about 4% flips) and the smallest detectable effect, so the
+  old winner could be picked by noise. The pre-registration states the expected smallest detectable effect, about 8.4
+  points at K = 5 and n = 90 (two-sided 0.05, power 0.8; #127), so picking the cheapest reads as "no larger difference
+  detected", not as equivalence. Opus 5.5 stays descriptive (D-267), and D-245's default-model switch is unchanged.
 
 ## Model access
 
