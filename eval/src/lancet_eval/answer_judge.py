@@ -35,7 +35,6 @@ from lancet_eval.corpus import GoldQuestion, load_sample_questions
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.judge import DEFAULT_CHAT_ENDPOINT, _post_judge
 from lancet_eval.metrics import answer_usable, context_tokens, extract_final_answer
-from lancet_eval.pairing import deduplicate_by_arm
 
 PROMPT_VERSION = "answer-judge-v1"
 REPORT_FILE = "answer-judge.json"
@@ -120,6 +119,7 @@ class _Item:
 
     question: GoldQuestion
     arm: str
+    replicate: int
     line: str | None
     primary: bool
 
@@ -190,14 +190,14 @@ def _items(run: Path) -> list[_Item]:
     journal = run / "journal.jsonl"
     if not journal.is_file():
         raise AnswerJudgeError(f"no journal in {run}")
-    records, _ = deduplicate_by_arm(load_records(journal))
+    records = _latest_per_replicate(load_records(journal))
     header = read_journal_header(journal) or {}
     corpus = str(header.get("corpus") or (records[0].corpus if records else ""))
     if not corpus:
         raise AnswerJudgeError(f"{journal} names no corpus")
     gold = {q.question_id: q for q in load_sample_questions(corpus)}
     items: list[_Item] = []
-    for rec in sorted(records, key=lambda r: (r.graph_arm, r.question_id)):
+    for rec in records:
         question = gold.get(rec.question_id)
         if question is None or question.is_null or not question.gold_answer:
             continue
@@ -206,11 +206,29 @@ def _items(run: Path) -> list[_Item]:
             _Item(
                 question=question,
                 arm=rec.graph_arm,
+                replicate=_replicate(rec),
                 line=line,
                 primary=_primary(question, rec),
             )
         )
     return items
+
+
+def _replicate(rec: RunRecord) -> int:
+    """The record's replicate; 1 for a journal written before replicates existed."""
+    return int(getattr(rec, "replicate", 1) or 1)
+
+
+def _latest_per_replicate(records: Sequence[RunRecord]) -> list[RunRecord]:
+    """The later record of each (question, arm, replicate), sorted by that key.
+
+    A resumed drive appends a later record for the same unit; replicates of one
+    question and arm are separate units, each judged.
+    """
+    latest: dict[tuple[str, str, int], RunRecord] = {}
+    for rec in records:
+        latest[(rec.graph_arm, rec.question_id, _replicate(rec))] = rec
+    return [latest[k] for k in sorted(latest)]
 
 
 def _primary(question: GoldQuestion, rec: RunRecord) -> bool:
@@ -388,6 +406,7 @@ def _report(
             disagreements.append({
                 "question_id": item.question.question_id,
                 "arm": item.arm,
+                "replicate": item.replicate,
                 "question": item.question.question,
                 "gold": item.question.gold_answer,
                 "final_line": item.line,

@@ -197,3 +197,28 @@ def test_the_cli_runs_the_judges(run: Path, monkeypatch: pytest.MonkeyPatch) -> 
         app, ["judge-answers", "--run", str(run), "--estimate-only"]
     )
     assert estimate.exit_code == 0, estimate.output
+
+
+def test_each_replicate_of_a_question_and_arm_is_judged(
+    run: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lane 123 adds `RunRecord.replicate`: records key by (qid, arm, replicate)."""
+    from types import SimpleNamespace
+
+    from lancet_eval.journal import load_records
+
+    records = load_records(run / "journal.jsonl")
+    hybrid = [r for r in records if r.graph_arm == "hybrid"]
+    second = [
+        SimpleNamespace(**{**r.model_dump(), "replicate": 2, "answer": "Answer: Lyon"})
+        for r in hybrid
+    ]
+    first = [SimpleNamespace(**{**r.model_dump(), "replicate": 1}) for r in hybrid]
+    monkeypatch.setattr(aj, "load_records", lambda path: [*first, *second])
+    aj.judge_answers(run, transport=StubTransport(sonnet_says_wrong_is_fine=False))
+    report = json.loads((run / aj.REPORT_FILE).read_text(encoding="utf-8"))
+    rates = {(r["judge"], r["arm"]): r for r in report["rates"]}
+    assert rates[("primary", "hybrid")]["n"] == 12  # 6 G questions x 2 replicates
+    assert rates[("primary", "hybrid")]["n_equivalent"] == 6
+    assert rates[("gpt-4o-mini", "hybrid")]["n_equivalent"] == 6
+    assert {d.get("replicate") for d in report["disagreements"]} <= {1, 2}
