@@ -151,3 +151,5 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **Lane 120 merged** 2026-10-31: PR #121 (closes #120), merge 971094f5. S1 overlay `excerpt_max_chars = 2048` (D-273; longest S1 chunk 1,489 chars; measurement-only, never reaches the prompt). Ran in lane 118's reused session (new sessions cannot start over Remote Control), branch `lane-120`. User: "開 lane 修 #120 (Recommended)", "Start lane 120".
 
 - **S1 recorded** 2026-10-31: PR #122 merged (16b9ebe5), run `eval/runs/2026-10-31-s1-multihop_rag_s1_dev`. Keep small, graph out; S2 `replay_source_arm` = `small/hybrid+rerank+metadata`. S1 total spend about $3.1-3.7 (step 1 ~$2.4-3.0, step 4 $0.67).
+
+- **Lane 125 merged (2026-10-31):** PR #129 at a858a339, merge b3f50d49, closes #125. Session local_7141a026-cb3b-4eaa-8c8c-0fe3f215cb87 (reused). Merged-store chunk-ID secondaries are now not evaluable; coverage_at_4 uses each store's chunk size; S1 decision rows byte-identical; EXPERIMENT-S1.md › Result carries the note.
