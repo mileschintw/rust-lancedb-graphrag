@@ -1,0 +1,22 @@
+# S3's second benchmark (D-234, #145): HippoRAG 2's packaging of the 2WikiMultiHopQA
+# subset. `python -m lancet_eval.twowiki fetch` downloads both files at the pinned
+# revision into twowiki/.cache/ (gitignored) and checks their sha256; no raw file is
+# committed (ATTRIBUTION.md). Questions, arms and S3's analysis pre-registration are
+# added before S3's first run.
+
+[documents]
+source = "https://huggingface.co/datasets/osunlp/HippoRAG_2"
+revision = "5ec05b38deecc3318bb432c69865959c56058990"
+original_source = "https://github.com/Alab-NII/2wikimultihop"
+license = "apache-2.0"
+count = 6119
+commit_documents = false
+
+# D-243: the dev / held-out split of the 1,000 questions, drawn from their IDs alone.
+# sha256 is the split file's LF-normalised digest (split.lf_sha256), recorded in each
+# S3 journal header.
+[d243_split]
+file = "twowiki/split.json"
+seed = 243
+dev_size = 100
+sha256 = "0447b65e0a0c7be4f51ab5ad5ffe8c3a79dad7eb7bd7a7266bf94b079117b089"
