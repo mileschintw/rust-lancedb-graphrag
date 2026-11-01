@@ -133,21 +133,27 @@ _LIST_SEPARATOR = re.compile(r"\s*(?:,|;|&|\band\b)\s*", re.IGNORECASE)
 
 
 def _fold_plural(token: str) -> str:
-    """D-276: a normalised token's singular, by suffix; short tokens stay as they are.
+    """D-276: the form a normalised token and its plural share; short tokens kept.
 
-    `-ies` becomes `-y`, `-es` after s/x/z/ch/sh is dropped, and any other final `s`
+    `-ies` becomes `-y`; `-es` after x, z, ch or sh is dropped; any other final `s`
     is dropped, except after `s`, `u` or `i` (`class`, `bus`, `this`) and in
-    `_NOT_PLURAL`. Tokens of three letters or fewer are kept (`yes`, `has`, `nos`).
+    `_NOT_PLURAL`. Then a final `e` is dropped from a result of five letters or more,
+    so `house`/`houses` and `cache`/`caches` meet (`hous`, `cach`). Tokens of three
+    letters or fewer are kept (`yes`, `has`, `nos`), and so is the `e` of a
+    four-letter word (`note` stays apart from `not`).
     """
-    if len(token) <= 3 or not token.endswith("s") or token in _NOT_PLURAL:
+    if len(token) <= 3 or token in _NOT_PLURAL:
         return token
+    stem = token
     if token.endswith("ies") and len(token) > 4:
-        return token[:-3] + "y"
-    if token.endswith(("ses", "xes", "zes", "ches", "shes")):
-        return token[:-2]
-    if token.endswith(("ss", "us", "is")):
-        return token
-    return token[:-1]
+        stem = token[:-3] + "y"
+    elif token.endswith(("xes", "zes", "ches", "shes")):
+        stem = token[:-2]
+    elif token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        stem = token[:-1]
+    if stem.endswith("e") and len(stem) > 4:
+        stem = stem[:-1]
+    return stem
 
 
 def _folded_tokens(text: str) -> list[str]:
@@ -168,8 +174,9 @@ def gold_contained(gold: str, text: str) -> bool:
     "know" (D-70) the way a raw substring check would. D-276 adds two folds, applied
     to every arm: each token is folded to its singular (`_fold_plural`) on both
     sides, and a list gold (items separated by commas, semicolons, `&` or `and`)
-    also matches when every item is contained on its own, in any order. Both folds
-    only turn misses into hits. Under `answer_rule("d70")` neither fold applies.
+    also matches when every item is contained in a span of its own, in any order.
+    Both folds only turn misses into hits. Under `answer_rule("d70")` neither fold
+    applies.
     """
     if _ANSWER_RULE.get() == "d70":
         return _contains_span(
@@ -180,7 +187,26 @@ def gold_contained(gold: str, text: str) -> bool:
         return True
     items = [_folded_tokens(i) for i in _LIST_SEPARATOR.split(gold)]
     items = [i for i in items if i]
-    return len(items) > 1 and all(_contains_span(i, text_tokens) for i in items)
+    return len(items) > 1 and _contains_items(items, text_tokens)
+
+
+def _contains_items(items: list[list[str]], haystack: list[str]) -> bool:
+    """Whether every item has a span of its own in `haystack`, none overlapping.
+
+    Longest items are placed first, each at its leftmost free span, so "Johnson &
+    Johnson" needs two separate "johnson" tokens.
+    """
+    used: set[int] = set()
+    for item in sorted(items, key=len, reverse=True):
+        span = len(item)
+        for i in range(len(haystack) - span + 1):
+            cells = set(range(i, i + span))
+            if haystack[i : i + span] == item and not cells & used:
+                used |= cells
+                break
+        else:
+            return False
+    return True
 
 
 def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:

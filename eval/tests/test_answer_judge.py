@@ -164,6 +164,17 @@ def test_a_record_without_a_final_line_is_not_equivalent_and_not_sent(
     assert len(stub.calls) == 2 * 3  # only hybrid+rerank's lines
 
 
+def test_null_token_counts_do_not_stop_the_run(run: Path) -> None:
+    def no_usage(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
+        reply = StubTransport()(payload, api_key)
+        reply["usage"] = {"prompt_tokens": None, "completion_tokens": None}
+        return reply
+
+    report = aj.judge_answers(run, transport=no_usage)
+    assert report is not None
+    assert report["spend_this_invocation"]["gpt-4o-mini"]["prompt_tokens"] == 0
+
+
 def test_a_bad_reply_is_an_error_kept_out_of_the_cache(run: Path) -> None:
     def broken(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
         return {"choices": [{"message": {"content": "not json"}}]}
@@ -215,10 +226,14 @@ def test_each_replicate_of_a_question_and_arm_is_judged(
     ]
     first = [SimpleNamespace(**{**r.model_dump(), "replicate": 1}) for r in hybrid]
     monkeypatch.setattr(aj, "load_records", lambda path: [*first, *second])
-    aj.judge_answers(run, transport=StubTransport(sonnet_says_wrong_is_fine=False))
+    stub = StubTransport()  # Sonnet calls every line equivalent: replicate 2 disagrees
+    aj.judge_answers(run, transport=stub)
     report = json.loads((run / aj.REPORT_FILE).read_text(encoding="utf-8"))
     rates = {(r["judge"], r["arm"]): r for r in report["rates"]}
     assert rates[("primary", "hybrid")]["n"] == 12  # 6 G questions x 2 replicates
     assert rates[("primary", "hybrid")]["n_equivalent"] == 6
     assert rates[("gpt-4o-mini", "hybrid")]["n_equivalent"] == 6
-    assert {d.get("replicate") for d in report["disagreements"]} <= {1, 2}
+    assert any("Answer to judge: lyon" in json.dumps(c) for c in stub.calls)
+    assert {
+        d["replicate"] for d in report["disagreements"] if d["arm"] == "hybrid"
+    } == {2}

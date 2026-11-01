@@ -166,8 +166,8 @@ def _parse(response: dict[str, Any]) -> tuple[bool | None, str, tuple[int, int]]
     """(verdict or None, rationale or error, (prompt, completion) tokens)."""
     usage = response.get("usage") or {}
     tokens = (
-        int(usage.get("prompt_tokens", 0)),
-        int(usage.get("completion_tokens", 0)),
+        int(usage.get("prompt_tokens") or 0),
+        int(usage.get("completion_tokens") or 0),
     )
     choices = response.get("choices") or []
     if not choices:

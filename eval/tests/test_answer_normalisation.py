@@ -51,7 +51,8 @@ def test_the_no_lack_artifact_is_left_to_the_judge() -> None:
         ("Yes", "yesterday"),
         ("Taylor Swift and Travis Kelce", "taylor swift"),  # one item of two
         ("Taylor Swift and Travis Kelce", "taylor kelce and travis swift"),
-        ("Sportsbooks", "sports"),
+        ("not", "note"),  # a four-letter word keeps its final "e"
+        ("Johnson & Johnson", "johnson"),  # each item needs its own span
         ("class", "clas"),  # "ss" is not a plural ending
         ("news", "new"),  # nor are a few common words ending in "s"
         ("bus", "bu"),
@@ -70,6 +71,11 @@ def test_misses_that_stay_misses(gold: str, text: str) -> None:
         ("companies", "company"),
         ("boxes", "box"),
         ("matches", "match"),
+        ("houses", "house"),  # -se words fold both ways
+        ("caches", "cache"),
+        ("classes", "class"),
+        ("cases", "case"),
+        ("Johnson & Johnson", "johnson and johnson"),
         ("Bears", "the bear"),
         ("Taylor Swift and Travis Kelce", "it was travis kelce with taylor swift"),
     ],

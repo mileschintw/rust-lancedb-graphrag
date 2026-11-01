@@ -391,10 +391,12 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
 - **D-276 Answer normalisation and a dual-judge secondary** (owner: "正規化＋裁判當次要 (Recommended)" and
   "gpt-4o-mini＋Sonnet 雙裁判", 2026-10-31; #124). Amends D-70's `answer_usable` for v1.1, applied to every arm.
   - *Normalisation (primary).* `gold_contained` keeps D-70's whole-token containment ("no" never matches "not") and
-    adds two folds. Each token folds to its singular on both sides (`-ies` to `-y`; `-es` dropped after s, x, z, ch,
-    sh; a final `s` dropped except after s, u or i; tokens of three letters or fewer and a few non-plurals such as
-    "news" kept). A list gold, with items separated by commas, semicolons, `&` or "and", also matches when every item
-    is contained on its own, in any order. Both folds only turn misses into hits. S1's three artifact cases: "Travis
+    adds two folds. Each token folds to a form it shares with its plural, on both sides (`-ies` to `-y`; `-es`
+    dropped after x, z, ch, sh; any other final `s` dropped except after s, u or i; then a final `e` dropped from a
+    result of five letters or more, so "house" and "houses" meet; tokens of three letters or fewer and a few
+    non-plurals such as "news" kept). A list gold, with items separated by commas, semicolons, `&` or "and", also
+    matches when every item is contained in a span of its own, in any order ("Johnson & Johnson" needs two
+    "johnson" tokens). Both folds only turn misses into hits. S1's three artifact cases: "Travis
     Kelce and Taylor Swift" and "sportsbook" now match; "no lack of functionality" for a "no" gold still matches,
     since the folds are lexical, and is left to the judges. `final_answer_em` (exact equality) and the null guard's
     abstention predicate (`is_abstention`, equality with "insufficient information") are unchanged.
