@@ -820,8 +820,8 @@ def canary(writer: str, out: Path = DEFAULT_OUT) -> None:
     w = _writer(writer)
     out = _out(out)
     chunk = read_chunks(out)[:1]
-    typer.echo(estimate(w, chunk, _output_tokens(out)))
     canary_writer = Writer(f"{w.name}.canary", w.price, 1.0, w.declaration)
+    typer.echo(estimate(canary_writer, chunk, _output_tokens(out)))
     for r in run_sync(canary_writer, chunk, batch_client.chat_client(), out):
         data, why = parse_extraction(r.get("content") or "")
         typer.echo(
