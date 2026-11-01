@@ -197,3 +197,6 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 
 | 146 | #146 (prep) | local_97bc85b5-3b3c-469c-8a5b-d7eb5514737a | started 2026-11-01 on "Confirm and start": full-corpus stores, LlamaIndex 609, run plan + prereg drafts (free) | main checkout after spare-1 |
 - Stopped: owner "Pause #146" (relayed "可以，先暫停"). Branch claude/lane-146-6286dc at ac782ac4: merged-store code, LlamaIndex 609-doc persisted index, WIP EXPERIMENT-CONFIRM.md; no paid calls; main checkout untouched (reports/146.md). Focus moves to S3 core (#163), a one-page results summary, then agentic retrieval / graph community summaries.
+
+- Lane 146 (#146 merged-store code only): merged as PR #170 (9eb2f2bf) 2026-11-01; progress comment posted on #146. Row: | 146 | #146 (merged-store code only) | local_97bc85b5-3b3c-469c-8a5b-d7eb5514737a | resumed 2026-11-01 (owner: "可以，就這麼辦"): PR with merged-store code only; run plan/prereg stay unfrozen drafts; progress comment for #146 | PR on done |
+- Lane spare-2 #128: merged as PR #171 (0313af73) 2026-11-01; #128 closed; lane continues on #164.
