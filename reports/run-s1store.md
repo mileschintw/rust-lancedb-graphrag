@@ -1,7 +1,7 @@
-# run-s1store 報告：S1 store build（第二次嘗試，停在付費 seed 前）
+# run-s1store 報告：S1 store build（完成）
 
-- 位置：主 checkout `D:\Repos\lancet`，`main` @ `aedd4723`（= `origin/main`，含 PR #119 / #118）。沒有 lane 分支、沒有 commit、沒有 PR、沒有 PR body。
-- 狀態：**blocked，seed 與 1.4 都通過，1.5 preflight 有一項 FAIL（`corpus_generation`：excerpt 截斷）**，見「1.5 preflight」。stack 已停。
+- 位置：主 checkout `D:\Repos\lancet`，`main` @ `971094f5`（= `origin/main`；seed 時是 `aedd4723`，含 PR #119 / #118）。沒有 lane 分支、沒有 commit、沒有 PR、沒有 PR body。
+- 狀態：**done**。S1 store 建好，1.4 與 1.5 preflight 全部通過（1.5 在 #120 / PR #121 合併後重跑，`main` @ `971094f5`）。stack 已停。步驟 4（付費 S1 drive）要等使用者另外同意。
 - 未讀 held-out。沒碰 `data/lancedb-eval`、`lancet_eval` schema 或 `config/`。
 
 ## 使用者在本 session 的決定（原話）
@@ -115,9 +115,31 @@ stack 已停（8080、50051 已釋放）。OTel 匯出錯誤（4317 沒有 colle
 - 1.5 preflight：1 個 probe 查詢 + 6 個 arm canary，約幾分錢（< $0.03）。
 - 第一次嘗試（更正後）約 $1.4-1.7。步驟 1 合計約 **$2.4-3.0**。
 
-## 給 coordinator 的問題
+## 1.5 重跑（#120 修好後，GO 2026-10-31）
 
-- 1.5 的 `corpus_generation` FAIL 怎麼處理？建議：開 issue 修 `config.eval-s1.toml` 的 `excerpt_max_chars`（含量測 S1 最長 chunk），合併後我重啟 stack 重跑 1.5（幾分錢，不用重新 seed）。
+| 步驟 | 指令 | exit | 結果 |
+|---|---|---|---|
+| pull | `git -C D:/Repos/lancet pull --ff-only` | 0 | `aedd4723` → `971094f5`（PR #121：`config.eval-s1.toml` `excerpt_max_chars = 2048`（D-273）、測試、PLAN.md；沒有 engine code 變更，不需重 build） |
+| 重啟 stack | engine、gateway（同上） | 啟動成功，後來停止 | `BM25 snapshot built document_count=3953 generation=lance-693 nodes_version=693 graph_entities=24187 doc_meta_documents=346`（就是剛 seed 的 S1 store）；gateway listen 8080 |
+| 1.5 preflight | `LANCET_ENV=eval-s1 PYTHONUTF8=1 uv run --project eval lancet-eval preflight --store eval-s1 --corpus multihop_rag_s1_dev` | **0** | **12/12 PASS**，`All preflight checks passed successfully.`；`corpus_generation` PASS（generation `lance-693` 一致，沒有截斷）；`index_identity`、`store_chunking`、`arm_mode_canaries`（6 個）都 PASS |
+| 停 stack | TaskStop engine、gateway | — | 8080、50051 已釋放 |
+
+## 步驟 1 總花費（估算；以 OpenRouter activity page 為準）
+
+| 項目 | 時段（2026-10-31 PDT） | 估算 |
+|---|---|---|
+| 第一次嘗試（中止，768 截斷） | 15:14-15:56 | 約 $1.4-1.7 |
+| 第二次 seed（3,953 次 extraction，0 重試；embedding 約 0.85 M） | 17:06-18:18 | 約 $1.0-1.2 |
+| 1.5 preflight × 2（各 1 個 probe + 6 個 canary） | 約 18:20、18:42 | 合計 < $0.06 |
+| **合計** | | **約 $2.4-3.0** |
+
+指南原估步驟 1 約 $2-3、上限約 $11。log 不記 token 用量，所以以上都是推估。
+
+## 交接
+
+- S1 store 完成：`data/lancedb-eval-s1`（421 MB，generation `lance-693`）、`lancet_eval_s1`（346 `completed`）、`eval/corpora/multihop_rag/document_map.eval-s1.json`（346 筆，未追蹤）。
+- 步驟 2-4 不在本 lane 範圍；步驟 4 要使用者另外同意。
+- 給 coordinator 的問題：無。
 
 # 第一次嘗試（d943d558，已中止）
 

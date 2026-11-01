@@ -1,8 +1,8 @@
 # run-s1store status
 
-- state: parked
+- state: done
 - branch: main
-- head: aedd4723
+- head: 971094f5
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\run-s1store.md
-- time: 2026-10-31 18:22 -0700
-- doing: waits for #120 (S1 excerpt_max_chars); then rerun 1.5 only, no re-seed; stack down
+- time: 2026-10-31 18:44 -0700
+- doing: S1 store done: 346/346 seeded, 1.4 ok, 1.5 preflight 12/12 PASS at 971094f5; stack down; step 1 est. ~$2.4-3.0
