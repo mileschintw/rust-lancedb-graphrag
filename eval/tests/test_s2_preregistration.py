@@ -189,6 +189,7 @@ def test_the_numbers_are_s1s() -> None:
         "replay_source_arm",
         "replicates",
         "reference_price",
+        "reader_replicates",  # #149: replay stages only; S2 leaves it empty
     }
     # D-274: replicates replace the sign test with the sign-flip permutation.
     assert s2.test == thresholds.REPLICATE_TEST and s2.replicates == 5

@@ -244,8 +244,14 @@ _ALIAS: dict[str, str] = {
 }
 
 #: D-251 store prefixes: ``<prefix>/<label>`` runs on the eval store named here
-#: (``config.EVAL_STORES``). ``small`` is the v1.0 store, ``merged`` the S1 store.
-STORE_PREFIXES: dict[str, str] = {"small": "eval", "merged": "eval-s1"}
+#: (``config.EVAL_STORES``). ``small`` is the v1.0 store, ``merged`` the S1 store,
+#: ``full`` all 609 MultiHop-RAG documents and ``twowiki`` the 2Wiki passages (#149).
+STORE_PREFIXES: dict[str, str] = {
+    "small": "eval",
+    "merged": "eval-s1",
+    "full": "eval-full",
+    "twowiki": "eval-2wiki",
+}
 
 #: D-257 reader names: ``<base>@<reader>`` replays the base arm's context to this
 #: reader. A pre-registration declares each reader it uses

@@ -307,6 +307,16 @@ class CorpusConfig:
         # [documents] map_corpus, so a corpus without its own seeded map (e.g. a
         # diagnostic corpus) can share another's. Defaults to itself.
         self.map_corpus = str(self.documents.get("map_corpus", corpus_name))
+        # #149: the documents `seed` uploads, relative to eval/corpora: JSONL, or a
+        # `.json` array such as a cached dataset file, which `sha256` (LF-normalised)
+        # pins. Defaults to the map corpus's sampled `documents.subset.jsonl`.
+        default_file = f"{self.map_corpus}/documents.subset.jsonl"
+        self.documents_file = str(self.documents.get("file", default_file))
+        self.documents_path = root / "eval" / "corpora" / self.documents_file
+        documents_sha = self.documents.get("sha256")
+        self.documents_sha256: str | None = (
+            str(documents_sha) if documents_sha is not None else None
+        )
 
     @property
     def judge_model(self) -> str:

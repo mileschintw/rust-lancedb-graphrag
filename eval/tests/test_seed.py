@@ -734,7 +734,7 @@ def test_get_eval_store_names_both_stores_and_refuses_others() -> None:
 
     assert get_eval_store("eval") is V1_STORE
     assert get_eval_store("eval-s1") is S1_STORE
-    with pytest.raises(EvalConfigError, match="eval, eval-s1"):
+    with pytest.raises(EvalConfigError, match="eval, eval-s1, eval-full, eval-2wiki"):
         get_eval_store("eval-s2")
 
 
@@ -1020,3 +1020,38 @@ def test_s1_reseed_without_the_stores_entry_deletes_nothing(
     assert v1_canary.exists()
     assert s1_canary.exists()
     assert httpx_mock.get_requests() == []
+
+
+@pytest.mark.parametrize(
+    ("store", "schema"),
+    [("eval-full", "lancet_eval_full"), ("eval-2wiki", "lancet_eval_2wiki")],
+)
+def test_the_149_stores_have_an_atlas_env_and_the_eval_schema_renamed(
+    store: str, schema: str
+) -> None:
+    """#149: each hybrid-only store has its Atlas env, its schema file is
+    schema.eval.hcl renamed, and its overlay builds no graph."""
+    import re
+    import tomllib
+
+    from lancet_eval.config import get_eval_store, repo_root
+
+    assert get_eval_store(store).pg_schema == schema
+    gateway = repo_root() / "gateway"
+    atlas = (gateway / "atlas.hcl").read_text(encoding="utf-8")
+    env_block = re.search(rf'env "{store}" \{{(.*?)\n\}}', atlas, re.S)
+    assert env_block is not None
+    var = store.replace("-", "_") + "_db_url"
+    assert f'src = "file://db/schema.{store}.hcl"' in env_block.group(1)
+    assert f"url = var.{var}" in env_block.group(1)
+    assert re.search(rf'variable "{var}" \{{[^}}]*search_path={schema}"', atlas)
+
+    v1 = (gateway / "db" / "schema.eval.hcl").read_text(encoding="utf-8")
+    own = (gateway / "db" / f"schema.{store}.hcl").read_text(encoding="utf-8")
+    renamed = re.sub(r"\blancet_eval\b", schema, v1)
+    assert own.splitlines()[0].startswith("// schema.eval.hcl with the schema renamed")
+    assert own.splitlines()[1:] == renamed.splitlines()[1:]
+
+    overlay = repo_root() / "config" / f"config.{store}.toml"
+    graph = tomllib.loads(overlay.read_text(encoding="utf-8"))["engine"]["graph"]
+    assert graph == {"ingest_extraction": False}

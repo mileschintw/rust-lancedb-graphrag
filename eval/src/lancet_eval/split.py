@@ -40,6 +40,8 @@ class HeldOutSplit(BaseModel):
         heldout_g_ids: Non-dev sample questions in G (308 expected).
         heldout_null_ids: Non-dev null questions, an abstention-only stratum
             (43 expected).
+        heldout_ids: Held-out IDs not yet sorted into G and null, because the split
+            never read their content (#149's fresh split). Empty in the D-105 split.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -53,19 +55,23 @@ class HeldOutSplit(BaseModel):
     dev_ids: list[str]
     heldout_g_ids: list[str]
     heldout_null_ids: list[str]
+    heldout_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _disjoint(self) -> HeldOutSplit:
-        dev = set(self.dev_ids)
-        g = set(self.heldout_g_ids)
-        null = set(self.heldout_null_ids)
-        if dev & g or dev & null or g & null:
-            raise ValueError("dev, held-out G and held-out null sets must be disjoint")
-        if (
-            len(dev) != len(self.dev_ids)
-            or len(g) != len(self.heldout_g_ids)
-            or len(null) != len(self.heldout_null_ids)
-        ):
+        lists = (
+            self.dev_ids,
+            self.heldout_g_ids,
+            self.heldout_null_ids,
+            self.heldout_ids,
+        )
+        sets = [set(ids) for ids in lists]
+        if sum(len(ids) for ids in sets) != len(set().union(*sets)):
+            raise ValueError(
+                "dev, held-out G, held-out null and unsorted held-out sets must be "
+                "disjoint"
+            )
+        if any(len(ids) != len(seen) for ids, seen in zip(lists, sets, strict=True)):
             raise ValueError("duplicate question IDs in the split")
         return self
 
@@ -137,7 +143,8 @@ def split_sha256(split: HeldOutSplit) -> str:
 
     The canonical form is the parsed model dumped with sorted keys and compact
     separators, so the digest does not depend on file whitespace or line
-    endings.
+    endings. An empty `heldout_ids` is left out, so a split written before the
+    field existed keeps its digest (#149).
 
     Args:
         split: The parsed split.
@@ -145,5 +152,8 @@ def split_sha256(split: HeldOutSplit) -> str:
     Returns:
         Lower-case hex digest.
     """
-    canonical = json.dumps(split.model_dump(), sort_keys=True, separators=(",", ":"))
+    dumped = split.model_dump()
+    if not dumped["heldout_ids"]:
+        del dumped["heldout_ids"]
+    canonical = json.dumps(dumped, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -433,6 +433,30 @@ def _sanitize_filename(name: str) -> str:
     return clean[:60] + ".txt"
 
 
+def _read_documents(path: Path, sha256: str | None) -> list[dict[str, Any]]:
+    """The documents to seed: a JSONL file, or a `.json` array (#149).
+
+    Raises:
+        SeedError: If `sha256` is given and the file's LF-normalised digest differs.
+    """
+    if sha256 is not None:
+        from lancet_eval.split import lf_sha256
+
+        actual = lf_sha256(path)
+        if actual != sha256:
+            raise SeedError(
+                f"{path} hashes to {actual[:12]}, not the corpus's pinned "
+                f"{sha256[:12]}; refusing to seed another document set"
+            )
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".json":
+        rows = json.loads(text)
+        if not isinstance(rows, list):
+            raise SeedError(f"{path} is not a JSON array of documents")
+        return [dict(row) for row in rows]
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
 def seed_corpus(
     corpus_name: str,
     client: httpx.Client | None = None,
@@ -446,10 +470,9 @@ def seed_corpus(
     assert_store_target(settings, store)
     corpus = load_corpus(corpus_name)
     chunking = store_chunking_of(corpus, store)
-    # A corpus that shares another corpus's map (D-68) seeds that corpus's documents.
-    subset_path = (
-        repo_root() / "eval" / "corpora" / corpus.map_corpus / "documents.subset.jsonl"
-    )
+    # A corpus that shares another corpus's map (D-68) seeds that corpus's documents,
+    # unless it names its own documents file (#149).
+    subset_path = repo_root() / "eval" / "corpora" / corpus.documents_file
 
     if not subset_path.is_file():
         raise SeedError(
@@ -467,11 +490,7 @@ def seed_corpus(
             entries={},
         )
 
-    documents: list[dict[str, Any]] = []
-    with open(subset_path, encoding="utf-8") as f:
-        for line in f:
-            if line.strip():
-                documents.append(json.loads(line.strip()))
+    documents = _read_documents(subset_path, corpus.documents_sha256)
 
     should_close_client = False
     if client is None:

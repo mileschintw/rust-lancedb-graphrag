@@ -70,6 +70,8 @@ eval/runs/*
 !eval/runs/*-multihop_rag_s1_dev/
 !eval/runs/*-multihop_rag_s2_dev/
 !eval/runs/*-multihop_rag_s2x_dev/
+!eval/runs/*-multihop_rag_full_dev/
+!eval/runs/*-twowiki_s3b_dev/
 data/lancedb-verify-02-06/
 data/.phase02-lancedb-preclean-*/
 .planning/phases/02-ingestion-chunking-vector-storage/.02-LIVE-CHALLENGE.json

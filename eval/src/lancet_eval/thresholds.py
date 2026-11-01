@@ -583,11 +583,17 @@ class ReplayStagePreRegistration(StagePreRegistration):
             carried deepseek reader, at which its cost per answered question (D-257)
             and its replicates' spend are read. None reads the engine's list price
             (``measure.GENERATION_LIST_*``), as before D-277.
+        reader_replicates: #149: ``(reader name, K)`` pairs for readers that give
+            fewer answers than ``replicates`` (a costly reader at K = 1). Each names a
+            declared reader, with K from 1 to ``replicates``; a reader not listed gives
+            ``replicates`` answers. ``compare-levers`` reads one K for every arm, so a
+            stage that sets this is read by hand.
     """
 
     replay_source_arm: str
     replicates: int = 1
     reference_price: ReaderPrice | None = None
+    reader_replicates: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         if self.replicates < 1:
@@ -599,6 +605,13 @@ class ReplayStagePreRegistration(StagePreRegistration):
                 f"{self.replicates} replicates need test {REPLICATE_TEST!r} (D-274), "
                 f"not {self.test!r}"
             )
+        declared = {name for name, _ in self.readers}
+        for name, k in self.reader_replicates:
+            if name not in declared or not 1 <= k <= self.replicates:
+                raise ThresholdError(
+                    f"reader_replicates entry ({name!r}, {k}) must name a declared "
+                    f"reader with K from 1 to replicates ({self.replicates})"
+                )
         source = self.replay_source_arm
         labels = (
             self.reference_arm,

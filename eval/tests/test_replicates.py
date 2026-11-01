@@ -546,3 +546,28 @@ def test_a_deepseek_replicate_whose_body_keeps_reasoning_on_is_refused(s2) -> No
             break
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert "reasoning_tokens" in {f.code for f in _replay_failures(run)}
+
+
+def test_a_reader_with_its_own_k_sends_that_many_answers(
+    s2, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#149: a reader's own K (`reader_replicates`) caps its replicates below the
+    stage's K; the custom_id keeps the stage's `_r<k>` form."""
+    run, qs, _, endpoint, _ = s2
+    own = dataclasses.replace(_prereg(), reader_replicates=((rf.READER, 1),))
+    monkeypatch.setattr(thresholds, fx.TOKEN, own, raising=False)
+    sent = batch.submit(run=run, arm=rf.READER_ARM, echo=lambda _: None)
+    ids = [r.custom_id for r in endpoint.batches[sent.batch_id]]
+    assert ids == [f"{q}_r1" for q in _all(qs)]
+    batch.fetch(run=run, echo=lambda _: None)
+    assert sorted(_units(run, rf.READER_ARM)) == sorted((q, 1) for q in _all(qs))
+
+
+@pytest.mark.parametrize(
+    "own", [(("nobody", 1),), ((rf.READER, 0),), ((rf.READER, K + 1),)]
+)
+def test_reader_replicates_names_a_declared_reader_within_k(
+    own: tuple[tuple[str, int], ...],
+) -> None:
+    with pytest.raises(thresholds.ThresholdError, match="reader_replicates"):
+        dataclasses.replace(_prereg(), reader_replicates=own)
