@@ -76,7 +76,6 @@ Not a lane: PR #17 `docs/no-triage-labels` ("docs(agents): record that this repo
 
 | Key | Issues | Session | State | Parked until |
 |---|---|---|---|---|
-| 147 | #147 | local_104e6592-6081-4db7-9dff-6b240ae49211 | started 2026-11-01 (unattended): metric fix (yes/no split, guess-adjusted, evidence split as reported secondaries) + D-IDs for principles 1-9; free | — |
 | 148 | #148 | local_4b47d05b-1a55-4b82-a4da-a3b9193706f8 | started 2026-11-01 (unattended): MHR writer grid on S1 subset; freeze PR → Claude extraction tonight (ceiling Claude $40, OpenRouter $1.50); graph import + reading after main checkout (3rd) | — |
 | 149 | #149 | local_0c64611e-c641-4167-b6c3-364ca0fdeead | started 2026-11-01 (unattended): B 2Wiki hybrid readers + C full-MHR fresh split, store, readers; freeze PR(s) → main checkout (2nd, after 143) → Claude readers tonight (ceiling Claude $70, OpenRouter $3) | — |
 | spare-1 | none | local_5e0dd332-9421-44e7-84a5-e5c0a705ec0d | parked spare (rewrite brief before GO) | GO #spare-1 |
@@ -113,7 +112,6 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
 | #145 | now (lane 145) | — | #117 (script, step 4 only) | 2Wiki corpus config + split, writer prereg constant in `thresholds.py`, #117 script extension, `RUN-S3-EXTRACT.md` | limited: paid, owner's yes on estimate; by the morning of 2026-11-02 |
 | #146 | after S3 | — | none | full-MultiHop-RAG confirmation stage: new split + prereg, full store, `answer_usable` yes/no fix; files set at design (user: "Add to roadmap") | limited: held-out budget, store rebuild, paid |
-| #147 | now (lane 147) | — | none | `score.py`, `lever_comparison.py`, `PLAN.md` › Decisions | free |
 | #148 | now (lane 148) | — | #117 (script) | `multihop_rag_s3m_dev.toml`, prereg constant, extraction import path, `EXPLORE-S3-MHR-WRITERS.md` | limited: paid (pre-approved, ceilings) |
 | #149 | now (lane 149) | — | #145 (2Wiki pin/split, part B) | 2Wiki + full-MHR corpus configs, fresh split file, prereg constants, `EXPLORE-B/C` docs | limited: paid (pre-approved), store builds (approved) |
 | #139 | 2 | — | none | `comparison.py` › reader table `batch_spend` for sync arms (Sonnet printed at half; S2 Result states the true ~$7.02) | free; not urgent |
@@ -212,3 +210,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 02:35 -0800: PR #151 (143 record) green, merged 5422656f; #143 closed. Lane 143 moved to plan-history. Main checkout stays with lane 149 (it pulls).
 - 2026-11-01 02:35 -0800: lane 147 opened #152 (slow-tier v1.0 re-score test already fails on main since D-276; not blocking 147). Added to roadmap as a morning owner decision; no lane tonight (fix needs a design choice).
 - 2026-11-01 02:54 -0800: lane 147 done (a72ed439; D-281..D-289; slow-test edit only filters its new D-286 dims) → PR #153. Lane 148 freeze done (94d3ff8e; PREREGISTRATION_S3M; branch merged origin/lane-117, so it carries 117's reviewed writer_pilot code) → PR #154 (Refs only). Both waitchecks running. Lane 117 status unchanged since 02:15 (deepseek sync).
+- 2026-11-01 02:58 -0800: PR #153 (147 metric fix) green, merged ce3773f2; #147 closed. PR #154 (148 freeze) failed ruff E501 in its new thresholds.py lines; sent back to lane 148 to amend + force-push.

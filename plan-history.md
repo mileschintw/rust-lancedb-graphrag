@@ -168,3 +168,9 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 | 143 | #143 | local_ed178c0c-c52d-4b0d-adfc-1716596a661f | started 2026-11-01 on the user's "好，執行三個 reader K=2 跟補跑deepseek": exploratory merged-store reader run, K=2 (Haiku, Sonnet sync, Opus, + deepseek replicate 2), ~$7, ceiling $15. Freeze PR #144 merged 639ee82f (first CI fail: ruff line length, fixed by amending to c767bff1); "continue" sent. Flow: freeze PR → coordinator merges → "continue" → paid run in main checkout → record PR (merge on green, standing instruction 1) | — |
 | #143 | now (lane 143) | — | none | exploratory merged-store readers: `multihop_rag_s2x_dev.toml`, new prereg constant in `thresholds.py`, run dir, `EXPLORE-S2-MERGED.md` | limited: paid ~$7 (approved) |
 - Merged: freeze PR #144 (639ee82f), record PR #151 (5422656f). S2X spend ~$7.50. Both predictions hold on point estimates (moved-question abstention: Sonnet 0.267→0.067, Opus 0.227→0.067, Haiku 0.293→0.267; gap to deepseek Sonnet -6.2→-5.6, Opus -2.9→-2.2; overall change <1 point, within noise). Partial yes/no: Claude abstains 39-52%, deepseek 24%. Null guards evaluable, all pass. No decision; deepseek stays reader.
+
+## Lane 147 (merged 2026-11-01, unattended)
+
+| 147 | #147 | local_104e6592-6081-4db7-9dff-6b240ae49211 | started 2026-11-01 (unattended): metric fix (yes/no split, guess-adjusted, evidence split as reported secondaries) + D-IDs for principles 1-9; free | — |
+| #147 | now (lane 147) | — | none | `score.py`, `lever_comparison.py`, `PLAN.md` › Decisions | free |
+- Merged PR #153 (ce3773f2): answer_usable by kind (yes/no, open), balanced accuracy, evidence split; D-281..D-289. Opened #152 (slow-tier v1.0 re-score drift since D-276).
