@@ -264,6 +264,71 @@ def test_a_run_with_no_export_reports_no_evidence_dimensions(
     assert not any(n.startswith(new) for n in names)
 
 
+# ---- #147, D-286 answer_usable by kind and evidence (reported secondaries) -----------
+
+
+def _hybrid_says_yes(arm: str, qid: str) -> Spec:
+    return Spec(kind="answer_yes") if arm == "hybrid" else Spec()
+
+
+def _no_facts_on_hybrid(arm: str, qid: str) -> list[str] | None:
+    """lv-g000 (gold Yes) and lv-g002 (gold Paris): no gold fact in hybrid's context."""
+    if arm == "hybrid" and qid in ("lv-g000", "lv-g002"):
+        return ["filler"] * 8
+    return None
+
+
+def test_score_reports_answer_usable_by_kind_with_balanced_accuracy(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    # 10 G golds cycle Yes / No / Paris: 4 Yes, 3 No, 3 open.
+    run, gold = _build(tmp_path, monkeypatch, ARMS, _hybrid_says_yes)
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    yes_no = _dim(report, "answer_usable_yes_no__hybrid")
+    assert (yes_no.n, yes_no.score) == (7, pytest.approx(4 / 7))
+    assert _dim(report, "answer_usable_open__hybrid").score == 0.0
+    balanced = _dim(report, "answer_usable_yes_no_balanced__hybrid")
+    assert balanced.score == pytest.approx(0.5)
+    assert balanced.detail["usable_gold_yes"] == 1.0
+    assert balanced.detail["usable_gold_no"] == 0.0
+    assert balanced.detail["n_gold_no"] == 3.0
+    assert balanced.detail["better_constant"] == pytest.approx(4 / 7)
+    assert _dim(report, "answer_usable_yes_no_balanced__hybrid_metadata").score == 1.0
+    # the decisional dimension is unchanged
+    assert _dim(report, "answer_usable_p4__hybrid").score == pytest.approx(0.4)
+
+
+def test_score_reports_answer_usable_by_evidence_from_the_export(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS, _hybrid_says_yes)
+    write_evidence_export(
+        run, make_questions(10, 5), default_spec, ARMS, texts_fn=_no_facts_on_hybrid
+    )
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    complete = _dim(report, "answer_usable_evidence_complete__hybrid")
+    partial = _dim(report, "answer_usable_evidence_partial__hybrid")
+    assert (complete.n, complete.score) == (8, pytest.approx(3 / 8))
+    assert (partial.n, partial.score) == (2, pytest.approx(0.5))
+    assert _dim(report, "answer_usable_evidence_partial__hybrid_metadata").n == 0
+
+
+def test_a_run_with_no_export_reports_no_evidence_split(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    run, gold = _build(tmp_path, monkeypatch, ARMS)
+    report = score_run(run_dir=run, no_judge=True, gold_chunks_path=gold)
+    names = {d.name for d in report.dimensions}
+    assert not any(n.startswith("answer_usable_evidence_") for n in names)
+    assert "answer_usable_yes_no__hybrid" in names
+
+
+D286_DIMENSIONS = (
+    "answer_usable_yes_no__",
+    "answer_usable_open__",
+    "answer_usable_yes_no_balanced__",
+    "answer_usable_evidence_",
+)
 V1_0_LEVER_RUN = "eval/runs/2026-10-10-levers-heldout-multihop_rag_levers_heldout"
 
 
@@ -293,7 +358,15 @@ def test_the_v1_0_lever_run_re_scores_and_re_compares_unchanged(
     run = _copy_run(source, tmp_path, "journal.jsonl", "gates-heldout.json")
     score_run(run_dir=run, no_judge=True)
     recorded = _recorded(source / "report.json")
-    assert _recorded(run / "report.json")["dimensions"] == recorded["dimensions"]
+    # D-286 (#147) only adds reported secondaries; every recorded figure is unchanged.
+    rebuilt_dims = [
+        d
+        for d in _recorded(run / "report.json")["dimensions"]
+        if not d["name"].startswith(D286_DIMENSIONS)
+    ]
+    assert rebuilt_dims == recorded["dimensions"]
     payload = lever_comparison.build_lever_comparison(run)
     rebuilt = json.loads(lever_comparison._dump_json(payload))
+    for block in rebuilt["answer_mix"]:
+        assert block.pop("by_kind")
     assert rebuilt == _recorded(source / "lever-comparison.json")
