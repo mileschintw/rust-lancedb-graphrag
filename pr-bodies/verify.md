@@ -41,10 +41,10 @@ Result sections gain lines; frozen pre-registration text is untouched.
 
 ## Review
 
-- Spec, blocker, fixed: #169's "scaled to the pools" line multiplied a per-chunk precision by relation counts. Removed. The text and the docstring now say the precision is a mean over chunks.
-- Spec, fixed: the agent's labels were called "by hand". They are now "agent, writer hidden" (Claude Opus 5.5, not a human).
-- Spec, fixed: #166's wording said `official_scorer` runs the official `main`. It now says the per-reader rates call `extract_answer` and `has_intersection`, and that `main` reproduces the pooled accuracy.
-- Standards, fixed: the cost formula was written twice, so it now has one `usd()` helper. Added the missing docstrings in `relation_precision`.
+- Spec, blocker, handled: #169's "scaled to the pools" line multiplied a per-chunk precision by relation counts. Removed. The text and the docstring now say the precision is a mean over chunks.
+- Spec, handled: the agent's labels were called "by hand". They are now "agent, writer hidden" (Claude Opus 5.5, not a human).
+- Spec, handled: #166's wording said `official_scorer` runs the official `main`. It now says the per-reader rates call `extract_answer` and `has_intersection`, and that `main` reproduces the pooled accuracy.
+- Standards, handled: the cost formula was written twice, so it now has one `usd()` helper. Added the missing docstrings in `relation_precision`.
 - Standards, left as notes:
   - private helpers are used across modules (`metrics._ANSWER_LINE`, `writer_pilot._relation_pairs`/`_norm`); the repo has precedent for this.
   - `paired_ci.usable_by_replicate` repeats `explore_readout`'s loop shape.
