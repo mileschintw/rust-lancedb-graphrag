@@ -156,7 +156,7 @@ def require_unblinded(config: CorpusConfig) -> None:
 
 
 def blinded_corpus_problem(corpus_name: str) -> str | None:
-    """``require_unblinded`` by corpus name: why reading a run of it is refused, or None.
+    """``require_unblinded`` by corpus name: why reading its runs is refused, or None.
 
     A corpus that does not load is None here: the caller fails on it anyway, and only a
     corpus that loads can name a run-plan column.

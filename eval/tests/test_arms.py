@@ -728,7 +728,8 @@ def test_the_closed_book_arm_is_outside_the_engine_registry_and_takes_a_store() 
     assert spec.retrieval_mode == "none"
     assert spec.levers == ()
     assert canonical_arm("twowiki/closed-book") == "twowiki/closed-book"
-    assert canonical_arm("twowiki/closed-book@opus-5.5") == "twowiki/closed-book@opus-5.5"
+    reader_arm = "twowiki/closed-book@opus-5.5"
+    assert canonical_arm(reader_arm) == reader_arm
     assert arm_store("twowiki/closed-book@haiku-5.5") == "eval-2wiki"
     assert is_closed_book_arm("twowiki/closed-book")
     assert is_closed_book_arm("twowiki/closed-book@sonnet-5.5")
