@@ -932,7 +932,8 @@ def _submit_sync(
             raise BatchError(
                 f"{len(misrouted)} deepseek answer(s) of the last {len(chunk)} break "
                 "is_byok or the provider; stopped before sending more (#133). "
-                f"{path.name} stays 'syncing'; a rerun sends only the rest"
+                "They stay recorded and score will refuse them: tell the owner before "
+                f"any rerun. {path.name} stays 'syncing'; a rerun sends only the rest"
             )
     manifest.update(state="fetched", fetched_at=time.time())
     _write_manifest(path, manifest)
