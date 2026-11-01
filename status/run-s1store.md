@@ -1,8 +1,8 @@
 # run-s1store status
 
-- state: parked
+- state: blocked
 - branch: main
-- head: d943d558
+- head: aedd4723
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\run-s1store.md
-- time: 2026-10-31 16:01 -0700
-- doing: waits for #118 (seed stopped at 118/346 per user; stack down; report written)
+- time: 2026-10-31 17:04 -0700
+- doing: S1 rebuilt to just before paid seed (A2 ok, stack down); waits for user yes on seed (~$1.0-1.2, ceiling ~$29.4 excl. retries)
