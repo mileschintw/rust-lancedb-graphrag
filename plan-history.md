@@ -200,3 +200,4 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 
 - Lane 146 (#146 merged-store code only): merged as PR #170 (9eb2f2bf) 2026-11-01; progress comment posted on #146. Row: | 146 | #146 (merged-store code only) | local_97bc85b5-3b3c-469c-8a5b-d7eb5514737a | resumed 2026-11-01 (owner: "可以，就這麼辦"): PR with merged-store code only; run plan/prereg stay unfrozen drafts; progress comment for #146 | PR on done |
 - Lane spare-2 #128: merged as PR #171 (0313af73) 2026-11-01; #128 closed; lane continues on #164.
+- Lane 145 (#145): merged as PR #172 2026-11-01 (deepseek 6,119/6,119 sync, $1.12, 42 runaways; 8-shard deviation recorded). Row: | 145 | #145 | local_b792b8dc-3864-43f1-8564-58de4475b13b | done at c239a969: deepseek 6,119/6,119 sync, $1.12, 42 runaways; full text committed; PR #172 open, CI running | — |
