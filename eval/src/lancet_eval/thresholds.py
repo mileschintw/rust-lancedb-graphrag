@@ -614,6 +614,84 @@ class ReplayStagePreRegistration(StagePreRegistration):
             )
 
 
+#: The transports a writer's extraction may run on.
+WRITER_TRANSPORTS = ("openrouter_batch",)
+_LOWER_HEX = frozenset("0123456789abcdef")
+
+
+@dataclass(frozen=True, kw_only=True)
+class WriterPreRegistration:
+    """v1.1 S3 (#145): what the writer extraction fixes, frozen before any spend (D-73).
+
+    S3 compares graph writers (D-235). Each writer extracts every passage of the pinned
+    2Wiki corpus once; the store builds, the reader runs and S3's analysis
+    pre-registration (arms, K, Holm family, metrics) come later, in their own constant.
+    A writer added after a constant reaches main gets its own constant of this type
+    in its own commit, so a frozen one never changes.
+
+    Attributes:
+        dataset: The Hugging Face dataset the passages come from.
+        dataset_revision: Its git revision (``twowiki.REVISION``).
+        passages_file: The passages file at that revision.
+        passages_sha256: sha256 of that file's bytes.
+        passage_count: How many passages, so how many requests per writer.
+        unit: What one request extracts.
+        extraction_source: The repo file whose request body every writer starts from.
+        extraction_source_blob: That file's git blob ID at the freeze, so a later edit
+            to the prompt or schema is caught.
+        request_rule: How each writer's request is built from that body.
+        writers: ``(writer name, reader_request.ReaderDeclaration)`` pairs: slug,
+            target, thinking, effort and sync list price per writer.
+        transports: ``(writer name, transport)`` pairs, one per writer, out of
+            ``WRITER_TRANSPORTS``.
+        report_rule: What is stored and reported per writer.
+        provenance: Where the values come from.
+    """
+
+    dataset: str
+    dataset_revision: str
+    passages_file: str
+    passages_sha256: str
+    passage_count: int
+    unit: str
+    extraction_source: str
+    extraction_source_blob: str
+    request_rule: str
+    writers: tuple[tuple[str, ReaderDeclaration], ...]
+    transports: tuple[tuple[str, str], ...]
+    report_rule: str
+    provenance: str
+
+    def __post_init__(self) -> None:
+        names = [name for name, _ in self.writers]
+        if not names or len(set(names)) != len(names):
+            raise ThresholdError(f"writers must be non-empty and unique, got {names}")
+        transports = dict(self.transports)
+        if sorted(transports) != sorted(names) or len(self.transports) != len(names):
+            raise ThresholdError(
+                f"transports name {sorted(transports)}, writers {sorted(names)}"
+            )
+        bad = {n: t for n, t in transports.items() if t not in WRITER_TRANSPORTS}
+        if bad:
+            raise ThresholdError(f"unknown transports {bad}; known {WRITER_TRANSPORTS}")
+        between = [n for n, d in self.writers if d.thinking == "between_tools"]
+        if between:
+            raise ThresholdError(
+                f"{between}: the Batch API refuses between_tools thinking (D-280)"
+            )
+        for field, value, size in (
+            ("dataset_revision", self.dataset_revision, 40),
+            ("passages_sha256", self.passages_sha256, 64),
+            ("extraction_source_blob", self.extraction_source_blob, 40),
+        ):
+            if len(value) != size or not set(value) <= _LOWER_HEX:
+                raise ThresholdError(f"{field} must be {size} lower-case hex digits")
+        if self.passage_count < 1:
+            raise ThresholdError(
+                f"passage_count must be positive, not {self.passage_count}"
+            )
+
+
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
 # shipped default against the MultiHop-RAG paper's LlamaIndex pipeline, read once on the
 # held-out split (the first of D-237's two reads). Every number a reading uses is inside
@@ -1052,6 +1130,115 @@ PREREGISTRATION_S2X = ReplayStagePreRegistration(
                 price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
             ),
         ),
+    ),
+)
+
+
+# v1.1 S3 writers (#145, D-73): what the 2Wiki writer extraction fixes, frozen before
+# any extraction is paid for. It names the pinned passages, the extraction unit, the
+# engine's request body and each writer's model and thinking; S3's analysis
+# pre-registration (arms, K, Holm family, metrics) is a later constant. A writer added
+# after this freeze gets its own WriterPreRegistration constant in its own commit.
+PREREGISTRATION_S3_WRITERS = WriterPreRegistration(
+    dataset="osunlp/HippoRAG_2",
+    dataset_revision="5ec05b38deecc3318bb432c69865959c56058990",
+    passages_file="2wikimultihopqa_corpus.json",
+    passages_sha256="9d6e352952aafb18dab22bf8195039461321a44a949df902ae83bce134ad238a",
+    passage_count=6_119,
+    unit=(
+        "One request per passage, in file order, taken as given: the passage's title "
+        "and text joined by one newline (twowiki.passage_unit, HippoRAG 2's own form; "
+        "about 37% of the texts do not name their title). No chunking and no length "
+        "floor: the 41 units under the engine's 40-byte MIN_CHUNK_CONTENT_LENGTH are "
+        "extracted too, so every writer gets the same 6,119 requests"
+    ),
+    extraction_source="engine/src/graph/extraction.rs",
+    extraction_source_blob="54c926a6c07b4483eb394cb5ff4bf58dcd158dfb",
+    request_rule=(
+        "Every writer starts from the body OpenRouterExtractionGenerator::"
+        "build_request_payload builds for the unit: its system message, its user "
+        "message ('Extract entities and relationships:' and the unit), the strict "
+        "json_schema 'knowledge_graph_extraction' and max_completion_tokens 16,384 "
+        "(D-272). deepseek gets that body as the engine sends it: the model and "
+        "provider pin config.toml holds (D-271) and reasoning {effort: none}. Each "
+        "Claude writer gets it rewritten as S2's readers are (D-255, reader_request."
+        "rewrite_pack_body): its slug, provider {only: [anthropic], allow_fallbacks: "
+        "false} (BYOK, D-265), temperature and top_p removed, and reasoning per its "
+        "thinking. The message text is the same for every writer; no few-shot "
+        "example and no prompt caching (D-256)"
+    ),
+    writers=(
+        (
+            "deepseek",
+            ReaderDeclaration(
+                slug="deepseek/deepseek-v4-flash-0731",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.0448, output_per_mtok=0.30),
+            ),
+        ),
+        (
+            "haiku-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-haiku-5.5",
+                target="openrouter",
+                thinking="off",
+                price=ReaderPrice(input_per_mtok=0.10, output_per_mtok=0.50),
+            ),
+        ),
+        (
+            "sonnet-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-sonnet-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=2.0, output_per_mtok=10.0),
+            ),
+        ),
+        (
+            "opus-5.5",
+            ReaderDeclaration(
+                slug="anthropic/claude-opus-5.5",
+                target="openrouter",
+                thinking="on",
+                effort="low",
+                price=ReaderPrice(input_per_mtok=4.0, output_per_mtok=20.0),
+            ),
+        ),
+    ),
+    transports=(
+        ("deepseek", "openrouter_batch"),
+        ("haiku-5.5", "openrouter_batch"),
+        ("sonnet-5.5", "openrouter_batch"),
+        ("opus-5.5", "openrouter_batch"),
+    ),
+    report_rule=(
+        "Per writer and passage: the raw output and its usage (prompt, completion and "
+        "reasoning tokens, cost, provider, is_byok) are stored; no store is built in "
+        "this step. Per writer: its thinking setting and measured reasoning_tokens "
+        "(no zero requirement), tokens and spend, and the failed, expired and "
+        "schema-invalid outputs. A Claude writer's request must run BYOK (is_byok "
+        "true, provider Anthropic). Every paid batch is submitted only after the "
+        "owner's yes on its printed estimate (D-258)"
+    ),
+    provenance=(
+        "#145, owner 2026-11-01: 'Start S3 prep'. Writers: D-235 (deepseek, Haiku 5.5, "
+        "Sonnet 5.5), and Opus 5.5 added by the owner before this freeze merged "
+        "(2026-11-01, relayed by the coordinator: '全部接受，同意 force-push'). "
+        "Thinking: the lowest setting each model supports on the Batch API, "
+        "one rule for every writer, each setting and its measured reasoning_tokens "
+        "reported (owner 2026-11-01, relayed from a side session and confirmed to the "
+        "coordinator: '是說haiku也不用一定要開low effort吧？…就直接變成off, off, low, "
+        "low這樣？', 'Confirm'): deepseek off, Haiku 5.5 off, Sonnet 5.5 and Opus 5.5 "
+        "on at effort low, all on the Batch API. Sync list prices, USD per MTok: "
+        "deepseek 0.0448/0.30 (Wafer, D-277), Haiku 5.5 0.10/0.50 and Sonnet 5.5 2/10 "
+        "(decisions 2026-10-30), Opus 5.5 4/20 (D-269); OpenRouter's Batch API bills "
+        "Claude at half. "
+        "Dataset: D-234; revision, file sha256 and licence (Apache-2.0 at "
+        "github.com/Alab-NII/2wikimultihop) read 2026-11-01. Passage form: HippoRAG "
+        "2's main.py. Extraction source blob: engine/src/graph/extraction.rs at "
+        "639ee82f. Written 2026-11-01, before any 2Wiki extraction"
     ),
 )
 
