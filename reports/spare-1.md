@@ -1,11 +1,12 @@
 # spare-1 報告：#163 S3 held-out 讀者網格（免費階段：凍結與 harness）
 
-- **分支與 head**：`claude/lane-spare-1-c7ab76`，head `e664121d`（起點 origin/main `68f0009c`）。共五個 commit：
+- **分支與 head**：`claude/lane-spare-1-c7ab76`，head `10dda4ee`（起點 origin/main `68f0009c`）。共六個 commit：
   - `f9b26754`：harness（run-plan 型別、closed-book 欄、held-out replay 閘門、盲化拒絕）與 D-291
-  - `4f0b3bc1`：D-73 凍結 commit，只含常數 `RUN_PLAN_S3_HELDOUT`
-  - `79ace56d`：六個欄 corpus、四個 graph overlay、RUN-S3-HELDOUT.md
-  - `aa2b0428`：第 1 輪 review 修正
-  - `e664121d`：第 2 輪 review 修正
+  - `99b9d29e`：D-73 凍結 commit，只含常數 `RUN_PLAN_S3_HELDOUT`
+  - `e39546e9`：六個欄 corpus、四個 graph overlay、RUN-S3-HELDOUT.md
+  - `927d5460`：第 1 輪 review 修正
+  - `879bbd0e`：第 2 輪 review 修正
+  - `10dda4ee`：CI ruff 修正（兩行換行）
 - **PR 本文草稿**：`pr-bodies/spare-1.md`。依 brief 寫 `Refs #163`，不寫 Closes；Closes 留給最終紀錄 PR。
 
 ## Issue 項目中已不成立者
@@ -17,7 +18,7 @@
 - `experiments/v1.1/PLAN.md`：新增 D-291，內容是兩段凍結（先 run plan、後分析計畫）、盲化規則，以及 harness 如何強制執行。
 - `eval/src/lancet_eval/thresholds.py`：
   - 新增 `ReaderGridRunPlan`、`GridColumn`、`ColumnRunPlan` 三個類別，沒有 Holm family。
-  - 新增常數 `RUN_PLAN_S3_HELDOUT`，只在 `4f0b3bc1` 這一個 commit 中出現。
+  - 新增常數 `RUN_PLAN_S3_HELDOUT`，只在 `99b9d29e` 這一個 commit 中出現。
 - `preregistration.py`：
   - `resolve(token, column)`：run plan 必須帶 column，否則拒絕。
   - 新增 `resolve_corpus`、`require_unblinded`、`blinded_corpus_problem`。
@@ -47,14 +48,26 @@
   - 新檔：`test_reader_grid_run_plan.py`、`test_reader_grid_resolution.py`、`test_closed_book.py`、`test_twowiki_h.py`、`test_s3_heldout_run_plan.py`
   - 擴充：`test_arms.py`、`test_replay.py`
 
+## CI 修正（PR #173，run 41360565244）
+
+- CI 的 ruff 檢查失敗，原因是本分支新增了 3 行過長的行（line-too-long）：
+  - `preregistration.py`、`test_arms.py` 各 1 行，另開 commit `10dda4ee` 修正。
+  - `thresholds.py` 有 1 行在 `RUN_PLAN_S3_HELDOUT` 常數內。
+- 依 coordinator 指示改寫未 merge 的分支，讓凍結 commit 仍是常數唯一的 commit：
+  - 新的凍結 commit 是 `99b9d29e`，取代 `4f0b3bc1`，只改了該行的換行。
+  - 已確認常數的 AST 與舊凍結 commit 相同，`preregistered_value_problem` 回傳 `None`。
+  - 之後的 commit 以 cherry-pick 重放，hash 都變了。
+  - 用 `--force-with-lease`（以舊 head `e664121d` 為基準）force-push，只推本分支。
+- 本機照 CI 的方式比對「changed files 新增的 ruff 規則數」，已無新發現。
+
 ## 預設分支上本來就失敗的檢查
 
 無。
 
 ## 檢查與 lane 測試
 
-- `PYTHONUTF8=1 uv run --project eval pytest -n auto --dist loadfile`（在 head `e664121d` 上）：**3252 passed, 14 skipped, 42 subtests passed**（194.84 秒）。
-- D-73 漂移檢查：`gitcheck.preregistered_value_problem('RUN_PLAN_S3_HELDOUT', '4f0b3bc1')` 回傳 `None`。`git log -S RUN_PLAN_S3_HELDOUT -- thresholds.py` 只列出 `4f0b3bc1`。
+- `PYTHONUTF8=1 uv run --project eval pytest -n auto --dist loadfile`（在 head `10dda4ee` 上）：**3252 passed, 14 skipped, 42 subtests passed**（194.84 秒）。
+- D-73 漂移檢查：`gitcheck.preregistered_value_problem('RUN_PLAN_S3_HELDOUT', '99b9d29e')` 回傳 `None`（force-push 後重驗）。`git log -S RUN_PLAN_S3_HELDOUT -- thresholds.py` 只列出 `99b9d29e`。
 - **未執行**：
   - cargo（`cargo test --manifest-path engine/Cargo.toml --locked && sh scripts/engine-test-targets.sh`）與 Go（`(cd gateway && go test -count=1 -short ./...) && sh scripts/gateway-test-targets.sh`）。原因：沒有改到 Rust 或 Go 程式碼，只新增引擎在各自 `LANCET_ENV` 下讀的 overlay 檔。若要保險，可在 merge 前跑這兩條。
   - ruff：repo 整體本來就有大量 E501 與排版問題；新檔與新測試都已 ruff 乾淨。
@@ -73,12 +86,12 @@
    - 標準軸：沒有硬性違規。
      - 已處理：`_dev_corpus` 改名；`ColumnRunPlan` docstring 補全；`score._refuse_blinded` 的 fail-open 加上註解說明。
      - 保留：其餘 smell（字串三元組的 cells、`batch.py` 中五處 closed-book 分支、從 `replay.py` import 私有 helper）。理由是 repo 本來就這樣寫，而且只有單一特例。
-2. 第 2 輪（只看 `aa2b0428`）：
+2. 第 2 輪（只看 `927d5460`）：
    - 阻斷 1：unpark 測試缺必要參數，argparse 先退出，測試等於空測。→ 補上 pid 參數，並檢查 stderr 含 D-291。
    - 阻斷 2：`diagnostic.build_rows` 仍能讀答案與 gold。→ 已改為拒絕。
    - 附註：`twowiki_h` docstring 寫「每個 run 目錄都有副本」，但這次 diff 沒有任何東西複製它。→ 改寫為「由 RUN 指南的紀錄步驟複製」。
    - 附註（未處理）：unpark 的 `--baseline-run` 沒有檢查；風險低。
-3. 第 3 輪（只看 `e664121d`）：沒有阻斷。
+3. 第 3 輪（只看 `879bbd0e`）：沒有阻斷。
 4. 留下的已知落差：凍結常數 `blinding_rule` 的文字只列出 score、compare-levers 和兩個 readout，實際拒絕的指令更多。常數凍結後不能修改，D-291 與 RUN 指南已列出完整清單。
 
 ## 開出的 issue
@@ -110,6 +123,8 @@
 無。依 coordinator 指示，模式是 normal，scope 決定記在上面的「Coordinator 的裁示」。
 
 ## 給 coordinator 的待決問題（付費階段之前）
+
+（#172 的四個 writer 抽取結果已 merge 進 main，步驟 3 可在 continue 後匯入。）
 
 1. **Claude 額度不夠跑完 must-run 的 cells。** 依 run B 實測單價估算：
    - closed-book 與 hybrid 兩欄全部讀者：約 $22。

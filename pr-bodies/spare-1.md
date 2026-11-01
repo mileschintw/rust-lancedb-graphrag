@@ -18,7 +18,7 @@ The coordinator ruled that this harness code belongs in #163's scope.
 - **D-291** (`experiments/v1.1/PLAN.md`) freezes the plan in two steps:
   - the run plan first: which cells run, K, transports and thinking, and no analysis;
   - then blinding: no run is scored or read for its answers until a separate analysis constant is frozen; then every run is scored once.
-- **`RUN_PLAN_S3_HELDOUT`** (`thresholds.py`, type `ReaderGridRunPlan`) is frozen alone in commit `4f0b3bc1` (D-73). It holds:
+- **`RUN_PLAN_S3_HELDOUT`** (`thresholds.py`, type `ReaderGridRunPlan`) is frozen alone in commit `99b9d29e` (D-73). It holds:
   - 24 cells: Sonnet's graph-haiku, graph-sonnet and graph-opus cells are `optional`, every other cell is `core`;
   - Claude on OpenRouter's Batch API: Haiku thinking off, Sonnet and Opus on at effort low;
   - deepseek: replicate 1 from the engine drive, replicate 2 through the sync API;
