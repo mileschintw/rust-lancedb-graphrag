@@ -667,7 +667,7 @@ class WriterPreRegistration:
         if not names or len(set(names)) != len(names):
             raise ThresholdError(f"writers must be non-empty and unique, got {names}")
         transports = dict(self.transports)
-        if sorted(transports) != sorted(names) or len(transports) != len(names):
+        if sorted(transports) != sorted(names) or len(self.transports) != len(names):
             raise ThresholdError(
                 f"transports name {sorted(transports)}, writers {sorted(names)}"
             )

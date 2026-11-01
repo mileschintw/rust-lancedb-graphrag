@@ -59,6 +59,15 @@ def test_a_consistent_constant_builds() -> None:
             "unique",
         ),
         ({"transports": (("sonnet-5.5", "openrouter_batch"),)}, "transports name"),
+        (
+            {
+                "transports": (
+                    ("haiku-5.5", "openrouter_batch"),
+                    ("haiku-5.5", "openrouter_batch"),
+                )
+            },
+            "transports name",
+        ),
         ({"transports": (("haiku-5.5", "sync"),)}, "unknown transports"),
         (
             {
