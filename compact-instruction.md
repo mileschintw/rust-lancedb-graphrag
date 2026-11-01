@@ -12,7 +12,7 @@ Files over summary. After the compact, reread these; where a file and this summa
 `ready`: `py -3 -I C:/Users/user3/.claude/plugins/cache/relay/relay/0.3.2/tools/relay.py ready D:/Repos/lancet-coord --repo mileschintw/rust-lancedb-graphrag --checkout D:/Repos/lancet` (600 s timeout).
 
 In flight:
-- run-s1store (local_51a319aa-e1e9-489f-b5d9-9bc448cd73a9) is rewriting reports/run-s1store-compact.md and will reply "compact file ready"; the user compacts it with that file.
+- run-s1store (local_51a319aa-e1e9-489f-b5d9-9bc448cd73a9) wrote reports/run-s1store-compact.md ("compact file ready"); the user compacts it with that file. It starts nothing until GO.
 - No lane is working; no alarm runs.
 
 Next (S2 hold, user: "S2開始前我們要先解決所有的問題，並討論可能因此而改變的設計"):
