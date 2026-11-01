@@ -135,6 +135,69 @@ def test_the_writers_and_their_thinking() -> None:
     assert dict(_s3().transports) == dict.fromkeys(writers, "openrouter_batch")
 
 
+def _addendum(**over: Any) -> thresholds.WriterTransportAddendum:
+    fields: dict[str, Any] = {
+        "amends": "PREREGISTRATION_TEST",
+        "transports": (("haiku-5.5", "openrouter_sync"),),
+        "request_rule": "one at a time",
+        "report_rule": "runaways too",
+        "provenance": "test",
+    }
+    fields.update(over)
+    return thresholds.WriterTransportAddendum(**fields)
+
+
+def test_an_addendum_moves_only_its_writers() -> None:
+    base = _valid(
+        writers=(("haiku-5.5", HAIKU), ("other", HAIKU)),
+        transports=(("haiku-5.5", "openrouter_batch"), ("other", "openrouter_batch")),
+    )
+    assert _addendum().transports_for(base) == {
+        "haiku-5.5": "openrouter_sync",
+        "other": "openrouter_batch",
+    }
+    with pytest.raises(thresholds.ThresholdError, match="not writers"):
+        _addendum(transports=(("opus-5.5", "openrouter_sync"),)).transports_for(base)
+
+
+@pytest.mark.parametrize(
+    ("over", "message"),
+    [
+        ({"amends": "S3_WRITERS"}, "amends"),
+        ({"transports": ()}, "non-empty"),
+        (
+            {
+                "transports": (
+                    ("haiku-5.5", "openrouter_sync"),
+                    ("haiku-5.5", "openrouter_sync"),
+                )
+            },
+            "unique",
+        ),
+        ({"transports": (("haiku-5.5", "openrouter_batch"),)}, "unknown transports"),
+    ],
+)
+def test_an_inconsistent_addendum_is_refused(
+    over: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(thresholds.ThresholdError, match=message):
+        _addendum(**over)
+
+
+def test_deepseek_alone_moves_to_the_sync_api() -> None:
+    """D-290: the addendum moves deepseek; the Claude writers keep their batches."""
+    addendum = thresholds.PREREGISTRATION_S3_WRITERS_SYNC
+    assert getattr(thresholds, addendum.amends) is _s3()
+    assert addendum.transports_for(_s3()) == {
+        "deepseek": "openrouter_sync",
+        "haiku-5.5": "openrouter_batch",
+        "sonnet-5.5": "openrouter_batch",
+        "opus-5.5": "openrouter_batch",
+    }
+    assert "D-290" in addendum.provenance
+    assert "#156" in addendum.report_rule
+
+
 def test_the_claude_writers_match_s2s_slugs_and_prices() -> None:
     s2 = dict(thresholds.PREREGISTRATION_S2.readers)
     for name, declaration in _s3().writers:

@@ -708,6 +708,57 @@ class WriterPreRegistration:
             )
 
 
+#: The transports a writer addendum may move a frozen writer to.
+WRITER_ADDENDUM_TRANSPORTS = ("openrouter_sync",)
+
+
+@dataclass(frozen=True, kw_only=True)
+class WriterTransportAddendum:
+    """v1.1 S3 (#145, D-290): a new transport for writers a frozen constant lists.
+
+    A ``WriterPreRegistration`` never changes once frozen (D-73). When one of its
+    writers cannot run on its frozen transport, an addendum of this type, frozen in its
+    own commit, moves that writer and says how its requests are sent; every other field
+    of the frozen constant still holds.
+
+    Attributes:
+        amends: The name of the frozen ``WriterPreRegistration`` constant it amends.
+        transports: ``(writer name, transport)`` pairs, out of
+            ``WRITER_ADDENDUM_TRANSPORTS``, for the writers that move.
+        request_rule: How a moved writer's requests are sent.
+        report_rule: What is reported beyond the frozen constant's ``report_rule``.
+        provenance: Where the values come from.
+    """
+
+    amends: str
+    transports: tuple[tuple[str, str], ...]
+    request_rule: str
+    report_rule: str
+    provenance: str
+
+    def __post_init__(self) -> None:
+        if not self.amends.startswith("PREREGISTRATION_"):
+            raise ThresholdError(f"amends must name a constant, got {self.amends!r}")
+        names = [name for name, _ in self.transports]
+        if not names or len(set(names)) != len(names):
+            raise ThresholdError(
+                f"transports must be non-empty and unique, got {names}"
+            )
+        bad = {n: t for n, t in self.transports if t not in WRITER_ADDENDUM_TRANSPORTS}
+        if bad:
+            raise ThresholdError(
+                f"unknown transports {bad}; known {WRITER_ADDENDUM_TRANSPORTS}"
+            )
+
+    def transports_for(self, base: WriterPreRegistration) -> dict[str, str]:
+        """Each of `base`'s writers and the transport that holds for it."""
+        frozen = dict(base.transports)
+        unknown = sorted(name for name, _ in self.transports if name not in frozen)
+        if unknown:
+            raise ThresholdError(f"{unknown} are not writers of {self.amends}")
+        return frozen | dict(self.transports)
+
+
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
 # shipped default against the MultiHop-RAG paper's LlamaIndex pipeline, read once on the
 # held-out split (the first of D-237's two reads). Every number a reading uses is inside
@@ -1255,6 +1306,43 @@ PREREGISTRATION_S3_WRITERS = WriterPreRegistration(
         "github.com/Alab-NII/2wikimultihop) read 2026-11-01. Passage form: HippoRAG "
         "2's main.py. Extraction source blob: engine/src/graph/extraction.rs at "
         "639ee82f. Written 2026-11-01, before any 2Wiki extraction"
+    ),
+)
+
+
+# v1.1 S3 writers, deepseek's transport (#145, D-290, D-73): the Batch transport
+# PREREGISTRATION_S3_WRITERS froze for deepseek has no deepseek path, so deepseek runs
+# through the sync API as D-278 and #117 send it. Every other field of
+# PREREGISTRATION_S3_WRITERS still holds, and that constant is unchanged.
+PREREGISTRATION_S3_WRITERS_SYNC = WriterTransportAddendum(
+    amends="PREREGISTRATION_S3_WRITERS",
+    transports=(("deepseek", "openrouter_sync"),),
+    request_rule=(
+        "deepseek's body is the one PREREGISTRATION_S3_WRITERS' request_rule fixes: "
+        "the engine's body as the engine sends it, unrewritten (config.toml's model "
+        "and D-271's pin: order [wafer/us], allow_fallbacks false, max_price; "
+        "reasoning {effort: none}). Each passage's body is posted alone to "
+        "OpenRouter's POST /api/v1/chat/completions, one request at a time, as D-278 "
+        "sends S2's "
+        "replicates and #117's writer_pilot.run_sync sends its extraction; a rerun "
+        "sends only the passages without a succeeded answer. Full price, no batch "
+        "discount, on OpenRouter credit"
+    ),
+    report_rule=(
+        "PREREGISTRATION_S3_WRITERS' report_rule, with each answer's own sync usage. "
+        "Every succeeded answer must report is_byok false, as D-271's pinned endpoint "
+        "bills OpenRouter credit; the run stops at the first answer that does not. "
+        "The D-258 estimate is printed before the first request. Runaways (answers "
+        "that end with finish_reason length, #156) are counted per writer and "
+        "reported beside the Claude writers' counts"
+    ),
+    provenance=(
+        "D-290, #145, owner 2026-11-01 (typed to the coordinator, relayed): 'Sync with "
+        "a new D-ID'. Why no batch: deepseek/deepseek-v4-flash-0731 has no batch "
+        "variant and a batch cannot carry D-271's pin (D-278, checked 2026-10-31). "
+        "Price: Wafer's 0.0448/0.30 USD per MTok (D-277), the price "
+        "PREREGISTRATION_S3_WRITERS lists. Written 2026-11-01, after the Claude "
+        "writers' batches and before any deepseek extraction"
     ),
 )
 

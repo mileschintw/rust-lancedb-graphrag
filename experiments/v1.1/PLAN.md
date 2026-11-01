@@ -564,6 +564,17 @@ the owner's budget answer.
 - **D-289 Thinking at the lowest setting each model supports on the Batch API** (owner: "全部接受",
   2026-11-01; #147). Every model runs at the lowest thinking setting it supports on the Batch API. Each run reports
   the setting it sent and the measured `reasoning_tokens`.
+- **D-290 deepseek's S3 extraction goes through OpenRouter's sync API** (owner: "Sync with a new D-ID", 2026-11-01;
+  #145). Amends `PREREGISTRATION_S3_WRITERS`'s transport for deepseek; the Claude writers keep their batches, which
+  ran on 2026-11-01. The frozen constant gives deepseek `openrouter_batch`, but that transport has no deepseek path:
+  `deepseek/deepseek-v4-flash-0731` has no batch variant and a batch cannot carry D-271's pin (D-278). So deepseek
+  runs as D-278 sends S2's replicates and #117's `writer_pilot` sends its extraction: the engine's body, unrewritten
+  (D-271's pin to wafer/us with `allow_fallbacks: false` and `max_price`, reasoning `{effort: none}`), posted one
+  passage at a time to `POST /api/v1/chat/completions`, at full price with no batch discount. The D-258 estimate is
+  printed first, and every answer must report `is_byok` false. A runaway (`finish_reason: length`, #156) is counted
+  per writer beside the Claude writers' counts. The addendum constant `PREREGISTRATION_S3_WRITERS_SYNC`
+  (`thresholds.py`) freezes this in its own commit; `PREREGISTRATION_S3_WRITERS` is unchanged. At D-277's Wafer price
+  this costs about $1 of OpenRouter credit.
 
 ## Model access
 
