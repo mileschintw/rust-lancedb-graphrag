@@ -1,0 +1,1510 @@
+{
+  "answer_mix": [
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "label": "reported only, never decisional; beating constant-Yes is not a default condition",
+      "mix": [
+        {
+          "arm": {
+            "insufficient_information": 0.19444444444444445,
+            "no": 0.3888888888888889,
+            "other": 0.05555555555555555,
+            "yes": 0.3611111111111111
+          },
+          "constant_no_answer_usable": 0.2777777777777778,
+          "constant_yes_answer_usable": 0.6666666666666666,
+          "gold": {
+            "no": 0.2777777777777778,
+            "other": 0.05555555555555555,
+            "yes": 0.6666666666666666
+          },
+          "n": 36,
+          "reference": {
+            "insufficient_information": 0.08333333333333333,
+            "no": 0.2222222222222222,
+            "other": 0.08333333333333333,
+            "yes": 0.6111111111111112
+          },
+          "subset": "comparison_query"
+        },
+        {
+          "arm": {
+            "insufficient_information": 0.2545454545454545,
+            "no": 0.36363636363636365,
+            "other": 0.05454545454545454,
+            "yes": 0.32727272727272727
+          },
+          "constant_no_answer_usable": 0.34545454545454546,
+          "constant_yes_answer_usable": 0.6545454545454545,
+          "gold": {
+            "no": 0.34545454545454546,
+            "other": 0.0,
+            "yes": 0.6545454545454545
+          },
+          "n": 55,
+          "reference": {
+            "insufficient_information": 0.14545454545454545,
+            "no": 0.21818181818181817,
+            "other": 0.03636363636363636,
+            "yes": 0.6
+          },
+          "subset": "binary_gold"
+        }
+      ],
+      "non_binary_gold": {
+        "ci_hi": 0.029411764705882353,
+        "ci_label": "unadjusted, estimation only",
+        "ci_lo": -0.20588235294117646,
+        "delta": -0.08823529411764708,
+        "mean_arm": 0.8823529411764706,
+        "mean_reference": 0.9705882352941176,
+        "n": 34
+      },
+      "transitions": {
+        "all": {
+          "abstain_to_correct": 4,
+          "answer_to_abstain": 14,
+          "correct_to_abstain": 14,
+          "correct_to_wrong": 9,
+          "n": 89,
+          "other_transitions": 2,
+          "unchanged": 58,
+          "wrong_to_correct": 2
+        },
+        "comparison_query": {
+          "abstain_to_correct": 2,
+          "answer_to_abstain": 7,
+          "correct_to_abstain": 7,
+          "correct_to_wrong": 7,
+          "n": 36,
+          "other_transitions": 1,
+          "unchanged": 18,
+          "wrong_to_correct": 1
+        },
+        "inference_query": {
+          "abstain_to_correct": 0,
+          "answer_to_abstain": 3,
+          "correct_to_abstain": 3,
+          "correct_to_wrong": 0,
+          "n": 31,
+          "other_transitions": 0,
+          "unchanged": 28,
+          "wrong_to_correct": 0
+        },
+        "temporal_query": {
+          "abstain_to_correct": 2,
+          "answer_to_abstain": 4,
+          "correct_to_abstain": 4,
+          "correct_to_wrong": 2,
+          "n": 22,
+          "other_transitions": 1,
+          "unchanged": 12,
+          "wrong_to_correct": 1
+        }
+      }
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "label": "reported only, never decisional; beating constant-Yes is not a default condition",
+      "mix": [
+        {
+          "arm": {
+            "insufficient_information": 0.16666666666666666,
+            "no": 0.2222222222222222,
+            "other": 0.1111111111111111,
+            "yes": 0.5
+          },
+          "constant_no_answer_usable": 0.2777777777777778,
+          "constant_yes_answer_usable": 0.6666666666666666,
+          "gold": {
+            "no": 0.2777777777777778,
+            "other": 0.05555555555555555,
+            "yes": 0.6666666666666666
+          },
+          "n": 36,
+          "reference": {
+            "insufficient_information": 0.08333333333333333,
+            "no": 0.2222222222222222,
+            "other": 0.08333333333333333,
+            "yes": 0.6111111111111112
+          },
+          "subset": "comparison_query"
+        },
+        {
+          "arm": {
+            "insufficient_information": 0.21818181818181817,
+            "no": 0.21818181818181817,
+            "other": 0.09090909090909091,
+            "yes": 0.4727272727272727
+          },
+          "constant_no_answer_usable": 0.34545454545454546,
+          "constant_yes_answer_usable": 0.6545454545454545,
+          "gold": {
+            "no": 0.34545454545454546,
+            "other": 0.0,
+            "yes": 0.6545454545454545
+          },
+          "n": 55,
+          "reference": {
+            "insufficient_information": 0.14545454545454545,
+            "no": 0.21818181818181817,
+            "other": 0.03636363636363636,
+            "yes": 0.6
+          },
+          "subset": "binary_gold"
+        }
+      ],
+      "non_binary_gold": {
+        "ci_hi": 0.08823529411764706,
+        "ci_label": "unadjusted, estimation only",
+        "ci_lo": 0.0,
+        "delta": 0.02941176470588236,
+        "mean_arm": 1.0,
+        "mean_reference": 0.9705882352941176,
+        "n": 34
+      },
+      "transitions": {
+        "all": {
+          "abstain_to_correct": 3,
+          "answer_to_abstain": 7,
+          "correct_to_abstain": 7,
+          "correct_to_wrong": 3,
+          "n": 89,
+          "other_transitions": 1,
+          "unchanged": 75,
+          "wrong_to_correct": 0
+        },
+        "comparison_query": {
+          "abstain_to_correct": 1,
+          "answer_to_abstain": 5,
+          "correct_to_abstain": 5,
+          "correct_to_wrong": 3,
+          "n": 36,
+          "other_transitions": 1,
+          "unchanged": 26,
+          "wrong_to_correct": 0
+        },
+        "inference_query": {
+          "abstain_to_correct": 0,
+          "answer_to_abstain": 0,
+          "correct_to_abstain": 0,
+          "correct_to_wrong": 0,
+          "n": 31,
+          "other_transitions": 0,
+          "unchanged": 31,
+          "wrong_to_correct": 0
+        },
+        "temporal_query": {
+          "abstain_to_correct": 2,
+          "answer_to_abstain": 2,
+          "correct_to_abstain": 2,
+          "correct_to_wrong": 0,
+          "n": 22,
+          "other_transitions": 0,
+          "unchanged": 18,
+          "wrong_to_correct": 0
+        }
+      }
+    }
+  ],
+  "ci_statement": "Bootstrap CIs are 95% percentile intervals, labelled 'unadjusted, estimation only'. A CI that excludes 0 without a Holm rejection is not significant.",
+  "context": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "context_tokens_mean": 1748.7111111111112,
+      "evidence_hits_at_4": 0.9,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 3778.8444444444444
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "context_tokens_mean": 1748.7111111111112,
+      "evidence_hits_at_4": null,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 6647.377777777778
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "context_tokens_mean": 1748.7111111111112,
+      "evidence_hits_at_4": null,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 6647.377777777778
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+      "context_tokens_mean": 1748.7111111111112,
+      "evidence_hits_at_4": null,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 6648.377777777778
+    }
+  ],
+  "default_decisions": [
+    {
+      "answer_usable_decision": "significant",
+      "decision": "significantly worse, stays off",
+      "delta": -0.1853932584269663,
+      "gate_reads": null,
+      "hits_at_4_note": null,
+      "hits_at_4_support": null,
+      "interaction_caveat": "If two levers win, D-157 flips both. The combination is never tested decisionally; hybrid+all is its only, descriptive, evidence.",
+      "kind": "default_decision",
+      "lever": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "reasons": [
+        "Holm rejection with a negative delta"
+      ]
+    },
+    {
+      "answer_usable_decision": "not significant",
+      "decision": "stays off: not significant",
+      "delta": -0.05617977528089879,
+      "gate_reads": null,
+      "hits_at_4_note": null,
+      "hits_at_4_support": null,
+      "interaction_caveat": "If two levers win, D-157 flips both. The combination is never tested decisionally; hybrid+all is its only, descriptive, evidence.",
+      "kind": "default_decision",
+      "lever": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "reasons": [
+        "no Holm rejection"
+      ]
+    }
+  ],
+  "descriptive_rows": [],
+  "families": [
+    {
+      "alpha": 0.05,
+      "comparisons": [
+        {
+          "adjusted_p": 0.00020503997802734375,
+          "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+          "ci_hi": -0.10112359550561797,
+          "ci_label": "unadjusted, estimation only",
+          "ci_lo": -0.2752808988764045,
+          "ci_note": null,
+          "coverage": 0.9888888888888889,
+          "decision": "significant",
+          "delta": -0.1853932584269663,
+          "evaluable": true,
+          "exclusions": {
+            "of_which_reference_own_failure": 1,
+            "of_which_reference_provenance": 0,
+            "of_which_rerank_degrade": 0,
+            "own_failure": 0,
+            "own_provenance": 0,
+            "reference_only_failure": 1
+          },
+          "mean_arm": 0.6629213483146067,
+          "mean_reference": 0.848314606741573,
+          "n_neg": 27,
+          "n_pairs": 89,
+          "n_pos": 6,
+          "paired_t_p": 7.884334367821644e-05,
+          "raw_p": 0.00010251998901367188,
+          "reference": "merged/hybrid+rerank+metadata",
+          "rejected": true,
+          "strata": [
+            {
+              "ci_hi": -0.1111111111111111,
+              "ci_lo": -0.4027777777777778,
+              "delta": -0.25,
+              "n": 36,
+              "stratum": "comparison_query"
+            },
+            {
+              "ci_hi": -0.016129032258064516,
+              "ci_lo": -0.22580645161290322,
+              "delta": -0.11290322580645162,
+              "n": 31,
+              "stratum": "inference_query"
+            },
+            {
+              "ci_hi": 0.022727272727272728,
+              "ci_lo": -0.38636363636363635,
+              "delta": -0.18181818181818182,
+              "n": 22,
+              "stratum": "temporal_query"
+            }
+          ]
+        },
+        {
+          "adjusted_p": 0.156097412109375,
+          "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+          "ci_hi": 0.011235955056179775,
+          "ci_label": "unadjusted, estimation only",
+          "ci_lo": -0.12921348314606743,
+          "ci_note": null,
+          "coverage": 0.9888888888888889,
+          "decision": "not significant",
+          "delta": -0.05617977528089879,
+          "evaluable": true,
+          "exclusions": {
+            "of_which_reference_own_failure": 1,
+            "of_which_reference_provenance": 0,
+            "of_which_rerank_degrade": 0,
+            "own_failure": 0,
+            "own_provenance": 0,
+            "reference_only_failure": 1
+          },
+          "mean_arm": 0.7921348314606742,
+          "mean_reference": 0.848314606741573,
+          "n_neg": 10,
+          "n_pairs": 89,
+          "n_pos": 6,
+          "paired_t_p": 0.11434479840575684,
+          "raw_p": 0.156097412109375,
+          "reference": "merged/hybrid+rerank+metadata",
+          "rejected": false,
+          "strata": [
+            {
+              "ci_hi": -0.041666666666666664,
+              "ci_lo": -0.3055555555555556,
+              "delta": -0.16666666666666663,
+              "n": 36,
+              "stratum": "comparison_query"
+            },
+            {
+              "ci_hi": 0.0,
+              "ci_lo": 0.0,
+              "delta": 0.0,
+              "n": 31,
+              "stratum": "inference_query"
+            },
+            {
+              "ci_hi": 0.20454545454545456,
+              "ci_lo": -0.11363636363636363,
+              "delta": 0.045454545454545414,
+              "n": 22,
+              "stratum": "temporal_query"
+            }
+          ]
+        }
+      ],
+      "m": 2,
+      "matching_rule": null,
+      "primary": "answer_usable",
+      "role": "decisional"
+    }
+  ],
+  "fwer_statement": "Two Holm families, one per primary, each at its family-wise error rate (m fixed at the registered arm count). Across both families the family-wise error rate can reach 0.10 (the Bonferroni bound over two families), and this report states it. Defaults read only the decisional family (at most 0.05). The guards can only veto a rejection, so they never raise the error rate.",
+  "gate_readings": null,
+  "graph_state": [],
+  "null_guards": [
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "b": 0,
+      "c": 0,
+      "decisional": true,
+      "evaluable": true,
+      "margin": 0.1,
+      "min_pairs": 16,
+      "n_heldout_null": 20,
+      "n_pairs": 20,
+      "net_loss_rate": 0.0,
+      "ni_label": null,
+      "note": "net loss 0 of 20, at most the margin 0.1",
+      "passes": true,
+      "predicate": "metrics.is_abstention",
+      "status": "PASS",
+      "upper_bound_95": 0.0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "b": 0,
+      "c": 0,
+      "decisional": true,
+      "evaluable": true,
+      "margin": 0.1,
+      "min_pairs": 16,
+      "n_heldout_null": 20,
+      "n_pairs": 20,
+      "net_loss_rate": 0.0,
+      "ni_label": null,
+      "note": "net loss 0 of 20, at most the margin 0.1",
+      "passes": true,
+      "predicate": "metrics.is_abstention",
+      "status": "PASS",
+      "upper_bound_95": 0.0
+    }
+  ],
+  "populations": {
+    "floor": 0.8,
+    "n_heldout_g": 90,
+    "n_heldout_null": 10,
+    "p_all_label": "all-arm P_all, not the decisional population",
+    "population": "dev",
+    "provenance_block_passed": true
+  },
+  "preregistration": {
+    "answer_mix_strata": [
+      "comparison_query",
+      "binary_gold"
+    ],
+    "bootstrap_b": 10000,
+    "bootstrap_seed": 42,
+    "complete_case_floor": 0.8,
+    "default_rule": "Exploratory: this run decides nothing and changes no S2 or S3 decision; S2's reader choice stands (EXPERIMENT-S2.md). The family is decisional only because the lever comparison needs one. Read in EXPLORE-S2-MERGED.md, by hand: per reader, answer_usable and the abstention rate on the 90 G questions, split by whether every gold fact is in the context (metrics.gold_contained, evidence_split) and by yes/no against open questions, beside S2's small-store run; the paired deltas against deepseek and the null guards as the lever comparison prints them; reasoning_tokens; spend. Every arm answers each question 2 times, and every test is the exact sign-flip permutation on the per-question mean differences (D-274). The written predictions are checked, never tuned after the data",
+    "descriptive_arms": [
+      "merged/hybrid+rerank+metadata@opus-5.5"
+    ],
+    "external_pipelines": [],
+    "families": [
+      {
+        "alpha": 0.05,
+        "arms": [
+          "merged/hybrid+rerank+metadata@haiku-5.5",
+          "merged/hybrid+rerank+metadata@sonnet-5.5"
+        ],
+        "primary": "answer_usable",
+        "role": "decisional"
+      }
+    ],
+    "matching_rule": "chunk_id_via_gold_chunks",
+    "non_evaluable_rule": "p=1_m_unchanged",
+    "null_guard_arms": [
+      "merged/hybrid+rerank+metadata@haiku-5.5",
+      "merged/hybrid+rerank+metadata@sonnet-5.5"
+    ],
+    "null_guard_margin": 0.1,
+    "null_guard_min_pair_fraction": 0.8,
+    "null_guard_predicate": "metrics.is_abstention",
+    "population": "pairwise_per_comparison",
+    "provenance": "#143, owner 2026-11-01: '\u597d\uff0c\u57f7\u884c\u4e09\u500b reader K=2 \u8ddf\u88dc\u8dd1deepseek' (the three Claude readers at K=2, plus deepseek's replicate 2). Source: S1's run of record eval/runs/2026-10-31-s1-multihop_rag_s1_dev, arm merged/hybrid+rerank+metadata, replicate 1 carried (D-254). Everything else is PREREGISTRATION_S2's: readers and thinking (D-255, D-260, D-265, D-267, D-280), prices (D-269, D-277), deepseek's pinned sync replicates (D-278), the replicate test (D-274), the null guard numbers (D-264, D-269). Dev only (D-237), no held-out read. Written 2026-11-01, before any data of this run.",
+    "readers": [
+      [
+        "haiku-5.5",
+        {
+          "effort": null,
+          "price": {
+            "input_per_mtok": 0.1,
+            "output_per_mtok": 0.5
+          },
+          "slug": "anthropic/claude-haiku-5.5",
+          "target": "openrouter",
+          "thinking": "off"
+        }
+      ],
+      [
+        "sonnet-5.5",
+        {
+          "effort": null,
+          "price": {
+            "input_per_mtok": 2.0,
+            "output_per_mtok": 10.0
+          },
+          "slug": "anthropic/claude-sonnet-5.5",
+          "target": "openrouter",
+          "thinking": "between_tools"
+        }
+      ],
+      [
+        "opus-5.5",
+        {
+          "effort": "low",
+          "price": {
+            "input_per_mtok": 4.0,
+            "output_per_mtok": 20.0
+          },
+          "slug": "anthropic/claude-opus-5.5",
+          "target": "openrouter",
+          "thinking": "on"
+        }
+      ]
+    ],
+    "reference_arm": "merged/hybrid+rerank+metadata",
+    "reference_price": {
+      "input_per_mtok": 0.0448,
+      "output_per_mtok": 0.3
+    },
+    "replay_source_arm": "merged/hybrid+rerank+metadata",
+    "replicates": 2,
+    "rerank_consecutive_degrade_halt": 5,
+    "rerank_degrade_tripwire_min_calls": 50,
+    "rerank_degrade_tripwire_rate": 0.2,
+    "sc2_timeout_rate_floor": 0.025,
+    "test": "paired_sign_flip_permutation_exact_two_sided"
+  },
+  "provenance_counts": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    }
+  ],
+  "reader_comparison": {
+    "cost_basis": "Every reader is scored on the same G questions: the ones every reader of the group is ok on (a reader replaying a rerank-degraded context is dropped with its base). cost per answered question = sync list price x the reader's tokens over those questions, divided by its answer_usable answers among them; the retrieval every reader shares is left out. The batch spend is the reader's actual usage at the batch rate (0.5 x the sync price), apart from the comparison.",
+    "groups": [
+      {
+        "base": "merged/hybrid+rerank+metadata",
+        "null_guards": [
+          {
+            "against": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "arm": "merged/hybrid+rerank+metadata",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "arm": "merged/hybrid+rerank+metadata",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@opus-5.5",
+            "arm": "merged/hybrid+rerank+metadata",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@opus-5.5",
+            "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@opus-5.5",
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "b": 0,
+            "c": 0,
+            "decisional": true,
+            "evaluable": true,
+            "margin": 0.1,
+            "min_pairs": 16,
+            "n_heldout_null": 20,
+            "n_pairs": 20,
+            "net_loss_rate": 0.0,
+            "ni_label": null,
+            "note": "net loss 0 of 20, at most the margin 0.1",
+            "passes": true,
+            "predicate": "metrics.is_abstention",
+            "status": "PASS",
+            "upper_bound_95": 0.0
+          }
+        ],
+        "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+        "pairs": [
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "ci_hi": -0.10112359550561797,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": -0.2752808988764045,
+            "delta": -0.1853932584269663,
+            "mean_against": 0.848314606741573,
+            "mean_arm": 0.6629213483146067,
+            "n_neg": 27,
+            "n_pairs": 89,
+            "n_pos": 6,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 7.884334367821644e-05,
+            "raw_p": 0.00010251998901367188
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "ci_hi": 0.011235955056179775,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": -0.12921348314606743,
+            "delta": -0.05617977528089879,
+            "mean_against": 0.848314606741573,
+            "mean_arm": 0.7921348314606742,
+            "n_neg": 10,
+            "n_pairs": 89,
+            "n_pos": 6,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 0.11434479840575684,
+            "raw_p": 0.156097412109375
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "ci_hi": 0.03932584269662921,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": -0.08426966292134831,
+            "delta": -0.022471910112359494,
+            "mean_against": 0.848314606741573,
+            "mean_arm": 0.8258426966292135,
+            "n_neg": 8,
+            "n_pairs": 89,
+            "n_pos": 6,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 0.48260613975820854,
+            "raw_p": 0.602783203125
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "ci_hi": 0.2222222222222222,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": 0.06111111111111111,
+            "delta": 0.13888888888888884,
+            "mean_against": 0.6555555555555556,
+            "mean_arm": 0.7944444444444444,
+            "n_neg": 5,
+            "n_pairs": 90,
+            "n_pos": 19,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 0.0013040546715290297,
+            "raw_p": 0.001705169677734375
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "ci_hi": 0.2611111111111111,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": 0.08888888888888889,
+            "delta": 0.17222222222222217,
+            "mean_against": 0.6555555555555556,
+            "mean_arm": 0.8277777777777777,
+            "n_neg": 5,
+            "n_pairs": 90,
+            "n_pos": 21,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 0.00014585269738478731,
+            "raw_p": 0.00017178058624267578
+          },
+          {
+            "against": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "ci_hi": 0.08333333333333333,
+            "ci_label": "unadjusted, estimation only",
+            "ci_lo": -0.005555555555555556,
+            "delta": 0.033333333333333326,
+            "mean_against": 0.7944444444444444,
+            "mean_arm": 0.8277777777777777,
+            "n_neg": 2,
+            "n_pairs": 90,
+            "n_pos": 4,
+            "p_label": "exact paired sign-flip p, reported, not used (direction-finding, D-252)",
+            "paired_t_p": 0.15845588679689548,
+            "raw_p": 0.25
+          }
+        ],
+        "population": {
+          "drops": [
+            {
+              "arm": "merged/hybrid+rerank+metadata",
+              "n": 1,
+              "of_which_rerank_degrade": 0,
+              "own_failure": 1,
+              "own_provenance": 0
+            },
+            {
+              "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+              "n": 0,
+              "of_which_rerank_degrade": 0,
+              "own_failure": 0,
+              "own_provenance": 0
+            },
+            {
+              "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+              "n": 0,
+              "of_which_rerank_degrade": 0,
+              "own_failure": 0,
+              "own_provenance": 0
+            },
+            {
+              "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+              "n": 0,
+              "of_which_rerank_degrade": 0,
+              "own_failure": 0,
+              "own_provenance": 0
+            }
+          ],
+          "n": 89,
+          "n_g": 90
+        },
+        "readers": [
+          {
+            "answer_usable": {
+              "mean": 0.848314606741573,
+              "n": 89,
+              "n_answers": 178,
+              "n_excluded": 1,
+              "n_usable": 151
+            },
+            "arm": "merged/hybrid+rerank+metadata",
+            "batch_spend": {
+              "n_records": 100,
+              "note": null,
+              "usd": 0.0265415736
+            },
+            "cost": {
+              "n_answered": 151,
+              "per_answered_usd": 0.0003108827284768212,
+              "reasoning_tokens": 0,
+              "sync_usd": 0.046943292
+            },
+            "price": {
+              "input_per_mtok": 0.0448,
+              "output_per_mtok": 0.3,
+              "source": "preregistration"
+            },
+            "reader": null
+          },
+          {
+            "answer_usable": {
+              "mean": 0.6629213483146067,
+              "n": 89,
+              "n_answers": 178,
+              "n_excluded": 1,
+              "n_usable": 118
+            },
+            "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+            "batch_spend": {
+              "n_records": 200,
+              "note": null,
+              "usd": 0.08627614999999997
+            },
+            "cost": {
+              "n_answered": 118,
+              "per_answered_usd": 0.0013113338983050846,
+              "reasoning_tokens": 0,
+              "sync_usd": 0.1547374
+            },
+            "price": {
+              "input_per_mtok": 0.1,
+              "output_per_mtok": 0.5,
+              "source": "preregistration"
+            },
+            "reader": "haiku-5.5"
+          },
+          {
+            "answer_usable": {
+              "mean": 0.7921348314606742,
+              "n": 89,
+              "n_answers": 178,
+              "n_excluded": 1,
+              "n_usable": 141
+            },
+            "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+            "batch_spend": {
+              "n_records": 200,
+              "note": null,
+              "usd": 1.7882230000000001
+            },
+            "cost": {
+              "n_answered": 141,
+              "per_answered_usd": 0.02271523404255319,
+              "reasoning_tokens": 0,
+              "sync_usd": 3.202848
+            },
+            "price": {
+              "input_per_mtok": 2.0,
+              "output_per_mtok": 10.0,
+              "source": "preregistration"
+            },
+            "reader": "sonnet-5.5"
+          },
+          {
+            "answer_usable": {
+              "mean": 0.8258426966292135,
+              "n": 89,
+              "n_answers": 178,
+              "n_excluded": 1,
+              "n_usable": 147
+            },
+            "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+            "batch_spend": {
+              "n_records": 200,
+              "note": null,
+              "usd": 3.461946000000001
+            },
+            "cost": {
+              "n_answered": 147,
+              "per_answered_usd": 0.04208141496598639,
+              "reasoning_tokens": 441,
+              "sync_usd": 6.185968
+            },
+            "price": {
+              "input_per_mtok": 4.0,
+              "output_per_mtok": 20.0,
+              "source": "preregistration"
+            },
+            "reader": "opus-5.5"
+          }
+        ]
+      }
+    ]
+  },
+  "rerank_operation": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "attempts": 100,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.02783126,
+      "degrade_rate": 0.0,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 1259.0,
+      "latency_ms_p50": 361.5,
+      "latency_ms_p95": 716.0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "attempts": 0,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.0,
+      "degrade_rate": null,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": null,
+      "latency_ms_p50": null,
+      "latency_ms_p95": null,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "attempts": 0,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.0,
+      "degrade_rate": null,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": null,
+      "latency_ms_p50": null,
+      "latency_ms_p95": null,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@opus-5.5",
+      "attempts": 0,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.0,
+      "degrade_rate": null,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": null,
+      "latency_ms_p50": null,
+      "latency_ms_p95": null,
+      "records": 100
+    }
+  ],
+  "run": {
+    "arms": [
+      "merged/hybrid+rerank+metadata",
+      "merged/hybrid+rerank+metadata@haiku-5.5",
+      "merged/hybrid+rerank+metadata@opus-5.5",
+      "merged/hybrid+rerank+metadata@sonnet-5.5"
+    ],
+    "corpus": "multihop_rag_s2x_dev",
+    "index_generation": "lance-693",
+    "journal_created_at": 1793526958.6389832,
+    "judged": false,
+    "preregistration_token": "PREREGISTRATION_S2X",
+    "reference_arm": "merged/hybrid+rerank+metadata",
+    "run": "2026-11-01-s2-multihop_rag_s2x_dev"
+  },
+  "schema_version": 1,
+  "secondaries": [
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_hits_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_mrr_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_map_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "coverage_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "all_gold_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": -0.07865168539325842,
+      "ci_lo": -0.2696629213483146,
+      "delta": -0.1741573033707865,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.6348314606741573,
+      "mean_reference": 0.8089887640449438,
+      "metric": "final_answer_em",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": -0.0898876404494382,
+      "ci_lo": -0.2303370786516854,
+      "delta": -0.1573033707865169,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.7640449438202247,
+      "mean_reference": 0.9213483146067416,
+      "metric": "gold_containment",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "final_answer_missing_rate",
+      "n_pairs": 89,
+      "n_unscorable": 0,
+      "parser_parity_review": false
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": 0.1797752808988764,
+      "ci_lo": 0.016853932584269662,
+      "delta": 0.09550561797752809,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.21348314606741572,
+      "mean_reference": 0.11797752808988764,
+      "metric": "abstention_rate_g",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": 2899.112359550562,
+      "ci_lo": 2838.7865168539324,
+      "delta": 2869.1797752808984,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 6647.494382022472,
+      "mean_reference": 3778.3146067415732,
+      "metric": "prompt_tokens_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": -1602.5786516853932,
+      "ci_lo": -1731.6797752808989,
+      "delta": -1667.629213483146,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 1667.629213483146,
+      "metric": "latency_total_ms_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "retrieve_node_ms_mean",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": -0.0006284730337078653,
+      "ci_lo": -0.0006687689325842698,
+      "delta": -0.0006485432584269664,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0004346556179775281,
+      "mean_reference": 0.0010831988764044944,
+      "metric": "spend_usd_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 1747.685393258427,
+      "mean_reference": 1747.685393258427,
+      "metric": "context_tokens_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_hits_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_mrr_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "paper_map_at_10",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "coverage_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "all_gold_at_4",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": -0.011235955056179775,
+      "ci_lo": -0.16853932584269662,
+      "delta": -0.0898876404494382,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.7191011235955056,
+      "mean_reference": 0.8089887640449438,
+      "metric": "final_answer_em",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 0.0,
+      "ci_lo": -0.11797752808988764,
+      "delta": -0.0561797752808989,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.8651685393258427,
+      "mean_reference": 0.9213483146067416,
+      "metric": "gold_containment",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "final_answer_missing_rate",
+      "n_pairs": 89,
+      "n_unscorable": 0,
+      "parser_parity_review": false
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 0.08426966292134831,
+      "ci_lo": -0.0449438202247191,
+      "delta": 0.016853932584269662,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.1348314606741573,
+      "mean_reference": 0.11797752808988764,
+      "metric": "abstention_rate_g",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 2899.112359550562,
+      "ci_lo": 2838.7865168539324,
+      "delta": 2869.1797752808984,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 6647.494382022472,
+      "mean_reference": 3778.3146067415732,
+      "metric": "prompt_tokens_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": -1602.5786516853932,
+      "ci_lo": -1731.6797752808989,
+      "delta": -1667.629213483146,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 1667.629213483146,
+      "metric": "latency_total_ms_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": null,
+      "ci_lo": null,
+      "delta": null,
+      "label": "unadjusted, estimation only",
+      "mean_arm": null,
+      "mean_reference": null,
+      "metric": "retrieve_node_ms_mean",
+      "n_pairs": 0,
+      "n_unscorable": 89
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 0.008025839438202247,
+      "ci_lo": 0.007802312134831459,
+      "delta": 0.007913565168539326,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.00899676404494382,
+      "mean_reference": 0.0010831988764044944,
+      "metric": "spend_usd_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 1747.685393258427,
+      "mean_reference": 1747.685393258427,
+      "metric": "context_tokens_mean",
+      "n_pairs": 89,
+      "n_unscorable": 0
+    }
+  ],
+  "sensitivity": {
+    "p_dec": {
+      "comparisons": [
+        {
+          "adjusted_p": 0.0001332641113549471,
+          "arm": "merged/hybrid+rerank+metadata@haiku-5.5",
+          "decision": "significant",
+          "delta": -0.18888888888888888,
+          "n_neg": 28,
+          "n_pairs": 90,
+          "n_pos": 6,
+          "raw_p": 6.663205567747355e-05
+        },
+        {
+          "adjusted_p": 0.2144317626953125,
+          "arm": "merged/hybrid+rerank+metadata@sonnet-5.5",
+          "decision": "not significant",
+          "delta": -0.050000000000000044,
+          "n_neg": 10,
+          "n_pairs": 90,
+          "n_pos": 7,
+          "raw_p": 0.2144317626953125
+        }
+      ],
+      "coverage": 1.0,
+      "evaluable": true,
+      "label": "sensitivity line, decides nothing",
+      "n_pdec": 90,
+      "population": "P_dec: ok on the reference and on every decisional lever arm"
+    },
+    "rerank_itt": null
+  }
+}
