@@ -708,6 +708,57 @@ class WriterPreRegistration:
             )
 
 
+#: The transports a writer addendum may move a frozen writer to.
+WRITER_ADDENDUM_TRANSPORTS = ("openrouter_sync",)
+
+
+@dataclass(frozen=True, kw_only=True)
+class WriterTransportAddendum:
+    """v1.1 S3 (#145, D-290): a new transport for writers a frozen constant lists.
+
+    A ``WriterPreRegistration`` never changes once frozen (D-73). When one of its
+    writers cannot run on its frozen transport, an addendum of this type, frozen in its
+    own commit, moves that writer and says how its requests are sent; every other field
+    of the frozen constant still holds.
+
+    Attributes:
+        amends: The name of the frozen ``WriterPreRegistration`` constant it amends.
+        transports: ``(writer name, transport)`` pairs, out of
+            ``WRITER_ADDENDUM_TRANSPORTS``, for the writers that move.
+        request_rule: How a moved writer's requests are sent.
+        report_rule: What is reported beyond the frozen constant's ``report_rule``.
+        provenance: Where the values come from.
+    """
+
+    amends: str
+    transports: tuple[tuple[str, str], ...]
+    request_rule: str
+    report_rule: str
+    provenance: str
+
+    def __post_init__(self) -> None:
+        if not self.amends.startswith("PREREGISTRATION_"):
+            raise ThresholdError(f"amends must name a constant, got {self.amends!r}")
+        names = [name for name, _ in self.transports]
+        if not names or len(set(names)) != len(names):
+            raise ThresholdError(
+                f"transports must be non-empty and unique, got {names}"
+            )
+        bad = {n: t for n, t in self.transports if t not in WRITER_ADDENDUM_TRANSPORTS}
+        if bad:
+            raise ThresholdError(
+                f"unknown transports {bad}; known {WRITER_ADDENDUM_TRANSPORTS}"
+            )
+
+    def transports_for(self, base: WriterPreRegistration) -> dict[str, str]:
+        """Each of `base`'s writers and the transport that holds for it."""
+        frozen = dict(base.transports)
+        unknown = sorted(name for name, _ in self.transports if name not in frozen)
+        if unknown:
+            raise ThresholdError(f"{unknown} are not writers of {self.amends}")
+        return frozen | dict(self.transports)
+
+
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
 # shipped default against the MultiHop-RAG paper's LlamaIndex pipeline, read once on the
 # held-out split (the first of D-237's two reads). Every number a reading uses is inside
