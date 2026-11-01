@@ -44,6 +44,7 @@ role = "dev"
 [preregistration]
 token = "PREREGISTRATION_EXPLORE_C"
 
+# No canary: the arm canaries would send every listed arm, and a reader arm sends no
+# gateway request (D-257). The drive's `--limit 1` smoke run stands in for them.
 [preflight]
 legacy_canaries = false
-arm_canaries = "multihop_rag/canary.arms.jsonl"
