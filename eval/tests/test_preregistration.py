@@ -925,7 +925,9 @@ def test_a_moved_preregistered_number_fails_the_ast_gate(tmp_path: Path) -> None
     _write(root, THRESHOLDS, commented.encode("utf-8"))
     assert gitcheck.preregistered_value_problem(FREEZE_TOKEN, sha, repo=root) is None
 
-    block = source[source.index(head) :]
+    # The assignment alone: later constants may follow it in the file (#149).
+    start = source.index(head)
+    block = source[start : source.index("\n)\n", start) + 3]
     assert block.count("null_guard_margin=0.10,") == 1
     moved_block = block.replace("null_guard_margin=0.10,", "null_guard_margin=0.11,")
     _write(root, THRESHOLDS, source.replace(block, moved_block).encode("utf-8"))
