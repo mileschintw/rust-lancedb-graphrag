@@ -2291,7 +2291,9 @@ def score_run(
 
     # 2. Structural Guard: Validate all document_ids against document_map.json. A
     # store-prefixed arm (D-251) reads the map of the store its prefix declares, every
-    # other arm the v1.0 map (#18): one journal may hold both stores' arms.
+    # other arm the v1.0 map (#18): one journal may hold both stores' arms. A map is
+    # loaded only when a record reads it, so a corpus on #149's stores needs no v1.0
+    # map (#164).
     doc_maps: dict[str | None, Any] = {}
 
     def doc_map_of(store_name: str | None) -> Any:
@@ -2306,7 +2308,6 @@ def score_run(
                 ) from e
         return doc_maps[store_name]
 
-    doc_map = doc_map_of(None)
     for rec in records:
         if rec.snapshot and rec.snapshot.retrieved_chunks:
             try:
@@ -2328,9 +2329,12 @@ def score_run(
 
     # Load gold questions and config
     config = load_corpus_config(corpus_name)
-    require_external_provenance(
-        records, journal_path, config, {*doc_map.entries, *doc_map.aliases}
-    )
+    if any(is_external_arm(r.graph_arm) for r in records):
+        # #164: the store `[documents] external_store` names, else the v1.0 store.
+        ext_map = doc_map_of(config.external_store)
+        require_external_provenance(
+            records, journal_path, config, {*ext_map.entries, *ext_map.aliases}
+        )
     try:
         require_replay_provenance(
             records, journal_path, getattr(config, "preregistration_token", None)
