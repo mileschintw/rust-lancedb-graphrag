@@ -111,4 +111,104 @@ Written before the run. Each is checked once against the Result and never tuned 
 
 ## Result
 
-Not run yet.
+Run 2026-11-01 (#148), dev pool only, no held-out read. **Reading: open.** The Claude writers' graphs read below 0,
+but exactly 5 points below deepseek's, which is not within 5 points (below). It decides nothing: the graph stays out.
+
+**The loss does not reproduce on deepseek's re-extracted graph.** S1's -8.9 points came from the v1.0 graph. On the
+same store, deepseek's own re-extraction at the grid's granularity reads +1.7 points.
+
+### Answers (`answer_usable`, K = 2, paired against the reference on the 90 G questions)
+
+| Writer's graph | All 90: arm / reference, delta | n_pos / n_neg | p | Yes/no (56) delta | Open (34) delta | Null guard |
+|---|---|---|---|---|---|---|
+| deepseek | 0.878 / 0.861, **+1.7** | 8 / 5 | 0.654 | +2.7 | 0.0 | passes (10 pairs, drop 0) |
+| Haiku 5.5 | 0.828 / 0.861, **-3.3** | 4 / 10 | 0.333 | -6.2 | +1.5 | passes (10 pairs, drop 0) |
+| Sonnet 5.5 | 0.828 / 0.861, **-3.3** | 4 / 10 | 0.268 | -6.2 | +1.5 | passes (10 pairs, drop 0) |
+
+- Every comparison is evaluable: 90 of 90 G questions pair, as do 10 of 10 nulls.
+- Haiku's and Sonnet's figures are equal, but their answers are not. They differ on 14 questions. Each loses on 10
+  questions, and 5 of those are the same questions for both.
+- **Rule.** The Claude deltas are -6/180 and deepseek's is +3/180, so they are exactly 5 points apart.
+  - "Within 5 points" is read as a distance on either side, with 5 points apart not within. That is the boundary
+    `s3m_reading`'s tests fixed before any S3M run (deepseek -9, Sonnet -4: open).
+  - The script first checked only the side above deepseek. It was corrected to the frozen text after this run's
+    numbers were in. That one-sided version would have read "does not explain".
+  - Either way, every p is above 0.25 and the gap is within the 10 to 13 points a significant difference needs, so
+    no reading here is a finding.
+- Read with `python -m lancet_eval.s3m_reading` → [s3m-writers/reading.json](s3m-writers/reading.json).
+
+### Extraction (`writer_grid report` → [s3m-writers/summary.json](s3m-writers/summary.json))
+
+| Writer | Chunks | Entities / chunk | Relations / chunk | Dates per 1,000 entities | Publishers per 1,000 | Entity Jaccard vs deepseek | Runaways (#156) |
+|---|---|---|---|---|---|---|---|
+| deepseek | 15,264 | 4.08 | 3.22 | 16.9 | 3.9 | – | 245 |
+| Haiku 5.5 | 15,264 | 4.99 | 4.45 | 25.0 | 3.7 | 0.67 | 0 |
+| Sonnet 5.5 | 15,264 | 5.21 | 4.52 | 23.2 | 3.6 | 0.63 | 0 |
+| *Pilot's 1,803 chunks:* deepseek | 1,803 | 4.24 | 3.39 | 14.8 | 5.2 | – | 23 |
+| Haiku 5.5 | 1,803 | 5.24 | 4.78 | 22.1 | 6.1 | 0.67 | 0 |
+| Sonnet 5.5 | 1,803 | 5.46 | 4.84 | 18.0 | 6.5 | 0.62 | 0 |
+| Opus 5.5 (spot check) | 1,803 | 4.57 | 3.91 | 14.3 | 10.0 | 0.66 | 0 |
+
+- **deepseek's 245 runaways** run to the 16,384-token cap on whitespace. They are its only invalid answers, so 15,019
+  of its 15,264 chunks have an answer. Opus 5.5 had 2 answers stopped by Anthropic's content filter.
+- **Top 10 junk names.**
+  - deepseek: TechCrunch 71, 2023 70, 2024 42, 2022 37, The Verge 33, WIRED 31, Polygon 27, Engadget 26,
+    November 23, 1989 21.
+  - Haiku 5.5: 2023 101, TechCrunch 74, 2021 64, 2022 62, WIRED 59, 2024 50, 2019 37, 2020 37, The Verge 33, 2018 32.
+  - Sonnet 5.5: 2023 106, TechCrunch 74, WIRED 65, 2022 59, 2021 57, 2024 56, 2019 44, 2020 39, 2018 38,
+    The Verge 36.
+- **Graph side tables** in `data/lancedb-eval`, built by `import_graph_extractions` (346 documents; recomputed chunks
+  equal the store's `nodes`, chunk for chunk):
+
+  | Set | Entities | Entity edges |
+  |---|---|---|
+  | `s3m_deepseek` | 25,955 | 45,333 |
+  | `s3m_haiku` | 32,935 | 65,881 |
+  | `s3m_sonnet` | 35,272 | 68,830 |
+
+  The store's own graph has 27,855 entities. Every file of the store's existing tables, and its manifest, has the
+  same name, size and modification time before and after the imports.
+
+### Predictions
+
+1. **deepseek repeats S1: fails.** deepseek's delta is +1.7, not below 0.
+2. **Fewer junk entities: fails for every writer.** Each Claude writer extracts more dates per 1,000 entities than
+   deepseek (Opus 5.5 is the exception, 14.3 against 14.8). Dates and publishers together are also higher:
+   - grid: Haiku 28.7 and Sonnet 26.8 against deepseek 20.8;
+   - pilot chunks: Haiku 28.2, Sonnet 24.5 and Opus 24.3 against deepseek 20.0.
+3. **The writer does not explain the loss: fails, at the boundary.** Both Claude deltas are below 0, but exactly 5
+   points from deepseek's, not within 5.
+
+### Runs and counts
+
+- **Run directories** `eval/runs/2026-11-01-s3m-<run>-multihop_rag_s3m_dev`, all on the v1.0 store at generation
+  `lance-703`:
+  - `ref1`, `ref2`: engine `LANCET_ENV=eval`, no `graph_table_set` line.
+  - `deepseek1`, `deepseek2`: engine `LANCET_ENV=eval-s3m-deepseek`, which logs `graph_table_set="s3m_deepseek"`.
+  - `haiku1`, `haiku2`: `eval-s3m-haiku`, `graph_table_set="s3m_haiku"`.
+  - `sonnet1`, `sonnet2`: `eval-s3m-sonnet`, `graph_table_set="s3m_sonnet"`.
+
+  The gateway and the harness ran with `LANCET_ENV=eval`. Each stack's preflight passed before its drive.
+- **Counts.** Each run holds 100 records of its one arm. 3 of the 800 are `error`: ref2, deepseek2 and sonnet1 each
+  have one empty answer on `mhr-dd03ecc9ba3d` after 2 retries. That question's arm score is then the mean of its one
+  success, and it still pairs.
+- **Graph use.** As in S1's run, every record of both arms reports `degraded_mode`. The graph arm draws graph facts
+  into the prompt: 2.70 per answer in Haiku's first run, against 2.44 in S1's small graph arm.
+- **Sonnet's first import** stopped at about document 300 of 346 on a Lance decoding assertion
+  (`lance-encoding` `primitive.rs:305`). It was dropped with `--replace` and imported again in full. Haiku's and
+  deepseek's imports ran once each.
+
+### Spend
+
+| Item | Claude credit | OpenRouter |
+|---|---|---|
+| Haiku 5.5 extraction | $1.43 | – |
+| Sonnet 5.5 extraction | $29.14 | – |
+| Opus 5.5 extraction | $7.21 | – |
+| Canaries | about $0.01 | – |
+| deepseek extraction (from usage) | – | $2.03 |
+| 8 drives (observed, smoke drive included) | – | $0.82 |
+| Entity-name embeddings and 4 preflights | – | a few cents |
+| **Total** | **about $37.8** (ceiling $45) | **about $2.85** (ceiling raised to $3.50 by the coordinator) |
+
+The OpenRouter balance moved from $19.79 to $18.99 over the imports and drives.
