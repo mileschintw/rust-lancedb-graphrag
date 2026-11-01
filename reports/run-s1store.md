@@ -193,3 +193,47 @@ seed 不印 observed spend，以下依指南價格估算：
 - repo 與 scratchpad 外建立的東西：上述 S1 store、schema 與 map（重建時會清掉）。
 - log 保存在 scratchpad：`C:\Users\user3\AppData\Local\Temp\claude\D--Repos-lancet--claude-worktrees-lane-run-s1store-e04537\5b28e8b4-b206-44f2-a129-90133b1a82d1\scratchpad\`（`engine-clean.log`、`gateway.log`、`seed.log`、`build-*.log`）。
 
+
+# Step 4：S1 drive（完成）
+
+GO 來自 coordinator（使用者「開跑 step 4」，2026-10-31）。main `971094f5`，沒有新引擎改動，不重編。Blockers #65、#68、#69 都已關閉，修正都在 main。`git status --short eval/src/` 乾淨。`<S1_RUN>` = `eval/runs/2026-10-31-s1-multihop_rag_s1_dev`。所有 `lancet-eval` 指令都加 `PYTHONUTF8=1`。
+
+| 步驟 | 指令 | exit | 結果 | 時間（PDT） |
+|---|---|---|---|---|
+| 4.1 | `LANCET_ENV=eval ... preflight --corpus multihop_rag_s1_dev`（v1.0 stack） | 0 | 11/11 PASS，generation `lance-703`，6 個 arm-mode canary 通過 | 19:08:26-19:08:56 |
+| 4.2 | `LANCET_ENV=eval ... run --arms small/hybrid+rerank+metadata,small/hybrid+graph+rerank+metadata --stage-cap 100` | 0 | 兩 arm 各 100 success，0 error；6 題空答案重試成功（共 7 次重試）；無 `Drive stopped early`；observed spend **$0.2069** | 19:09:01-19:22:22 |
+| 切換 | 停 v1.0 stack，確認 8080/50051 空出，啟動 S1 stack（`lance-693`，3953 docs） | — | — | 19:22 |
+| 4.3 | `LANCET_ENV=eval-s1 ... preflight --store eval-s1 --corpus multihop_rag_s1_dev` | 0 | 12/12 PASS | 19:22:46-19:23:19 |
+| 4.4 | `LANCET_ENV=eval-s1 ... run --arms merged/hybrid+rerank+metadata,merged/hybrid+graph+rerank+metadata --stage-cap 100` | 0 | 四個 arm 各 100 success，0 error；2 題重試成功；無 `Drive stopped early`；observed spend **$0.4602** | 19:23:24-19:35:19 |
+| 4.5 | `export-context --run <S1_RUN>` | 0 | 400 列 = 400 筆 success；之後停 S1 stack，port 已空 | ~19:36 |
+| 4.6 | `score --run <S1_RUN> --no-judge`；`compare-levers --run <S1_RUN>` | 0 / 0 | `report.json`、`lever-comparison.{json,md}`；|H_G| = 90，|H_N| = 10 | ~19:37 |
+| 4.7 | merged-graph D-73 檢查 + `lever-comparison-merged-graph.{json,md}` | 0 | D-73 無問題 | ~19:38 |
+
+## 4.8 判讀（EXPERIMENT-S1.md › Decision rule，用整數判斷）
+
+| 比較 | evaluable | n_pairs | coverage | n_pos | n_neg | delta | guard |
+|---|---|---|---|---|---|---|---|
+| merged/hybrid+rerank+metadata vs small（chunking） | True | 90 | 1.0 | 4 | 5 | -0.0111 | evaluable，passes（b=0, c=0, 10 對） |
+| small/hybrid+graph+rerank+metadata vs small（graph，選定 store） | True | 90 | 1.0 | 2 | 10 | -0.0889 | evaluable，passes（b=0, c=0） |
+| merged/hybrid+graph+rerank+metadata vs merged（僅記錄） | True | 90 | 1.0 | 2 | 5 | -0.0333 | evaluable，passes（b=0, c=0） |
+
+- Chunking：`n_pos > n_neg` 不成立（4 對 5），**保留 small**。
+- Graph（small）：淨增 -8，需要 ≥ `ceil(0.05×90)` = 5，**graph 不加入**。
+- **S1 結論：S2 的 `replay_source_arm` = `small/hybrid+rerank+metadata`**。
+- 已寫入 EXPERIMENT-S1.md › Result。
+
+## 花費（step 4）
+
+| 項目 | 金額 | OpenRouter 時段（2026-10-31 PDT） |
+|---|---|---|
+| 4.1 preflight | 幾美分（估） | 19:08-19:09 |
+| 4.2 small drive | $0.2069（observed） | 19:09-19:22 |
+| 4.3 preflight | 幾美分（估） | 19:22-19:23 |
+| 4.4 merged drive | $0.4602（observed） | 19:23-19:35 |
+| **合計** | **約 $0.67-0.72** | 指南估算約 $0.5，上限約 $1.8 |
+
+merged drive 比估算的 $0.25 高，因為 merged store 的 excerpt 較長。
+
+## Commit
+
+Run 目錄、`document_map.eval-s1.json`、EXPERIMENT-S1.md Result 已 commit 在 lane branch `claude/lane-run-s1store-e04537`（`32903b17`，基於 main `971094f5`），並已 push；沒有開 PR，也沒有 commit 到 main。注意：main checkout 裡還留著同樣內容的未追蹤檔案（run 目錄和 document map），PR 合併後在 main checkout `git pull` 前要先刪掉這些未追蹤檔案，否則 pull 會因為未追蹤檔案擋住而失敗。
