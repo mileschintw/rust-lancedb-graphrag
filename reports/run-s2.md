@@ -195,3 +195,15 @@
 1. **#138 要 owner 給 D-ID**，選項見 issue：(1) Sonnet 改走 sync API 並保留 `between_tools`（約 $5，上限約 $18.9，要寫程式）；(2) Sonnet 走 batch，thinking 改 off（只改常數）；(3) Sonnet 走 batch，thinking 改 on 加 effort（只改常數）。常數還沒 commit，D-73 不受影響。
 2. **#137 要開一個修程式的 lane**（`batch_client.py` 加測試，用真實的結果格式）。`is_byok` 改從 batch 層取，是否需要 D-ID？
 3. 修好之後要**重做 pilot**：刪掉 `<PILOT_RUN>`，再跑一次 2.1-2.5。Haiku 和 Opus 大約再花 $0.34，Sonnet 依 #138 的選擇而定。這需要使用者再同意一次，因為「pilot 同意」的上限 $1.50 已經用掉約 $0.35。另外，main checkout 工作樹裡步驟 1 的改動要保留，還是先還原，讓修程式的 lane 在乾淨的 main 上合併？（修程式的 lane 會在 worktree 裡做，所以不衝突；重做前 `git pull` 也需要工作樹沒有衝突。）
+
+## Step 4：凍結預註冊（2026-11-01，GO 之後）
+
+- GO 原話（協調者轉述業主）：「先compact run-s2跟你，然後再一次全部跑完」，涵蓋 step 4 到 8。
+- 主 checkout 從 `main`（`ad8ed74f`）開分支 `lane-run-s2-freeze`，帶著 step 1 的貼上變更。
+- EXPERIMENT-S2.md：狀態行改為「pre-registered 2026-11-01, before any S2 data」，Arms 下寫明 S1 winner
+  `small/hybrid+rerank+metadata`。語料檔刪掉兩行 `DRAFT` 註解。
+- 檢查：`22 passed, 1 skipped`。
+- 提交 `4baa5fc5`「Pre-register S2: PREREGISTRATION_S2, S2 corpus and EXPERIMENT-S2 (D-73)」，只含三個檔案；
+  `git log -S PREREGISTRATION_S2` 只列出這個提交。已推送 `origin/lane-run-s2-freeze`。
+- PR 內文草稿：`pr-bodies/run-s2.md`。狀態 `done`，等合併與「continue step 5」。
+- 注意：分支名不是 worktree 的 `claude/lane-run-s2-464f82`，因為那個分支被 worktree 佔用，主 checkout 無法切過去。
