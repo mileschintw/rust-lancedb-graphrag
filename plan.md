@@ -222,3 +222,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 04:15 -0800: lane 149 C store built (609 docs, preflight pass); C deepseek drive running (1,000 q, ~$0.70). Lane 148 deepseek sync still running.
 - 2026-11-01 04:55 -0800: lane 148 Claude: Haiku $1.43, Sonnet $29.14, Opus spot check $7.21 (2 stopped by Anthropic content filter) = ~$37.8. deepseek resharded to 8 parallel shards (~200 chunks/min; 23 runaways ~1.8%); new engine [engine.graph] table_set overlay + import_graph_extractions bin (never writes the store's existing tables). Lane 149 C drive 628/1,000.
 - 2026-11-01 05:15 -0800: lane 148 all extraction done (deepseek 13,461 chunks, 245 runaways, ~$2.03 OR; Claude ~$37.8); waits for main checkout after 149.
+- 2026-11-01 06:16 -0800: lane 149 B 2Wiki seed at 2,269 docs, ~30/min, ~2 h left; C Sonnet sync ~580. Lane 148 keeps waiting for the main checkout (one live-stack lane at a time).
