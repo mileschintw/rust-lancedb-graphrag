@@ -681,8 +681,7 @@ def summarise(
     An ungrounded entity's normalised name is not in the chunk's normalised text: a
     paraphrase, or a name the writer brought from outside the chunk.
     ``reference`` (deepseek's results) adds the mean Jaccard overlap of normalised
-    entity
-    names on the chunks both answered validly.
+    entity names, and of relation end pairs, on the chunks both answered validly.
     """
     publishers = list(publishers)
     ok = invalid = missing = 0
