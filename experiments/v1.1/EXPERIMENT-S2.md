@@ -344,4 +344,73 @@ After the S1 dev-run analysis, the owner added two more on 2026-10-31 (#123, #12
 
 ## Result
 
-Not run yet.
+**deepseek stays the reader.** No Claude reader is a candidate, since all their null guards against deepseek are not
+evaluable, and the D-275 Holm reading over all three readers also keeps deepseek. D-245's switch to Haiku 5.5 does
+not hold. S3's fixed reader is `deepseek/deepseek-v4-flash-0731`.
+
+- Run: `eval/runs/2026-11-01-s2-multihop_rag_s2_dev`, pre-registration `PREREGISTRATION_S2` (frozen by `4baa5fc5`,
+  merged in #141 as `15a20fdd`), run on `main` at `15a20fdd` on 2026-11-01. Dev only (|H_G| = 90, |H_N| = 10); no
+  held-out read. Replicate 1 of the deepseek arm is carried from `eval/runs/2026-10-31-s1-multihop_rag_s1_dev`.
+- Counts: 500 of 500 records per arm for all four arms. Haiku 5.5, Sonnet 5.5 and Opus 5.5: 500 `success` each.
+  deepseek: 493 `success` and 7 error records, every one `answer basis 'mixed' requires at least one cited evidence
+  ID` (a billed answer `render` rejected, so never retried): `mhr-dd03ecc9ba3d` (4 replicates), `mhr-3c8f1e201011`
+  (2), `mhr-a759db86980a` (1). All three are null questions. Every `Routing` line printed 0 misrouted records.
+- `answer_usable` on the 90 G questions, 450 answers per arm (`reader_comparison`; every pair 90 of 90 questions):
+
+  | Arm | mean | delta vs deepseek | n_pos / n_neg | raw p | 95% CI (unadjusted) | cost per answered question |
+  |---|---|---|---|---|---|---|
+  | deepseek (reference) | 0.8533 | | | | | $0.000239 |
+  | Haiku 5.5 | 0.6933 | -16.0 points | 6 / 28 | 4.9e-5 | [-23.6, -9.1] | $0.000974 |
+  | Sonnet 5.5 | 0.7911 | -6.2 points | 7 / 14 | 0.0613 | [-12.7, -0.4] | $0.017898 |
+  | Opus 5.5 (descriptive) | 0.8244 | -2.9 points | 8 / 9 | 0.353 | [-8.4, +2.2] | $0.032936 |
+
+  Between readers: Sonnet minus Haiku +9.8 points (17 / 5, raw p 0.00241); Opus minus Haiku +13.1 (22 / 3, raw p
+  8.4e-5); Opus minus Sonnet +3.3 (6 / 0, raw p 0.031).
+- Null guards (rule 1): every guard against deepseek is NOT EVALUABLE, 35 null pairs against the 40 needed
+  (7 paired null questions, below 8). deepseek's 7 error records leave the three null questions above without 5 ok
+  answers. Guards between Claude readers are evaluable and pass (50 pairs, b = 0, c = 0). So Haiku 5.5 and Sonnet
+  5.5 are not candidates, and deepseek, which has no guard of its own (D-270a), is the only one.
+- Reader choice (rule 2), with Holm also run as if both Claude readers were candidates, for the record (m = 3, alpha
+  0.05): Haiku vs deepseek p 4.9e-5 x 3 = 1.5e-4, rejected, in deepseek's favour; Sonnet vs Haiku 0.00241 x 2 =
+  0.0048, rejected, in Sonnet's favour; Sonnet vs deepseek 0.0613 x 1 = 0.0613, not rejected. The starting pick is
+  the cheapest, deepseek; no dearer candidate is significantly better than it, so deepseek wins either way. Sonnet's
+  -6.2 points is inside the smallest detectable effect of about 8.4 points.
+- D-245 (rule 4) does not hold for Haiku 5.5. Holm (m = 2) rejects its row with a negative delta (Holm p 0.0001);
+  its point estimate is -16.0 points, below -3; its null guard is not evaluable; its cost per answered question is
+  above deepseek's.
+- Thinking as run, with measured `reasoning_tokens` (journal, every record of the arm):
+
+  | Arm | thinking | reasoning_tokens total | mean per record |
+  |---|---|---|---|
+  | deepseek | reasoning off, temperature 0, as in S1 | 0 over the 400 new records (the 100 carried records hold no count) | 0.0 |
+  | Haiku 5.5 | off | 0 | 0.0 |
+  | Sonnet 5.5 | `between_tools`, sync API (D-280) | 0 | 0.0 |
+  | Opus 5.5 | on at effort low; it cannot be turned off (D-265) | 2,399 (14 of 500 records nonzero) | 4.8 |
+
+- Answer judges (D-276, secondary, decides nothing), equivalence rate per arm over 450 answers, 0 failed requests:
+
+  | Arm | primary | gpt-4o-mini | Sonnet 5.5 |
+  |---|---|---|---|
+  | deepseek | 0.8533 | 0.8489 | 0.8444 |
+  | Haiku 5.5 | 0.6933 | 0.6933 | 0.6978 |
+  | Sonnet 5.5 | 0.7911 | 0.7733 | 0.7778 |
+  | Opus 5.5 | 0.8244 | 0.8244 | 0.8244 |
+
+  `answer-judge.json` lists 14 disagreements for the owner to review: 8 on Sonnet 5.5, 4 on deepseek, 2 on Haiku 5.5.
+- Batch IDs (`batches/`): Haiku 5.5 `batch-1793517683-8OIO5z15LFzeGHgXpyAO`, Opus 5.5
+  `batch-1793517687-Hpud2vURLvRukD1nCgqF`, Sonnet 5.5 `sync-small_hybrid_rerank_metadata_sonnet_5_5-1-1793517695`,
+  deepseek `sync-small_hybrid_rerank_metadata-1-1793519858`.
+- Spend, from each record's usage at the declared prices (the run lane did not read the OpenRouter activity page):
+
+  | Arm | spend | this guide's estimate (RUN-S2.md) |
+  |---|---|---|
+  | Haiku 5.5 (batch rate) | $0.1668 | about $0.17 |
+  | Sonnet 5.5 (sync list price) | about $7.02 | about $7.0 |
+  | Opus 5.5 (batch rate) | $6.7523 | about $6.6 |
+  | deepseek | $0.0806 | about $0.08 |
+  | judges: gpt-4o-mini / Sonnet 5.5 | $0.0125 / $0.3417 | about $0.15 / $2.20 |
+
+  About $14.38 in all, inside the step 6 ceiling. `lever-comparison.json` prints Sonnet's `batch_spend` as $3.5111,
+  at the batch rate; its answers went through the sync API, so it cost twice that (#139). The two pilots cost about
+  $1.03 more.
+- Every `lancet-eval` command ran with `PYTHONUTF8=1` (#84).

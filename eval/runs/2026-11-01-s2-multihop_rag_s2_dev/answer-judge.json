@@ -1,0 +1,322 @@
+{
+  "disagreements": [
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "final_line": "Yes, the nature of issues changed from general antitrust trial coverage to a new class action suit citing AI harms.",
+      "gold": "Yes",
+      "question": "Between the TechCrunch report on Google's hardware developments published on October 7, 2023, and the TechCrunch report on the antitrust suit against Google published on December 15, 2023, was there a change in the nature of the issues reported concerning Google?",
+      "question_id": "mhr-1dd857e94826",
+      "replicate": 1,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "final_line": "Yes, the issues expanded to include AI-related harms.",
+      "gold": "Yes",
+      "question": "Between the TechCrunch report on Google's hardware developments published on October 7, 2023, and the TechCrunch report on the antitrust suit against Google published on December 15, 2023, was there a change in the nature of the issues reported concerning Google?",
+      "question_id": "mhr-1dd857e94826",
+      "replicate": 2,
+      "verdicts": {
+        "gpt-4o-mini": true,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "final_line": "Yes, the nature of issues changed from general antitrust to AI-specific harms.",
+      "gold": "Yes",
+      "question": "Between the TechCrunch report on Google's hardware developments published on October 7, 2023, and the TechCrunch report on the antitrust suit against Google published on December 15, 2023, was there a change in the nature of the issues reported concerning Google?",
+      "question_id": "mhr-1dd857e94826",
+      "replicate": 5,
+      "verdicts": {
+        "gpt-4o-mini": true,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "final_line": "Align; no lack of functionality",
+      "gold": "no",
+      "question": "Does the TechCrunch article describing ChatGPT's multifunctional capabilities, such as cooking, composing music, and writing poetry, align with the description of ChatGPT as a general-purpose chatbot in another TechCrunch article, or do they portray ChatGPT as lacking in functionality in terms of its functionality?",
+      "question_id": "mhr-ab4e28055c90",
+      "replicate": 1,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@haiku-5.5",
+      "final_line": "Yes",
+      "gold": "Similar",
+      "question": "Does TechCrunch describe Sam Bankman-Fried's actions in handling customer funds similarly to the way it portrays his pursuit of wealth, power, and influence, with both descriptions implying misconduct, or are the portrayals different?",
+      "question_id": "mhr-595a561a5063",
+      "replicate": 2,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": false,
+        "sonnet-5.5": true
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@haiku-5.5",
+      "final_line": "Yes",
+      "gold": "Similar",
+      "question": "Does TechCrunch describe Sam Bankman-Fried's actions in handling customer funds similarly to the way it portrays his pursuit of wealth, power, and influence, with both descriptions implying misconduct, or are the portrayals different?",
+      "question_id": "mhr-595a561a5063",
+      "replicate": 5,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": false,
+        "sonnet-5.5": true
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, with a caveat: The Verge says Valve focuses exclusively on games but does not describe a shift",
+      "gold": "Yes",
+      "question": "Does the Engadget article suggest that Valve is launching a new product on November 16th, while The Verge article indicates that Valve has shifted its business strategy to focus exclusively on games for their store?",
+      "question_id": "mhr-17e563aaa33e",
+      "replicate": 3,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, mostly (the Engadget claim is supported; The Verge supports the exclusive game focus but not that it was a recent shift)",
+      "gold": "Yes",
+      "question": "Does the Engadget article suggest that Valve is launching a new product on November 16th, while The Verge article indicates that Valve has shifted its business strategy to focus exclusively on games for their store?",
+      "question_id": "mhr-17e563aaa33e",
+      "replicate": 4,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, but the Epic report was dated 2023 (not 2024), and there is no evidence of an inconsistent portrayal",
+      "gold": "no",
+      "question": "Did TechCrunch report on Google's antitrust battle with Epic Games on November 6, 2024, and then report on a class action antitrust suit against Google on December 15, 2023, resulting in an inconsistent portrayal of Google's legal challenges related to anticompetitive practices?",
+      "question_id": "mhr-1ba051fc3413",
+      "replicate": 3,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, largely (the same platforms appear, though Polygon's listings also include Xbox One)",
+      "gold": "Yes",
+      "question": "Does 'The Verge' article on Prime Big Deal Days indicate that there are gaming deals for the same range of gaming platforms as 'Polygon' staff play games on, including PlayStation 5, PS4, Xbox Series X / S, Nintendo Switch, and PC?",
+      "question_id": "mhr-2401af1be65c",
+      "replicate": 4,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": true
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, in part (Verge: $1 billion Binance buyout; TechCrunch covers only political influence and Alameda funding)",
+      "gold": "Yes",
+      "question": "Does the article from The Verge suggest that Sam Bankman-Fried used FTX customer funds for a specific transaction, while the TechCrunch articles imply that his overall wealth and alleged fraudulent activities were directed towards different goals, such as influencing politics and achieving personal gain?",
+      "question_id": "mhr-5931848a7227",
+      "replicate": 3,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, in part",
+      "gold": "Yes",
+      "question": "Does the Polygon article suggest that the kid appeal of \"Five Nights at Freddy's\" is based on shared stories among elementary school children, while the same source, Polygon, indicates that in \"Tears of the Kingdom,\" Link is treated with suspicion by children due to unfamiliarity, thus showing a difference in children's reactions to the characters in the two games?",
+      "question_id": "mhr-e9ceb746408c",
+      "replicate": 1,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Partly yes, but they are not a like-for-like comparison",
+      "gold": "Yes",
+      "question": "Does the Polygon article suggest that the kid appeal of \"Five Nights at Freddy's\" is based on shared stories among elementary school children, while the same source, Polygon, indicates that in \"Tears of the Kingdom,\" Link is treated with suspicion by children due to unfamiliarity, thus showing a difference in children's reactions to the characters in the two games?",
+      "question_id": "mhr-e9ceb746408c",
+      "replicate": 2,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": false
+      }
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "final_line": "Yes, each claim is supported, but they describe different kinds of reactions",
+      "gold": "Yes",
+      "question": "Does the Polygon article suggest that the kid appeal of \"Five Nights at Freddy's\" is based on shared stories among elementary school children, while the same source, Polygon, indicates that in \"Tears of the Kingdom,\" Link is treated with suspicion by children due to unfamiliarity, thus showing a difference in children's reactions to the characters in the two games?",
+      "question_id": "mhr-e9ceb746408c",
+      "replicate": 3,
+      "verdicts": {
+        "gpt-4o-mini": false,
+        "primary": true,
+        "sonnet-5.5": true
+      }
+    }
+  ],
+  "estimate": "Cost estimate (D-258, never refuses): gpt-4o-mini: 202 call(s), about $0.0162; sonnet-5.5: 202 call(s), about $0.2484; total about $0.2646 at sync list price",
+  "judges": [
+    {
+      "name": "gpt-4o-mini",
+      "slug": "openai/gpt-4o-mini"
+    },
+    {
+      "name": "sonnet-5.5",
+      "slug": "anthropic/claude-sonnet-5.5"
+    }
+  ],
+  "n_errors_this_invocation": 0,
+  "prompt_version": "answer-judge-v1",
+  "rates": [
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "judge": "primary",
+      "n": 450,
+      "n_equivalent": 384,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8533333333333334
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@haiku-5.5",
+      "judge": "primary",
+      "n": 450,
+      "n_equivalent": 312,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.6933333333333334
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@opus-5.5",
+      "judge": "primary",
+      "n": 450,
+      "n_equivalent": 371,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8244444444444444
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "judge": "primary",
+      "n": 450,
+      "n_equivalent": 356,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.7911111111111111
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "judge": "gpt-4o-mini",
+      "n": 450,
+      "n_equivalent": 382,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8488888888888889
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@haiku-5.5",
+      "judge": "gpt-4o-mini",
+      "n": 450,
+      "n_equivalent": 312,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.6933333333333334
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@opus-5.5",
+      "judge": "gpt-4o-mini",
+      "n": 450,
+      "n_equivalent": 371,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8244444444444444
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "judge": "gpt-4o-mini",
+      "n": 450,
+      "n_equivalent": 348,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.7733333333333333
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "judge": "sonnet-5.5",
+      "n": 450,
+      "n_equivalent": 380,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8444444444444444
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@haiku-5.5",
+      "judge": "sonnet-5.5",
+      "n": 450,
+      "n_equivalent": 314,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.6977777777777778
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@opus-5.5",
+      "judge": "sonnet-5.5",
+      "n": 450,
+      "n_equivalent": 371,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.8244444444444444
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata@sonnet-5.5",
+      "judge": "sonnet-5.5",
+      "n": 450,
+      "n_equivalent": 350,
+      "n_error": 0,
+      "n_no_final_line": 0,
+      "rate": 0.7777777777777778
+    }
+  ],
+  "rule": "D-276: primary is answer_usable with D-276's folds; the judges are a secondary, blind to the arm, given the question, the gold answer and the extracted final line only. G population; a record with no final line is not equivalent for every judge and is never sent.",
+  "spend_this_invocation": {
+    "gpt-4o-mini": {
+      "completion_tokens": 7751,
+      "prompt_tokens": 52474,
+      "usd_at_list_price": 0.012521699999999998
+    },
+    "sonnet-5.5": {
+      "completion_tokens": 11691,
+      "prompt_tokens": 112385,
+      "usd_at_list_price": 0.34168
+    }
+  }
+}

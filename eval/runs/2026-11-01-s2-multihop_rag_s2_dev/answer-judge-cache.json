@@ -1,0 +1,2022 @@
+{
+  "01c1bafd4731ab3b3822fe2096d37965fcedc2faa6ac4e1d380c0a16f685bcae": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a flat 'Yes'. The answer hedges ('Partly') and says one claim is not supported, which contradicts the gold answer rather than affirming it."
+  },
+  "030465b09c2bead8c619b48a741237cdb11623df7e6f2add9f013900407ea294": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' matches the gold answer 'Google' exactly, naming the same entity without any discrepancies."
+  },
+  "033e15f4931e3cdf11f2c46208fb01cf1e5312ac0c2a3c4c8c7883c60d8161c4": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Federal Reserve' is identical to the gold answer 'Federal Reserve'."
+  },
+  "03aa6b7c62e3363f16e535f09ff633de1e68609d67f6a9cf14e939844b47baab": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no', while the answer says 'Yes, they align'. The question is framed as an either/or, so the answers conflict: the gold says they do not align, the response says they do."
+  },
+  "04383c25058ac91e72c913f4058eb1f40bf5b77e0697fc1e38146c401e208285": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "04c565869ede4b194e1aa618d03931da6dc7bfbf7b1e84769c3ab7765e04067a": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"no\", a definite answer. The response \"Insufficient information\" declines to answer, so it does not match the gold answer."
+  },
+  "0582ebb89e5267b8f8a7f596b52ecf194a740fc814b9de3f563025eabe218f3f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sportsbooks' matches the gold answer exactly, naming the same entity without any differences."
+  },
+  "05c5326a71cc87bea05ae8d86d25b1bc99b5965f3c418bb1eadd163eaffd8f47": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "06941a2a50916977e04aff9b6929fbb8c797e7df8cd6bad5f9b8b72de56fa8ca": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Bankman-Fried' exactly matches the gold answer, naming the same individual."
+  },
+  "070eabb80d22488517f24c1ef2774481a731178db345e523bc99eeb86cc2ec47": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'sportsbooks' matches the gold answer 'Sportsbooks'; only capitalisation differs."
+  },
+  "073a87bd3dcd674d3e04eaa7b5cd01404140e594848676fd059f1ed67d6267f8": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No inconsistency shown' conveys the same meaning as the gold answer 'no', i.e., there was no inconsistency. The extra wording does not change the meaning."
+  },
+  "079f4277bb3bca897d34a2001fd38b59b509866716dcc96705f74c1c698b7aea": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Partially' does not affirmatively agree with the gold answer 'Yes', indicating uncertainty rather than a clear agreement."
+  },
+  "07bfaee3432ed1c107626c240c903d72427b88510bf6def9405777e298d462df": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite 'no'. The answer 'Insufficient information' declines to answer and does not commit to yes or no, so it does not match."
+  },
+  "08298f3694194292ba148d7ee87f21780c1719157c3c243b4ef546d7062bb026": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sam Bankman-Fried' directly names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "083b7895403febd63b0ff55f22437c3a75b9caf7c0c09d0c90876958dcb46b88": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not affirm or deny the comparison made in the question, while the gold answer clearly states 'Yes', indicating agreement with the premise."
+  },
+  "08717566b5fd36787405fd1e6dfe74b80fd6e9340eda46f43f93a54923ce853e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The gold answer indicates a change in issues, while the answer specifies a different type of issue (class action suit citing AI harms) which is not equivalent to the general change mentioned in the gold answer."
+  },
+  "08a274bf6948aaab8207df917a639cb3b455a7bfe1f8a3a507ffc454572c2694": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer, and the added explanation of the shift in perspective does not contradict it."
+  },
+  "0931e325dc5c6e9378d0c45d5a2ce6b49c3b5b4e0f91869ec8dd22c9516a5dbe": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating 'No', which implies that the articles do not suggest the same things, while the gold answer confirms they do."
+  },
+  "0b86b8cf34f731be9d96e81b11d9cf8052dbd488c65a8ae65f503eb0b7e73a0b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "0b8bee35638d80c37e87f36face91431a2e09de5fc2a289962e6c39358a7a8ee": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"Yes\", while \"Partially\" hedges and does not commit to yes or no, so it does not match."
+  },
+  "0bccef0b010f35db309bf6c34b05f4fbc3d0ec0602d4b230e8a85954d1b2f549": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not provide a clear identification of the group of individuals, while the gold answer specifies 'Consumers'."
+  },
+  "0be8d60134081461fe6265eb3fff564e8f43a6740cf7fe4df0c69d98854c8342": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' while the answer given is 'Yes', which directly contradicts it."
+  },
+  "0ce80492790214109a3d88eda208878c6f28888e593b597fde9f94fb821b0471": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating 'No' instead of 'Yes', indicating a different conclusion about the evaluation criteria."
+  },
+  "0dea530da619269fb10e31cf13dbe097929e4bc4c9dbf3f27f2c77ca5dbc94c3": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\", while the answer declines to answer by saying \"Insufficient information\". These are not the same."
+  },
+  "0e0e1f52c70ab97dec972166f4476fb1b15ac56369187fe8fd25ef77408c8501": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Federal Reserve' matches the gold answer exactly, naming the same entity without any discrepancies."
+  },
+  "0e9e99c7d031f3aa3da55d074f4bdbcaf91ee3c595b5d2a75bd33df4fb9d3f75": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Bankman-Fried' exactly matches the gold answer, naming the same individual."
+  },
+  "0eabca22d7f92ca11d276cb8fba5c9e9309ee2ef2b33e755ae75f3cca4111cd7": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state that there is no conflict regarding the emotional state of Prince William and the depiction of events in 'The Crown season six'."
+  },
+  "0fb3a9f836ac3ea4543304fb0d4eaf563b612ae4bd7591cfbd430c32aef43bba": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Consumers' matches the gold answer exactly, naming the same entity without any differences."
+  },
+  "0fc6f574d758b4f75948978b40d83cdef25ecc9a40f85bbdbb8b48d59c4a891b": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers indicate that the articles express the same view on the option of divorce regarding Will Smith and Jada Pinkett Smith's marriage."
+  },
+  "10b47aeb8b12020d5c4e3bbb00ff54b14f5082ca232adbc3959c5b161f1b151d": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests uncertainty about the Verge claim, which contradicts the gold answer that states a definitive 'Yes' regarding Google's behavior."
+  },
+  "12f22c5345febb36fbf86ee9bf6c9901d312dd82a11a62c4fbd719873a18b2e6": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address whether the Fortune article implied illegal practices, while the gold answer clearly states 'no', indicating that it does not imply illegality."
+  },
+  "135143483e3b9163da4471a8ba68ee540e7c8807d8314a8e61dc4d0a330aff0f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating there is no conflict between the two sources regarding Prince William's emotional state and the depiction of events."
+  },
+  "13623dfed6b25a9905f5c78cba240d24e73ef5c657c9ba16186f53ffa5ec6eeb": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'Yes', indicating agreement on Spider-Man embodying the spirit of Thanksgiving as described."
+  },
+  "13c9ed1437e3dcecfb593a86daa88109b181b0f679e539342c794772a7c1871d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names ChatGPT, which exactly matches the gold answer."
+  },
+  "13f50941f23a3a7d2bd6dfc7dd2831cd216314def7a6286f897e23daa5bec168": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that the reporting on Derrick Henry and Nathan Murphy is consistent regarding their respective injuries and game participation."
+  },
+  "14640c6be882429d8c5570b3230f2ddecb078052d587a70dc48618b898ccfdb2": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address the question of inconsistency, while the gold answer clearly states 'no', indicating that there is no inconsistency."
+  },
+  "15098b57eb236aeef88e541d3b7ae467cbebf72e7b125986d40b99a82eb53d1c": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\"; the answer \"Insufficient information\" declines to answer and does not name the same yes/no value."
+  },
+  "159d20e216586ce985bdc281baa0ad08813b9b13aea3005c8b97e24c07945aea": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a plain \"Yes\". The answer says \"Partly\" and disputes one claim as unsupported, which hedges and contradicts the gold's affirmation rather than matching it."
+  },
+  "15c6286f059b64011c0f6e759f7f91939bf3f57bbb438a0537e633394592636f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that the reporting was not consistent."
+  },
+  "16c70afaca8a12766e605a8267131cc80ce93ec80861ef7fcebf81b1ccbeb55d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'no' matches the gold answer 'no' exactly."
+  },
+  "1746fd757d982d9736d75a79f50be0549fa2cbb3898943cab0e96a37cac30af4": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; capitalisation is ignored."
+  },
+  "1754fc059c532ecb0e901e6f3baa1b442dd2ad5cfc4104c5f0cba21716e7d755": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity implicated in the court case."
+  },
+  "1762e1df3c950986d00d53153bb3ef1ee88534b16097c2ef268d2efb834c4846": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "17bec033b4f7967a4a7a8991916fd47272d1c69c842305ab0e38548e4b4ef44b": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating that both articles align, while the gold answer clearly states they do not."
+  },
+  "188f078b882e8b5eccdd15b42680959efe99035a85675370e06510e95c6187c9": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests that the Verge article focuses on a specific transaction, while the TechCrunch articles discuss broader themes. This implies a difference in focus, which contradicts the gold answer's affirmation of a direct suggestion."
+  },
+  "18aba86a61c593bc67013ea105d64eff995e99725c63f66b32c178ddc31c2923": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests a partial agreement but does not affirm the complete contrast as stated in the gold answer. It implies ambiguity rather than a clear 'yes'."
+  },
+  "19439817cbf5b4876269d3a2af8db73fb7431c47ee831de27ca1d0e54ab21d43": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer. The gold answer states 'no', indicating that the articles suggest different levels of involvement, while the answer states 'Yes', which implies they are the same."
+  },
+  "19eafcb514b4afcfe478a25953533540b2cb7c2716fe6fa4282e095fba4dcd86": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' exactly matches the gold answer 'Yes'."
+  },
+  "1a6c8613079f1f461e0fc258f2d665bac8ff4c35b7908427b601b2c40b80683b": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that they agree on the response to the question."
+  },
+  "1a7cfcb24b8ee6d2b0b554d5563c4f95d6958eff413a982f9dad293f03b9fb3f": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "1aa2a4bd540e4fd91792e500068dfffe298444eabd1d8a40c106e5ba48e7b417": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'Yes', indicating agreement on the control of social networks by large corporations."
+  },
+  "1b00404f317615ae1dc0ba3eb434592521c67d370936fb10d9d16bb67135babe": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly, confirming consistency in the portrayal of Sam Bankman-Fried's actions."
+  },
+  "1d4948637ea084e9c47cc1c58eb194471d96204b2d5861621487301c13ba31b6": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "1ef3b2cafd478375af8bc59244a055c02527b051925bafd425c1fc389f8d0863": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests a disagreement with the framing of the question, indicating a lack of alignment with the gold answer, which confirms the comparison."
+  },
+  "209c4572db9c402e4db9b239046733583e29a12a33c8a3fa995af4e036f90509": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not name the entity 'Google' as required by the gold answer, thus it is not equivalent."
+  },
+  "20d74f8f49a16065b50f4fd325a7f60e78edef5cfd08d6679289fe317d682c84": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer 'no' means the articles do not align; the answer 'Align' states they do align, which contradicts the gold answer."
+  },
+  "20e0b9c5c763673ae39ec1cfcf94229a41153e475ab7aec5de14617bd70f4838": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Altman' is identical to the gold answer."
+  },
+  "21238c68010f6644815e85bedff60e25086b9cae420281e7ed6f19980b71e47b": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so they contradict each other."
+  },
+  "212fe9ce034ebd61eb1eda7dd357e96add8b945666bdc4b47faf7fb00b9a480c": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same entities as the gold answer, just in a different order. Both names refer to the same celebrities."
+  },
+  "218d0b784aece666e7d3fbce3ba069ff7f4ba5f44fbf3c4ff34da0a02989b31c": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'The Federal Reserve' names the same institution as the gold answer 'Federal Reserve'; the article 'The' does not change the meaning."
+  },
+  "21c23aa4bef6b2370552fa3a3c41d4b70b34590f35dddfa15b1d4bde404ff6b8": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Yes' contradicts the gold answer 'no', indicating inconsistency in the reporting."
+  },
+  "21fe457d8ddafa67be0a16014872dbe7f00def24acfa6f465d1111798aaff062": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' names the same entity as the gold answer, which is also 'Google', thus they are equivalent."
+  },
+  "22b74dd95eb8be7d9ca2d78884408d134153706024a4a5d6c1b9f13b79719a1c": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers indicate a change in portrayal, confirming that there was a shift in how Sam Bankman-Fried's interactions with his peers were viewed."
+  },
+  "22c395851a0e3da2be66943b784adfaea4879aae4e6b68a6f64b75a74d0e1785": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, ignoring capitalisation."
+  },
+  "23bedb34b1d4d485dbb71d96a22b7299e424a7e7a2a098c9c5fd9278e0dea0fc": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not match the gold answer 'no', as it does not provide a definitive response."
+  },
+  "24025293e42f6ceddc2693a4c09cfcc71ef61a1f260030f5efee4f502a3c66e7": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'consumers' matches the gold answer exactly, naming the same entity without any differences."
+  },
+  "241c53b73f9b300656261c0d7cf496cc2462d8889cf80e56830064510efbf7e1": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "257447a49d1414aa82b2a16b4d09b6d9c4d661178311927eeb8024efc62695ee": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly confirm or deny the change in advice, while the gold answer clearly states 'no', indicating that there was no change."
+  },
+  "26733a430dbb93b6e645bc58b6a61d2f0e969475481709976910b6425fb8e694": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer. The gold answer states 'no' to the question, while the response states 'Yes', indicating a disagreement."
+  },
+  "271d15f70d40759ed6a42b661ff6cf95545643e285c044cbf3747487ed207964": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; only capitalisation differs."
+  },
+  "2778a264b37b153a8c1bf5d8b133c0daed9cf47ef331070e9f87db0d92c6315a": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer says the articles present the same stance. The answer 'No' is ambiguous, but as a response to a same-or-differing question it implies they do not match, which contradicts the gold answer 'Same'."
+  },
+  "28e9ae95b73ce95559ced54c94b407ec7a40e6da78d366678eeedce95d0f4fd2": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny consistency, while the gold answer states 'Yes', indicating consistency. Therefore, they are not equivalent."
+  },
+  "291419d008f01990a653ff66ae43c0278cdf56700285159990cbd7062ba74dd4": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating that the articles align, while the gold answer clearly states they do not."
+  },
+  "295a421fd6eeadc2b4c87cad1b21a35538db1c39faebd58269640b34c4a4bdbd": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating there is no conflict."
+  },
+  "29aaeb55b3f2e3baaaacb561bdcc310a0f98d26b9619a842b759536df89cdfac": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'sportsbooks' directly matches the gold answer 'Sportsbooks', naming the same entity without any differences."
+  },
+  "2b2c6e2fde14f00f5c13efe7ae4352844d76a882b8c95277c11387e716f2b6c4": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, ignoring capitalisation."
+  },
+  "2b65df9e43537b17ca2f495e4866ad71cd2d7d26ea9e880203f8f6e1eeab872b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "2c1f4ec6f653b7b83f68aed67025ec5fa4071e8ed17db7f2ffaa5dfe3d30ab5d": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a yes/no (Yes, there was a change). The answer 'antitrust issues' names a topic and never states yes or no, so it does not match the gold answer."
+  },
+  "2c91a0f6dd1c10fa4255b2f7645328336ab45f9da8322b2b45349be7f9d04ca6": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"Yes\", while the answer says \"Insufficient information\", which declines to answer and does not match the gold answer."
+  },
+  "2d7901a2cf33a8c4df65d03d22c1f0ba91082f45517bca07a69c5d7c6699f4a0": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' matches the gold answer exactly, naming the same entity without any discrepancies."
+  },
+  "2db75e0d3c7f333273a89bbd5c9cb731af59138fa488982c33b1af52a66df542": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a clear \"Yes\". The answer hedges with \"Partly\" and says the comparison is unsupported by the sources, which contradicts the gold answer rather than affirming it."
+  },
+  "2e0126f2c7241c665ed74b90e0c42074a163d15e92378194e9e9e1e9380b1d0c": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sportsbook' is equivalent to the gold answer 'Sportsbooks' as it refers to the same type of establishment, differing only in singular vs. plural form."
+  },
+  "2e78feb8c9f20c6798fa9c3b3db4c310ace342eed06cc046722f94aa8cabef74": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'The Federal Reserve' names the same institution as the gold answer 'Federal Reserve'; the article 'The' does not change the meaning."
+  },
+  "2f47c52ca1e81e1548f15ee2ea1f62db6413913fdab74adfdefcf71621784db0": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers confirm that there was a change in the Sydney Swans' ranking in the AFLW, with the answer providing additional detail about their new position."
+  },
+  "3067fac5877e8c9aa22e3d0e1ac168a4e8181839b16965a17b6cfaf782848c51": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No change in approach' conveys the same meaning as the gold answer 'no': the approach did not change."
+  },
+  "309cdf7bba59f7478864dca6662af76f8cb52ec777d489988de71e20d67cb8c1": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite 'no'. The answer 'Insufficient information' declines to answer and does not match the gold answer's yes/no value."
+  },
+  "31d9b4c689540d394b66463ab72730702a9d4c7fd0dd323882e6a1df9294a1e2": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "31dd5ec0436de4bceddfb7f5d7eed5df850816c9e1a0751a99f434dc2b34e57a": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Partly' suggests uncertainty or a partial agreement, which contradicts the definitive 'Yes' in the gold answer."
+  },
+  "329604a84d5463b8be9d80af220b0b4dc1ff66be733730647ef8ee5ae4f789e8": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "33343b764247629875a072b2f5232394cd65f1c3bba341720825647c8fb2b473": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers refer to the same entity, the Federal Reserve, with the answer specifying 'U.S.' which does not change the meaning."
+  },
+  "336c26b287208cfcaaba644b87e26f45370ebf71e29ae376b98d121659799a70": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"Sportsbooks\"; the answer \"Insufficient information\" declines to answer and names no entity, so it does not match."
+  },
+  "33a7f49b48a565638da0d23a13744aa8d249a27cf00391632d0f49c8bd6bcf0b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer says the articles present the same stance, matching the gold answer 'Same'. The added detail that divorce is not an option does not contradict the gold answer."
+  },
+  "341538828b56f6443b81a2b0a6460e544219fd83a78d96e95b1b9aeb5efda03e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', indicating that the Engadget article does not claim the mentioned cybersecurity measures, which is not aligned with the gold answer."
+  },
+  "348f2380020d60812f42968dc789ae3db685ab428b32128776270bad0a769867": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state that there was no change in approach, using different phrasing but conveying the same meaning."
+  },
+  "364e0ce92e9b1267c2cfb68f67c9ea589a08b326323f89543d872fb6d4c662dc": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', which confirms that there is a difference in the nature of actions attributed to Israel according to the articles."
+  },
+  "3682d0fd4864285981e94709daffdb598824ab278b2c754f9338d4aac6b7a827": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "37850f478d37cbbee93d41ceaa70a12bfc828c73025b27d4af5563c8c8932461": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "3a44dffcf79b5b33965170ca0305f410f041506d1ff27d8951fd39f79377ca73": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', which indicates that there is a difference in the portrayal of the relationship between the two sources."
+  },
+  "3b35bf278c137724d6ced4c0335db59a95c670ee0411db1226f9e21806a72203": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer affirms there was a change in ranking (\"Yes\"), matching the gold answer; the extra detail about moving to eighth place does not contradict it."
+  },
+  "3cdbe8483fc85a49d0b0fad1d226febfc51e022fadd1670f58260822d18352a2": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "3da1d8bc53329dbacd7c0000e7f18fc704b1daf4b78ab912cb9b062972d3971b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'consistent' matches the gold answer 'Consistent'; only capitalisation differs."
+  },
+  "3ddd8a210becc00f2f2dad611dcc1faf6a4618192008d4a596cd9ecd40fc7cad": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating agreement on the change in the nature of the issues reported concerning Google."
+  },
+  "3e1fc9606ebdb14dc6f41c16ec436804e1a9b075d51316d36f0738a2d5ef2633": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'yes' directly confirms the gold answer 'Yes', indicating the same affirmation regarding the gaming deals."
+  },
+  "405917aa2c8623cafa6aa069aa0c44ede08f2cf2a166907d1f7651c8bd5a60e0": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sam Bankman-Fried' names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "42100ddc1f66919668dabf3f6e8150ce0e562fa895b6bb963f663d463e888889": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Align' suggests that the articles agree on ChatGPT's capabilities, while the gold answer states 'no', indicating a disagreement about its functionality."
+  },
+  "42408b27ae71b8c38799795ec95ce4bdf8b675efb25d7729e4efb4e4cbbda909": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'yes' directly matches the gold answer 'Yes', indicating the same affirmation regarding TechCrunch's consistency in its portrayal of Sam Bankman-Fried's actions."
+  },
+  "4250c0df7d762b92760cc870ad4bd8a39fc9aaa02333fc859098dab218ccd5a4": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' (reporting was not consistent), while the answer given is 'Yes', which directly contradicts it."
+  },
+  "4329f0ff53701bf79544352c8b92574a0b592762a993aba701aa13ad9120d56d": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' directly names the same entity as the gold answer, which is also 'Google', fulfilling the criteria for equivalence."
+  },
+  "435f93e5a592d23d8b83cd9ae00c10506f077fb67e2311b6d4f0a65c2271aede": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive 'no', while the answer declines to answer ('Insufficient information'). A refusal or non-answer does not match the gold answer."
+  },
+  "43b669e45c92164deac55ca20ad03d4fc6686b0c1a67abfce6874bb5ffd79d0e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating 'No' instead of 'Yes', indicating a different interpretation of the articles."
+  },
+  "43debae293bade48c41a7bbedd777788cd384008610e8e83034aaaf3aeb494bd": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "441e7d3273df5482588fa4da28352f7476f084965247cd8e771fbaf4af58a13e": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that law enforcement did not adequately assess the threat and that Otto Wallin is not considered a greater threat than Joseph Parker."
+  },
+  "444208dc793266b01f2263a12ada67fe42e1b1f0ace7df7588e4130125e6c651": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite 'Yes', while the answer declines to answer ('Insufficient information'), which contradicts the gold answer."
+  },
+  "44988ebdc9d954a23b91aab224bb0698e22311a50b07f47001cc1f9ea426dd50": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Amazon' directly matches the gold answer 'Amazon', naming the same entity without any discrepancies."
+  },
+  "44b1a157c4d7b29dfcbf82078e1db142a76e1c5becfe00326e83c308ccdcd287": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\", while the answer \"Partly\" hedges and does not match the yes/no value."
+  },
+  "44fc6d8ab4f087408e61f298227b89f40c16b6889723f63b26a119f57ace5d97": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "47543ffe215ff5bf1746d5a8a08d791421ae24c7cfd9a3e6ea1722180a9b1fa1": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\", while the answer \"Insufficient information\" declines to answer and does not affirm consistency, so it does not match."
+  },
+  "47951d2025c5b81677818b5e2088cc9e785294a6cfa1f725cdd6bafc2e0f0225": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm a change in perspective, with the gold answer stating 'Yes' and the judged answer elaborating on the shift in focus, which aligns with the gold answer's affirmation."
+  },
+  "47cdc6a9382871046b4e8e10a91e7d3951235cd43d49dff9a0cc333b0d18cd49": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating agreement on the change in perspective."
+  },
+  "48357484cbc982afee3fc9e99d6bf44191ce9b6efc510c3be49ced2050d78f16": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "4a0db4e12fc4749ea97b9fcac43e935ef36e10abd5254085c746203088eccfda": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' (the reports are not inconsistent). The answer 'No inconsistency found' conveys the same conclusion, so they are equivalent."
+  },
+  "4b8259b2ed87789590652dc0bf36110dec4decf4b184056b9b90935e134964cc": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sportsbooks' is identical to the gold answer 'Sportsbooks'."
+  },
+  "4c1f21285a680752163173eb1cfca70f4a0dbd1d0ec963bd1ff53b849da3431f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sam Altman' names the same entity as the gold answer, which is also 'Sam Altman', thus they are equivalent."
+  },
+  "4c4583a1e2c230b441b55e260c1d169a8cc9b4a8594ba22d093392d9aed37d6d": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sportsbooks' matches the gold answer exactly, naming the same entity without any discrepancies."
+  },
+  "4cf87fffde23e304d7e927c586830944178b06998e7d13aa052e850dae4a4695": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"Yes\", while the answer declines to answer by saying \"Insufficient information\". It does not affirm consistency, so it is not equivalent."
+  },
+  "4dbd2e77875dbd6ace65af9659c64107f4d79497f76c5bb2b192f11ef7bf23aa": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "4dd4d40412a07234b8002c608a8b09554306ad0c6f3f6c98cfa80cf434027e3c": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' exactly matches the gold answer 'Google'."
+  },
+  "4ee0cdc1f4e43c4ed67f1b149aca42e64ab2622073573750a2d1fb6d35f0880d": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a plain \"Yes.\" The answer hedges (\"Partly yes, but they are not a like-for-like comparison\"), which is not a clear yes and qualifies/contradicts the gold's unqualified affirmation."
+  },
+  "4fe5b5972590f67d022438ff8bb134a8d2e0ce2e695ff0ba4ad1d64526eb7970": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer, but it adds an unsupported claim that issues expanded to include AI-related harms. That contradicts the gold framing (hardware news vs antitrust suit), so it adds a wrong detail beyond the yes/no."
+  },
+  "50051cc140592c1ae38ee64a87391caed9e3a2a7fdf2b3d4c232007b963f2444": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "503a7e64dcf4710a61be5ffd535cbc2f37115634928c09a76eaee4352595e76f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' matches the gold answer exactly, naming the same entity responsible for the described actions."
+  },
+  "51b904f3ba3b6967e0b6596629300f2e900d6236a41c78adb7efe43dce4ec61a": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' exactly matches the gold answer 'Google'."
+  },
+  "525ac890879e050b2acd9bf07c758c0b8e28df3d21278b4681ebad99e55153ec": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\"; \"Partially\" hedges and does not affirm both parts, so it names a different value than the gold answer."
+  },
+  "527d555dde420f7fba6c37131405a76c50895ccb8c6d2846b20e93569873fe26": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not affirm or deny the consistency of TechCrunch's reporting, which contradicts the gold answer 'Yes'."
+  },
+  "533d4fe198b3a8908e0f875b2a079c23e3ab9174548eff156f2e17625ab237fe": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating they agree on the response to the question."
+  },
+  "535c84e1dae256cf8eb71645f4cfcc9e2b463db15449b353cc8ffab0d3c1ddbc": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively respond to the question, indicating that the Polygon article suggests a difference in children's reactions to the characters in the two games."
+  },
+  "549cc9e03b65544c3a727a79956ca8371e1ef9c2aee3b429a03dea3df597c418": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that they agree on the involvement of Harbaugh in both contexts."
+  },
+  "54ea86e972aa200294f8507468e198aed8bdac9d629b3cb0aa9e1e91382fe7c7": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'The Federal Reserve (Fed)' names the same institution as the gold answer 'Federal Reserve'; the abbreviation and article do not change the meaning."
+  },
+  "552287467436aea916c2b65fd43f152fa4b3ff524044c268cef228b52f980763": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sam Altman' names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "5548cbbb471e8dfe59023dc75e850c25c441234b6d061b9a39ab83e26af999df": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer provided affirmatively state 'Yes', indicating agreement on the variability of Terry McLaurin's performance compared to the Chiefs' star rookie."
+  },
+  "5586da4f653eeceacc6e962f7378ddde3ca2bc7ab36cf572781f13a3272114bd": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"Yes\", but the answer \"Insufficient information\" declines to answer and does not affirm the claim, so it does not match."
+  },
+  "55dc0e47effbb10228bc9707d228e70be24e5206e6e88e335139d4ecb551c5c3": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "5717b09acd5c23ef2b6328ea45cd21bc8f83636ba7416d38eb4e88f2a82b7f5a": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the article suggests Sam Bankman-Fried used FTX customer funds for a specific transaction, aligning with the overall implication of his wealth and activities."
+  },
+  "57af09c9598cb56d1a3bcf3d2d99aec1655a01c8f3b4721d1dca4db9ff407af4": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' directly matches the gold answer 'no', indicating that there is no inconsistency in the promotional offers as reported."
+  },
+  "58cf2cff9d2fb6bb4dd7ee86a5efb8891470ab4f2cd7802c531d723033b77ccc": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"Yes\" and the answer given is \"No\". These are opposite yes/no values, so the answer contradicts the gold answer."
+  },
+  "59069b8455be8c414dc938a7cb0c3deb96347b85ea005ae8e53bd85a9d5e40ff": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the articles identify different top scorers, confirming the difference in their scoring achievements."
+  },
+  "595b283fc230462d26d0a9e9522359ad5cb1cb25eaf20b5035a8d43cda63be62": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer, and the added detail about a shift in framing does not contradict it."
+  },
+  "59a1523db5ffc41dc15a1feb910e342eb52d9cdf786033413953491e2f44fc78": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "5a8540f985798351111a7e167e2783f11a1c491783bda03233f55972e8ea8aef": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that the articles do not align in their portrayal of ChatGPT's functionality."
+  },
+  "5aa361724860e44f9fcdf4cc2ab0a76387a52ee6408be642282d2f9bb4d945ab": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation is irrelevant."
+  },
+  "5b6c44210c21e6583827634914195a5ad311a6ab3284c354f37d21863fadb2e8": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'yes', indicating that TechCrunch reported on Paul Denino obtaining consent before The Independent reported on Kevin Federline's actions."
+  },
+  "5c0f48be2877f742b651f39c254c699352528f44d183dfb3008949c2e6c2ed91": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that there was no change in advice regarding fantasy football."
+  },
+  "5d1f0125e8e0e8d86862b77cc28af8c7854ebbe8963401ef9e1b841651522dc2": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is 'no' (no conflict). The answer 'No conflict' conveys the same negative response to the yes/no question, so they match."
+  },
+  "5dd15a4613aa5c32a9ace4508152a123f6f2ee3940aee612b8129b34ca454915": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "5dfa7edfc0a9eb251fcae924a169e12b56edb2850c92f31a82dfb50ada1ca02a": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', indicating that there are no gaming deals for the specified platforms."
+  },
+  "5edc3e234c2b548eb3341ee75c73249b37ba84b2139e605b6dcca72894f45cb8": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "5f566d7b090d5db4fd72d9bdc0e2e86a554b3d68af06f88e097679d1ddba11ca": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; only capitalisation differs."
+  },
+  "5f85a6d9240fd47a062dc551b3b851386a01cb7c6bb6a6395f721854f06a44d7": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "606b9a97b4762de77c1b0c8838b1661eced5a0aea594a685b730c30491b02710": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Sam Altman' names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "612716529f04e0cf61e94d2f16a3cf75c7f8430adb54edbb5edfceaa0d9c98ac": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, ignoring capitalisation."
+  },
+  "6279398b889200118160fa49f58a5700e2ce6538cd0b264d266fd431d0e9a979": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer refers to the same entity, the Federal Reserve, using its full name and abbreviation, which does not change the meaning."
+  },
+  "63d9da446fff11e54be0970889a8e7ff96a242fbcc936529c0eaaa1661b3f1ec": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "63f60436e11bb9f11b169a0d1e05916abd763b0b5c3c8e74f4a10901d4d941b9": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sportsbooks' is identical to the gold answer 'Sportsbooks'."
+  },
+  "649cf94003cbd2ae40bf4ec1a6644307ae8929f46993ede775164169cf8156bb": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes,\" while the answer declines to commit by saying \"Insufficient information.\" This is a refusal to answer and does not match the gold."
+  },
+  "6550f980983ed995d7a303cda75aeb0dd50e1d45647e1ed6face5e2991b02f7c": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names the same two people as the gold answer, Taylor Swift and Travis Kelce."
+  },
+  "6551beabc5578050f3ee987d6a8e6c992a92cbf09c07a645eac98b433d561d49": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual, Sam Bankman-Fried, as the gold answer, matching the criteria of the question."
+  },
+  "656394cd6eb971db1565caae6fa45757a0af63feb0c23901b8a69b86daf72842": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation is ignored and both give the same yes/no value."
+  },
+  "6637d4af6a1549a2d54032286701d6d45a5e47e7244abc6b4bf81ccf9230325c": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' directly matches the gold answer 'no', indicating that the approaches are indeed not less proactive."
+  },
+  "66727cb8d57dd8a6b6ed8468cb294b3ba15e18aa03914fd6b0d9b748770b86fd": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating the same affirmation regarding the situation involving consent in media-related incidents."
+  },
+  "67708fb21e2e43cf4039861485e97c986749e85030061c9e05bc76af3d9f42d4": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "'sportsbook' is the singular form of the gold answer 'Sportsbooks'; number differences are ignored, so they name the same entity."
+  },
+  "67ccdf0a7cf2f74c3754fa06b1ecb8e78412236c1789bd09e6262ff5bbea3dfd": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Yes' contradicts the gold answer 'no', which states that the promotional offers are not inconsistent."
+  },
+  "68480fa85b5acb4a0c5f306514136a8e9cb4011057e065fe2ec43fa1b2f6f27e": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Although it says Yes, the answer adds a specific, incorrect claim: that the shift was from general antitrust to AI-specific harms. The reports were about hardware developments and then an antitrust suit, so the direction of change is wrong and contradicts the sources."
+  },
+  "6851b121ccc47045dede00ced305435699318cbfe95a466f2d6e97008253f282": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that 'The Guardian' describes Shai Hope's performance differently, indicating agreement."
+  },
+  "693f5c0da2753a307ccd36c014f4fee89aa2807b2974c95052219d370de1f2fe": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, ignoring capitalisation."
+  },
+  "69506a46a32f314fe66a607364178999d7b7af00622b74a2922ee4272aa04240": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names the same two people as the gold answer, Taylor Swift and Travis Kelce, only in a different order, which does not change the meaning."
+  },
+  "69652ee8d003f5c454dbbb118fd05494a0372a40989b01a39e6b06390c2139c0": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "6a3a12e577363c7b1cd99e65a4ee9566abf7e74d8233a207d825bb32958b2535": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a plain \"Yes\", while the answer is a hedged \"Partly, with inference required\". It does not commit to yes, so it does not match the gold answer."
+  },
+  "6ab98aba69f84cc6290e9fc9e5947c624af3af96a7712eed650e200bed8c630f": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\" (the reports were consistent), while the answer declines to answer by saying \"Insufficient information\". This does not match the gold answer."
+  },
+  "6b06fc1b504e52d6cbdea7ba1670ac3da10caf7ab8c92952799ebb853283182f": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "6b86fd3d540f37c9780f13c2149a3f4fb60c5a97f771b16131d0229369db788d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Amazon' is identical to the gold answer 'Amazon'."
+  },
+  "6bf3b6b9cf3df6d528a261bae5b041ad0ebed56833b1f9debc81c26643b9f266": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a clear \"Yes\", while the answer hedges with \"Partly, but not similarly\", which denies the similarity and contradicts the gold answer."
+  },
+  "6c0d0632e1a6048b2d9d235cffc0c3124b762a8dafe67cf060717aa0f9fdb42c": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive 'no' (no inconsistency). The answer 'Insufficient information' declines to answer rather than saying no, so it does not match the gold answer."
+  },
+  "6d3d0f052ef8b0ca1ae724e878f133364f5426e4b7d050b9e56b247c86975e6f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'yes', indicating the same response to the question."
+  },
+  "6dfd379ee4862ae5614903e7e68ce63f3dc8d0f7ba111436fc143edb38968a5d": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address whether the issues are the same, which contradicts the gold answer stating 'no'."
+  },
+  "6e1660bcaceac8c9348f0222a78bae01dcbf75cb617f383c7a5cfbda9a57d6af": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; only capitalization differs."
+  },
+  "6e2c490957aa2ab15017d69e2b758187ebf7bfb0f3792275175c799f02d58bce": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; only capitalisation differs."
+  },
+  "70445c83d1657a6349e80de65b88ab23a804c7149b071154c91b510d1195f718": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; capitalisation is ignored."
+  },
+  "7050f95db72cc2172bade7ae59c7b8a351a1c6405400455a0be9fd2f826b0c17": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests uncertainty with 'mostly' and implies that the information about The Verge is not fully aligned with the gold answer, which states a clear 'Yes'."
+  },
+  "707d0943bc2efa0ca5ffe9e8608e305bf8459358d2f10b518992ab5db6784e3e": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that the Fortune article did not imply illegal practices."
+  },
+  "730a88a7c89911272b297dd59e5f720a1cde456c85bd25486ddda3b6636b8f76": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' directly matches the gold answer 'no', indicating that there was no change in advice regarding fantasy football."
+  },
+  "735f1d69f69248c418ed97262544a363adb42c4a1cbb1d820dfe26afe8d3acf5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "7396db694d409cb8eee7b6b4f52b0c9006234b826b5ce81a412768aac9ea6347": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, indicating there was no inconsistency as stated."
+  },
+  "765fcbf8d52208955e9630252366ec6f4834a7ec0df24b175d3fbaa64a9fd088": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer says Yes, matching the gold, but it describes the change as antitrust trial coverage shifting to an AI-harms class action. The question concerns hardware reporting versus the antitrust suit, so this reasoning contradicts the premise and adds unsupported claims."
+  },
+  "7691ba3d9c2f656a617cea55175438bc415af9f3a806819ca9af7d679fc1f457": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer says the portrayals are similar, while the answer declines to answer ('Insufficient information'). Declining to answer is not equivalent to the gold answer."
+  },
+  "76e98b26374e574278b46f44f32dae385bbb5860c834e1841653822facc56d3d": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'sportsbook' is equivalent to the gold answer 'Sportsbooks' as it refers to the same entity, differing only in capitalization."
+  },
+  "76f14d66b06bef65cb8e3337dd9041d65d620a8406b432730325f0d6db4cb9d7": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Consumers' names the same group as the gold answer 'Consumers.' Only punctuation differs."
+  },
+  "7801607319a54f4f8a671ffecf5b11a53fb2eddfa5097d0a2e85f49eed2c3d4f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, indicating the same response to the question."
+  },
+  "78e73d7dd6b1994575c2184a63453a46fa8b069db94b615e9dee0a81270dc886": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'yes', indicating agreement on the portrayal of Spider-Man and Thanksgiving."
+  },
+  "79236c8118d69d8966f340505f11e3f2c7b0d530820d71b35bcca550f51d5954": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating that both articles align, while the gold answer clearly states they do not."
+  },
+  "7a1e5f1a15b6c2d400da42bba3041ad0bd4731243921492f7a8bc5a2b38b994e": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "7aa542b288c13ce9a1abc680b7246ab5a142aeefe0a77a18142902b100f7dc43": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer introduces a caveat that suggests a contradiction to the gold answer, indicating that The Verge does not mention a shift, which alters the meaning."
+  },
+  "7b134c11a550bdbc8a3f0c48376abd3b080bd8e81d31d62431f390d56dbcf206": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that TechCrunch did not report on the specified events."
+  },
+  "7b8714043f783f76330850abbbc29fedaa1c2a20ba589cdec0497b81f8180304": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation is ignored."
+  },
+  "7ccf8995a70b0bdbd531b15e6a99a47f56e56ea7c9e1fae63945a3a9b594dce4": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating 'Yes', which directly opposes the 'no' in the gold answer."
+  },
+  "7cf502898028caf9fba1ae7e5c958595cea4b7872d570878521e295fc564bf75": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Apple' exactly matches the gold answer 'Apple'."
+  },
+  "7d2235ff65fa368225a42b8b5ea1d7c58a4c77b6ac8cf269d06c1fda3e256826": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating that the articles align, while the gold answer clearly states they do not."
+  },
+  "7d6eb6f26885876481ab77d9eac10e3cd333175e4a344d6edef8e02a5d7ac70f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that there is a difference in the portrayal of the relationship, indicating a romantic interest versus openness."
+  },
+  "7d8dd33f1b766b537d64edf46a8878e102b9a494d34c686a5c6d7c54b4b1fd06": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address whether England's team had issues or if Australia's team had key performers, which contradicts the gold answer of 'no'."
+  },
+  "7fc70cdf61209b0ac80830cc6588a5d392784c03a287460e2419d0f147c71a49": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a plain \"Yes\", while the answer \"Not as framed\" rejects the question's framing, which contradicts the gold answer."
+  },
+  "805e3539e8e1e70860c93cf054c1d656d3a9a5272a484bbe6b1b0d2415aed6d8": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The question is a two-way choice: the articles align, or they portray ChatGPT as lacking functionality. The gold answer 'no' contradicts alignment, while the answer says they align with no lack of functionality. This conflicts with the gold answer."
+  },
+  "80ea156ae34b0573a56769139e5fdc924593ec9c2e26a1099a6c0a89293912aa": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Apple' matches the gold answer 'Apple' exactly, naming the same entity without any discrepancies."
+  },
+  "81b637f4a6238afd94d5c05b62ec9ba5477421375e80853e77ba00d46669fbf9": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'Yes', but the answer given is 'Insufficient information', which declines to answer and does not match the gold yes/no."
+  },
+  "831b56a16cab8c71bdab8473d75b9bc08bb6bcab54b286d67428e8f2c40cca98": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', indicating that the Sporting News did not report on FC Cincinnati's achievement before the mentioned event."
+  },
+  "8393864531d885d034ca0d4a5db2aab4d33457ee745bfd4671ef6a0b79f33966": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "857e2feb530ab8b5b28f419ffeaaea3e324733a88c24d722a67125e6ca82dcf3": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; only capitalisation differs."
+  },
+  "85a4ed58b9ca4e26d290e6e42fae3739b2792839abc2665ed96a0bd70f95266d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "85d6ec6a1074579feb15aa26a4b7dd5251e86222d99ce3f443e29f51342413b9": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "86a27792bf3366fbea516806e6fcdcb5556aacb2dd791f4031893104bb37bc11": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so they contradict each other."
+  },
+  "8705d72ddc3f95ca17e7c0f5b488c30cbe44f516f0e81b988afaa847a0a89d15": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', indicating a difference in children's reactions to the characters in the two games."
+  },
+  "87e1ba0c69c8fc391c751161dd5a28258b4d88a25cd0955fcfa6a237ced25c81": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating that there was a change in the Sydney Swans' ranking in the AFLW."
+  },
+  "889362a3f786ad0e62e389f23df063cbb85b17d60e633468166806586dfaea31": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\", but the answer declines to answer with \"Insufficient information\", which does not match the gold answer."
+  },
+  "88d61e61f308e25eb1b552f47783e1ab86735bd213a0d20665c179791e89b796": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating they agree on the involvement of Harbaugh in both contexts."
+  },
+  "8965cc1b7f8f67ff31ccf01137b8995122078f71e372340350332f1e52cb885c": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'consumers' matches the gold answer 'Consumers.' apart from capitalisation and punctuation, which are ignored."
+  },
+  "8b5a9813f6d08b3a5187b52cc7ae254fbc9e11df7c6c7a300efc0d635642f857": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny the presence of gaming deals, contradicting the gold answer which states 'Yes'."
+  },
+  "8b8a3aab99952c631a2a6f5cc7f48562ad38e8ddf81493de355ea3ae942f0fda": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests a partial agreement but indicates a difference in comparison, which contradicts the gold answer that states a clear 'Yes'."
+  },
+  "8be4f41c3638867f7e6c170624bdf7ddc71a32c9b7d687d0b034c93df9bb8220": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no', while the judged answer states that the articles align and portray ChatGPT as multifunctional. This contradicts the gold answer's meaning."
+  },
+  "8cc2101614751d30f50d2cf22d30dcfbdb02be565ead70920dcd3b851d978b02": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'Yes' while the answer given is 'No'; they directly contradict each other."
+  },
+  "8e06c0822c0ee8adf88dff3837bd1c750acb05b98b858648b3918fec34896eb8": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' is identical to the gold answer 'Google'."
+  },
+  "8e1500752b3a6eb14de4414886a68cf8c68c52847c57defae3c364a089418e91": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly the same person as the gold answer."
+  },
+  "8f9169440344025fcbd2b04bc8efbdfe3bef2055d3b20fc2c2af0acf7cfa37be": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge indicate that there is no inconsistency in the promotional offers for new users of sportsbooks."
+  },
+  "8ffbce4f7074dcbe676886751939c5b00c223dddb886d6abb49be6b5cef81194": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'Yes' while the answer given is 'No'. These are directly contradictory yes/no responses, so the answer does not match the gold."
+  },
+  "900f6988d648be439da4245ac6acfa4b9afc9089834305071b1ef3eba8ff0f1a": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a flat 'Yes'. The answer says 'Partially supported' and claims no evidence from The Age, which hedges and contradicts the gold answer's full confirmation."
+  },
+  "9037dcc5b52dff17d76e007db86d557eba23f93282b0ffc5f22bbe727828ec73": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Federal Reserve' is identical to the gold answer 'Federal Reserve'."
+  },
+  "9063e3e7435c3279cb22520726ee5abd399e8e5f565c790671bd49713c76932e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not agree with the gold answer 'Yes', as it neither confirms nor denies the agreement, thus contradicting the definitive nature of the gold answer."
+  },
+  "91234d31fb973480e42201ebe21ca6ed7eeee2592e4520bc470bbf705095aed8": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address whether the approaches are the same or different, which contradicts the gold answer stating 'no'."
+  },
+  "91f02df0518bb05788b8634a1effc04a4ffe3489ec2819012e90eb6f08f9c490": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, ignoring capitalisation."
+  },
+  "930a66693c07b436970ea78eb2fdd676b51c136080d6f7d9151b873efcd21fb3": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers indicate that the articles express the same view regarding divorce, confirming that it is not considered an option."
+  },
+  "944a61a7c63cdfb06802eae246b2bf50eb74c8d9aab2edc2b698ad1b7152d6b2": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests uncertainty and requires inference, while the gold answer is a clear 'Yes'. This indicates a difference in certainty and directness between the two responses."
+  },
+  "946bb66746a4e24e0244f3053d7396e27bb697a18fef3ebd797043bd9fd6ae4a": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"Yes\", a definite affirmation. The answer \"Insufficient information\" declines to answer and does not match the gold answer."
+  },
+  "94fa2d07b1741a1f7bdcbf587dbda8a376b2b70268e66d8b0670d206d3a8ee84": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "954c8455f59e4d52a967cf7cf0e97a3c9eada9c00ab10d1e1e323c99e090a4a7": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the provided answer affirmatively state 'Yes', indicating agreement on the provision of a welcome bonus for new users/customers of sportsbooks."
+  },
+  "97713280c1505c501e4f7fe7d4b2198f9095dbce6db049c6b2992d347da8133c": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"Yes\", while the answer declines to answer with \"Insufficient information\". It does not state the same yes/no value, so it is not equivalent."
+  },
+  "9979eae67f6cb411b4d637bdc6628d119b395de2f8ea09438049a8fb561a7549": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a plain 'Yes' confirming all claims. The answer says 'Partly' and rejects the Verge claim, which contradicts and hedges rather than affirming."
+  },
+  "99faa7ce5bb622ee620ab88f554f50f60b615fb4788e51f626446b58d2dfd9ba": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that there was a change in the portrayal of Sam Bankman-Fried's interactions with his peers, thus they are equivalent."
+  },
+  "9a5ee37a23e79629a21c02c374ad15822c7f8ca6c003c3fa14391deb50c277f0": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirmatively state that the reporting on Derrick Henry and Nathan Murphy is consistent regarding their respective injuries and game participation."
+  },
+  "9ce64dbd4f4477dae485b26b9bb4911320c65a3050113291db30ac6b88193ec0": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not match the gold answer 'no', as it implies uncertainty rather than a definitive statement about the portrayal of Google's impact."
+  },
+  "9cf695815f98b39a3734b32e1b2593ba088e609fbfb8f7f90566575ed787822e": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\". The answer \"Insufficient information\" declines to answer and does not state \"no\", so it does not match."
+  },
+  "9d741a05e04c6fe6ee856d53fb1b302ca34c66ea4d8ee13f7c9823127a2c9ec3": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny consistency, while the gold answer states 'Yes', indicating a clear affirmation."
+  },
+  "9e57962864e6270a49e364e4afd551dceb99c539dc254134155aeebad7f2176f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that the strategies discussed in the articles are aligned in their goal to enhance cranberry cultivation."
+  },
+  "9f2f659d1ede9aad54d312c54b26a33e695ed0aa983a734a5bcd1715c48e8e86": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Amazon' matches the gold answer 'Amazon' exactly, naming the same entity without any discrepancies."
+  },
+  "9f9e7eb8f79323197631351b63632c32d20daa3e6ac5688a24285ff5d21e5aee": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating consistency in the portrayal of Sam Bankman-Fried's involvement in fraudulent activities."
+  },
+  "a21777c081733d91ad04a53f40c901a4b1d52281f104df7fbfa1ad4fb87eab91": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' exactly matches the gold answer 'Google'."
+  },
+  "a2255609fccb2bf332c8588e2afe2a6d369e82ba59f03ef6fea64803dda60d06": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the Engadget article suggests a new product launch and The Verge article indicates a shift in Valve's business strategy, confirming the same information."
+  },
+  "a2508bd36869e6cdf3f24b713fb8b621b9f600349cc4705070c8089430291d04": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'no' matches the gold answer 'no' exactly."
+  },
+  "a30d3da08f27c67e4dda540ca2cb418e9e8536ac077784641f80deeb33922f94": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny the criteria evaluation, which contradicts the gold answer 'Yes'."
+  },
+  "a4111755c91bc518765e85370e1e9315048510c9883dcf693fe19a941093b89e": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the Fortune article attributes the cause of the war to Hamas and that the TechCrunch article focuses on Paddy Cosgrave's public fight regarding support for Israel."
+  },
+  "a414cccb78368774d5a00c8f666fd7b96ca9f3b0a41b375d726c5ea1ad73a6e0": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes' exactly, ignoring capitalisation."
+  },
+  "a4fd55163c09b21a191436f3f6d486bcab25ca6d5fc45c8553e35da57158aed8": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Bankman-Fried' exactly matches the gold answer, naming the same individual."
+  },
+  "a512a8e094b3905ab7496eba099feb89b47e6c3e796f1bea4acb786c22c95460": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer, and the added explanation of the shift does not contradict it."
+  },
+  "a52a0ed45ea2e1671b5f372150d63188272e13ef344e4921f1cd52dc02c96358": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that the 'Fortune' article discusses a re-release of 'Stop Making Sense' and the 'Polygon' article discusses a recent release of BTS's film, confirming the difference in timing."
+  },
+  "a560fa3ac2b8cb9c4cc5cd8d3f1a64abe941841a70bb6d5721fb4fbae241dc00": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests that the Verge claim is unsupported, which contradicts the gold answer that states 'Yes' to the question about Google's behavior. This indicates a lack of agreement with the gold answer."
+  },
+  "a70176df100cb975aee26924377605671d2ff975ca175dd36165c52466e846b5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation differences are ignored."
+  },
+  "a78b6016d39fe4efde984c854bdab1ff35b9966636a893e3b71b9628e74fed63": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation is irrelevant and both give the same yes/no value."
+  },
+  "a7ddc45270d99fabcc01f4b6e5d30a67b4c7d9f040748fdec4232b0d52f0236e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer states 'Align; no lack of functionality', which contradicts the gold answer 'no', indicating that the articles do not align in their portrayal of ChatGPT's capabilities."
+  },
+  "a94e9134c4f3da453b10ad60b3965373410c1da04143d7fb5c32f8ab6e95c31b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "aa8be3e85459c6b11a6303bd8d03d375ee9c484b5abcb771e6b8a890a1d9d388": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold is a plain 'Yes'. The answer begins with 'Yes' but hedges with 'mostly' and says The Verge does not support the claim of a recent shift, partly disputing the question's premise, so it is not a clean match."
+  },
+  "aac6cdc00abaeeaab5ab0a5bc970e6dbe162f07ee343080ca599ad0de789bf7c": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'no' matches the gold answer 'no' exactly on this yes/no question."
+  },
+  "abb3ce179babbc860303b7207569def6b592c12317f94f9b3e5e42b0644cf7ae": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' contradicts the gold answer 'Yes', indicating that the TechCrunch article does not suggest anticompetitive behavior, which is not aligned with the gold answer."
+  },
+  "acda32670b1a43076ff375ee820a35cb81aeebedb76364db1339315f632f9c16": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating there was indeed a change in focus from safety concerns to financial outcomes."
+  },
+  "ad8e6543f6114c2d5465613e87271e4321fb8391869e092733728eb4d1272ff9": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a clear \"Yes\". The answer hedges with \"Partly\" and says it's not a like-for-like contrast, which does not affirm the claim and effectively disagrees with the gold."
+  },
+  "ada15885304602522aeb386436d7f01be60eaf5dff09dca0d2bd2bb4b431a34d": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that law enforcement did not adequately assess the threat and that Otto Wallin is not considered a greater threat than Joseph Parker."
+  },
+  "ae6ff8cf5cb757f4fea77e6b746e3bc67e52909569b504205570dc27119eddb8": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'antitrust issues' does not directly confirm or deny a change in the nature of the issues reported, which is what the gold answer states. It only mentions one type of issue."
+  },
+  "aee8e13dd5fb44bf487c61a806c02fd4d6ad5407cc1613d3c759b40841247780": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"Consumers\", but the answer declines to answer by saying \"Insufficient information\", so it does not name the same entity."
+  },
+  "af49f77627c04201ba7a771bd4a2a81e39a017ed12f9d0ba05aafaaf2a754ec4": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny the alignment of the strategies, while the gold answer states a clear 'Yes'."
+  },
+  "af8748d84772d14a35b1c0e52648a3d84e29f91b371c5957469017ec1009f4f5": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly affirm or deny the presence of inconsistency, while the gold answer clearly states 'no', indicating there was no inconsistency."
+  },
+  "afb579d96281e646aeabbea8d0e648a9820f26267bf4509773dc100427d2aad6": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sportsbook' is the singular form of the gold answer 'Sportsbooks' and names the same type of establishment; singular/plural differences are ignored."
+  },
+  "b039cac6e66354603e1ebfb3efdc78955496f1d7077ed7f6b5ad3ddb25fbc522": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating that the Sporting News did not report a defeat for the Cowboys or a win for the Lions."
+  },
+  "b0ddad7b9aa042284462c86d3d8f579994467b3e05f8d0b6f97320d5881df241": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' while the answer is 'Yes, they align'. The question is framed as an either/or with a yes/no gold answer; the given answer asserts alignment, which contradicts the gold answer 'no'."
+  },
+  "b13dc5552f3cd76e441cf2d3b8c3032c7a4aab3802c4b4d1a052c1a6a18c63d1": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "b1ec103b5a2f046afefa567ad6e187c6aaee0f0d61fd2ff6b2dabd4d94b15b1d": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is an unqualified \"Yes\", while the answer \"Partially supported\" hedges and does not affirm the claim. It does not name the same yes/no value."
+  },
+  "b244bf672c5361822cf3d378f74f297d4997f50850dab11b4576aa97b9505630": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual, Sam Bankman-Fried, as the gold answer without any discrepancies."
+  },
+  "b331787f5be9d631f66204d3b1d655d1511ca0bf50e6d461026b24d4d91fcf7c": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"Yes\", while the answer declines to answer with \"Insufficient information\". It does not state or imply that a change occurred, so it does not match."
+  },
+  "b4b0f076fb36757de759265e20a63712040880a2c69244372f3f83a1294009c5": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so the answer contradicts the gold answer."
+  },
+  "b4d7bcb117b6aefda60f37de88bdf1a54764fffff5cb90eba29aff08c6f01726": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The gold answer states 'Similar', while the answer provided is 'Yes', which does not directly match the phrasing or meaning of the gold answer."
+  },
+  "b4f22744296014d17ad834c554c93ac885adfdcaa60cba12d75a1d068689f432": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so the answer contradicts the gold answer."
+  },
+  "b673d203f67e4a7e62f2c7eed6e2a0bf43d4d009ef0145afa5be4e8d55abeb6e": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly, giving the same yes/no response to the question."
+  },
+  "b6bf22966299daf553d3366fbb7fb59ad56dc13d50b34617f7bc6e669c64857a": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'Yes', indicating a consistent perspective on Google's market behavior."
+  },
+  "b6fb8d709062e7b5825b5a731a8019cc7837a2b1ceaa750683d4ead40f6b52fa": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state that there was no inconsistency in Jada Pinkett Smith's statements."
+  },
+  "b7a85db9db4e147ae28ff3b12e8fbe1e87e0667b39928668ec49f3010e6fecc6": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; only capitalisation differs."
+  },
+  "b861bfae6ff2d0b1a55adaace687ca57aad910fe8d2896418dbe2cdb173aba67": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual, Sam Bankman-Fried, as the gold answer, matching the entity being judged in the legal case."
+  },
+  "b8998e7bc894b80fbe39c44a7cb3ebe567a0c554974677f706e0ef0713ab83c5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' exactly matches the gold answer 'Google'."
+  },
+  "b9436637edb8c3c4719163af9ffb237faccc3de62cabfd8f12a50e45abae9170": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Consistent', indicating they convey the same meaning regarding the account of Moungi Bawendi's focus."
+  },
+  "ba7b31c894c9fdfcd5bf588833ccf28df4f1131ff86c8373d02b306932941910": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'Yes', indicating that the criteria suggested are the same."
+  },
+  "baa503850c21c377d5ea11e2eaced9524e681340b0648f412039e653a84462ac": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a plain \"Yes\". The answer says \"Yes, in part\" and adds qualifications about TechCrunch covering only political influence and Alameda funding, which hedges and partially contradicts the full-yes claim, so it is not equivalent."
+  },
+  "bbb5091eae5151c72d3ea7cb465cfd329394c1b51768c624e1e45162c438bc89": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\" (not inconsistent), while the answer declines to commit, saying \"Insufficient information\". It does not state the same yes/no as the gold answer."
+  },
+  "bbd8fbaefe4fa65be673594592b06a3b1877eec46d3d50d8a27c45ec0baff883": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Federal Reserve' matches the gold answer exactly, naming the same entity without any discrepancies."
+  },
+  "bcc6d2167997bc6cedfb62695650cf8c1c8ae40857c5730cd9350333616d6cd2": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not affirm or deny the question, while the gold answer clearly states 'Yes', indicating agreement with the premise."
+  },
+  "bce033ada227c3e9e23117973b58d2a0170f0afd985db8e12fcac5a68d3727ac": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite 'no'. The answer 'Insufficient information' declines to answer and does not commit to yes/no, so it does not match."
+  },
+  "bd7683e6e67237e98e3e47c322af9c3b22bd5d2af5b1b4538d787065a38228fb": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the 'Fortune' article claims a re-release of 'Stop Making Sense' and that the 'Polygon' article discusses a recent release of BTS's film, confirming the difference in timing."
+  },
+  "be0004bc5d7a462f20bba3592a072103c26d4d83068ca07ad19865d5d8bb36cb": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that there was a change in the nature of the issues reported concerning Google, with the second answer providing additional detail about the expansion to AI-related harms."
+  },
+  "be04d78398d60af0ae3e152e7899cac152a9d4eaf95861ac8714ab171bef07b7": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Amazon' is identical to the gold answer 'Amazon'."
+  },
+  "be8ad67295c1921dcb3f1270850dbe4b024f58781be158ff39f570b17a3e55a9": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating the same affirmation regarding the reporting order."
+  },
+  "bec1cc8c22cebecf723eb92381db14c7543990dc02ee1f5030ae2b57389363db": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' while the answer given is 'Yes'; these are opposite yes/no values, so they contradict each other."
+  },
+  "becb753d75d0d7e18ac53042a35401008561a5c7a95dcb8605e1f35e104f6250": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that there is a difference in the nature of actions attributed to Israel, confirming the claim made in the question."
+  },
+  "bf3d5635feb35b90e220b8c7db6d241c05ee2a67c85f3fd773051bdd8b08f019": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer opens with 'Yes, largely', agreeing with the gold answer 'Yes'. The added note about Xbox One is a minor caveat and does not contradict the yes/no conclusion."
+  },
+  "bf7003e5df50c2122d9afee4ec55c5ad1d8cf8ae48a13c5dc8df950f03943af5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "c018635df0667fd27b6e56b18af5c775c3b914a34e2c8869a4175ed557db416d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer. The added clause that the claims describe different kinds of reactions does not contradict or change the affirmative verdict."
+  },
+  "c065f277322ad89c904d1f9375e3cc1a5f6fb92752181bd6dcbbb6ec8ffc7b26": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No inconsistency' conveys the same meaning as the gold answer 'no' — both state there was no inconsistency in the statements."
+  },
+  "c1303038581186da12147e169c43234a678dc42f988abe5f1683b3b2a85ea159": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'Yes', indicating the same response to the question."
+  },
+  "c1b8c0c0782b514e02d3e1c9c61b41af64f00b359c7e674557271bad83a8dd70": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge indicate that the articles express the same view regarding divorce, confirming that it is not considered an option."
+  },
+  "c22051ebc3e34aa0649ec187149d402069d8cc1ec0d817fdf168f20461cfa4e3": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "c29ab99113e16071ac45cd9e6f90d37e6c9923279cccef674657afc73a18c033": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'ChatGPT' matches the gold answer exactly, naming the same entity without any discrepancies."
+  },
+  "c365d76be6516ba0c3d273e89ad5acb6b6b543cdf2b3654268bbe1f007f5fb73": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Google' matches the gold answer 'Google' exactly, naming the same entity without any discrepancies."
+  },
+  "c37c72fac8277c8381c645ffa3c4000ce76d7cc4641e293744de5bff8f7e55b9": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'The Federal Reserve' names the same entity as the gold answer 'Federal Reserve', differing only in the addition of the article 'The', which does not change the meaning."
+  },
+  "c3dda45d520fe0425c9a66413e23da986649e2c3a78eae44e32a5098c4b4959a": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'no' matches the gold answer 'no' exactly, giving the same yes/no response to the question."
+  },
+  "c3f52f14c92931af272e11c7ec41a82a4706c9b2ec578a31b77e28fa80edbb66": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes', matching the gold answer, and the added explanation about the shift from caregiving to drug development does not contradict it."
+  },
+  "c4b47492cbca01fa260b20460f70dbe26fcf75a0034d7e88764212b2ec928d17": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "c50f1b00dfa819047be4958c1a3ab93fe130e8280ca0358b58f52a295dbee521": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no', meaning the articles do not align. The answer says 'Aligned', which contradicts the gold answer."
+  },
+  "c69a7a00351c8fd8b22b1e7068327c37e33e02a13847263e608914bd4a1f617e": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "\"Same stance\" conveys the same meaning as the gold answer \"Same\": both say the two articles present the same position on divorce. The extra word \"stance\" does not change the meaning."
+  },
+  "c6a790dbcdcdb49fbe0916183119549bc000ebc593838d4ea151e8e9bb877451": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer says the articles express the same stance, matching the gold answer 'Same'. The added detail that divorce is not an option does not contradict the gold answer."
+  },
+  "c73ddcc81b98068bc7f51d0bb7a1b6916dc08bae8fd58fff2800dfeea5ecf8ac": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer introduces a distinction by mentioning Xbox One, which is not included in the gold answer. This implies a difference in the platforms covered."
+  },
+  "c871cacf1eef327e992aaa582e24632b132de25b53ceecef45ebd552f96c1650": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirmatively state 'yes', indicating the same response to the question."
+  },
+  "c8b57fc77faf3192a85928cfe12c242bf3f9c803746059e7f54bd20bf41053ef": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Partially supported' does not affirmatively confirm the gold answer 'Yes', indicating uncertainty rather than agreement."
+  },
+  "c90ddd8aed545f9114db4394fc81ce4578fc3f66f21761fa59d63a6398fa49f0": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"no\" (not inconsistent), while the answer given is \"Yes\" (inconsistent). These are opposite yes/no responses."
+  },
+  "c9463a4ca8d216431c9a51a7dc9aeb35a321df8bd8afbece8c5259d889de1a78": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm a change in perspective regarding dementia management, indicating a shift from caregiver advice to optimism about new drugs."
+  },
+  "c99320d469ae8b884313a9a934a8e22d56c5504d4b0341fbbae58ab1f3da6c8f": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definitive \"Yes\", while the answer says \"Insufficient information\", which declines to answer and does not match the gold answer."
+  },
+  "cacb871f9d2e8efc97ca58c5262d1a2de45f761e77489516c6fc868557c23db6": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is \"no\"; the answer begins with \"Yes\" and hedges with caveats about dates, so it does not give a clear \"no\" and contradicts the gold answer's yes/no value."
+  },
+  "caf89b7efed6077c29f1b3f0eeacb7c139b655ebacdccb51b7a1779bb12ab0ae": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly for this yes/no question."
+  },
+  "cbba4ad3ce9330bf6b1b9b35aa572b35fcfef2f776e3c16d2e07553c43e1b8fa": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation is ignored."
+  },
+  "cbded8ec675cd14f361902fb526d25a497973ed9f21f71e3d389de0c04886c95": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests a partial agreement but indicates a difference in similarity, which contradicts the gold answer that states a clear 'Yes'."
+  },
+  "cc6c4283a043dccfd84ba13dcb9606af918e203a4aba0b860e314d5f60355f4d": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The question asks whether the portrayals are similar or different. 'Yes' affirms the first option (similar, both implying misconduct), matching the gold answer 'Similar'."
+  },
+  "cd578ed11c976f2bcdf332057d7405944a810acd76363b26fc4a1f9d44fc378c": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so the answer contradicts the gold answer."
+  },
+  "cdc3ab1a66165f0c2ea42042a95ac757e27cd56a3921857524b0241b2ea6347f": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating agreement on the presence of gaming deals for the specified platforms."
+  },
+  "ce8b04f9509ae9e7dc5184db04218688499f2513dd2f784c79437ea41a336a1c": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address the question of whether the approach is less proactive, which the gold answer states is 'no'. Therefore, it is not equivalent."
+  },
+  "ceac41e88a64b59d1fa3e90b87514658e48a89d88a71a9056267d938942d4d16": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly address the question of whether there was a change in focus, while the gold answer clearly states 'no', indicating there was a change."
+  },
+  "cf093f464f6e39fc5416ddbed15b3a98abbb9ad58a470e01d37d660fc7d4f173": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalisation differences are ignored."
+  },
+  "cfb64d13d69ae1c7cacd431ca5fb6515087ef84ea5db4ff2d3557b0d2b47aa2b": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "cfec60607c7f9d2ac1e2dfbb05031268a670dd240340e8ff7391cc59e8ea92c1": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Bankman-Fried' exactly matches the gold answer, naming the same individual."
+  },
+  "d1a905584dde638af26ebd6523c6ccd0e134e336721286418fd9b8afac990c69": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "'The U.S. Federal Reserve' names the same institution as the gold answer 'Federal Reserve'; the 'U.S.' qualifier does not change the meaning."
+  },
+  "d5b2ae99a8c3efa91fd4c51a175ce7f02edf8b523b428245ebed72c3e76ade1d": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer begins with 'Yes' but adds a caveat that The Verge does not describe a shift in strategy, which partly contradicts the question's premise. The gold answer is an unqualified 'Yes', so the hedged answer is not equivalent."
+  },
+  "d5b3fd1574a8e35e79045ab40540b001a165e1ba202c037a8e36573dd932d278": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests uncertainty about the Verge claim, which contradicts the gold answer's definitive 'Yes' regarding Google's behavior and responsibility."
+  },
+  "d5c9f1d03ce5ae489d9f1242a98c4cf759f551804259212bad248001d4e5ac7f": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is 'no' while the answer given is 'Yes', which directly contradicts the gold answer."
+  },
+  "d5fd2a6df2a7d4431a8c45c1be62fb36c2c2cdbafd635f9fdbf07880d86f729a": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating that the articles align, while the gold answer clearly states they do not."
+  },
+  "d60ad578cfc30a31ff6a1973aa0401352dc19cfecbe83ee8d003df92312665f4": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same entities as the gold answer, specifically Taylor Swift and Travis Kelce, without any discrepancies."
+  },
+  "d61dd9477fdcf7057d806662d7bd4ddf0cba397731160c50bcf3979cb271ae02": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Yes, in part' suggests a partial agreement, which implies a difference in interpretation, while the gold answer states a definitive 'Yes' without any qualifications."
+  },
+  "d688081d2179145e71051d094a342bb5fa03b3938fb383b05ed372d95dffd6ff": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\". The answer \"Insufficient information\" declines to answer rather than naming the same yes/no value, so it does not match."
+  },
+  "d76d9ee01e821bf52c73c677f869f7dc213efb0e6745b1c1243d51bcc9ecf217": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Amazon, but the answer declines to name any company by saying 'Insufficient information', so it does not match."
+  },
+  "d7bc7e7a5b2f1dece0e1b404dde0a2ba4bef8090d46936e5c12eaeb6c0ccf084": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm the same idea that there is a lack of legislative remedy for AI risks according to TechCrunch, while Music Business Worldwide mentions advocacy for regulations by the National Music Publishers Association."
+  },
+  "d811bd838b956126c1dbb87780e29ade15e871bd5353e1637e0da70ba39cbc28": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm that the Polygon article suggests a difference in children's reactions to the characters in the two games, confirming the gold answer."
+  },
+  "d82f07162c34e7ebba783fb1c01c04d37dbf109bdb4fd31be157e40423e14599": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests a partial agreement but does not affirm the gold answer's clear 'Yes' response, indicating a difference in interpretation."
+  },
+  "d9931523985c0785edc6897a540d3dd46b10adfb23b610f362adea26ad6aac8b": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are directly contradictory yes/no responses."
+  },
+  "dbad67e160eb0973ea5eaf192c49cdc0dde1659c4dfdb9cf3356c3ba1a7a1002": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, but the answer given is no, which directly contradicts it."
+  },
+  "dc8638a9ac80ddfed220c07cc99dcc27778e331556ce431d26a7c2a3de4c5402": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny the claims made in the gold answer, which states a clear 'Yes'. Therefore, it does not match the gold answer."
+  },
+  "dcb5599a406b893e2c24f6d9de82ce560f5bb9e3d1e0fa22fcba54221ed0bc77": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers confirm a change in the nature of issues reported concerning Google, aligning on the fact that the focus shifted from general antitrust to AI-specific harms."
+  },
+  "dd32d295db18546137ac75e114ab05fd9f165eb8027a6942a7268bfdb03f335e": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny consistency, while the gold answer states 'Yes', indicating consistency."
+  },
+  "de677a1ff278ef3b48036d423924a5cc472cfe0cb70e7149086acccfb7c7c35a": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests that the claims are supported but emphasizes a difference in reactions, which implies a nuance not captured in the gold answer's simple 'Yes'."
+  },
+  "dfc1b0f71ac4341e73a27c57c5eb60f5d236fdf863609dd20431ef90638190b5": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'No' matches the gold answer 'no' exactly, indicating that the approach did not change."
+  },
+  "e019b8d214d3e00be044a999ffd96ad7ba2ad8b56afe34a64be977bdbd0dcd09": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not directly confirm or deny the claims made in the question, which is not equivalent to the definitive 'no' in the gold answer."
+  },
+  "e06487c81528f2828b46aae2980ecf0775e54476029c9fcab91476d45da46bbd": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; capitalization is ignored."
+  },
+  "e0e53182ec09c27cbccfeecddc4b2d6cdf17e72a010d983c6d003adf581bcb06": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that there is a suggestion of no legislative remedy for AI risks in one article, while another article indicates advocacy for regulations, thus they convey the same meaning."
+  },
+  "e0e7f7a3f7d40499c5a675526506acc9e32d8baa211041b16aefcdd385fa9c57": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Partly' does not affirmatively agree with the gold answer 'Yes', indicating uncertainty or a partial agreement rather than a full confirmation."
+  },
+  "e0eb3c41d98726adbbd9c353edbacdd03045dcb3e1cf8feb2d1e929de2b4aedb": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Altman' exactly matches the gold answer 'Sam Altman'."
+  },
+  "e1871cf74adb02c52be26a92be53773e4cdef26ded7a5b26b9b16873975a2730": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'consistent' matches the gold answer 'Consistent' in meaning, indicating that both refer to the same assessment of the accounts regarding Moungi Bawendi's focus."
+  },
+  "e194495acd2baae63c429ddfaef83e5f8e3825cf94c0b3e883cdbd3303dba955": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'The Federal Reserve' names the same entity as the gold answer 'Federal Reserve', differing only in the addition of the article 'The', which does not change the meaning."
+  },
+  "e2663d64dad2c1c1a5fcef3c770411d74c01f1ebb266553df3d5086ec20d7e54": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Google' is identical to the gold answer 'Google'."
+  },
+  "e2ba7922a54b64a13f987e90d9e28be8be6f4b1eb27f6851acc1644b5ff84e4c": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not affirm or deny a change in the nature of the issues, while the gold answer clearly states 'Yes', indicating a change."
+  },
+  "e2c2a9fc5f6deba7061337fafd6aaeae16890b443e7cfef89c2cb8c83333bac6": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer states 'No', indicating differing views, while the gold answer states 'Same', indicating agreement. This is a direct contradiction."
+  },
+  "e307b26bd1b74858ceba5c1b03fae8800914d33d1965ba5a2cb90071e2654519": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "e3b1c8c06964423a81a46ad7741b841f810c65e746d2bd5563e089de54ca9dfb": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer contradicts the gold answer by stating 'Yes' instead of 'no', indicating that it does not align with the description of ChatGPT's functionality."
+  },
+  "e44814f05b4760904fed55fa380bb56edfa5bf2e00bb74b66213250e066c0822": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm a change in perspective regarding dementia management, with the answer elaborating on the shift from caregiver advice to hope in new drugs, which aligns with the gold answer."
+  },
+  "e45e3bd1d9510d73fc34dafc40943186fce1142d50a6470c990ae44b89db2fb0": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Google, but the answer given is 'Insufficient information', which declines to name any entity and so does not match the gold answer."
+  },
+  "e48ace6033fbdf27a9d3041d1aa1fee65a38883a17db0e1333a6a4717cd67ce8": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the Insidesport article suggests English players may not be available for the playoffs, aligning with the question's context."
+  },
+  "e55977518e5002d2c51c1d976b358d97946a07dcd4133bbe28309a3532b26849": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "e58ed868dfa9c1114f74dcf79bf3a3f1d8ff8ab2d74fbe3ff3e3ab0839de5a87": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Yes' matches the gold answer 'Yes' exactly."
+  },
+  "e6ad2433e9c78d577d12be6790575da1ab8e042a9fb4a6c8158dc4331f7473d2": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Bankman-Fried' is identical to the gold answer, naming the same individual."
+  },
+  "e7637a1edc78dd7a28a82de1d68afd1ab5c01f8bd51410564542c414adf6e4de": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the TechCrunch article suggests anticompetitive behavior, while The Verge implies resolution capability, and another TechCrunch article states no plans for YouTube measures, indicating differing responsibilities."
+  },
+  "e86c95c648185084c8cf98ffa318e70c86b79bf83bc147aba35f32405b4e3ae9": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer names Sam Bankman-Fried, exactly matching the gold answer."
+  },
+  "e8a0cc1be7fbb14a28984652286295282c5330ff0dec451945060751e0a39b3f": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is a definite \"no\". The answer \"Insufficient information\" declines to answer and does not commit to \"no\", so it does not say the same thing."
+  },
+  "eb39c6875103cc0c7bed91589baedaa454ad1226d717a66ad372f76622d30944": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is \"no\", while the answer says \"Yes, they align.\" This contradicts the gold answer."
+  },
+  "ecb2dae78f77d9ec28cfa5b2ab5290845ddc16562d3c6d3e930f4f4dea6b308b": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "Gold answer is a definite \"Yes\"; the answer \"Partly\" is a hedge that does not commit to yes and so does not say the same thing."
+  },
+  "ed2d5b40e165d61e5f471385c6054e383f2598263705f19a1e74cb0a856bd608": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not address whether the portrayals are similar or different, which contradicts the gold answer stating they are similar."
+  },
+  "eec176e9a403f3e31a510a5f7c2d95b0fb9a147e19855b3d56e660b5ec95b6ec": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is Yes, while the answer given is No. These are opposite yes/no values, so the answer contradicts the gold answer."
+  },
+  "ef23a8426ce5c528dc04f11669b9304863296befd622a16bb190dc038dc294be": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not name the entity 'Amazon' as required by the gold answer."
+  },
+  "ef329238052ec22f65d41982a4d5529e9404d3a3a947b6f1c5702daf8296b2dd": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Consistent' exactly matches the gold answer 'Consistent'."
+  },
+  "efcc19ee63cfedfdc5f106bf43cb436fc0fa896346eb0dc9c3a297547ecacbc3": {
+    "equivalent": false,
+    "judge": "sonnet-5.5",
+    "rationale": "The gold answer is an unqualified \"Yes\". The answer \"Yes, in part\" hedges and implies only partial agreement, so it does not clearly match the gold yes/no."
+  },
+  "f03ad8a17d6dee69a1863171a754e559996b2e60273141ebe3fedc2527424ce2": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Partially' does not affirmatively confirm the gold answer 'Yes', indicating uncertainty rather than agreement."
+  },
+  "f193c43efb9203fbe6a5fa68636440940d589b87b0ea0fc9d9045e353c0ec0e9": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both answers affirm the same agreement regarding sportsbooks' approach and adjustments in betting lines."
+  },
+  "f25e391570b0beeba1e55ca9ec788b2aa34beb4a984437033f0728997c5743c5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'Sam Altman' is identical to the gold answer 'Sam Altman'."
+  },
+  "f2a7366fa5e695b5967318d683f90592dcdcf40dc2af8ab8672fee3bb4269562": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer names the same individual as the gold answer, matching the entity without any discrepancies."
+  },
+  "f388ccdf4bd775792c37ef7ed4f63324e6231593f4a59a13808aa8e47ebbbef5": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; capitalisation is ignored."
+  },
+  "f402efe9821d41f0e93e5c2d466ec0d4cc0e5496c6f6224bb745c427093c1977": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; only capitalisation differs, which is ignored."
+  },
+  "f5a28b03f1622dea78733ffcee42d32d3410a623b1f6a9e9b0408a78e9136696": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer suggests that the gold answer is only partially supported and introduces doubt about The Age's evidence, which contradicts the definitive 'Yes' of the gold answer."
+  },
+  "f5ca593b34a360b79dc69d49d843f20a8cb56acc5d6d5d4f1e994fdf790d9210": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not name the same entity as the gold answer 'Sportsbooks', thus it is not equivalent."
+  },
+  "f5e28988b7b8120ad2698ad298188992242cdef253ec208dcf23e0928384a888": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes'; only capitalization differs."
+  },
+  "f623e4a9ec0ee0ccd9ab8c6c2b3cb12931ee99d2e4e57aae9b2f5a4103d2cdaf": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'no' contradicts the gold answer 'Yes', indicating that the Sporting News did not report on FC Cincinnati's achievement before the mentioned event."
+  },
+  "f6732ffd49fcafdbd917653053b7b4115fa21bdad47e429c791041a3e25035f4": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'Yes', indicating agreement on the question about the differing challenges for Tyreek Hill."
+  },
+  "f6f6d1b7ddaf347b2e591256894594075e62e311ec034a87849ca0fea33c231b": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the provided answer state that there was no inconsistency in Jada Pinkett Smith's statements."
+  },
+  "f73db7cc7b772677dea7b67d22df1f3bf571e74a0c279b7616b13ed2ebe8be64": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'no' matches the gold answer 'no' exactly."
+  },
+  "f7c8c8fce07d3c59c0bb0303c78438ae802cea8875850c127fe0387adf109bc6": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the Oregon football team is no longer in contention for the College Football Playoff, thus they convey the same information."
+  },
+  "f8b0efbf8bbae12b38ff895e43cef7c7f3687247bcb9e6bf3379c239a51ec56e": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge affirm that the Engadget article claims certain cybersecurity measures and that the TechCrunch article suggests a different approach, confirming the same information."
+  },
+  "f92f149c75bdcc182e08a084a06d2033547e6725015ec934039f990bc446f416": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'No' matches the gold answer 'no'; only capitalisation differs, which is ignored."
+  },
+  "fa03bc6d21d870fe5c7bbe61e67d7ab8ab2c99adf311cba5ecb5d4b47c9f1344": {
+    "equivalent": false,
+    "judge": "gpt-4o-mini",
+    "rationale": "The answer 'Insufficient information' does not confirm or deny the comparison made in the gold answer, which states 'Yes'. Therefore, it does not provide the same information."
+  },
+  "fc8f3bff48de5a814a5e9474a46546ba9c186e49ac8c847a7c2b39e45c9cd721": {
+    "equivalent": true,
+    "judge": "gpt-4o-mini",
+    "rationale": "Both the gold answer and the answer to judge state 'no', indicating they agree on the response to the question."
+  },
+  "fd398247f7eee212f93285a86e5f9f7cfb7011c8240c42c319ae6f7ba152ab52": {
+    "equivalent": true,
+    "judge": "sonnet-5.5",
+    "rationale": "The answer 'yes' matches the gold answer 'Yes' exactly, ignoring capitalisation."
+  }
+}
