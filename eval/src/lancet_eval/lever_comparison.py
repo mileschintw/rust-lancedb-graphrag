@@ -1660,7 +1660,7 @@ def _by_evidence(ctx: _Ctx, recs: Sequence[RunRecord]) -> dict[str, Any] | None:
             continue
         complete = evidence_complete(ctx.gold_map[r.question_id], row)
         flagged.append((complete, float(usable(r) or 0.0)))
-    split = answer_kinds.evidence_split(flagged)
+    split = answer_kinds.by_evidence(flagged)
     return {
         "complete": _share(split.complete),
         "partial": _share(split.partial),

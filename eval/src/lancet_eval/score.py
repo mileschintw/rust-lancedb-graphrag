@@ -921,7 +921,6 @@ def _answer_kind_dimensions(
     index: Mapping[tuple[str, str], RunRecord],
     export_rows: Mapping[tuple[str, str], ContextExportRow] | None,
     detail: Mapping[str, float],
-    empty_reason: str,
 ) -> list[DimensionResult]:
     """#147, D-286: `answer_usable_p4` read apart, per arm; reported, never decisional.
 
@@ -1277,7 +1276,6 @@ def _four_arm_dimensions(
                 index=index,
                 export_rows=export_rows,
                 detail={"n_excluded": n_excluded, "n_unscorable": float(n_unscorable)},
-                empty_reason=empty,
             )
         for arm in metric_arms:
             values = by_arm[arm]

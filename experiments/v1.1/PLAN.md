@@ -522,14 +522,15 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
 ### S3 design decisions
 
 The owner accepted the coordinator's package on 2026-11-01 with "全部接受" (#147): design principles 1-7, the metric
-fix (item F), the cap raise and the thinking rule. Each decision below quotes that answer.
+fix (item F), the cap raise and the thinking rule. Each decision below quotes that answer, and D-288 also quotes
+the owner's budget answer.
 
 - **D-281 Claude writers for large runs; deepseek stays the baseline writer** (owner: "全部接受", 2026-11-01; #147).
   Large extraction runs use Claude writers. Writer costs are compared at list prices (D-257's sync list price times
   tokens), not at the batch-discounted spend. deepseek stays the baseline writer every other writer is compared
   against. Lancet's default writer is decided after the writer pilot (#117), not before.
-- **D-282 Opus 5.5 is the ceiling point** (owner: "全部接受", 2026-11-01; #147). Opus marks the ceiling a writer or
-  reader can reach. As a reader it runs at K = 1, and only on the key cells, not on every arm.
+- **D-282 Opus 5.5 is the ceiling point** (owner: "全部接受", 2026-11-01; #147). Opus is the ceiling point of each
+  comparison it joins. As a reader it runs at K = 1, and only on the key cells, not on every arm.
 - **D-283 Per-model K from S2's measured variance** (owner: "全部接受", 2026-11-01; #147). Amends D-274's one K for
   every reader, from S3 on. Sonnet 5.5 and Opus 5.5 read at K = 1, deepseek and Haiku 5.5 at K = 2 to 3. Budget saved
   on replicates goes to more questions.
@@ -538,21 +539,21 @@ fix (item F), the cap raise and the thinking rule. Each decision below quotes th
 - **D-285 A pre-registered two-stage design** (owner: "全部接受", 2026-11-01; #147). S3 first screens every candidate
   on a small question set, then runs only the finalists on the full set. Both stages, and the rule that picks the
   finalists, are written into the pre-registration before the screen runs.
-- **D-286 `answer_usable` is reported by kind, with balanced accuracy for yes/no** (owner: "全部接受", 2026-11-01;
-  #147). On a yes/no question `answer_usable` rewards a guess: a constant Yes scored about 0.66 in S2, so deepseek,
-  which answers on partial evidence, beat Claude readers that abstained. `score` and `compare-levers` now report, as
-  secondaries, `answer_usable` on yes/no and on open questions; for yes/no, balanced accuracy, the mean of
-  `answer_usable` over gold-Yes and over gold-No questions; and the evidence split: complete when every gold fact is
-  in the reader's context (`metrics.gold_contained`, as `evidence_split` does), else partial. Balanced accuracy, not
-  the excess over the better constant answer: any constant answer scores 0.5 whatever the gold mix, so it reads the
-  same on every question set and benchmark, while the excess moves with each set's Yes share and has a ceiling of
-  1 minus that share. Abstaining on every question scores 0. The better constant's share is reported beside it. Code:
-  `answer_kinds.py`; in `score`, the `answer_usable_yes_no`, `answer_usable_open`, `answer_usable_yes_no_balanced`
-  and, with a context export, `answer_usable_evidence_complete` and `_partial` dimensions per arm; in
-  `compare-levers`, `by_kind` and `by_evidence` on each reader row and `by_kind` in each answer-mix block. No frozen
-  pre-registration changes (`PREREGISTRATION_S0` to `PREREGISTRATION_S2X`): their decisional metric stays
-  `answer_usable`. S3's pre-registration names its decisional metric with these figures available; the fix is
-  required before it.
+- **D-286 `answer_usable` is reported by kind, with balanced accuracy for yes/no** (owner: "全部接受", 2026-11-01; #147). On
+  a yes/no question `answer_usable` rewards a guess: a constant Yes scored about 0.66 in S2. On partial evidence
+  deepseek answers anyway, while the Claude readers abstain. `score` and `compare-levers` now report, as secondaries,
+  `answer_usable` on yes/no and on open questions; for yes/no, balanced accuracy, the mean of `answer_usable` over
+  gold-Yes and over gold-No questions; and the evidence split: complete when every gold fact is in the reader's context
+  (`metrics.gold_contained`, as `evidence_split` does), else partial. Balanced accuracy, not the excess over the better
+  constant answer: any constant answer scores 0.5 whatever the gold mix, so it reads the same on every question set and
+  benchmark, while the excess moves with each set's Yes share and has a ceiling of 1 minus that share. An abstention
+  counts as not usable in either class, so abstaining on every question scores 0 and an abstainer still scores below a
+  coin-flip guesser. The better constant's share is reported beside it. Code: `answer_kinds.py`; in `score`, the
+  `answer_usable_yes_no`, `answer_usable_open`, `answer_usable_yes_no_balanced` and, with a context export,
+  `answer_usable_evidence_complete` and `_partial` dimensions per arm; in `compare-levers`, `by_kind` and `by_evidence`
+  on each reader row and `by_kind` in each answer-mix block. No frozen pre-registration changes: `PREREGISTRATION_S0` to
+  `PREREGISTRATION_S2X` keep `answer_usable` as their decisional metric, and `PREREGISTRATION_S3_WRITERS` names no
+  metric. S3's pre-registration names its decisional metric with these figures available; the fix is required before it.
 - **D-287 One held-out read per benchmark** (owner: "全部接受", 2026-11-01; #147). Amends D-237's global count of
   held-out reads. Each benchmark's held-out part is read once, and every decisional hypothesis for that benchmark is
   packed into that one read, under Holm.
@@ -560,7 +561,7 @@ fix (item F), the cap raise and the thinking rule. Each decision below quotes th
   2026-11-01; #147). Amends D-246 (D-258 already made its figures a budget, not hard stops). While the current credit
   lasts, a run whose cost is reasonable and payable from that credit goes ahead without a separate budget approval.
   The coordinator sets each lane's ceiling; a run over its lane's ceiling still asks.
-- **D-289 Thinking at the lowest setting each model supports on the Batch API** (owner: "全部接受", confirmed
+- **D-289 Thinking at the lowest setting each model supports on the Batch API** (owner: "全部接受",
   2026-11-01; #147). Every model runs at the lowest thinking setting it supports on the Batch API. Each run reports
   the setting it sent and the measured `reasoning_tokens`.
 

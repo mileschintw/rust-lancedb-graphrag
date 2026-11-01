@@ -66,6 +66,6 @@ def test_an_empty_input_has_no_means() -> None:
 
 
 def test_the_evidence_split_counts_complete_and_partial_apart() -> None:
-    split = answer_kinds.evidence_split([(True, 1.0), (True, 0.0), (False, 0.0)])
+    split = answer_kinds.by_evidence([(True, 1.0), (True, 0.0), (False, 0.0)])
     assert split.complete == answer_kinds.Share(2, 0.5)
     assert split.partial == answer_kinds.Share(1, 0.0)

@@ -10,7 +10,7 @@ beats one that abstains. These figures read the score apart, and decide nothing:
   mix, and abstaining on every question scores 0. The better constant's share is
   reported beside it for context;
 * by evidence: complete when every gold fact is in the reader's context
-  (``evidence_split.evidence_complete``), else partial.
+  (``evidence_split.evidence_complete``), else partial (``by_evidence``).
 
 A frozen pre-registration's decisional metric is unchanged; callers report these only.
 """
@@ -59,9 +59,11 @@ def _share(values: list[float]) -> Share:
 
 
 def kind_split(answers: Iterable[tuple[GoldQuestion, float]]) -> KindSplit:
-    """Splits answers, each a gold question and its 0/1 `answer_usable`, by kind.
+    """Splits answers, each a gold question and its `answer_usable`, by kind.
 
-    Every answer counts once, so a question answered K times (D-274) counts K times.
+    A value is 0/1, or a question's mean over its K replicates (D-274). `compare-levers`
+    passes every replicate's answer, so a question answered K times counts K times;
+    `score` passes one replicate mean per question.
     """
     by: dict[str, list[float]] = {"yes": [], "no": [], "open": []}
     for question, value in answers:
@@ -81,7 +83,7 @@ def kind_split(answers: Iterable[tuple[GoldQuestion, float]]) -> KindSplit:
     )
 
 
-def evidence_split(answers: Iterable[tuple[bool, float]]) -> EvidenceSplit:
+def by_evidence(answers: Iterable[tuple[bool, float]]) -> EvidenceSplit:
     """Splits answers, each an evidence-complete flag and its 0/1 `answer_usable`."""
     complete: list[float] = []
     partial: list[float] = []
