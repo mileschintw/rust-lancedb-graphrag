@@ -1,8 +1,8 @@
 # S2 Reader: pre-registration
 
-Status: **draft, not yet pre-registered.** RUN-S2.md step 1 pastes the constant below into `thresholds.py` with S1's
-winner filled in. It becomes the pre-registration when step 4, after the pilot has checked every reader, commits
-it with this file on a clean tree before the run of record's `replay-init` (D-73, D-240, D-253).
+Status: **pre-registered 2026-11-01, before any S2 data.** RUN-S2.md step 1 pasted the constant below into
+`thresholds.py` with S1's winner filled in, and step 4, after the pilot had checked every reader, committed it with
+this file on a clean tree before the run of record's `replay-init` (D-73, D-240, D-253).
 The **Result** section is filled in after the run and nothing above it changes.
 
 How to run it: [RUN-S2.md](RUN-S2.md).
@@ -13,6 +13,8 @@ How much does the answering model matter on identical context? S2 keeps S1's ret
 only the reader (PLAN.md › S2 details, D-235).
 
 ## Arms (D-254, D-257, D-274)
+
+S1's winner, `<S1 winner>` below: `small/hybrid+rerank+metadata` (EXPERIMENT-S1.md › Result).
 
 Every arm answers each question **5 times** (K = 5, D-274), each answer its own request (`custom_id`
 `<question ID>_r<k>`) and its own journal record (`replicate` 1 to 5). `replay-init` carries S1's records of the
