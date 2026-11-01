@@ -11,8 +11,8 @@ This step runs the S3 writers over every 2Wiki passage, as `PREREGISTRATION_S3_W
 It stores the raw outputs and their usage per passage. It builds no store and reads no question. Store builds, graph
 ingestion, reader runs and S3's analysis pre-registration come later.
 
-**Status:** the three Claude writers ran on 2026-11-01 and every request succeeded. deepseek has not run; see
-[deepseek](#deepseek).
+**Status:** all four writers ran on 2026-11-01, and every request succeeded. The three Claude writers ran on the Batch API.
+deepseek ran on the sync API (D-290), in 8 parallel shards for most of its run (see [deepseek](#deepseek)).
 
 ## Inputs
 
@@ -39,17 +39,19 @@ PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract fetch opus-5
 PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract plan                       # Opus re-projected
 PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract submit opus-5.5            # paid: the other 12
 PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract fetch <writer>             # each writer
+PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract deepseek                   # paid: sync, D-290
 PYTHONUTF8=1 uv run --project eval python -m lancet_eval.s3_extract report                     # free: summary.json
 ```
 
 Outputs are in `experiments/v1.1/s3-extract/`:
 
-- **Committed:** the batch manifests (`<writer>.batch.json`, with batch IDs and body hashes) and `summary.json`.
-- **Gitignored:** `chunks.jsonl` and `<writer>.results.jsonl`. They hold Wikipedia text (CC BY-SA), about 34 MB in
-  all.
-- **Rebuilding them:** `plan` rebuilds `chunks.jsonl` from the pinned passages. `fetch` rebuilds a writer's results
-  from OpenRouter for as long as it keeps them (30 days, so until about 2026-12-01). A re-fetch keeps every answer
-  that had already succeeded.
+- **Committed:** everything, by the owner's decision (2026-11-01, relayed by the coordinator: "先不管，全都公開repo備份全文，以後真的有需要再下架就好").
+  - The batch manifests (`<writer>.batch.json`, with batch IDs and body hashes) and `summary.json`.
+  - `chunks.jsonl` and every writer's `<writer>.results.jsonl`, the raw answers and their usage.
+  - These hold Wikipedia text under CC BY-SA (`eval/corpora/ATTRIBUTION.md`). A file over 50 MB would be committed gzipped; none is.
+- **Rebuilding them:** `plan` rebuilds `chunks.jsonl` from the pinned passages. `fetch` rebuilds a Claude writer's
+  results from OpenRouter for as long as it keeps them (30 days, so until about 2026-12-01). A re-fetch keeps every
+  answer that had already succeeded.
 
 ## Estimates
 
@@ -80,6 +82,9 @@ come from `summary.json`. Cost is tokens × list price × 0.5, the Batch API rat
 | Sonnet 5.5 | on, effort low | 6,119 | 0 | 0 | 0 | 0 | 4,319,096 | 3,608,405 | $22.36 |
 | Opus 5.5 | on, effort low | 6,119 | 0 | 0 | 0 | 0 | 4,319,096 | 3,467,046 | $43.31 |
 | **Claude total** | | | | | | | | | **$66.80** |
+| deepseek (sync, D-290) | off | 6,119 | 0 | 42 | 42 | 0 | 955,777 | 3,580,586 | $1.12 |
+
+deepseek's cost is tokens × D-277's Wafer price at full rate, on OpenRouter credit.
 
 - **Routing:** every answer came from provider Anthropic with `is_byok: true` (`writer_pilot.routing_problem` found no
   break), so the spend is on the Claude credit.
@@ -88,15 +93,28 @@ come from `summary.json`. Cost is tokens × list price × 0.5, the Batch API rat
 - **Thinking:** Sonnet and Opus at effort low reported 0 reasoning tokens on every passage, as Sonnet did in #117's
   pilot.
 - **Opus part 1:** fetched twice. The second fetch replaced no answer.
+- **deepseek:**
+  - Every answer came from Wafer with `is_byok: false`, as D-271's pin requires. There were no routing breaks.
+  - 42 answers (0.69%) were runaways: whitespace until the 16,384-token cap, the failure in #156. Those 42 are exactly
+    its schema-invalid answers. They are kept as answered, as in #117's pilot (1.3% there).
+  - The runaways cost about $0.21 of its $1.12.
 
 ## deepseek
 
-deepseek is not run. The frozen constant gives it `openrouter_batch`, but #117's path sends deepseek only through the
-sync API (D-278), and running it there would contradict the freeze. OpenRouter credit does not expire, so the choice
-waits for the owner (coordinator, 2026-11-01). The options:
+deepseek runs on OpenRouter's sync API, by D-290 and its addendum constant `PREREGISTRATION_S3_WRITERS_SYNC`. The
+frozen `PREREGISTRATION_S3_WRITERS` gave it `openrouter_batch`, which has no deepseek path. The owner chose the sync
+transport with a new D-ID (2026-11-01, relayed by the coordinator: "Sync with a new D-ID").
 
-- **(a)** An addendum constant and a new D-ID that move deepseek to the sync API, as D-278 did for S2. This is the
-  pinned Wafer endpoint the engine and #117 already use. Its cost is about $1, with about 1.3% runaways expected
-  (#156).
-- **(b)** Try deepseek on OpenRouter's Batch API, as frozen. Whether the Batch API honours the D-271 Wafer pin and its
-  `max_price` is unverified, and a batch served by another provider would not be the v1.0 writer.
+**Departure from the frozen request rule.** `PREREGISTRATION_S3_WRITERS_SYNC.request_rule` says each passage is
+posted "one request at a time". The run started that way. At about 16 passages a minute it would have taken more
+than 6 hours. The owner then allowed 8 parallel runs (2026-11-01, relayed by the coordinator: "Allow 8 shards"),
+with no new constant:
+
+1. The sequential run was stopped after 469 answers, all of which were kept (`deepseek.results.jsonl`). The stop
+   could have dropped at most one request that was in flight, billed but never recorded.
+2. The other 5,650 passages were split into 8 disjoint shards (`s3_extract deepseek --shard i --shards 8`). Each
+   shard wrote its own `deepseek.shard<i>.results.jsonl` and posted one request at a time within the shard.
+3. The request bodies, the routing pin, the model and the checks are unchanged. Only the number of requests in flight
+   changed, from 1 to 8.
+
+The shards ran from about 21:55 to 22:45 UTC. `report` reads `deepseek.results.jsonl` and the shard files together.
