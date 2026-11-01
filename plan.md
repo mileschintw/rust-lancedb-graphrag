@@ -225,3 +225,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 - 2026-11-01 09:57 -0800: lane 149 done: B and C recorded on lane-149-record (79a1a5aa); Claude $30.82, OpenRouter ~$1.50 → PR #159, checks running. Decided while unattended: run dirs NOT committed (retrieved article text in a public repo; sha256 manifest committed; dirs in data/lane149-runs/, gitignored) — owner to confirm. Main checkout handed to lane 148 (import + reading runs).
 - 2026-11-01 09:59 -0800: lane 148 OpenRouter ceiling raised $3 → $3.50 (spent $2.03; phase 3 est. ~$3.15 total; balance ~$19.79). Lane 149 finished, nothing left for it.
 - 2026-11-01 10:01 -0800: PR #159 (149 record) green, merged; lane 149 moved to history.
+- 2026-11-01 10:57 -0800: lane 148 phase 3: Haiku set imported + 2 Haiku runs, 2 reference runs done; deepseek import running; Sonnet import hit a Lance decode panic, retry with --replace after deepseek.
