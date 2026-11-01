@@ -66,9 +66,12 @@ arm answers each question K times, each answer its own request and its own recor
 (``RunRecord.replicate``, 1 to K), and ``custom_id`` is ``<question ID>_r<k>``. A
 reader arm submits replicates 1 to K. The carried deepseek arm already holds
 replicate 1 (S1's answer), so ``submit`` on that arm sends replicates 2 to K: the
-``pack`` body itself, unrewritten, through an OpenRouter batch. That body carries the
-engine's provider pin (D-271: one ``order`` entry, ``allow_fallbacks: false`` and a
-``max_price``), and a body without it is refused. Each such record carries a
+``pack`` body itself, unrewritten, through OpenRouter's sync chat-completions API
+one request at a time (D-278: the Batch API cannot carry the pin, and the model has
+no batch variant), journalled every ``SYNC_CHUNK`` requests under a ``sync-`` ID, so a
+rerun sends only what holds no record yet. That body carries the engine's provider
+pin (D-271: one ``order`` entry, ``allow_fallbacks: false`` and a ``max_price``, with
+``config.toml``'s values), and a body without it is refused. Each such record carries a
 ``replay`` block like a reader record's, which ``provenance.replay_run_failures``
 checks. A reader arm's export row is appended once per question, whatever its
 replicates; the deepseek arm's is the carried row. With K at 1 every request, manifest
@@ -175,9 +178,14 @@ _LISTED = 10
 BinRunner = Callable[..., list[dict[str, Any]]]
 ClientFactory = Callable[[Target], BatchClient]
 
-#: The seams the tests replace: the bin and the batch endpoint.
+#: The seams the tests replace: the bin, the batch endpoint and the sync endpoint.
 bin_runner: BinRunner = parity.run_bin
 client_factory: ClientFactory = batch_client.client_for
+chat_client_factory: Callable[[], batch_client.OpenRouterChatClient] = (
+    batch_client.chat_client
+)
+#: The manifest target of deepseek's sync replicates (D-278).
+SYNC_TARGET = "openrouter-sync"
 
 
 class BatchError(ValueError):
@@ -600,14 +608,17 @@ def _pack(
 
 
 #: The share of list price a deepseek replicate is estimated and spent at: 1, since
-#: no batch discount on OpenRouter credit is established (D-274; the Claude readers'
-#: half price is BYOK's, `BATCH_PRICE_FACTOR`).
-DEEPSEEK_BATCH_FACTOR = 1.0
+#: it goes through the sync API at full price (D-278; the Claude readers' half price is
+#: the BYOK Batch API's, `BATCH_PRICE_FACTOR`).
+DEEPSEEK_PRICE_FACTOR = 1.0
+#: D-278: deepseek replicates journalled after every this many sync requests, so a
+#: crash loses at most this many billed answers and a rerun sends only the rest.
+SYNC_CHUNK = 20
 
 
 def batch_factor(arm: str) -> float:
-    """The share of list price a batch request of `arm` is billed at."""
-    return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_BATCH_FACTOR
+    """The share of list price a request of `arm` is billed at."""
+    return BATCH_PRICE_FACTOR if is_reader_arm(arm) else DEEPSEEK_PRICE_FACTOR
 
 
 def deepseek_request(
@@ -782,7 +793,7 @@ def submit(
     reader = packed[0].request.reader
 
     if declaration is None:
-        spent = DEEPSEEK_BATCH_FACTOR * sum(
+        spent = DEEPSEEK_PRICE_FACTOR * sum(
             tokens_usd(r.workflow_meta, reader.price)
             for r in held.values()
             if r.replay is not None and r.workflow_meta is not None
@@ -798,16 +809,19 @@ def submit(
         )
     echo(cost_estimate(packed, base, reader, spent, batch_factor(label)))
 
-    client = client_factory(reader.target)
+    # D-278: deepseek's replicates go through the sync API, the readers through a batch.
+    sync = declaration is None
+    chat = chat_client_factory() if sync else None
+    client = None if sync else client_factory(reader.target)
     path = _new_manifest_path(run_dir, label)
     manifest: dict[str, Any] = {
         "arm": label,
         "reader": arm_reader(label),
-        "target": reader.target,
-        "endpoint": client.endpoint,
+        "target": SYNC_TARGET if sync else reader.target,
+        "endpoint": (chat or client).endpoint,  # type: ignore[union-attr]
         "model": reader.slug,
-        "batch_id": None,
-        "state": "submitting",
+        "batch_id": f"sync-{path.stem}-{int(time.time())}" if sync else None,
+        "state": "syncing" if sync else "submitting",
         "retry_errors": retry_errors,
         "partial": limit is not None,
         "created_at": time.time(),
@@ -829,6 +843,20 @@ def submit(
         },
     }
     _write_manifest(path, manifest)
+    if chat is not None:
+        return _submit_sync(
+            run_dir,
+            label,
+            manifest,
+            path,
+            chat,
+            units,
+            ids,
+            packed,
+            base_errors,
+            echo,
+        )
+    assert client is not None
     try:
         batch_id = client.submit([
             BatchRequest(ids[unit], item.request.body_json)
@@ -843,6 +871,73 @@ def submit(
     for rec in base_errors:
         journal.append(rec)
     return SubmitResult(path, batch_id, len(packed), len(base_errors))
+
+
+def _submit_sync(
+    run_dir: Path,
+    label: str,
+    manifest: dict[str, Any],
+    path: Path,
+    client: batch_client.OpenRouterChatClient,
+    units: Sequence[Unit],
+    ids: Mapping[Unit, str],
+    packed: Sequence[_Packed],
+    base_errors: Sequence[RunRecord],
+    echo: Callable[[str], None],
+) -> SubmitResult:
+    """Sends deepseek's replicates one at a time through the sync API (D-278).
+
+    Every `SYNC_CHUNK` requests are rendered and journalled as `fetch` journals a
+    batch, under the manifest's sync ID, so a rerun after a crash sends only the
+    replicates that hold no record yet. The manifest ends `fetched`; one left
+    `syncing` is not pending, since every answer it got is already journalled.
+    """
+    batch_id = str(manifest["batch_id"])
+    journal = Journal(run_dir / JOURNAL_FILE)
+    for rec in base_errors:
+        journal.append(rec)
+    echo(
+        f"{len(units)} deepseek request(s) go through the sync chat-completions API "
+        f"one at a time (D-278), journalled every {SYNC_CHUNK}."
+    )
+    pairs = list(zip(units, packed, strict=True))
+    for start in range(0, len(pairs), SYNC_CHUNK):
+        chunk = pairs[start : start + SYNC_CHUNK]
+        results = [
+            client.complete(BatchRequest(ids[unit], item.request.body_json))
+            for unit, item in chunk
+        ]
+        part = {
+            **manifest,
+            "requests": {ids[u]: manifest["requests"][ids[u]] for u, _ in chunk},
+        }
+        try:
+            _journal_batch(run_dir, _load_run(run_dir), label, part, results)
+        except (KeyError, TypeError) as exc:
+            raise BatchError(f"manifest {path} is malformed: {exc!r}") from exc
+    manifest.update(state="fetched", fetched_at=time.time())
+    _write_manifest(path, manifest)
+    _routing_summary(_load_run(run_dir), {label: {batch_id}}, echo)
+    return SubmitResult(path, batch_id, len(packed), len(base_errors))
+
+
+def _routing_summary(
+    state: _Run, fetched: Mapping[str, set[str]], echo: Callable[[str], None]
+) -> None:
+    """Per arm, the billed records just journalled that break ``is_byok`` or the
+    provider (#133 L5): a misroute shows before the other arms have spent."""
+    for label, batch_ids in fetched.items():
+        records = [
+            r
+            for r in state.records
+            if r.graph_arm == label and r.session_id in batch_ids and r.replay
+        ]
+        bad = [r for r in records if routing_failures(r, state.readers)]
+        echo(
+            f"Routing ({label}): {len(bad)} of {len(records)} billed record(s) "
+            "break is_byok or the provider"
+            + ("; score will refuse them (#133)" if bad else "")
+        )
 
 
 # ---- fetch ------------------------------------------------------------------------
@@ -937,18 +1032,7 @@ def fetch(
         _write_manifest(path, manifest)
         state = _load_run(run_dir)
         fetched.setdefault(label, set()).add(batch_id)
-    for label, batch_ids in fetched.items():
-        records = [
-            r
-            for r in state.records
-            if r.graph_arm == label and r.session_id in batch_ids and r.replay
-        ]
-        bad = [r for r in records if routing_failures(r, state.readers)]
-        echo(
-            f"Routing ({label}): {len(bad)} of {len(records)} billed record(s) this "
-            "fetch break is_byok or the provider"
-            + ("; score will refuse them (#133)" if bad else "")
-        )
+    _routing_summary(state, fetched, echo)
     return FetchResult(successes, errors, tuple(pending))
 
 

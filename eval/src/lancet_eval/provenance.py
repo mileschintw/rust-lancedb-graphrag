@@ -107,7 +107,8 @@ target-dependent clauses need the reader's declaration.
 
 D-274: a deepseek replicate, replicate 2 or later of the carried engine arm, is a
 replay record too (``is_replay_record``): a new deepseek answer to the carried row's
-``pack`` body, sent unrewritten through an OpenRouter batch on OpenRouter credit. Its
+``pack`` body, sent unrewritten through OpenRouter's sync API on OpenRouter credit
+(D-278); its ``batch_id`` is the sync run's ``sync-`` ID. Its
 clauses are the ten above, read for that request: ``body_hash`` is the hash of the
 ``pack`` body itself and ``rewritten_fields`` is empty; ``model`` is the body's
 ``model``; ``is_byok`` must be False; ``provider`` must be the body's pinned provider
