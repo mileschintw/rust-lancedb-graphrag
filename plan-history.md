@@ -147,3 +147,5 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **Lane 109 (#109):** PR #115 merged 2026-10-31 at b48149e6 (ci green). It adds the D-73 check before spend, `replay-init --pilot`, and the replay_source_arm and completeness checks.
 - **Lane 110 (#110):** PR #116 merged 2026-10-31 at cf9adf3f (ci green). It adds the S2 type, a draft constant in EXPERIMENT-S2.md (kept out of thresholds.py, D-73), RUN-S2.md, the S2 dev corpus, a .gitignore line, and D-267 to D-270. The old branch `claude/peaceful-robinson-2e31dd` must never be merged.
 - **Lane 118 (#118):** PR #119 merged 2026-10-31 as aedd4723 (ci green). Adds the wafer/us pin with max_price (D-271), the extraction cap 16384 and 120 s timeout (D-272). Re-scoring S0 now needs its recorded provider order (score.py reads config.toml).
+
+- **Lane 120 merged** 2026-10-31: PR #121 (closes #120), merge 971094f5. S1 overlay `excerpt_max_chars = 2048` (D-273; longest S1 chunk 1,489 chars; measurement-only, never reaches the prompt). Ran in lane 118's reused session (new sessions cannot start over Remote Control), branch `lane-120`. User: "開 lane 修 #120 (Recommended)", "Start lane 120".
