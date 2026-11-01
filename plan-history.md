@@ -186,3 +186,9 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 | 149 | #149 | local_0c64611e-c641-4167-b6c3-364ca0fdeead | started 2026-11-01 (unattended): B 2Wiki hybrid readers + C full-MHR fresh split, store, readers; freeze PR(s) → main checkout (2nd, after 143) → Claude readers tonight (ceiling Claude $70, OpenRouter $3) | — |
 | #149 | now (lane 149) | — | #145 (2Wiki pin/split, part B) | 2Wiki + full-MHR corpus configs, fresh split file, prereg constants, `EXPLORE-B/C` docs | limited: paid (pre-approved), store builds (approved) |
 - Merged freeze PR #157 (68c100a5) and record PR #159. Claude $30.82, OpenRouter ~$1.50. Run dirs kept out of git (public repo, retrieved article text); sha256 manifest in explore-bc-runs.json; dirs in data/lane149-runs/ (owner to confirm).
+
+## Lane 148 (merged 2026-11-01, unattended)
+
+| 148 | #148 | local_4b47d05b-1a55-4b82-a4da-a3b9193706f8 | started 2026-11-01 (unattended): MHR writer grid on S1 subset; freeze PR → Claude extraction tonight (ceiling Claude $40, OpenRouter $1.50); graph import + reading after main checkout (3rd) | — |
+| #148 | now (lane 148) | — | #117 (script) | `multihop_rag_s3m_dev.toml`, prereg constant, extraction import path, `EXPLORE-S3-MHR-WRITERS.md` | limited: paid (pre-approved, ceilings) |
+- Merged freeze PR #154 (03fcb908) and PR #160 (76ee82d4). Claude ~$37.8 (Haiku $1.43, Sonnet $29.14, Opus spot $7.21), OpenRouter ~$2.03 extraction + phase 3. Reading: open / does not explain (deepseek +1.7, Haiku/Sonnet -3.3); verdict() went one-sided → two-sided after the data, both readings reported (owner to note).
