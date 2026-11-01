@@ -297,6 +297,15 @@ def _openrouter_head(requests: Sequence[BatchRequest]) -> dict[str, Any]:
     return head
 
 
+def _batch_error(error: Any) -> str | None:
+    """A failed batch's own ``error.message`` (#137), as the endpoint wrote it."""
+    if error is None:
+        return None
+    if isinstance(error, dict) and isinstance(error.get("message"), str):
+        return error["message"]
+    return _error_text(error)
+
+
 def _error_text(error: Any) -> str:
     if isinstance(error, dict):
         inner = error.get("error", error)
@@ -366,7 +375,7 @@ class OpenRouterBatchClient:
                 _openrouter_result(item, is_byok if isinstance(is_byok, bool) else None)
                 for item in items
             ],
-            error=None if error is None else _error_text(error),
+            error=_batch_error(error),
         )
 
 
