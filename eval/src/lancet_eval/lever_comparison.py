@@ -43,7 +43,7 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from lancet_eval import gitcheck, preregistration, provenance
+from lancet_eval import answer_kinds, gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval.arms import (
     STORE_PREFIXES,
@@ -70,6 +70,7 @@ from lancet_eval.corpus import (
     load_corpus_config,
     load_sample_questions,
 )
+from lancet_eval.evidence_split import evidence_complete
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.measure import (
     BATCH_PRICE_FACTOR,
@@ -1162,6 +1163,10 @@ def _answer_mix(ctx: _Ctx, arm: str) -> dict[str, Any]:
             _mix_block(ctx, arm, binary, "binary_gold"),
         ],
         "transitions": {"all": transition_counts(list(states.values())), **by_stratum},
+        "by_kind": {
+            "arm": _by_kind(ctx, [ctx.rec(q, arm) for q in ids]),
+            "reference": _by_kind(ctx, [ctx.rec(q, ctx.reference) for q in ids]),
+        },
         "non_binary_gold": {
             "n": len(nonbinary),
             "mean_arm": _mean(vx),
@@ -1609,6 +1614,60 @@ def _batch_usd(
     )
 
 
+LABEL_BY_KIND = (
+    "reported secondary, never decisional (D-286): answer_usable on yes/no and open "
+    "questions; balanced accuracy is the mean over gold-Yes and gold-No questions, so "
+    "any constant answer scores 0.5"
+)
+
+
+def _share(share: answer_kinds.Share) -> dict[str, Any]:
+    return {"n": share.n, "mean": share.mean}
+
+
+def _by_kind(ctx: _Ctx, recs: Sequence[RunRecord]) -> dict[str, Any]:
+    """#147, D-286: `answer_usable` of these answers by kind, guessing-adjusted."""
+    usable = _usable_value(ctx)
+    split = answer_kinds.kind_split(
+        (ctx.gold_map[r.question_id], float(usable(r) or 0.0)) for r in recs
+    )
+    return {
+        "label": LABEL_BY_KIND,
+        "yes_no": _share(split.yes_no),
+        "open": _share(split.open),
+        "gold_yes": _share(split.gold_yes),
+        "gold_no": _share(split.gold_no),
+        "balanced_accuracy": split.balanced_accuracy,
+        "better_constant": split.better_constant,
+    }
+
+
+def _by_evidence(ctx: _Ctx, recs: Sequence[RunRecord]) -> dict[str, Any] | None:
+    """#147, D-286: `answer_usable` by whether the context held every gold fact.
+
+    A reader read its base arm's row (`evidence_split`). None without an export; a
+    record whose row is missing is counted, not refused, since this decides nothing.
+    """
+    if ctx.export is None:
+        return None
+    usable = _usable_value(ctx)
+    flagged: list[tuple[bool, float]] = []
+    no_row = 0
+    for r in recs:
+        row = ctx.export.get((r.question_id, reader_base_arm(r.graph_arm)))
+        if row is None:
+            no_row += 1
+            continue
+        complete = evidence_complete(ctx.gold_map[r.question_id], row)
+        flagged.append((complete, float(usable(r) or 0.0)))
+    split = answer_kinds.by_evidence(flagged)
+    return {
+        "complete": _share(split.complete),
+        "partial": _share(split.partial),
+        "n_no_export_row": no_row,
+    }
+
+
 def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any]:
     """One reader's `answer_usable` and cost over the group's common population."""
     price, source = _reader_price(ctx, arm)
@@ -1638,6 +1697,8 @@ def _reader_row(ctx: _Ctx, arm: str, population: Sequence[str]) -> dict[str, Any
             "mean": n_usable / len(recs) if recs else None,
             **({"n_answers": len(recs)} if ctx.replicates > 1 else {}),
         },
+        "by_kind": _by_kind(ctx, recs),
+        "by_evidence": _by_evidence(ctx, recs),
         "cost": {
             "sync_usd": sync,
             "reasoning_tokens": sum(
@@ -2143,6 +2204,38 @@ def _render_drop(drop: Mapping[str, Any]) -> str:
     return f"{out} ({'; '.join(why)})"
 
 
+def _render_by_kind(rows: Sequence[tuple[str, Mapping[str, Any]]]) -> list[str]:
+    """#147, D-286: `answer_usable` by kind, one line per side or reader."""
+    out = [f"_{rows[0][1]['label']}_", ""] if rows else []
+    return out + _table(
+        [
+            "side",
+            "yes/no",
+            "n",
+            "open",
+            "n",
+            "gold Yes",
+            "gold No",
+            "balanced accuracy",
+            "better constant",
+        ],
+        [
+            (
+                side,
+                _fmt(k["yes_no"]["mean"], 3),
+                k["yes_no"]["n"],
+                _fmt(k["open"]["mean"], 3),
+                k["open"]["n"],
+                _fmt(k["gold_yes"]["mean"], 3),
+                _fmt(k["gold_no"]["mean"], 3),
+                _fmt(k["balanced_accuracy"], 3),
+                _fmt(k["better_constant"], 3),
+            )
+            for side, k in rows
+        ],
+    )
+
+
 def _render_readers(rc: Mapping[str, Any]) -> list[str]:
     """The reader comparison (#54): per group, readers, pairs and null guards."""
     out: list[str] = []
@@ -2191,6 +2284,29 @@ def _render_readers(rc: Mapping[str, Any]) -> list[str]:
             + ". The paired differences below keep their own pairwise populations.",
             "",
         ]
+        out += _render_by_kind([(r["arm"], r["by_kind"]) for r in group["readers"]])
+        if all(r["by_evidence"] is not None for r in group["readers"]):
+            out += _table(
+                [
+                    "arm",
+                    "evidence complete",
+                    "n",
+                    "evidence partial",
+                    "n",
+                    "no export row",
+                ],
+                [
+                    (
+                        r["arm"],
+                        _fmt(r["by_evidence"]["complete"]["mean"], 3),
+                        r["by_evidence"]["complete"]["n"],
+                        _fmt(r["by_evidence"]["partial"]["mean"], 3),
+                        r["by_evidence"]["partial"]["n"],
+                        r["by_evidence"]["n_no_export_row"],
+                    )
+                    for r in group["readers"]
+                ],
+            )
         out += [f"Paired `answer_usable` differences on G; {group['p_label']}.", ""]
         out += _table(
             ["arm - against", "n_pairs", "delta", "95% CI", "n_pos/n_neg", "raw p"],
@@ -2423,6 +2539,8 @@ def render_markdown(payload: Mapping[str, Any]) -> str:
                 for k, t in block["transitions"].items()
             ],
         )
+        kinds = block["by_kind"]
+        out += _render_by_kind([("arm", kinds["arm"]), ("hybrid", kinds["reference"])])
         nb = block["non_binary_gold"]
         out += [
             f"Non-binary gold (n = {nb['n']}): arm {_fmt(nb['mean_arm'])}, hybrid "

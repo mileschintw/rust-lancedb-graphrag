@@ -454,3 +454,46 @@ def test_the_report_holds_no_hits_at_4_for_reader_arms(
             held = {k: v for k, v in row.items() if "hits_at_4" in k and v is not None}
             assert not held, (row.get("arm"), row.get("metric"), held)
     assert "## Readers" in render_markdown(payload)
+
+
+# ---- #147, D-286 answer_usable by kind and evidence (reported secondaries) -----------
+
+
+def _no_facts(arm: str, qid: str) -> fx.Spec:
+    """lv-g000 (gold Yes) and lv-g002 (gold Paris): no gold fact in the context."""
+    return fx.Spec(ranks=(None, None)) if qid in ("lv-g000", "lv-g002") else fx.Spec()
+
+
+def test_each_reader_row_reads_answer_usable_by_kind_and_evidence(
+    tmp_path, monkeypatch, preregistered_clean_tree
+) -> None:
+    from lancet_eval.lever_comparison import render_markdown
+
+    s2, gold, _ = _s2(tmp_path, monkeypatch, spec_fn=_no_facts)
+    _score(s2, gold)
+    payload = _compare(s2, gold)
+    rows = {r["arm"]: r for r in _group(payload)["readers"]}
+
+    # Haiku is wrong on lv-g000 (gold Yes) and lv-g001 (gold No). The 10 G golds
+    # cycle Yes / No / Paris: 4 Yes, 3 No, 3 open.
+    haiku = rows[HAIKU_ARM]["by_kind"]
+    assert haiku["label"].startswith("reported secondary")
+    assert haiku["yes_no"] == {"n": 7, "mean": pytest.approx(5 / 7)}
+    assert haiku["open"] == {"n": 3, "mean": 1.0}
+    assert haiku["gold_yes"] == {"n": 4, "mean": 0.75}
+    assert haiku["gold_no"] == {"n": 3, "mean": pytest.approx(2 / 3)}
+    assert haiku["balanced_accuracy"] == pytest.approx((0.75 + 2 / 3) / 2)
+    assert haiku["better_constant"] == pytest.approx(4 / 7)
+    assert rows[SONNET_ARM]["by_kind"]["balanced_accuracy"] == 1.0
+
+    # Evidence: lv-g000 and lv-g002 are partial for every reader of the base row.
+    evidence = rows[HAIKU_ARM]["by_evidence"]
+    assert evidence["complete"] == {"n": 8, "mean": pytest.approx(7 / 8)}
+    assert evidence["partial"] == {"n": 2, "mean": 0.5}
+    assert rows[rf.BASE]["by_evidence"]["partial"] == {"n": 2, "mean": 1.0}
+
+    # The decisional figure is unchanged.
+    assert rows[HAIKU_ARM]["answer_usable"]["mean"] == pytest.approx(0.8)
+    md = render_markdown(payload)
+    assert "balanced accuracy" in md
+    assert "evidence complete" in md
