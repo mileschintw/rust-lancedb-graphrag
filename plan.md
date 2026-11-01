@@ -205,3 +205,4 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
 ## Unattended log
 
 - 2026-11-01 02:15 -0800: round started. Running: 117 (deepseek extraction), 143 (S2X paid run, holds main checkout), 145 (amending freeze for Opus). Started: 147, 148, 149, spare-1, spare-2 (parked). Session folders confirmed: each in its own worktree (lane-143-529d4b, lane-117-229c1a, lane-145-06ada6, lane-147-1c4eb0, lane-148-efa826, lane-149-1a898d, lane-spare-1-c7ab76, lane-spare-2-6b3626).
+- 2026-11-01 02:16 -0800: lane 148 asked A/B/C (full 4-writer grid ~$105 Claude over its $40 ceiling). Answered from the plan: A (Haiku+Sonnet on 15,264 chunks ~$32) + Opus spot check on 117 chunks (~$8), Claude ceiling raised to $45; deepseek re-extracted with 117 script last, only if OpenRouter stays > $1 (ceiling $3), else blocked for the morning. Why: credit payable beside 145/149; old v1.0 graph would confound the writer comparison.
