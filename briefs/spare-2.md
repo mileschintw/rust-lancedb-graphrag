@@ -8,5 +8,6 @@ Waits for (same section): none
 - **Files:** `eval/src/lancet_eval/score.py`, `comparison.py`, gold-chunk loading, tests. Do not touch `thresholds.py` constants or any run directory under `eval/runs/` (re-score in tests on copies only).
 - **Check:** re-scoring the v1.0 lever run must keep every recorded figure unchanged (the slow test, see #152 for its existing D-276 drift; do not fix #152 here). Show one merged-store run's new Hits@10/MRR@10 in the report.
 - **Rules:** no keys or env values in records; prefix commands with `PYTHONUTF8=1`; eval-only, skip cargo and Go.
-- **Finish:** push, write `done`; I open the PR and merge on green (owner's standing rule).
-- **Closes:** #128
+- **Resumed 2026-11-01** (owner: "可以，就這麼辦"): #128 is now an S3 prerequisite, not #146 prep. Finish it: review, full checks, the merged-store demo (read-only store dumps as approved earlier), PR body. Push, write `done`; I open the PR and merge on green.
+- **Then #164** (`score` always loads the v1.0 document map; the issue body is the spec), after #128 merges, on a fresh branch from main with the same rules. Its PR body says Closes #164.
+- **Closes:** #128 (first PR), #164 (second PR)
