@@ -40,10 +40,15 @@ class StubTransport:
         if payload["model"] == aj.SONNET.slug and self.sonnet_lenient:
             equivalent = True
         content = json.dumps({"equivalent": equivalent, "rationale": "stub"})
-        return {
+        reply: dict[str, Any] = {
             "choices": [{"message": {"content": content}}],
             "usage": {"prompt_tokens": 120, "completion_tokens": 20},
         }
+        if payload["model"] == aj.SONNET.slug:
+            # What OpenRouter reports for a BYOK request routed to Anthropic.
+            reply["provider"] = "Anthropic"
+            reply["usage"]["is_byok"] = True
+        return reply
 
 
 def _spec(arm: str, qid: str) -> fx.Spec:
@@ -177,7 +182,7 @@ def test_a_record_without_a_final_line_is_not_equivalent_and_not_sent(
 def test_null_token_counts_do_not_stop_the_run(run: Path) -> None:
     def no_usage(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
         reply = StubTransport()(payload, api_key)
-        reply["usage"] = {"prompt_tokens": None, "completion_tokens": None}
+        reply["usage"].update(prompt_tokens=None, completion_tokens=None)
         return reply
 
     report = aj.judge_answers(run, transport=no_usage)
@@ -187,7 +192,9 @@ def test_null_token_counts_do_not_stop_the_run(run: Path) -> None:
 
 def test_a_bad_reply_is_an_error_kept_out_of_the_cache(run: Path) -> None:
     def broken(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
-        return {"choices": [{"message": {"content": "not json"}}]}
+        reply = StubTransport()(payload, api_key)
+        reply["choices"] = [{"message": {"content": "not json"}}]
+        return reply
 
     aj.judge_answers(run, transport=broken)
     report = json.loads((run / aj.REPORT_FILE).read_text(encoding="utf-8"))
@@ -248,3 +255,34 @@ def test_each_replicate_of_a_question_and_arm_is_judged(
     assert {
         d["replicate"] for d in report["disagreements"] if d["arm"] == "hybrid"
     } == {2}
+
+
+@pytest.mark.parametrize(
+    ("provider", "is_byok"),
+    [("Anthropic", False), ("Anthropic", None), ("Amazon Bedrock", True)],
+)
+def test_the_sonnet_judge_stops_off_byok_and_caches_nothing_of_it(
+    run: Path, provider: str, is_byok: bool | None
+) -> None:
+    """B2 (#133): a Sonnet verdict billed off the owner's key, or routed off
+    Anthropic, stops the run at once and is never cached."""
+    stub = StubTransport()
+
+    def off_byok(payload: dict[str, Any], api_key: str) -> dict[str, Any]:
+        reply = stub(payload, api_key)
+        if payload["model"] == aj.SONNET.slug:
+            reply["provider"] = provider
+            reply["usage"]["is_byok"] = is_byok
+        return reply
+
+    with pytest.raises(aj.AnswerJudgeError, match="BYOK"):
+        aj.judge_answers(run, transport=off_byok)
+    sonnet = [c for c in stub.calls if c["model"] == aj.SONNET.slug]
+    assert len(sonnet) == 1
+    cache_path = run / aj.CACHE_FILE
+    cache = (
+        json.loads(cache_path.read_text(encoding="utf-8"))
+        if cache_path.is_file()
+        else {}
+    )
+    assert all(v["judge"] != aj.SONNET.name for v in cache.values())
