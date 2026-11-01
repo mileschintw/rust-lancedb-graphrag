@@ -107,6 +107,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | #100 | 2 | — | none | `baselines/llamaindex/README.md` › Embedding `input_type` (opened by lane 98) | free; not before S1 |
 | #123 | S2 hold | — | none | A1 reader nondeterminism: `PLAN.md` new D-ID; `EXPERIMENT-S2.md`/`RUN-S2.md` replicate or noise-floor step; `lever_comparison.py` aggregation if chosen | limited: owner design decision |
 | #124 | S2 hold | — | none | A2 lexical scoring: `metrics.py` › `gold_contained`, `answer_usable`; new test; `PLAN.md` new D-ID; `EXPERIMENT-S2.md` metric | limited: owner design decision |
+| #128 | 2 | — | none | `score.py` gold_sets/chunk_size per store, `comparison.py` paper-metric gold_sets (opened by lane 125; follow #125's shape). Not needed for S2 (small store only). Possible overlap: lane 124 may touch `score.py` (judge family guard) | free; propose after lanes 123/124 |
 | #126 | S3 input | — | none | B graph junk entities: `engine/src/graph/extraction.rs`, `seeding.rs`; D-ID if behaviour changes | limited: deferred to the S3 grill (user: "留給 S3 (Recommended)") |
 | #127 | S2 hold | — | none | D power and the D-270b 2-point margin: `PLAN.md` new D-ID; `EXPERIMENT-S2.md`; `RUN-S2.md`; `PREREGISTRATION_S2` (RUN-S2 step 4 only) | limited: owner design decision |
 
