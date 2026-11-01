@@ -306,7 +306,16 @@ and one K for every arm. No answer judges.
 
 Fill each EXPLORE file's Result: the run directories, both readout tables, each prediction held or not on the point
 estimates, the counts and every `error` line, each arm's batch IDs (`<RUN>/batches/`) and the spend per arm from the
-records' usage at the declared prices. The run directories hold retrieved article and passage text, which the
-repository does not commit (`eval/corpora/ATTRIBUTION.md`, #145): move them under the gitignored `data/` and commit
-`explore-bc-runs.json`, each file's size and sha256, instead. Commit that, both stores' document maps and the two
-Results on a new branch, never on `main`, push it, and leave the main checkout on `main`, clean.
+records' usage at the declared prices. Write `explore-bc-runs.json`, each run file's size and sha256, and commit the
+four run directories with it:
+
+- Gzip every file over 10 MB (`gzip -9 -n`), since C's journal is over GitHub's 100 MB file limit, and check that each
+  unpacked file matches its sha256. Add a `README.md` to each directory that holds a `.gz`, saying how to unpack it:
+  `find <dir> -name '*.gz' -exec gunzip -k {} \;`.
+- Give each directory a `.gitattributes` of `* -text`: the runs write some files with CRLF, and `core.autocrlf` would
+  change their bytes.
+
+The run files hold retrieved article and passage text beyond the committed corpus subsets
+(`eval/corpora/ATTRIBUTION.md`, #145); the owner chose to commit them anyway and take them down if ever needed (#149).
+Commit them, both stores' document maps and the two Results on a new branch, never on `main`, push it, and leave the
+main checkout on `main`, clean.
