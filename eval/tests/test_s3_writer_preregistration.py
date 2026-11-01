@@ -184,6 +184,20 @@ def test_an_inconsistent_addendum_is_refused(
         _addendum(**over)
 
 
+def test_deepseek_alone_moves_to_the_sync_api() -> None:
+    """D-290: the addendum moves deepseek; the Claude writers keep their batches."""
+    addendum = thresholds.PREREGISTRATION_S3_WRITERS_SYNC
+    assert getattr(thresholds, addendum.amends) is _s3()
+    assert addendum.transports_for(_s3()) == {
+        "deepseek": "openrouter_sync",
+        "haiku-5.5": "openrouter_batch",
+        "sonnet-5.5": "openrouter_batch",
+        "opus-5.5": "openrouter_batch",
+    }
+    assert "D-290" in addendum.provenance
+    assert "#156" in addendum.report_rule
+
+
 def test_the_claude_writers_match_s2s_slugs_and_prices() -> None:
     s2 = dict(thresholds.PREREGISTRATION_S2.readers)
     for name, declaration in _s3().writers:

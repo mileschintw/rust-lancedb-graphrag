@@ -1310,6 +1310,43 @@ PREREGISTRATION_S3_WRITERS = WriterPreRegistration(
 )
 
 
+# v1.1 S3 writers, deepseek's transport (#145, D-290, D-73): the Batch transport
+# PREREGISTRATION_S3_WRITERS froze for deepseek has no deepseek path, so deepseek runs
+# through the sync API as D-278 and #117 send it. Every other field of
+# PREREGISTRATION_S3_WRITERS still holds, and that constant is unchanged.
+PREREGISTRATION_S3_WRITERS_SYNC = WriterTransportAddendum(
+    amends="PREREGISTRATION_S3_WRITERS",
+    transports=(("deepseek", "openrouter_sync"),),
+    request_rule=(
+        "deepseek's body is the one PREREGISTRATION_S3_WRITERS' request_rule fixes: "
+        "the engine's body as the engine sends it, unrewritten (config.toml's model "
+        "and D-271's pin: order [wafer/us], allow_fallbacks false, max_price; "
+        "reasoning {effort: none}). Each passage's body is posted alone to "
+        "OpenRouter's POST /api/v1/chat/completions, one request at a time, as D-278 "
+        "sends S2's "
+        "replicates and #117's writer_pilot.run_sync sends its extraction; a rerun "
+        "sends only the passages without a succeeded answer. Full price, no batch "
+        "discount, on OpenRouter credit"
+    ),
+    report_rule=(
+        "PREREGISTRATION_S3_WRITERS' report_rule, with each answer's own sync usage. "
+        "Every succeeded answer must report is_byok false, as D-271's pinned endpoint "
+        "bills OpenRouter credit; the run stops at the first answer that does not. "
+        "The D-258 estimate is printed before the first request. Runaways (answers "
+        "that end with finish_reason length, #156) are counted per writer and "
+        "reported beside the Claude writers' counts"
+    ),
+    provenance=(
+        "D-290, #145, owner 2026-11-01 (typed to the coordinator, relayed): 'Sync with "
+        "a new D-ID'. Why no batch: deepseek/deepseek-v4-flash-0731 has no batch "
+        "variant and a batch cannot carry D-271's pin (D-278, checked 2026-10-31). "
+        "Price: Wafer's 0.0448/0.30 USD per MTok (D-277), the price "
+        "PREREGISTRATION_S3_WRITERS lists. Written 2026-11-01, after the Claude "
+        "writers' batches and before any deepseek extraction"
+    ),
+)
+
+
 # 06.3.6 D-154 freeze (2026-10-10): the ONE lever pre-registration. It lands in the single
 # freeze commit that also holds every frozen lever parameter (prompt sentences, rerank and
 # retrieve budgets, the graph-v2 precision variant, the unreported rerank-call cost ceiling,
