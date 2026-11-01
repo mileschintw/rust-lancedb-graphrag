@@ -128,3 +128,11 @@ rule uses point estimates, not p-values.
 - Spend: observed $0.67 (small drive $0.2069, merged drive $0.4602), plus a few cents for the two preflights. The
   merged drive cost more than the $0.25 estimate; its excerpts are longer than the small store's.
 - Every `lancet-eval` command ran with `PYTHONUTF8=1` (#84).
+- Mis-scored secondaries (#125): in the committed `lever-comparison.json` and `lever-comparison-merged-graph.json`,
+  the `merged/` rows of `paper_hits_at_10`, `paper_mrr_at_10`, `paper_map_at_10` and `all_gold_at_4` read 0 for the
+  merged arm. They scored merged chunk IDs against the v1.0 store's gold chunks, so they are wrong, not a retrieval
+  loss (the Metrics section already leaves them unread). `compare-levers` now reports those rows as not evaluable
+  (`n_pairs` 0, null mean and delta) and reads `coverage_at_4` at each arm's own store chunk size. A re-score of this
+  run in memory on 2026-10-31 left every other block byte-identical, the `answer_usable` families and null guards
+  included, and left `coverage_at_4` unchanged (merged 0.5648 against small 0.5593): no gold fact exceeds either
+  store's chunk. The run directory was not rewritten.
