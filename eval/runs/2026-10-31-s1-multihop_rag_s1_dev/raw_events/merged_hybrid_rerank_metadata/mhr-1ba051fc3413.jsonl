@@ -1,0 +1,12 @@
+{"seq": 0, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ReformulateQuery\",\"sequence_ordinal\":1}"}
+{"seq": 1, "event": "node_completed", "data": "{\"duration_ms\":0,\"node_name\":\"ReformulateQuery\",\"outputs_summary\":\"\"}"}
+{"seq": 2, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"ExtractGraphContext\",\"sequence_ordinal\":4}"}
+{"seq": 3, "event": "node_completed", "data": "{\"duration_ms\":311,\"node_name\":\"ExtractGraphContext\",\"outputs_summary\":\"\"}"}
+{"seq": 4, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"RetrieveHybrid\",\"sequence_ordinal\":7}"}
+{"seq": 5, "event": "node_completed", "data": "{\"duration_ms\":573,\"node_name\":\"RetrieveHybrid\",\"outputs_summary\":\"\"}"}
+{"seq": 6, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"AssemblePrompt\",\"sequence_ordinal\":10}"}
+{"seq": 7, "event": "node_completed", "data": "{\"duration_ms\":11,\"node_name\":\"AssemblePrompt\",\"outputs_summary\":\"\"}"}
+{"seq": 8, "event": "node_started", "data": "{\"inputs_summary\":\"\",\"node_name\":\"GenerateAnswer\",\"sequence_ordinal\":13}"}
+{"seq": 9, "event": "node_completed", "data": "{\"duration_ms\":3283,\"node_name\":\"GenerateAnswer\",\"outputs_summary\":\"\"}"}
+{"seq": 10, "event": "answer_chunk", "data": "{\"chunk_text\":\"No. The evidence does not show TechCrunch reporting on Google's antitrust battle with Epic Games on November 6, 2024, nor a class action antitrust suit against Google on December 15, 2023. TechCrunch reported on the Epic v. Google trial starting November 6, 2023 [2][3], and on a class action suit filed by news publisher Helena World Chronicle on December 15, 2023 [6][7]. These are separate, non-conflicting reports about different legal actions. The question's premise of an inconsistent portrayal is not supported by the evidence; the reports are consistent in describing Google facing multiple antitrust challenges. Evidence checked: [1] (The Verge, 2023-11-05), [2] (TechCrunch, 2023-11-06), [3] (TechCrunch, 2023-11-06), [4] (TechCrunch, 2023-11-13), [5] (The Verge, 2023-11-05), [6] (TechCrunch, 2023-12-15), [7] (TechCrunch, 2023-12-15), [8] (The Verge, 2023-11-05).\\nAnswer: No\",\"is_final\":true}"}
+{"seq": 11, "event": "truncation", "data": {"truncated": true, "unwritten_frames": 2}}

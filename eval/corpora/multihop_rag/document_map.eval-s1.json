@@ -1,0 +1,2083 @@
+{
+  "corpus": "multihop_rag_s1_dev",
+  "seeded_at": "2026-11-01T00:05:58.798204+00:00",
+  "index_generation": "lance-693",
+  "entries": {
+    "00162a9a-ea0d-4dd9-ae41-003b207cf08a": {
+      "corpus_id": "Bears vs. Vikings live score, updates, highlights from NFL 'Monday Night Football' game",
+      "document_id": "00162a9a-ea0d-4dd9-ae41-003b207cf08a",
+      "title": "Bears vs. Vikings live score, updates, highlights from NFL 'Monday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/bears-vikings-live-score-highlights-monday-night-football/9e0ddaf702f99e7aec9645db"
+    },
+    "0038a96d-0a7f-471b-a05c-b15dfcd89a4a": {
+      "corpus_id": "YouTube influencer who gave parenting advice pleads guilty to horrific child abuse",
+      "document_id": "0038a96d-0a7f-471b-a05c-b15dfcd89a4a",
+      "title": "YouTube influencer who gave parenting advice pleads guilty to horrific child abuse",
+      "url": "https://fortune.com/2023/12/18/youtube-mom-influencer-parenting-advice-ruby-franke-pleads-guilty-child-abuse-case/"
+    },
+    "007d42ce-4594-43a4-98c2-7a929b104c1f": {
+      "corpus_id": "Sam Altman ousted as OpenAI\u2019s CEO",
+      "document_id": "007d42ce-4594-43a4-98c2-7a929b104c1f",
+      "title": "Sam Altman ousted as OpenAI\u2019s CEO",
+      "url": "https://techcrunch.com/2023/11/17/sam-altman-is-out-as-openais-ceo/"
+    },
+    "011459aa-b88e-4b4c-ae23-13b82c7d257d": {
+      "corpus_id": "Cruise hits the brakes on driverless, UAW makes progress and more EV backpedaling",
+      "document_id": "011459aa-b88e-4b4c-ae23-13b82c7d257d",
+      "title": "Cruise hits the brakes on driverless, UAW makes progress and more EV backpedaling",
+      "url": "https://techcrunch.com/2023/10/30/cruise-hits-the-brakes-on-driverless-uaw-makes-progress-and-more-ev-backpedaling/"
+    },
+    "028a4dc3-155d-4de3-9b9d-09c1b176500c": {
+      "corpus_id": "The best Black Friday deals you can get for under $25",
+      "document_id": "028a4dc3-155d-4de3-9b9d-09c1b176500c",
+      "title": "The best Black Friday deals you can get for under $25",
+      "url": "https://www.theverge.com/23971355/black-friday-2023-tech-deals-under-25-cyber-monday"
+    },
+    "02f71894-33be-437b-93af-aa2661659b29": {
+      "corpus_id": "McRae reveals hidden message he carried under collar of his grand final shirt",
+      "document_id": "02f71894-33be-437b-93af-aa2661659b29",
+      "title": "McRae reveals hidden message he carried under collar of his grand final shirt",
+      "url": "https://www.smh.com.au/sport/afl/mcrae-reveals-hidden-message-he-carried-under-collar-of-his-grand-final-shirt-20231001-p5e8tl.html?ref=rss&utm_medium=rss&utm_source=rss_sport_afl"
+    },
+    "0451f40b-a713-4232-912e-03b327c242fc": {
+      "corpus_id": "5 myths about ketamine, the drug tied to Matthew Perry's death, according to doctors",
+      "document_id": "0451f40b-a713-4232-912e-03b327c242fc",
+      "title": "5 myths about ketamine, the drug tied to Matthew Perry's death, according to doctors",
+      "url": "https://www.foxnews.com/health/5-myths-ketamine-drug-tied-matthew-perry-death-according-doctors"
+    },
+    "04c86c35-88db-4389-96b2-5a6d2861a79d": {
+      "corpus_id": "The best VPN services for 2023",
+      "document_id": "04c86c35-88db-4389-96b2-5a6d2861a79d",
+      "title": "The best VPN services for 2023",
+      "url": "https://www.engadget.com/best-vpn-130004396.html?src=rss"
+    },
+    "057844c5-7bcc-48d4-a600-48b10533ab75": {
+      "corpus_id": "Thirty-seven phases of agony define Ireland\u2019s greatest heartbreak as curse continues",
+      "document_id": "057844c5-7bcc-48d4-a600-48b10533ab75",
+      "title": "Thirty-seven phases of agony define Ireland\u2019s greatest heartbreak as curse continues",
+      "url": "https://www.independent.co.uk/sport/rugby/rugby-union/ireland-new-zealand-all-blacks-result-rugby-world-cup-b2429900.html"
+    },
+    "059f8de6-2db6-466a-b524-5472b0974510": {
+      "corpus_id": "Michigan conquers Ohio State again, but the story is far from over for 2023 Wolverines",
+      "document_id": "059f8de6-2db6-466a-b524-5472b0974510",
+      "title": "Michigan conquers Ohio State again, but the story is far from over for 2023 Wolverines",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/michigan-conquers-ohio-state-again-story-far-over/797e0148646f5d0d76ae74ee"
+    },
+    "05db652f-5786-45c1-9b5c-9e18c2309fc7": {
+      "corpus_id": "Line Shopping in Sports Betting - How to Find the Best Odds",
+      "document_id": "05db652f-5786-45c1-9b5c-9e18c2309fc7",
+      "title": "Line Shopping in Sports Betting - How to Find the Best Odds",
+      "url": "https://www.sportingnews.com/us/betting/news/line-shopping/0f917db9336b2772ba044571"
+    },
+    "06e33f20-e419-47ff-9b32-33980ea1d13f": {
+      "corpus_id": "Uber sexual assault survivors call for in-car cameras, tech upgrades",
+      "document_id": "06e33f20-e419-47ff-9b32-33980ea1d13f",
+      "title": "Uber sexual assault survivors call for in-car cameras, tech upgrades",
+      "url": "https://techcrunch.com/2023/10/13/uber-sexual-assault-survivors-call-for-in-car-cameras-tech-upgrades/"
+    },
+    "07149289-8169-450f-9e41-6f509463aee9": {
+      "corpus_id": "Best sports betting promo codes for college basketball: Claim $5,000+ in bonuses from Caesars Sportsbook, BetMGM, Bet365, FanDuel, DraftKings, BetRivers",
+      "document_id": "07149289-8169-450f-9e41-6f509463aee9",
+      "title": "Best sports betting promo codes for college basketball: Claim $5,000+ in bonuses from Caesars Sportsbook, BetMGM, Bet365, FanDuel, DraftKings, BetRivers",
+      "url": "https://www.sportingnews.com/us/betting/news/best-sports-betting-promo-codes-college-basketball/c127273936d403c13e08aa45"
+    },
+    "07ac4c31-a2da-461e-a1cb-bcfe4451951b": {
+      "corpus_id": "The Steam Deck OLED arrives November 16 with an improved screen and longer battery life",
+      "document_id": "07ac4c31-a2da-461e-a1cb-bcfe4451951b",
+      "title": "The Steam Deck OLED arrives November 16 with an improved screen and longer battery life",
+      "url": "https://www.engadget.com/the-steam-deck-oled-arrives-november-16-with-an-improved-screen-and-longer-battery-life-180032945.html?src=rss"
+    },
+    "08ab11e1-585a-4207-a006-d37c49e1263b": {
+      "corpus_id": "NMPA: Generative AI is \u2018the greatest risk to the human creative class that has ever existed\u2019",
+      "document_id": "08ab11e1-585a-4207-a006-d37c49e1263b",
+      "title": "NMPA: Generative AI is \u2018the greatest risk to the human creative class that has ever existed\u2019",
+      "url": "https://www.musicbusinessworldwide.com/nmpa-generative-ai-is-the-greatest-risk-to-the-human-creative-class-that-has-ever-existed/"
+    },
+    "08ae109a-7d2b-462c-8778-7fdb4890bed0": {
+      "corpus_id": "North Texas vs. SMU odds, props, predictions: Red hot Mustangs could overpower not-so-Mean Green",
+      "document_id": "08ae109a-7d2b-462c-8778-7fdb4890bed0",
+      "title": "North Texas vs. SMU odds, props, predictions: Red hot Mustangs could overpower not-so-Mean Green",
+      "url": "https://www.sportingnews.com/us/betting/news/north-texas-vs-smu-odds-props-predictions-cfb-week-11/2750e2597b57a23f12c20adb"
+    },
+    "08d76497-c34a-4d73-9df4-13ed5400a055": {
+      "corpus_id": "Is Google Search better than the rest? And is that fair?",
+      "document_id": "08d76497-c34a-4d73-9df4-13ed5400a055",
+      "title": "Is Google Search better than the rest? And is that fair?",
+      "url": "https://www.theage.com.au/technology/is-google-search-better-than-the-rest-and-is-that-fair-20231012-p5ebsk.html?ref=rss&utm_medium=rss&utm_source=rss_technology"
+    },
+    "09a38c7a-d4a3-4701-8f88-1137d7243191": {
+      "corpus_id": "The best controllers for PC gaming",
+      "document_id": "09a38c7a-d4a3-4701-8f88-1137d7243191",
+      "title": "The best controllers for PC gaming",
+      "url": "https://www.polygon.com/what-to-buy/23658092/best-controllers-pc-gaming"
+    },
+    "0a60769b-f008-4780-917c-e463230cdad7": {
+      "corpus_id": "Cannabis use in pregnancy linked to small birth size, other poor outcomes",
+      "document_id": "0a60769b-f008-4780-917c-e463230cdad7",
+      "title": "Cannabis use in pregnancy linked to small birth size, other poor outcomes",
+      "url": "https://www.livescience.com/health/fertility-pregnancy-birth/cannabis-use-in-pregnancy-linked-to-small-birth-size-other-poor-outcomes"
+    },
+    "0ac751f5-2be8-4118-9e5a-93b7f373881b": {
+      "corpus_id": "Walks, tech and protein: how to parent your own parents",
+      "document_id": "0ac751f5-2be8-4118-9e5a-93b7f373881b",
+      "title": "Walks, tech and protein: how to parent your own parents",
+      "url": "https://www.theguardian.com/lifeandstyle/2023/oct/10/walks-tech-and-protein-how-to-parent-your-own-parents"
+    },
+    "0b23ca6b-79c4-4be7-a536-c259898b74c6": {
+      "corpus_id": "Amazon\u2019s Tye Brady discusses generative AI, humanoid robots and mobile manipulation",
+      "document_id": "0b23ca6b-79c4-4be7-a536-c259898b74c6",
+      "title": "Amazon\u2019s Tye Brady discusses generative AI, humanoid robots and mobile manipulation",
+      "url": "https://techcrunch.com/2023/10/28/2620382/"
+    },
+    "0c8bfd2f-8c10-4a52-acc1-e4ec9b2b6c29": {
+      "corpus_id": "Fans react to most \u2018heartbreaking\u2019 scene in The Crown",
+      "document_id": "0c8bfd2f-8c10-4a52-acc1-e4ec9b2b6c29",
+      "title": "Fans react to most \u2018heartbreaking\u2019 scene in The Crown",
+      "url": "https://www.independent.co.uk/life-style/royal-family/news/princess-diana-st-tropez-b2449049.html"
+    },
+    "0ca99648-6363-4590-b597-98ef5d649dbf": {
+      "corpus_id": "How U.S. Women\u2019s Soccer Team Lured Emma Hayes Away From Chelsea",
+      "document_id": "0ca99648-6363-4590-b597-98ef5d649dbf",
+      "title": "How U.S. Women\u2019s Soccer Team Lured Emma Hayes Away From Chelsea",
+      "url": "https://theathletic.com/5061878/2023/11/14/uswnt-emma-hayes-hire-chelsea/"
+    },
+    "0cd4ca32-a07a-4090-b10a-0787382bf05d": {
+      "corpus_id": "The best Apple Black Friday deals on iPads, AirPods, Apple Watches and more",
+      "document_id": "0cd4ca32-a07a-4090-b10a-0787382bf05d",
+      "title": "The best Apple Black Friday deals on iPads, AirPods, Apple Watches and more",
+      "url": "https://www.engadget.com/best-apple-black-friday-deals-ipads-airpods-apple-watch-iphone-more-094532221.html?src=rss"
+    },
+    "0da02dcd-1d12-4316-a43e-f7e0bdf05419": {
+      "corpus_id": "Could CRISPR cure HIV someday?",
+      "document_id": "0da02dcd-1d12-4316-a43e-f7e0bdf05419",
+      "title": "Could CRISPR cure HIV someday?",
+      "url": "https://www.livescience.com/health/hiv/could-crispr-cure-hiv-someday"
+    },
+    "0e7c775a-93f5-4ec4-8e11-aedf503280fe": {
+      "corpus_id": "Steam Deck OLED review: It's just better",
+      "document_id": "0e7c775a-93f5-4ec4-8e11-aedf503280fe",
+      "title": "Steam Deck OLED review: It's just better",
+      "url": "https://www.engadget.com/steam-deck-oled-review-its-just-better-180038030.html?src=rss"
+    },
+    "0ed5092b-3ab0-47d0-b0a8-e9a2b35c54c3": {
+      "corpus_id": "What\u2019s at stake in the Supreme Court\u2019s landmark social media case",
+      "document_id": "0ed5092b-3ab0-47d0-b0a8-e9a2b35c54c3",
+      "title": "What\u2019s at stake in the Supreme Court\u2019s landmark social media case",
+      "url": "https://techcrunch.com/2023/10/04/supreme-court-social-media-case-content-moderation-explained/"
+    },
+    "107e05a0-b56e-4d55-9bc5-8969761907eb": {
+      "corpus_id": "Canelo Alvarez vs Jermell Charlo live fight updates, results, highlights from 2023 boxing fight",
+      "document_id": "107e05a0-b56e-4d55-9bc5-8969761907eb",
+      "title": "Canelo Alvarez vs Jermell Charlo live fight updates, results, highlights from 2023 boxing fight",
+      "url": "https://www.sportingnews.com/us/boxing/news/canelo-alvarez-vs-jermell-charlo-updates-results-highlights/fa89de539f8e4132e0ffa8c1"
+    },
+    "11b25add-efd6-42d7-856b-b95f33e7be5d": {
+      "corpus_id": "Meta seeks legislation that would require parents to approve teens\u2019 app downloads",
+      "document_id": "11b25add-efd6-42d7-856b-b95f33e7be5d",
+      "title": "Meta seeks legislation that would require parents to approve teens\u2019 app downloads",
+      "url": "https://techcrunch.com/2023/11/15/meta-seeks-legislation-that-would-require-parents-to-approve-teens-app-downloads/"
+    },
+    "11b41c46-9445-4e15-afa3-88a219397f25": {
+      "corpus_id": "There\u2019s something going on with AI startups in France",
+      "document_id": "11b41c46-9445-4e15-afa3-88a219397f25",
+      "title": "There\u2019s something going on with AI startups in France",
+      "url": "https://techcrunch.com/2023/11/09/theres-something-going-on-with-ai-startups-in-france/"
+    },
+    "1246ccd0-71ab-4f49-84cc-fa0c4adce917": {
+      "corpus_id": "NBL Round 4: Creek pours in points as Phoenix swamp Sixers, CJ claims Kings didn\u2019t look after DJ",
+      "document_id": "1246ccd0-71ab-4f49-84cc-fa0c4adce917",
+      "title": "NBL Round 4: Creek pours in points as Phoenix swamp Sixers, CJ claims Kings didn\u2019t look after DJ",
+      "url": "https://www.theroar.com.au/2023/10/20/nbl-round-4/"
+    },
+    "13f140db-e008-43e4-82a1-87750d1dc52c": {
+      "corpus_id": "College football odds, lines, schedule for Week 6: Texas, Alabama, Notre Dame among favorites in ranked games",
+      "document_id": "13f140db-e008-43e4-82a1-87750d1dc52c",
+      "title": "College football odds, lines, schedule for Week 6: Texas, Alabama, Notre Dame among favorites in ranked games",
+      "url": "https://www.cbssports.com/college-football/news/college-football-odds-lines-schedule-for-week-6-texas-alabama-notre-dame-among-favorites-in-ranked-games/"
+    },
+    "141fee18-494a-4991-96e6-c371955b1226": {
+      "corpus_id": "Early impressions of Google\u2019s Gemini aren\u2019t great",
+      "document_id": "141fee18-494a-4991-96e6-c371955b1226",
+      "title": "Early impressions of Google\u2019s Gemini aren\u2019t great",
+      "url": "https://techcrunch.com/2023/12/07/early-impressions-of-googles-gemini-arent-great/"
+    },
+    "14aca36e-701f-42de-80a3-2ab3fedfbeb3": {
+      "corpus_id": "The $777 million surprise: Donald Trump is getting richer",
+      "document_id": "14aca36e-701f-42de-80a3-2ab3fedfbeb3",
+      "title": "The $777 million surprise: Donald Trump is getting richer",
+      "url": "https://www.theage.com.au/business/companies/the-777-million-surprise-donald-trump-is-getting-richer-20231108-p5eicf.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "155c4c6f-268a-4e7c-8cb2-c6212a490295": {
+      "corpus_id": "Sony Music has issued nearly 10,000 deepfake takedowns\u2026 and other things we learned from Dennis Kooker\u2019s speech about AI",
+      "document_id": "155c4c6f-268a-4e7c-8cb2-c6212a490295",
+      "title": "Sony Music has issued nearly 10,000 deepfake takedowns\u2026 and other things we learned from Dennis Kooker\u2019s speech about AI",
+      "url": "https://www.musicbusinessworldwide.com/sony-music-has-issued-nearly-10000-deepfake-takedowns-and-other-things-we-learned-from-dennis-kookers-speech-about-ai/"
+    },
+    "155cb7c3-97ba-4786-bb02-6564f080efa6": {
+      "corpus_id": "Fantasy Football RB Rankings Week 14: Who to start, best sleepers at running back",
+      "document_id": "155cb7c3-97ba-4786-bb02-6564f080efa6",
+      "title": "Fantasy Football RB Rankings Week 14: Who to start, best sleepers at running back",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-rb-rankings-week-14-running-backs-sleepers/7dba90c2816610df4860c264"
+    },
+    "15b477a1-7a37-4111-baed-cc1fc758e94b": {
+      "corpus_id": "The 53 best Black Friday deals we could find at Amazon, Walmart, Target and more",
+      "document_id": "15b477a1-7a37-4111-baed-cc1fc758e94b",
+      "title": "The 53 best Black Friday deals we could find at Amazon, Walmart, Target and more",
+      "url": "https://www.engadget.com/the-53-best-black-friday-deals-we-could-find-at-amazon-walmart-target-and-more-151323236.html?src=rss"
+    },
+    "17179dba-ed21-4a8f-8f7c-12f88311b2e0": {
+      "corpus_id": "Israel's blockade of Gaza means that a region the size of Philadelphia faces a real risk of starvation, says Peace Studies scholar",
+      "document_id": "17179dba-ed21-4a8f-8f7c-12f88311b2e0",
+      "title": "Israel's blockade of Gaza means that a region the size of Philadelphia faces a real risk of starvation, says Peace Studies scholar",
+      "url": "https://fortune.com/2023/10/13/israel-blockade-gaza-hamas-war-starvation-food-insecurity/"
+    },
+    "174ab388-6f95-4ae8-b644-30fbbe75641f": {
+      "corpus_id": "8 predictions for AI in 2024",
+      "document_id": "174ab388-6f95-4ae8-b644-30fbbe75641f",
+      "title": "8 predictions for AI in 2024",
+      "url": "https://techcrunch.com/2023/12/19/8-predictions-for-ai-in-2024/"
+    },
+    "17f273df-cd61-48f2-9ee3-cded38ebde8a": {
+      "corpus_id": "How queerness became calamity in Tears of the Kingdom",
+      "document_id": "17f273df-cd61-48f2-9ee3-cded38ebde8a",
+      "title": "How queerness became calamity in Tears of the Kingdom",
+      "url": "https://www.polygon.com/23922313/legend-of-zelda-tears-kingdom-totk-queer-gender-link"
+    },
+    "18d1a1c9-65af-4862-bfe0-d42dda331715": {
+      "corpus_id": "Point Spread Betting - What is a Point Spread Bet?",
+      "document_id": "18d1a1c9-65af-4862-bfe0-d42dda331715",
+      "title": "Point Spread Betting - What is a Point Spread Bet?",
+      "url": "https://www.sportingnews.com/us/betting/news/spread-betting/c740afa218dca67d75929ee4"
+    },
+    "19f97e88-9544-4e81-8830-cb587597f9b2": {
+      "corpus_id": "How is it still getting worse for Sam Bankman-Fried?",
+      "document_id": "19f97e88-9544-4e81-8830-cb587597f9b2",
+      "title": "How is it still getting worse for Sam Bankman-Fried?",
+      "url": "https://www.theverge.com/2023/10/12/23915108/sam-bankman-fried-ftx-alameda-caroline-ellison-lawyers"
+    },
+    "1b365e10-1572-41eb-bac0-a71b537d8207": {
+      "corpus_id": "Major NASCAR Snubs as Autosport Releases the Top 50 Motorsport Drivers in 2023",
+      "document_id": "1b365e10-1572-41eb-bac0-a71b537d8207",
+      "title": "Major NASCAR Snubs as Autosport Releases the Top 50 Motorsport Drivers in 2023",
+      "url": "https://www.essentiallysports.com/nascar-news-major-nascar-snubs-as-autosport-releases-the-top-fifty-motorsport-drivers-of-this-year-chris-buescher-denny-hamlin-christopher-bell-tyler-reddick-ross-chastain/"
+    },
+    "1bba66db-707d-438d-81e9-1653e9c55b9a": {
+      "corpus_id": "Rollback Policy, a Boon or a Curse? The Controversial System That Might Redefine the Golfing World by the End of 2030",
+      "document_id": "1bba66db-707d-438d-81e9-1653e9c55b9a",
+      "title": "Rollback Policy, a Boon or a Curse? The Controversial System That Might Redefine the Golfing World by the End of 2030",
+      "url": "https://www.essentiallysports.com/golf-news-perspectives-rollback-policy-a-boon-or-a-curse-the-controversial-system-that-might-redefine-the-golfing-world-by-the-end-of-two-zero-three-zero/"
+    },
+    "1d2ff9be-5607-4521-83bc-6dd0f87b918d": {
+      "corpus_id": "Craft beer and cheese boxes: Swans tap into something \u2018uniquely Sydney\u2019 to draw AFLW crowds | Jack Snape",
+      "document_id": "1d2ff9be-5607-4521-83bc-6dd0f87b918d",
+      "title": "Craft beer and cheese boxes: Swans tap into something \u2018uniquely Sydney\u2019 to draw AFLW crowds | Jack Snape",
+      "url": "https://www.theguardian.com/sport/2023/oct/27/craft-beer-and-cheese-boxes-swans-tap-in-something-uniquely-sydney-to-draw-aflw-crowds"
+    },
+    "1d67167f-545e-424f-b03e-c2cef341c199": {
+      "corpus_id": "Investment options for high networth investors",
+      "document_id": "1d67167f-545e-424f-b03e-c2cef341c199",
+      "title": "Investment options for high networth investors",
+      "url": "https://www.thehindubusinessline.com/portfolio/personal-finance/investment-options-for-high-networth-investors/article67465515.ece"
+    },
+    "1ddb1031-97cc-40ed-8c23-df4c76b263b6": {
+      "corpus_id": "Taylor Swift is Time\u2019s Person of the Year",
+      "document_id": "1ddb1031-97cc-40ed-8c23-df4c76b263b6",
+      "title": "Taylor Swift is Time\u2019s Person of the Year",
+      "url": "https://www.independent.co.uk/life-style/taylor-swift-time-person-of-the-year-b2459419.html"
+    },
+    "1df95979-aa57-4d68-8305-3ec9ede42269": {
+      "corpus_id": "Bryce Harper 'Atta Boy' controversy, explained: Why Orlando Arcia's comments led to backlash, Alanna Rizzo rant",
+      "document_id": "1df95979-aa57-4d68-8305-3ec9ede42269",
+      "title": "Bryce Harper 'Atta Boy' controversy, explained: Why Orlando Arcia's comments led to backlash, Alanna Rizzo rant",
+      "url": "https://www.sportingnews.com/us/mlb/news/bryce-harper-atta-boy-controversy-orlando-arcia-comments/0fe0f26efb69bc8b012216ad"
+    },
+    "1e9e4631-0e01-4bd1-b27f-e5df70a0fd00": {
+      "corpus_id": "NFL power rankings: Lions, 49ers level up; Texans jump Bengals, Bills; Jets, Patriots sink to bottom for Week 11",
+      "document_id": "1e9e4631-0e01-4bd1-b27f-e5df70a0fd00",
+      "title": "NFL power rankings: Lions, 49ers level up; Texans jump Bengals, Bills; Jets, Patriots sink to bottom for Week 11",
+      "url": "https://www.sportingnews.com/us/nfl/news/nfl-power-rankings-lions-49ers-texans-jets-patriots/7b7ee6be935efc3c735d72ac"
+    },
+    "1ee391b0-8df9-4a2d-a8e1-32ca2528059e": {
+      "corpus_id": "Taylor Swift has already sold over $100 million of tickets for her concert movie. Theaters nationwide brace for impact",
+      "document_id": "1ee391b0-8df9-4a2d-a8e1-32ca2528059e",
+      "title": "Taylor Swift has already sold over $100 million of tickets for her concert movie. Theaters nationwide brace for impact",
+      "url": "https://fortune.com/2023/10/10/taylor-swift-eras-tour-movie-amc-concert-blockbuster/"
+    },
+    "1fb07b9c-f69f-4910-b6f3-84057698b97c": {
+      "corpus_id": "Their kids died after buying drugs on Snapchat. Now the parents are suing",
+      "document_id": "1fb07b9c-f69f-4910-b6f3-84057698b97c",
+      "title": "Their kids died after buying drugs on Snapchat. Now the parents are suing",
+      "url": "https://www.theguardian.com/technology/2023/oct/18/snapchat-sued-overdose-deaths"
+    },
+    "20282d45-e4da-4c7d-bec0-a49bbab1ab42": {
+      "corpus_id": "Alcoholism, Ayahuasca and the Enlightenment of an N.F.L. Player",
+      "document_id": "20282d45-e4da-4c7d-bec0-a49bbab1ab42",
+      "title": "Alcoholism, Ayahuasca and the Enlightenment of an N.F.L. Player",
+      "url": "https://theathletic.com/5133811/2023/12/14/buffalo-bills-jordan-poyer-ayahuasca/"
+    },
+    "20a094ab-db09-4889-9238-4177af296f06": {
+      "corpus_id": "Which M.L.B. Playoff Team Has the Most Daunting Home Field? We Ranked Them.",
+      "document_id": "20a094ab-db09-4889-9238-4177af296f06",
+      "title": "Which M.L.B. Playoff Team Has the Most Daunting Home Field? We Ranked Them.",
+      "url": "https://theathletic.com/4934692/2023/10/06/mlb-postseason-stadium-ranking/"
+    },
+    "20b96ef1-f6ff-4839-825d-507c17ac416c": {
+      "corpus_id": "Creation of quantum dots wins 2023 chemistry Nobel",
+      "document_id": "20b96ef1-f6ff-4839-825d-507c17ac416c",
+      "title": "Creation of quantum dots wins 2023 chemistry Nobel",
+      "url": "https://www.snexplores.org/article/quantum-dots-technology-2023-nobel-prize-chemistry"
+    },
+    "20f8f381-3eff-4c36-ab33-38c04db2c0e2": {
+      "corpus_id": "Hottest seat on each NFC team: Buns burning for these four head coaches",
+      "document_id": "20f8f381-3eff-4c36-ab33-38c04db2c0e2",
+      "title": "Hottest seat on each NFC team: Buns burning for these four head coaches",
+      "url": "https://www.yardbarker.com/nfl/articles/hottest_seat_on_each_nfc_team_buns_burning_for_these_four_head_coaches/s1_13132_39607617"
+    },
+    "2141b913-5257-4bc6-9059-2bc91cb3245c": {
+      "corpus_id": "The jury finally hears from Sam Bankman-Fried",
+      "document_id": "2141b913-5257-4bc6-9059-2bc91cb3245c",
+      "title": "The jury finally hears from Sam Bankman-Fried",
+      "url": "https://www.theverge.com/2023/10/27/23935683/sam-bankman-fried-ftx-fraud-direct-testimony-jury"
+    },
+    "21845bb8-ef5c-4a6c-b1d5-31cc31a4bea9": {
+      "corpus_id": "9 great movies to watch on Tubi for free right now",
+      "document_id": "21845bb8-ef5c-4a6c-b1d5-31cc31a4bea9",
+      "title": "9 great movies to watch on Tubi for free right now",
+      "url": "https://www.polygon.com/what-to-watch/23686506/best-tubi-movies-free-watch"
+    },
+    "21a0ea70-7323-4486-b185-c69feee4e830": {
+      "corpus_id": "Inside the $US2.3b venue that will transform the concert industry",
+      "document_id": "21a0ea70-7323-4486-b185-c69feee4e830",
+      "title": "Inside the $US2.3b venue that will transform the concert industry",
+      "url": "https://www.smh.com.au/culture/music/inside-the-us2-3b-venue-that-will-transform-the-concert-industry-20231012-p5ebvv.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "21e72115-dae6-4020-bb2a-e771b8f13f0b": {
+      "corpus_id": "\u2018Right people in right roles\u2019: QRU breaks silence on RA\u2019s reform hopes, backs review into Wallabies\u2019 RWC flop",
+      "document_id": "21e72115-dae6-4020-bb2a-e771b8f13f0b",
+      "title": "\u2018Right people in right roles\u2019: QRU breaks silence on RA\u2019s reform hopes, backs review into Wallabies\u2019 RWC flop",
+      "url": "https://www.theroar.com.au/2023/10/11/right-people-in-right-roles-qru-breaks-silence-on-ras-reform-hopes-backs-review-into-wallabies-rwc-flop/"
+    },
+    "21ecd13e-710b-4b1d-b8fc-b8c8b1079c77": {
+      "corpus_id": "Rogue Trader\u2019s role-playing embraces the brutality and freedom of Warhammer 40K",
+      "document_id": "21ecd13e-710b-4b1d-b8fc-b8c8b1079c77",
+      "title": "Rogue Trader\u2019s role-playing embraces the brutality and freedom of Warhammer 40K",
+      "url": "https://www.polygon.com/23989600/rogue-trader-warhammer-40k-crpg-combat-characters-impressions"
+    },
+    "221bf223-9985-4bff-8fbf-b0cd938b0419": {
+      "corpus_id": "\u201cWe Sell More F-150s to NASCAR Fans\u201d \u2013 Ford Insider Reveals Insane Mustang Stat Amid Big Change",
+      "document_id": "221bf223-9985-4bff-8fbf-b0cd938b0419",
+      "title": "\u201cWe Sell More F-150s to NASCAR Fans\u201d \u2013 Ford Insider Reveals Insane Mustang Stat Amid Big Change",
+      "url": "https://www.essentiallysports.com/nascar-news-we-sell-more-f-one-fifties-to-nascar-fans-ford-insider-reveals-insane-mustang-stat-amid-big-change/"
+    },
+    "22856905-c590-4b20-92c3-117633dd9035": {
+      "corpus_id": "College Bowl Odds, Spreads, Money Lines and Totals - NCAAF 2023 Bowl Season",
+      "document_id": "22856905-c590-4b20-92c3-117633dd9035",
+      "title": "College Bowl Odds, Spreads, Money Lines and Totals - NCAAF 2023 Bowl Season",
+      "url": "https://www.sportingnews.com/us/betting/news/ncaaf-bowl-odds/275d2598457399b19a65202d"
+    },
+    "22d3ba60-4ffd-4ba4-85b2-0d83a4b5a37e": {
+      "corpus_id": "A provocative role for technologists in product innovation",
+      "document_id": "22d3ba60-4ffd-4ba4-85b2-0d83a4b5a37e",
+      "title": "A provocative role for technologists in product innovation",
+      "url": "https://techcrunch.com/2023/12/21/a-provocative-role-for-technologists-in-product-innovation/"
+    },
+    "230c2c2f-e554-4759-a47d-f065cae6f3f0": {
+      "corpus_id": "NBL Round 5: Harvey hits Hail Mary for Hawks to topple Taipans at the buzzer, Cheatham injured as Sixers upset Breakers",
+      "document_id": "230c2c2f-e554-4759-a47d-f065cae6f3f0",
+      "title": "NBL Round 5: Harvey hits Hail Mary for Hawks to topple Taipans at the buzzer, Cheatham injured as Sixers upset Breakers",
+      "url": "https://www.theroar.com.au/2023/10/27/nbl-round-5/"
+    },
+    "23a85367-a27b-4ec4-9ad8-ab41b1f53606": {
+      "corpus_id": "SBF, riding high on FTX, reportedly offered $5B to Trump to cancel President re-run",
+      "document_id": "23a85367-a27b-4ec4-9ad8-ab41b1f53606",
+      "title": "SBF, riding high on FTX, reportedly offered $5B to Trump to cancel President re-run",
+      "url": "https://techcrunch.com/2023/10/02/sbf-60-minutes/"
+    },
+    "23fd11e2-229b-43a3-98bf-eac61e598d25": {
+      "corpus_id": "Travis Kelce says he tried to delete his \u2018nonsense\u2019 tweets before they went viral",
+      "document_id": "23fd11e2-229b-43a3-98bf-eac61e598d25",
+      "title": "Travis Kelce says he tried to delete his \u2018nonsense\u2019 tweets before they went viral",
+      "url": "https://www.independent.co.uk/life-style/taylor-swift-travis-kelce-tweets-b2453410.html"
+    },
+    "257b485f-1210-44f3-bdec-68c3944682ff": {
+      "corpus_id": "Diablo 4 season 2\u2019s biggest draw is its quality-of-life updates",
+      "document_id": "257b485f-1210-44f3-bdec-68c3944682ff",
+      "title": "Diablo 4 season 2\u2019s biggest draw is its quality-of-life updates",
+      "url": "https://www.polygon.com/gaming/23901914/diablo-4-season-blood-2-quality-life-blizzard-interview"
+    },
+    "2581ee4d-35d7-413c-90f4-d62438073cfc": {
+      "corpus_id": "Alexis Ohanian says he\u2019s a \u2018techno optimist,\u2019 despite social media\u2019s impact on society",
+      "document_id": "2581ee4d-35d7-413c-90f4-d62438073cfc",
+      "title": "Alexis Ohanian says he\u2019s a \u2018techno optimist,\u2019 despite social media\u2019s impact on society",
+      "url": "https://techcrunch.com/2023/10/31/alexis-ohanian-says-hes-a-techno-optimist-despite-social-medias-impact-on-society/"
+    },
+    "25af8e1a-ac8b-4eb4-9740-a2399709672a": {
+      "corpus_id": "UTSA vs. Marshall odds, props, predictions: Roadrunners lay big spread in Frisco Bowl",
+      "document_id": "25af8e1a-ac8b-4eb4-9740-a2399709672a",
+      "title": "UTSA vs. Marshall odds, props, predictions: Roadrunners lay big spread in Frisco Bowl",
+      "url": "https://www.sportingnews.com/us/betting/news/utsa-vs-marshall-odds-props-predictions-spread-frisco-bowl/9f87d66235664608e5d678ba"
+    },
+    "26682304-faac-44f6-ac24-3187a70d42e0": {
+      "corpus_id": "Michigan State hires Jonathan Smith: Oregon State coach leaves alma mater to take over Spartans job",
+      "document_id": "26682304-faac-44f6-ac24-3187a70d42e0",
+      "title": "Michigan State hires Jonathan Smith: Oregon State coach leaves alma mater to take over Spartans job",
+      "url": "https://www.cbssports.com/college-football/news/michigan-state-hires-jonathan-smith-oregon-state-coach-leaves-alma-mater-to-take-over-spartans-job/"
+    },
+    "275ed93d-5cc0-4380-bf17-6546d020f2bb": {
+      "corpus_id": "Buckle up for more \u2018turbulence\u2019 in the housing market, BofA says\u2014it\u2019s a housing recession, 1980s style",
+      "document_id": "275ed93d-5cc0-4380-bf17-6546d020f2bb",
+      "title": "Buckle up for more \u2018turbulence\u2019 in the housing market, BofA says\u2014it\u2019s a housing recession, 1980s style",
+      "url": "https://fortune.com/2023/10/06/home-price-outlook-bank-of-america-housing-recession-turbulence-1980s-not-2008/"
+    },
+    "287c7969-2ba1-4d7a-9656-b40f84c9c770": {
+      "corpus_id": "Apple defends Google Search deal in court: \u2018There wasn\u2019t a valid alternative\u2019",
+      "document_id": "287c7969-2ba1-4d7a-9656-b40f84c9c770",
+      "title": "Apple defends Google Search deal in court: \u2018There wasn\u2019t a valid alternative\u2019",
+      "url": "https://www.theverge.com/2023/9/26/23891037/apple-eddy-cue-testimony-us-google"
+    },
+    "28fab41b-1795-4ca4-a537-37651bd7c616": {
+      "corpus_id": "Europe\u2019s artists and labels could lose $137m annually to US recorded music rightsholders if EU law isn\u2019t changed, trade groups warn",
+      "document_id": "28fab41b-1795-4ca4-a537-37651bd7c616",
+      "title": "Europe\u2019s artists and labels could lose $137m annually to US recorded music rightsholders if EU law isn\u2019t changed, trade groups warn",
+      "url": "https://www.musicbusinessworldwide.com/europes-artists-and-labels-could-lose-137m-annually-to-us-recorded-music-rightsholders-if-eu-law-isnt-changed-trade-groups-warn/"
+    },
+    "29d934ea-b045-415f-bfdf-4469b467c7cc": {
+      "corpus_id": "Top ten craziest fight endings in boxing history \u2013 Floyd Mayweather\u2019s ruthless KO, Mike Tyson\u2019s bite and a baffled Lennox Lewis",
+      "document_id": "29d934ea-b045-415f-bfdf-4469b467c7cc",
+      "title": "Top ten craziest fight endings in boxing history \u2013 Floyd Mayweather\u2019s ruthless KO, Mike Tyson\u2019s bite and a baffled Lennox Lewis",
+      "url": "https://talksport.com/sport/1249277/top-ten-craziest-fight-endings-boxing-floyd-mayweather-mike-tyson-lennox-lewis/"
+    },
+    "2ad998e9-d0b7-48dc-864e-f9d03310e76d": {
+      "corpus_id": "Shohei Ohtani rumors tracker: Latest news, updates on Dodgers, Cubs & more as free agency short list emerges",
+      "document_id": "2ad998e9-d0b7-48dc-864e-f9d03310e76d",
+      "title": "Shohei Ohtani rumors tracker: Latest news, updates on Dodgers, Cubs & more as free agency short list emerges",
+      "url": "https://www.sportingnews.com/us/mlb/news/shohei-ohtani-rumors-tracker-free-agency-updates/5749c16d66b36883ecd888d9"
+    },
+    "2b045620-00eb-4ca4-9125-0004717625a4": {
+      "corpus_id": "Robin Williams' drug addiction made him 'a monster': Friends recall depth of actor's cocaine use",
+      "document_id": "2b045620-00eb-4ca4-9125-0004717625a4",
+      "title": "Robin Williams' drug addiction made him 'a monster': Friends recall depth of actor's cocaine use",
+      "url": "https://www.foxnews.com/entertainment/robin-williams-drug-addiction-made-monster-friends-recall-depth-actors-cocaine-use"
+    },
+    "2b5b6f36-8906-4a14-aeaf-737beab21b72": {
+      "corpus_id": "Ten Hag\u2019s Manchester United stand up and die at club stuck in the past tense | Barney Ronay",
+      "document_id": "2b5b6f36-8906-4a14-aeaf-737beab21b72",
+      "title": "Ten Hag\u2019s Manchester United stand up and die at club stuck in the past tense | Barney Ronay",
+      "url": "https://www.theguardian.com/football/blog/2023/dec/12/ten-hags-manchester-united-stand-up-and-die-at-club-stuck-in-the-past-tense"
+    },
+    "2b6bbde1-ce8c-4a3a-82eb-6f1f10c6b8ee": {
+      "corpus_id": "49ers cap space 2024: Why Chase Young trade may not be a pure rental for San Francisco",
+      "document_id": "2b6bbde1-ce8c-4a3a-82eb-6f1f10c6b8ee",
+      "title": "49ers cap space 2024: Why Chase Young trade may not be a pure rental for San Francisco",
+      "url": "https://www.sportingnews.com/us/nfl/news/49ers-cap-space-2024-chase-young-trade/924c310ff72c00dd54a9cf2c"
+    },
+    "2c8c4bd5-8f78-42e0-8e02-305180f43159": {
+      "corpus_id": "Here are the shipping deadlines to get your holiday gifts on time",
+      "document_id": "2c8c4bd5-8f78-42e0-8e02-305180f43159",
+      "title": "Here are the shipping deadlines to get your holiday gifts on time",
+      "url": "https://www.theverge.com/23502151/ups-usps-fedex-amazon-walmart-best-buy-target-shipping-deadlines"
+    },
+    "2dca2cc2-a5dd-462b-b79f-e8d867380e4e": {
+      "corpus_id": "\u2018I see myself as a royal\u2019: artist Vincent Namatjira on colonialism, satire and his great-grandfather\u2019s legacy",
+      "document_id": "2dca2cc2-a5dd-462b-b79f-e8d867380e4e",
+      "title": "\u2018I see myself as a royal\u2019: artist Vincent Namatjira on colonialism, satire and his great-grandfather\u2019s legacy",
+      "url": "https://www.theguardian.com/artanddesign/2023/oct/17/i-see-myself-as-a-royal-artist-vincent-namatjira-on-colonialism-satire-and-his-great-grandfathers-legacy"
+    },
+    "2e84c0f6-5a2e-40c8-915f-db6f75defab6": {
+      "corpus_id": "England thrash Scotland but cannot avoid Team GB Olympic heartbreak",
+      "document_id": "2e84c0f6-5a2e-40c8-915f-db6f75defab6",
+      "title": "England thrash Scotland but cannot avoid Team GB Olympic heartbreak",
+      "url": "https://www.theguardian.com/football/2023/dec/05/womens-nations-league-scotland-england-match-report"
+    },
+    "2ee70dce-f893-468f-b0cd-f783a5b593ee": {
+      "corpus_id": "Amazon sellers sound off on the FTC's 'long-overdue' antitrust case",
+      "document_id": "2ee70dce-f893-468f-b0cd-f783a5b593ee",
+      "title": "Amazon sellers sound off on the FTC's 'long-overdue' antitrust case",
+      "url": "https://www.cnbc.com/2023/10/06/amazon-sellers-sound-off-on-the-ftcs-long-overdue-antitrust-case.html"
+    },
+    "2f00e7e7-e2af-40c0-98e3-56b5cc892001": {
+      "corpus_id": "Meet the American who made cranberries a Turkey Day tradition, Marcus Urann, farmer with can-do spirit",
+      "document_id": "2f00e7e7-e2af-40c0-98e3-56b5cc892001",
+      "title": "Meet the American who made cranberries a Turkey Day tradition, Marcus Urann, farmer with can-do spirit",
+      "url": "https://www.foxnews.com/lifestyle/meet-american-made-cranberries-turkey-day-tradition-marcus-urann-farmer-with-can-do-spirit"
+    },
+    "321af93f-914b-4372-be88-c043b22d00ad": {
+      "corpus_id": "From winter fun to summer sun: your seasonal guide to diverse Dubai",
+      "document_id": "321af93f-914b-4372-be88-c043b22d00ad",
+      "title": "From winter fun to summer sun: your seasonal guide to diverse Dubai",
+      "url": "https://www.independent.co.uk/travel/winter-fun-summer-sun-seasonal-guide-dubai-b2427344.html"
+    },
+    "3286153e-5a85-4bdf-b7f8-38f298d6efd7": {
+      "corpus_id": "FanDuel 'Prop Stars' Picks: Best bets for Travis Kelce & Taylor Swift-inspired props for Chiefs-Jets Week 4",
+      "document_id": "3286153e-5a85-4bdf-b7f8-38f298d6efd7",
+      "title": "FanDuel 'Prop Stars' Picks: Best bets for Travis Kelce & Taylor Swift-inspired props for Chiefs-Jets Week 4",
+      "url": "https://www.sportingnews.com/us/nfl/news/best-chiefs-jets-prop-stars-bets-fanduel-kelce-swift-snf/581275901fe0e3011cdcb562"
+    },
+    "32efaebd-48c6-41a1-8006-b32921b7afeb": {
+      "corpus_id": "\u2018I was being ritually tortured\u2019: the most shocking moments in Britney Spears\u2019 memoir",
+      "document_id": "32efaebd-48c6-41a1-8006-b32921b7afeb",
+      "title": "\u2018I was being ritually tortured\u2019: the most shocking moments in Britney Spears\u2019 memoir",
+      "url": "https://www.theguardian.com/music/2023/oct/24/britney-spears-memoir-most-shocking-woman-in-me"
+    },
+    "3395fa3d-28d9-403e-bf97-5393662ba2b3": {
+      "corpus_id": "Daye now offers tampon-based STI screening \u2014 starting in the UK",
+      "document_id": "3395fa3d-28d9-403e-bf97-5393662ba2b3",
+      "title": "Daye now offers tampon-based STI screening \u2014 starting in the UK",
+      "url": "https://techcrunch.com/2023/11/06/daye-sti-testing/"
+    },
+    "352aa759-5619-45e0-9f17-0b0868d25f89": {
+      "corpus_id": "Know the price-matching policies for Best Buy, Target, Walmart, and others",
+      "document_id": "352aa759-5619-45e0-9f17-0b0868d25f89",
+      "title": "Know the price-matching policies for Best Buy, Target, Walmart, and others",
+      "url": "https://www.theverge.com/21570383/price-matching-policy-apple-google-microsoft"
+    },
+    "35516689-11e3-433e-89fa-a44c911cec30": {
+      "corpus_id": "Michigan sign-stealing scandal winners and losers, from Jim Harbaugh to Tony Petitti",
+      "document_id": "35516689-11e3-433e-89fa-a44c911cec30",
+      "title": "Michigan sign-stealing scandal winners and losers, from Jim Harbaugh to Tony Petitti",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/michigan-scandal-winners-losers-jim-harbaugh-tony-petitti/52ad1c9ec667b556323fa41c"
+    },
+    "356e182a-a7bc-4a0c-ab28-bf3fc5fe2ffd": {
+      "corpus_id": "MLB Betting Sites & Apps - The Best Baseball Sportsbooks 2023",
+      "document_id": "356e182a-a7bc-4a0c-ab28-bf3fc5fe2ffd",
+      "title": "MLB Betting Sites & Apps - The Best Baseball Sportsbooks 2023",
+      "url": "https://www.sportingnews.com/us/betting/news/mlb-betting-sites/90537abdc639ffc5d57a8c1b"
+    },
+    "35723964-1afd-4903-9740-cb2eb596bb9d": {
+      "corpus_id": "The restaurant nearest Google",
+      "document_id": "35723964-1afd-4903-9740-cb2eb596bb9d",
+      "title": "The restaurant nearest Google",
+      "url": "https://www.theverge.com/2023/10/26/23931825/google-search-local-seo-thai-food-near-me-maps"
+    },
+    "36be132a-82ea-4c70-b8ee-29aeff5c4583": {
+      "corpus_id": "7 of the best luxury ski resorts for a five-star experience",
+      "document_id": "36be132a-82ea-4c70-b8ee-29aeff5c4583",
+      "title": "7 of the best luxury ski resorts for a five-star experience",
+      "url": "https://www.independent.co.uk/travel/skiing/best-luxury-ski-resorts-b2427066.html"
+    },
+    "37cfdcb8-9f5b-4b07-8b58-766733ceb20d": {
+      "corpus_id": "Deepfake election risks trigger EU call for more generative AI safeguards",
+      "document_id": "37cfdcb8-9f5b-4b07-8b58-766733ceb20d",
+      "title": "Deepfake election risks trigger EU call for more generative AI safeguards",
+      "url": "https://techcrunch.com/2023/09/26/generative-ai-disinformation-risks/"
+    },
+    "38e1d41d-03a6-4de7-ba88-32e1faa4eeec": {
+      "corpus_id": "IPL 2024 Auction Live: Starc, Cummins in spotlight as Dubai set for \u2018richie-rich\u2019 carnival",
+      "document_id": "38e1d41d-03a6-4de7-ba88-32e1faa4eeec",
+      "title": "IPL 2024 Auction Live: Starc, Cummins in spotlight as Dubai set for \u2018richie-rich\u2019 carnival",
+      "url": "https://www.insidesport.in/cricket/ipl-2024-auction-live-updates-liveblog-dubai/"
+    },
+    "39b90235-240b-464f-b6af-ba6810b9516b": {
+      "corpus_id": "West Indies v England: first T20 international \u2013 live",
+      "document_id": "39b90235-240b-464f-b6af-ba6810b9516b",
+      "title": "West Indies v England: first T20 international \u2013 live",
+      "url": "https://www.theguardian.com/sport/live/2023/dec/12/west-indies-v-england-first-t20-international-cricket-live"
+    },
+    "3d5e86b7-c165-4581-98b6-cee61286732f": {
+      "corpus_id": "WTF is going on at OpenAI? We have theories",
+      "document_id": "3d5e86b7-c165-4581-98b6-cee61286732f",
+      "title": "WTF is going on at OpenAI? We have theories",
+      "url": "https://techcrunch.com/2023/11/17/wtf-is-going-on-at-openai-sam-altman-fired/"
+    },
+    "3ed04af9-5440-4df5-8a8f-32a9cc7a98c5": {
+      "corpus_id": "These jellyfish can learn without brains",
+      "document_id": "3ed04af9-5440-4df5-8a8f-32a9cc7a98c5",
+      "title": "These jellyfish can learn without brains",
+      "url": "https://www.snexplores.org/article/jellyfish-learn-without-brains"
+    },
+    "3f01537d-241c-41b9-adfb-098850940ef1": {
+      "corpus_id": "Ground-breaking Gold Coast: Suns make AFLW finals for a second time",
+      "document_id": "3f01537d-241c-41b9-adfb-098850940ef1",
+      "title": "Ground-breaking Gold Coast: Suns make AFLW finals for a second time",
+      "url": "https://www.theage.com.au/sport/afl/ground-breaking-gold-coast-suns-make-aflw-finals-for-a-second-time-20231103-p5ehk0.html?ref=rss&utm_medium=rss&utm_source=rss_sport"
+    },
+    "3f9ea8e3-768b-4fa2-8dc0-dd69a0b2e7d1": {
+      "corpus_id": "Man United vs Chelsea final score, result and highlights as Scott McTominay brace gives Ten Hag vital win",
+      "document_id": "3f9ea8e3-768b-4fa2-8dc0-dd69a0b2e7d1",
+      "title": "Man United vs Chelsea final score, result and highlights as Scott McTominay brace gives Ten Hag vital win",
+      "url": "https://www.sportingnews.com/us/soccer/news/man-united-vs-chelsea-live-score-result-premier-league/3fbd625c62445c98c3f5a559"
+    },
+    "3fb68c4e-6dd1-4b48-8cfe-8c4904ba2fde": {
+      "corpus_id": "Why the\u00a0Apple Watch\u00a0is being banned \u2014 and how Apple can avoid it",
+      "document_id": "3fb68c4e-6dd1-4b48-8cfe-8c4904ba2fde",
+      "title": "Why the\u00a0Apple Watch\u00a0is being banned \u2014 and how Apple can avoid it",
+      "url": "https://www.theverge.com/24006607/apple-watch-series-9-ultra-2-itc-import-ban"
+    },
+    "3fee4a45-1d91-497a-aa6d-2967a27abe94": {
+      "corpus_id": "The future of DC movies in 2022 and beyond",
+      "document_id": "3fee4a45-1d91-497a-aa6d-2967a27abe94",
+      "title": "The future of DC movies in 2022 and beyond",
+      "url": "https://www.polygon.com/movies/22352001/new-dc-movies-release-schedule"
+    },
+    "40ef43cf-b729-4339-981c-dd74992f3e29": {
+      "corpus_id": "Jada Pinkett Smith and Will Smith have been separated since 2016 - when should couples just get divorced?",
+      "document_id": "40ef43cf-b729-4339-981c-dd74992f3e29",
+      "title": "Jada Pinkett Smith and Will Smith have been separated since 2016 - when should couples just get divorced?",
+      "url": "https://www.independent.co.uk/life-style/will-smith-jada-separation-divorce-b2429576.html"
+    },
+    "4106ed84-902c-4629-9078-d0c15a6418c7": {
+      "corpus_id": "Nobel Prize winner shocked by early morning phone call from Sweden: 'It was ringing during the night, but I didn\u2019t answer it because I\u2019m trying to get some sleep, basically'",
+      "document_id": "4106ed84-902c-4629-9078-d0c15a6418c7",
+      "title": "Nobel Prize winner shocked by early morning phone call from Sweden: 'It was ringing during the night, but I didn\u2019t answer it because I\u2019m trying to get some sleep, basically'",
+      "url": "https://fortune.com/2023/10/04/nobel-prize-winner-shocked-phone-call-sweden-columbia-professor-chemistry/"
+    },
+    "414a16b3-d623-4dd9-ac65-94eabd72d706": {
+      "corpus_id": "Chiefs vs. Jets live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "document_id": "414a16b3-d623-4dd9-ac65-94eabd72d706",
+      "title": "Chiefs vs. Jets live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/chiefs-jets-score-highlights-nfl-sunday-night-football/3e44364b970dbac0d083948d"
+    },
+    "414e1ae8-ee0a-46f2-a497-966a3e29dc12": {
+      "corpus_id": "Want to help your kids achieve their potential? This expert has some advice",
+      "document_id": "414e1ae8-ee0a-46f2-a497-966a3e29dc12",
+      "title": "Want to help your kids achieve their potential? This expert has some advice",
+      "url": "https://www.theage.com.au/lifestyle/health-and-wellness/want-to-help-your-kids-achieve-their-potential-this-expert-has-some-advice-20231128-p5end1.html?ref=rss&utm_medium=rss&utm_source=rss_lifestyle"
+    },
+    "42972973-c84e-4f5b-9f50-af0825eb7c2f": {
+      "corpus_id": "Fantasy Injury Updates Week 10: News on Justin Jefferson, Ja'Marr Chase, T.J. Hockenson & Curtis Samuel",
+      "document_id": "42972973-c84e-4f5b-9f50-af0825eb7c2f",
+      "title": "Fantasy Injury Updates Week 10: News on Justin Jefferson, Ja'Marr Chase, T.J. Hockenson & Curtis Samuel",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-injury-updates-week-10-jefferson-chase-hockenson/e836c8483a4efe09a42774e2"
+    },
+    "433af126-9ba1-49fc-b481-f40bd147bff6": {
+      "corpus_id": "The best Warlock subclass, feats, and build in Baldur\u2019s Gate 3",
+      "document_id": "433af126-9ba1-49fc-b481-f40bd147bff6",
+      "title": "The best Warlock subclass, feats, and build in Baldur\u2019s Gate 3",
+      "url": "https://www.polygon.com/baldurs-gate-3-guides/23814020/warlock-class-subclasses-stats-features-proficiencies"
+    },
+    "4340539e-9822-4d9f-9d13-df2c2659e1bc": {
+      "corpus_id": "The people who ruined the internet",
+      "document_id": "4340539e-9822-4d9f-9d13-df2c2659e1bc",
+      "title": "The people who ruined the internet",
+      "url": "https://www.theverge.com/features/23931789/seo-search-engine-optimization-experts-google-results"
+    },
+    "435e4d5d-30c4-4d6e-acbb-95347dbe0b67": {
+      "corpus_id": "Man United vs Chelsea head to head record, all-time results between Premier League giants",
+      "document_id": "435e4d5d-30c4-4d6e-acbb-95347dbe0b67",
+      "title": "Man United vs Chelsea head to head record, all-time results between Premier League giants",
+      "url": "https://www.sportingnews.com/us/soccer/news/man-united-vs-chelsea-head-head-record-all-time-results-between-premier-league-giants/b22c86de60fa22873714abc1"
+    },
+    "45678722-ff8f-447a-b6e6-831b7c42172c": {
+      "corpus_id": "Here are the best Kindle deals right now",
+      "document_id": "45678722-ff8f-447a-b6e6-831b7c42172c",
+      "title": "Here are the best Kindle deals right now",
+      "url": "https://www.theverge.com/21539047/best-amazon-kindle-deals"
+    },
+    "4685fd66-3194-4448-a8ad-cfd7e00b093a": {
+      "corpus_id": "European consumer groups band together to fight Meta\u2019s self-serving ad-free sub \u2014 branding it \u2018unfair\u2019 and \u2018illegal\u2019",
+      "document_id": "4685fd66-3194-4448-a8ad-cfd7e00b093a",
+      "title": "European consumer groups band together to fight Meta\u2019s self-serving ad-free sub \u2014 branding it \u2018unfair\u2019 and \u2018illegal\u2019",
+      "url": "https://techcrunch.com/2023/11/29/beuc-cpc-meta-complaint/"
+    },
+    "46976002-1d31-41a6-b14f-99572c3f7826": {
+      "corpus_id": "Earnings week ahead: Amazon, Microsoft, Alphabet, Meta, Ford, GM and more",
+      "document_id": "46976002-1d31-41a6-b14f-99572c3f7826",
+      "title": "Earnings week ahead: Amazon, Microsoft, Alphabet, Meta, Ford, GM and more",
+      "url": "https://seekingalpha.com/news/4022507-earnings-week-ahead-amazon-microsoft-alphabet-ford-general-motors-and-more?utm_source=feed_news_all&utm_medium=referral&feed_item_type=news"
+    },
+    "4812474b-5dee-4f83-89a3-20677b6ba617": {
+      "corpus_id": "Fans spot Travis Kelce wearing Taylor Swift-themed friendship bracelet before she attended his game",
+      "document_id": "4812474b-5dee-4f83-89a3-20677b6ba617",
+      "title": "Fans spot Travis Kelce wearing Taylor Swift-themed friendship bracelet before she attended his game",
+      "url": "https://www.independent.co.uk/life-style/travis-kelce-taylor-swift-friendship-bracelet-b2419065.html"
+    },
+    "4971c6de-bccc-4b0d-8a40-382787e33c0c": {
+      "corpus_id": "A timeline of Sam Altman\u2019s firing from OpenAI \u2014 and the fallout",
+      "document_id": "4971c6de-bccc-4b0d-8a40-382787e33c0c",
+      "title": "A timeline of Sam Altman\u2019s firing from OpenAI \u2014 and the fallout",
+      "url": "https://techcrunch.com/2023/11/18/a-timeline-of-sam-altmans-firing-from-openai-and-the-fallout/"
+    },
+    "49a8fd64-50e8-4530-81d9-aecebb7c522b": {
+      "corpus_id": "\u2018As clinical as it gets\u2019: Unbeaten Aussie moves to 24-0 with stunning first-round KO of hapless Englishman",
+      "document_id": "49a8fd64-50e8-4530-81d9-aecebb7c522b",
+      "title": "\u2018As clinical as it gets\u2019: Unbeaten Aussie moves to 24-0 with stunning first-round KO of hapless Englishman",
+      "url": "https://www.theroar.com.au/2023/12/24/as-clinical-as-it-gets-unbeaten-aussie-moves-to-24-0-with-stunning-first-round-ko-of-hapless-englishman/"
+    },
+    "49c13885-bb09-49c5-99d5-2e59edfa4b80": {
+      "corpus_id": "ASX set to drop as Wall Street\u2019s September slump deepens",
+      "document_id": "49c13885-bb09-49c5-99d5-2e59edfa4b80",
+      "title": "ASX set to drop as Wall Street\u2019s September slump deepens",
+      "url": "https://www.smh.com.au/business/markets/asx-set-to-drop-as-wall-street-s-september-slump-deepens-20230927-p5e7v7.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "4c00cad4-1132-4512-8702-981226a1e01e": {
+      "corpus_id": "Champions League permutations, scenarios: What teams need to qualify from groups for 2023/24 Round of 16 stage",
+      "document_id": "4c00cad4-1132-4512-8702-981226a1e01e",
+      "title": "Champions League permutations, scenarios: What teams need to qualify from groups for 2023/24 Round of 16 stage",
+      "url": "https://www.sportingnews.com/us/soccer/news/champions-league-permutations-scenarios-teams-groups-round-16/6a97ebef38a68bc175d441c5"
+    },
+    "4de016cb-d3a0-4f23-ada7-e69eeb718085": {
+      "corpus_id": "Castlevania: Nocturne is a revolutionary epic that does the franchise\u2019s best games justice",
+      "document_id": "4de016cb-d3a0-4f23-ada7-e69eeb718085",
+      "title": "Castlevania: Nocturne is a revolutionary epic that does the franchise\u2019s best games justice",
+      "url": "https://www.theverge.com/23891310/netflix-castlevania-nocturne-review-konami-animated"
+    },
+    "4edff177-6c11-401b-a7cd-a2295ff71060": {
+      "corpus_id": "Wild fire HC Dean Evason, hire John Hynes as replacement",
+      "document_id": "4edff177-6c11-401b-a7cd-a2295ff71060",
+      "title": "Wild fire HC Dean Evason, hire John Hynes as replacement",
+      "url": "https://www.yardbarker.com/nhl/articles/wild_fire_hc_dean_evason_hire_john_hynes_as_replacement/s1_14825_39593137"
+    },
+    "4ee67631-df20-47d5-b9c9-6d04c4cd3073": {
+      "corpus_id": "At 37, Alexandra found herself broke, heartbroken and living with her parents",
+      "document_id": "4ee67631-df20-47d5-b9c9-6d04c4cd3073",
+      "title": "At 37, Alexandra found herself broke, heartbroken and living with her parents",
+      "url": "https://www.theage.com.au/lifestyle/life-and-relationships/at-37-alexandra-found-herself-broke-heartbroken-and-living-with-her-parents-20231109-p5eirq.html?ref=rss&utm_medium=rss&utm_source=rss_lifestyle"
+    },
+    "4efd9b34-d867-4e85-9209-bc3cf561505f": {
+      "corpus_id": "Christmas Day preview: 49ers, Ravens square off in potential Super Bowl sneak peek",
+      "document_id": "4efd9b34-d867-4e85-9209-bc3cf561505f",
+      "title": "Christmas Day preview: 49ers, Ravens square off in potential Super Bowl sneak peek",
+      "url": "https://www.yardbarker.com/nfl/articles/christmas_day_preview_49ers_ravens_square_off_in_potential_super_bowl_sneak_peek/s1_13132_39720250"
+    },
+    "4fc13fd3-3de4-4966-bb14-1e9d9d2912dd": {
+      "corpus_id": "Young Taylor Swift fans go viral for struggling to open the star's CD: 'Making me laugh'",
+      "document_id": "4fc13fd3-3de4-4966-bb14-1e9d9d2912dd",
+      "title": "Young Taylor Swift fans go viral for struggling to open the star's CD: 'Making me laugh'",
+      "url": "https://www.foxnews.com/lifestyle/young-taylor-swift-fans-go-viral-struggling-open-stars-cd-making-me-laugh"
+    },
+    "5176a84e-33f4-4bee-931b-cc58928fff58": {
+      "corpus_id": "Cranberries: A Thanksgiving Staple With a Rich History and Unique Biology",
+      "document_id": "5176a84e-33f4-4bee-931b-cc58928fff58",
+      "title": "Cranberries: A Thanksgiving Staple With a Rich History and Unique Biology",
+      "url": "https://scitechdaily.com/cranberries-a-thanksgiving-staple-with-a-rich-history-and-unique-biology/"
+    },
+    "527b283e-11c2-4da0-8a8e-c762becc0b20": {
+      "corpus_id": "Israel's defense undone by reliance on technology",
+      "document_id": "527b283e-11c2-4da0-8a8e-c762becc0b20",
+      "title": "Israel's defense undone by reliance on technology",
+      "url": "https://en.globes.co.il/en/article-1001461695#utm_source=RSS"
+    },
+    "5608be7d-5278-4ef8-8064-670ee8a65f32": {
+      "corpus_id": "NFL Best Bets Week 9: Colts clobber Panthers, Dolphins drop Chiefs in Germany",
+      "document_id": "5608be7d-5278-4ef8-8064-670ee8a65f32",
+      "title": "NFL Best Bets Week 9: Colts clobber Panthers, Dolphins drop Chiefs in Germany",
+      "url": "https://www.sportingnews.com/us/nfl/news/nfl-best-bets-week-9-spread-moneyline-over-under-props/a1ec41161f82a56561cdac97"
+    },
+    "57017c27-7417-4856-ba71-eae257418cfd": {
+      "corpus_id": "How Did the Houston Astros Cheat in 2017? Everything to Know About a Dark Moment in MLB History",
+      "document_id": "57017c27-7417-4856-ba71-eae257418cfd",
+      "title": "How Did the Houston Astros Cheat in 2017? Everything to Know About a Dark Moment in MLB History",
+      "url": "https://www.essentiallysports.com/mlb-baseball-news-how-did-the-houston-astros-cheat-in-twenty-seventeen-everything-to-know-about-a-dark-moment-in-mlb-history/"
+    },
+    "584b2255-b4ea-4e18-a0bc-4ad9301dc8ae": {
+      "corpus_id": "Michigan didn't need Jim Harbaugh against Penn State, but Ohio State is a different game",
+      "document_id": "584b2255-b4ea-4e18-a0bc-4ad9301dc8ae",
+      "title": "Michigan didn't need Jim Harbaugh against Penn State, but Ohio State is a different game",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/michigan-jim-harbaugh-penn-state-ohio-state-different-game/91a7f796bb8ff2fdc9c27698"
+    },
+    "5854a074-32a3-4682-8722-75fd5ed31d91": {
+      "corpus_id": "Suicide prevention program at Nebraska children's hospital emphasizes encouraging, 'life-saving' notes",
+      "document_id": "5854a074-32a3-4682-8722-75fd5ed31d91",
+      "title": "Suicide prevention program at Nebraska children's hospital emphasizes encouraging, 'life-saving' notes",
+      "url": "https://www.foxnews.com/health/suicide-prevention-program-nebraska-childrens-hospital-encouraging-life-saving-notes"
+    },
+    "58e1ed34-09b5-4f76-8a20-8a1832ba08e8": {
+      "corpus_id": "6 games to play first on your new Nintendo Switch",
+      "document_id": "58e1ed34-09b5-4f76-8a20-8a1832ba08e8",
+      "title": "6 games to play first on your new Nintendo Switch",
+      "url": "https://www.polygon.com/what-to-play/24007353/nintendo-switch-best-games-to-play-first"
+    },
+    "58e7b327-bd36-4020-8497-153773b17fa5": {
+      "corpus_id": "A comprehensive list of 2023 tech layoffs",
+      "document_id": "58e7b327-bd36-4020-8497-153773b17fa5",
+      "title": "A comprehensive list of 2023 tech layoffs",
+      "url": "https://techcrunch.com/2023/09/28/tech-layoffs-2023-list/"
+    },
+    "59600680-c672-4887-8a7e-eaa1ae2bdcd5": {
+      "corpus_id": "Thanksgiving is Spider-Man\u2019s holiday",
+      "document_id": "59600680-c672-4887-8a7e-eaa1ae2bdcd5",
+      "title": "Thanksgiving is Spider-Man\u2019s holiday",
+      "url": "https://www.polygon.com/23971196/spider-man-thanksgiving-connection-holiday"
+    },
+    "5a596f47-bb64-4aa4-bde2-89deb1cec115": {
+      "corpus_id": "RA set to announce local as high-performance director \u2013 and how it could help land Schmidt as Wallabies coach",
+      "document_id": "5a596f47-bb64-4aa4-bde2-89deb1cec115",
+      "title": "RA set to announce local as high-performance director \u2013 and how it could help land Schmidt as Wallabies coach",
+      "url": "https://www.theroar.com.au/2023/12/12/ra-set-to-announce-local-as-high-performance-director-and-how-it-could-help-land-schmidt-as-wallabies-coach/"
+    },
+    "5ae3947f-67b5-4649-81ac-d4cdefdc8dcb": {
+      "corpus_id": "ICC World Cup 2023 Most Runs and Wickets: Full List of top 10 batsmen and bowlers in 2023 edition of cricket World Cup, Know where Virat Kohli, Rohit Sharma, Shami, Bumrah, rank",
+      "document_id": "5ae3947f-67b5-4649-81ac-d4cdefdc8dcb",
+      "title": "ICC World Cup 2023 Most Runs and Wickets: Full List of top 10 batsmen and bowlers in 2023 edition of cricket World Cup, Know where Virat Kohli, Rohit Sharma, Shami, Bumrah, rank",
+      "url": "https://www.zeebiz.com/trending/sports/news-icc-world-cup-2023-most-runs-and-wickets-full-list-of-top-10-batsmen-and-bowlers-in-2023-edition-of-cricket-world-cup-know-where-virat-kohli-rohit-sharma-shami"
+    },
+    "5ae7bda1-ae43-4eda-a236-5338c0fc8fd7": {
+      "corpus_id": "Mysterious dog respiratory illness: What to know",
+      "document_id": "5ae7bda1-ae43-4eda-a236-5338c0fc8fd7",
+      "title": "Mysterious dog respiratory illness: What to know",
+      "url": "https://news.yahoo.com/mysterious-dog-respiratory-illness-know-193006621.html"
+    },
+    "5b2eba1c-77a4-424f-b8ec-1e6a2121d106": {
+      "corpus_id": "200+ of the best deals from Amazon's Cyber Monday sale",
+      "document_id": "5b2eba1c-77a4-424f-b8ec-1e6a2121d106",
+      "title": "200+ of the best deals from Amazon's Cyber Monday sale",
+      "url": "https://mashable.com/article/cyber-monday-deals-amazon-2023"
+    },
+    "5d7efdb0-4a25-4dc3-acd7-8411f5f343e6": {
+      "corpus_id": "Colorado vs. UCLA live score, updates, highlights from Week 9 college football game",
+      "document_id": "5d7efdb0-4a25-4dc3-acd7-8411f5f343e6",
+      "title": "Colorado vs. UCLA live score, updates, highlights from Week 9 college football game",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/colorado-ucla-live-score-highlights-college-football/01a78f0b290d93746e3e17bb"
+    },
+    "5ec746c6-d0bf-4b21-9e8c-e7b61c52753f": {
+      "corpus_id": "Best NHL prop bets tonight: Artemi Panarin, Cale Makar highlight top parlay picks for Rangers-Red Wings, Devils-Avalanche",
+      "document_id": "5ec746c6-d0bf-4b21-9e8c-e7b61c52753f",
+      "title": "Best NHL prop bets tonight: Artemi Panarin, Cale Makar highlight top parlay picks for Rangers-Red Wings, Devils-Avalanche",
+      "url": "https://www.sportingnews.com/us/nhl/news/best-nhl-prop-bets-tonight-panarin-makar-tuesday/67d9b5e55d061181d7805c01"
+    },
+    "5fbaf2c9-c45f-42b1-b04b-ea202f7c4422": {
+      "corpus_id": "Vermont Sportsbook Promos and Sports Betting Launch News",
+      "document_id": "5fbaf2c9-c45f-42b1-b04b-ea202f7c4422",
+      "title": "Vermont Sportsbook Promos and Sports Betting Launch News",
+      "url": "https://www.sportingnews.com/us/betting/news/vermont-sportsbook-promos/b4779ea9b7172cc57a201b0f"
+    },
+    "6014545a-b2ca-4ea8-97af-0b81e63b6dbd": {
+      "corpus_id": "Michigan sign-stealing scandal news: Latest updates on possible Jim Harbaugh suspension from NCAA cheating investigation",
+      "document_id": "6014545a-b2ca-4ea8-97af-0b81e63b6dbd",
+      "title": "Michigan sign-stealing scandal news: Latest updates on possible Jim Harbaugh suspension from NCAA cheating investigation",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/michigan-sign-stealing-scandal-updates-jim-harbaugh-suspension/4072ec7b8f79e8a6a3251892"
+    },
+    "6021b206-2b7d-4ad3-9873-0a0f25fdcd4c": {
+      "corpus_id": "Cowboys vs. 49ers live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "document_id": "6021b206-2b7d-4ad3-9873-0a0f25fdcd4c",
+      "title": "Cowboys vs. 49ers live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/cowboys-49ers-live-score-highlights-sunday-night-football/e46d8e03c6a948aa82f859c3"
+    },
+    "60732396-4781-4f56-8ca0-1f09abfae75f": {
+      "corpus_id": "Blackhawks vs. Penguins live score, updates, highlights from Connor Bedard's NHL debut",
+      "document_id": "60732396-4781-4f56-8ca0-1f09abfae75f",
+      "title": "Blackhawks vs. Penguins live score, updates, highlights from Connor Bedard's NHL debut",
+      "url": "https://www.sportingnews.com/us/nhl/news/blackhawks-penguins-live-score-highlights-connor-bedard-nhl/fb8d1f92d5b8081447fa904c"
+    },
+    "635bfeb5-2ba0-474e-b755-ca03234569f7": {
+      "corpus_id": "Top goalscorers of 2023: Cristiano Ronaldo brings up 50 goals with Erling Haaland and Harry Kane also high on list",
+      "document_id": "635bfeb5-2ba0-474e-b755-ca03234569f7",
+      "title": "Top goalscorers of 2023: Cristiano Ronaldo brings up 50 goals with Erling Haaland and Harry Kane also high on list",
+      "url": "https://talksport.com/football/1674719/top-goalscorers-2023-ronaldo-haaland-kane/"
+    },
+    "63e7980a-55c0-4419-9fd7-66484bbd5f6e": {
+      "corpus_id": "Wullaert Fires Belgium to 3-2 Home Win over England In UEFA Women\u2019s Nations League",
+      "document_id": "63e7980a-55c0-4419-9fd7-66484bbd5f6e",
+      "title": "Wullaert Fires Belgium to 3-2 Home Win over England In UEFA Women\u2019s Nations League",
+      "url": "https://sportgrill.co.uk/2023/10/31/wullaert-fires-belgium-to-3-2-home-win-over-england-in-uefa-womens-nations-league/"
+    },
+    "641104ca-4882-410c-bde3-e220f407fea1": {
+      "corpus_id": "ChatGPT: Everything you need to know about the AI-powered chatbot",
+      "document_id": "641104ca-4882-410c-bde3-e220f407fea1",
+      "title": "ChatGPT: Everything you need to know about the AI-powered chatbot",
+      "url": "https://techcrunch.com/2023/09/28/chatgpt-everything-to-know-about-the-ai-chatbot/"
+    },
+    "653d9033-3122-4c40-8a90-5ec7af6658c7": {
+      "corpus_id": "ICC World Cup 2023: India at Cricket World Cup semi-finals so far",
+      "document_id": "653d9033-3122-4c40-8a90-5ec7af6658c7",
+      "title": "ICC World Cup 2023: India at Cricket World Cup semi-finals so far",
+      "url": "https://www.zeebiz.com/trending/sports/news-icc-world-cup-2023-india-at-cricket-world-cup-semifinals-so-far-indias-journey-in-world-cup-semifinals-rohit-sharma-sachin-tendulkar-kohli-ind-vs-sa-australia-eden-gardens-wankhede-south-africa-england-sri-lanka-262883"
+    },
+    "6573efea-b232-434e-9ea7-945b594651bb": {
+      "corpus_id": "Elon Musk\u2019s X faces first DSA probe in EU over illegal content risks, moderation, transparency and deceptive UX design",
+      "document_id": "6573efea-b232-434e-9ea7-945b594651bb",
+      "title": "Elon Musk\u2019s X faces first DSA probe in EU over illegal content risks, moderation, transparency and deceptive UX design",
+      "url": "https://techcrunch.com/2023/12/18/x-dsa-probe/"
+    },
+    "6625a0ba-8a96-48a2-94a0-4984ec424f2b": {
+      "corpus_id": "5 things to know before watching the Five Nights at Freddy\u2019s movie",
+      "document_id": "6625a0ba-8a96-48a2-94a0-4984ec424f2b",
+      "title": "5 things to know before watching the Five Nights at Freddy\u2019s movie",
+      "url": "https://www.polygon.com/23933705/five-nights-at-freddys-fnaf-movie-post-credits-scene-faq-too-scary-for-kids"
+    },
+    "664c2ad5-fa2f-4f39-ae35-cdbf6817581b": {
+      "corpus_id": "Here are over 40 last-minute gifts you can still nab before Christmas",
+      "document_id": "664c2ad5-fa2f-4f39-ae35-cdbf6817581b",
+      "title": "Here are over 40 last-minute gifts you can still nab before Christmas",
+      "url": "https://www.theverge.com/23642026/best-digital-gift-ideas-online-cards-subscriptions"
+    },
+    "66690032-12bc-4ed4-860e-6a2a532b73ce": {
+      "corpus_id": "NBA Prop Bets - Best Team and Player Props 2023/24 Season",
+      "document_id": "66690032-12bc-4ed4-860e-6a2a532b73ce",
+      "title": "NBA Prop Bets - Best Team and Player Props 2023/24 Season",
+      "url": "https://www.sportingnews.com/us/betting/news/nba-prop-bets/1ced83b63a5656fa1b3daffb"
+    },
+    "67bd1ea0-e3cc-4bd7-8cac-aa5fbee89dcb": {
+      "corpus_id": "\u2018Mass breach of privacy\u2019: TikTok under fire for tracking users online",
+      "document_id": "67bd1ea0-e3cc-4bd7-8cac-aa5fbee89dcb",
+      "title": "\u2018Mass breach of privacy\u2019: TikTok under fire for tracking users online",
+      "url": "https://www.theage.com.au/technology/mass-breach-of-privacy-tiktok-under-fire-for-tracking-users-online-20231224-p5etik.html?ref=rss&utm_medium=rss&utm_source=rss_technology"
+    },
+    "6824db02-4cd3-487a-92ff-7e1aae9dee86": {
+      "corpus_id": "Hipgnosis Songs Fund\u2019s board is concerned over Citrin Cooperman\u2019s latest valuation of the company. What\u2019s it going to do about it?",
+      "document_id": "6824db02-4cd3-487a-92ff-7e1aae9dee86",
+      "title": "Hipgnosis Songs Fund\u2019s board is concerned over Citrin Cooperman\u2019s latest valuation of the company. What\u2019s it going to do about it?",
+      "url": "https://www.musicbusinessworldwide.com/hipgnosis-songs-funds-board-is-concerned-over-citrin-coopermans-latest-valuation-of-the-company-whats-it-going-to-do-about-it/"
+    },
+    "685c354b-a8f6-486d-ae3a-792426e9ae7b": {
+      "corpus_id": "Michigan\u2019s Rivals Fume About Sign-Stealing: \u2018This Was Damn Near Espionage\u2019",
+      "document_id": "685c354b-a8f6-486d-ae3a-792426e9ae7b",
+      "title": "Michigan\u2019s Rivals Fume About Sign-Stealing: \u2018This Was Damn Near Espionage\u2019",
+      "url": "https://theathletic.com/5024796/2023/11/02/big-ten-coaches-call-michigan-sign-stealing/"
+    },
+    "6868ef1b-703c-4e2b-a79b-bd44bbe0a2aa": {
+      "corpus_id": "Fantasy Football Week 16 Wide Receiver Preview: Waiver adds, DFS plays, and more",
+      "document_id": "6868ef1b-703c-4e2b-a79b-bd44bbe0a2aa",
+      "title": "Fantasy Football Week 16 Wide Receiver Preview: Waiver adds, DFS plays, and more",
+      "url": "https://www.cbssports.com/fantasy/football/news/fantasy-football-week-16-wide-receiver-preview-waiver-adds-dfs-plays-and-more/"
+    },
+    "691c2251-e17c-4413-b106-c2ebca295d66": {
+      "corpus_id": "ASX rises after Wall Street gains on rate optimism; Oil drops",
+      "document_id": "691c2251-e17c-4413-b106-c2ebca295d66",
+      "title": "ASX rises after Wall Street gains on rate optimism; Oil drops",
+      "url": "https://www.smh.com.au/business/markets/asx-rises-after-wall-street-gains-on-rate-optimism-oil-drops-20231011-p5eba1.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "69a69f2e-e1bc-4f62-9391-f01ffcf73553": {
+      "corpus_id": "Jada Pinkett Smith reveals why she and Will Smith never signed a prenup",
+      "document_id": "69a69f2e-e1bc-4f62-9391-f01ffcf73553",
+      "title": "Jada Pinkett Smith reveals why she and Will Smith never signed a prenup",
+      "url": "https://www.independent.co.uk/life-style/jada-pinkett-will-smith-prenup-b2430529.html"
+    },
+    "6cdbfe5f-e21e-4ab4-ba6f-30e37dd73e9d": {
+      "corpus_id": "World Series 2023 live score: Rangers vs. Diamondbacks updates, highlights, results from Game 4",
+      "document_id": "6cdbfe5f-e21e-4ab4-ba6f-30e37dd73e9d",
+      "title": "World Series 2023 live score: Rangers vs. Diamondbacks updates, highlights, results from Game 4",
+      "url": "https://www.sportingnews.com/us/mlb/news/world-series-live-score-rangers-diamondbacks-game-4/59435f6fdceaa5092bcb2f40"
+    },
+    "6dd830f3-ecf6-409d-adb4-f63908fc6924": {
+      "corpus_id": "Keep Labs\u2019 smart storage redefines medication management",
+      "document_id": "6dd830f3-ecf6-409d-adb4-f63908fc6924",
+      "title": "Keep Labs\u2019 smart storage redefines medication management",
+      "url": "https://techcrunch.com/2023/10/04/keep-labs-smart-storage-redefines-medication-management/"
+    },
+    "6e61f175-4d8b-4937-a2e4-2a228cd756a4": {
+      "corpus_id": "NFL standings: Updated AFC, NFC playoff picture for Week 13 of 2023 season",
+      "document_id": "6e61f175-4d8b-4937-a2e4-2a228cd756a4",
+      "title": "NFL standings: Updated AFC, NFC playoff picture for Week 13 of 2023 season",
+      "url": "https://www.sportingnews.com/us/nfl/news/nfl-standings-2023-playoff-picture-week-13/d51dfe0fbd879c7a1bbadb06"
+    },
+    "70dfcc2b-4c0c-42d2-a288-45fd810a94c6": {
+      "corpus_id": "Uber\u2019s Q3 numbers include impressive profitability gains, slower-than-expected growth",
+      "document_id": "70dfcc2b-4c0c-42d2-a288-45fd810a94c6",
+      "title": "Uber\u2019s Q3 numbers include impressive profitability gains, slower-than-expected growth",
+      "url": "https://techcrunch.com/2023/11/07/ubers-q3-numbers-profitability-gains/"
+    },
+    "70e9f7f9-d067-4856-a30c-c083feec1e4f": {
+      "corpus_id": "India to be one of world's fastest growing economies over next decade",
+      "document_id": "70e9f7f9-d067-4856-a30c-c083feec1e4f",
+      "title": "India to be one of world's fastest growing economies over next decade",
+      "url": "https://www.zeebiz.com/economy-infra/news-india-to-be-one-of-worlds-fastest-growing-economies-over-next-decade-259584"
+    },
+    "717190ca-5f44-4320-bdd8-2d4f541bed7b": {
+      "corpus_id": "The obsessive tormenter who made professors\u2019 lives miserable",
+      "document_id": "717190ca-5f44-4320-bdd8-2d4f541bed7b",
+      "title": "The obsessive tormenter who made professors\u2019 lives miserable",
+      "url": "https://www.theverge.com/c/features/23903125/lurker-online-harassment-stalking-asian-academics"
+    },
+    "7299008e-566b-4a29-8272-fef1598df05d": {
+      "corpus_id": "Why Mozilla is betting on a decentralized social networking future",
+      "document_id": "7299008e-566b-4a29-8272-fef1598df05d",
+      "title": "Why Mozilla is betting on a decentralized social networking future",
+      "url": "https://techcrunch.com/2023/11/03/why-mozilla-is-betting-on-a-decentralized-social-networking-future/"
+    },
+    "7319f912-2d49-4be0-980b-8aef4c8601cf": {
+      "corpus_id": "How to choose the best class for you in Baldur\u2019s Gate 3",
+      "document_id": "7319f912-2d49-4be0-980b-8aef4c8601cf",
+      "title": "How to choose the best class for you in Baldur\u2019s Gate 3",
+      "url": "https://www.polygon.com/baldurs-gate-3-guides/23817654/best-class-choose-classes"
+    },
+    "742ae62d-3c3f-4e91-aa4e-67a5b964e790": {
+      "corpus_id": "Arnold Schwarzenegger, Reese Witherspoon parent with tough love: 'Learning from failure'",
+      "document_id": "742ae62d-3c3f-4e91-aa4e-67a5b964e790",
+      "title": "Arnold Schwarzenegger, Reese Witherspoon parent with tough love: 'Learning from failure'",
+      "url": "https://www.foxnews.com/entertainment/arnold-schwarzenegger-reese-witherspoon-parent-with-tough-love-learning-from-failure"
+    },
+    "74c8caca-5f25-487e-85a8-f2e4b9d18764": {
+      "corpus_id": "Travis Kelce faces backlash after comments about \u2018finding a breeder\u2019 resurface amid Taylor Swift romance",
+      "document_id": "74c8caca-5f25-487e-85a8-f2e4b9d18764",
+      "title": "Travis Kelce faces backlash after comments about \u2018finding a breeder\u2019 resurface amid Taylor Swift romance",
+      "url": "https://www.independent.co.uk/life-style/travis-kelce-taylor-swift-children-b2438558.html"
+    },
+    "7549eeb4-0d3f-42af-a669-bc1c435aa40d": {
+      "corpus_id": "FanDuel Picks Week 15: Best NFL DFS lineup advice for daily fantasy football tournaments",
+      "document_id": "7549eeb4-0d3f-42af-a669-bc1c435aa40d",
+      "title": "FanDuel Picks Week 15: Best NFL DFS lineup advice for daily fantasy football tournaments",
+      "url": "https://www.sportingnews.com/us/nfl/news/fanduel-picks-week-15-nfl-dfs-lineup-advice-daily-fantasy/ec0ab2947586908f262c7bcd"
+    },
+    "7567400d-cb63-4a1c-96cf-60d9f9181006": {
+      "corpus_id": "How the conspiracy-fueled Epoch Times went mainstream and made millions",
+      "document_id": "7567400d-cb63-4a1c-96cf-60d9f9181006",
+      "title": "How the conspiracy-fueled Epoch Times went mainstream and made millions",
+      "url": "https://www.nbcnews.com/news/us-news/epoch-times-falun-gong-growth-rcna111373"
+    },
+    "7574f117-cc99-4ab5-9467-83788ff1ca93": {
+      "corpus_id": "Fantasy Football QB Rankings Week 14: Who to start, best sleepers at quarterback",
+      "document_id": "7574f117-cc99-4ab5-9467-83788ff1ca93",
+      "title": "Fantasy Football QB Rankings Week 14: Who to start, best sleepers at quarterback",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-qb-rankings-week-14-quarterback-sleepers/800a53cfcb378f32c12b80cd"
+    },
+    "75db838e-9fc7-4c83-938b-e816ff19e774": {
+      "corpus_id": "Amazon\u2019s iRobot purchase sucks up formal competition concerns in EU",
+      "document_id": "75db838e-9fc7-4c83-938b-e816ff19e774",
+      "title": "Amazon\u2019s iRobot purchase sucks up formal competition concerns in EU",
+      "url": "https://techcrunch.com/2023/11/27/eu-amazon-irobot-statement-of-objections/"
+    },
+    "765330fb-c43e-4392-8dfe-229c10c4ef29": {
+      "corpus_id": "Sarah Michelle Gellar hits out at Roblox after her son\u2019s account gets hacked",
+      "document_id": "765330fb-c43e-4392-8dfe-229c10c4ef29",
+      "title": "Sarah Michelle Gellar hits out at Roblox after her son\u2019s account gets hacked",
+      "url": "https://www.independent.co.uk/life-style/sarah-michelle-gellar-roblox-hacked-b2458897.html"
+    },
+    "795af886-f1e4-4c97-a698-d0c9c0e7ca51": {
+      "corpus_id": "How OpenAI's ChatGPT has changed the world in just a year",
+      "document_id": "795af886-f1e4-4c97-a698-d0c9c0e7ca51",
+      "title": "How OpenAI's ChatGPT has changed the world in just a year",
+      "url": "https://www.engadget.com/how-openais-chatgpt-has-changed-the-world-in-just-a-year-140050053.html?src=rss"
+    },
+    "7a304b38-bb43-40f1-9c64-29f96d5d1d03": {
+      "corpus_id": "WebSummit derailed by founder\u2019s public fight with those supporting Israel in Hamas conflict",
+      "document_id": "7a304b38-bb43-40f1-9c64-29f96d5d1d03",
+      "title": "WebSummit derailed by founder\u2019s public fight with those supporting Israel in Hamas conflict",
+      "url": "https://techcrunch.com/2023/10/16/websummit-derailed-by-founders-public-fight-with-those-supporting-israel-in-hamas-conflict/"
+    },
+    "7b917925-1c13-497b-a5a9-b08659923d07": {
+      "corpus_id": "Tesla \u2018digs its own grave with the Cybertruck,\u2019 Convoy collapses and Rivian scores a win at Rebelle",
+      "document_id": "7b917925-1c13-497b-a5a9-b08659923d07",
+      "title": "Tesla \u2018digs its own grave with the Cybertruck,\u2019 Convoy collapses and Rivian scores a win at Rebelle",
+      "url": "https://techcrunch.com/2023/10/22/tesla-digs-its-own-grave-with-the-cybertruck-convoy-collapses-and-rivian-scores-a-win-at-rebelle/"
+    },
+    "7c23a300-66f0-4f37-81f9-4bebd5d3ef14": {
+      "corpus_id": "He killed Jon Snow. Now Owen Teale is coming to ruin your Christmas",
+      "document_id": "7c23a300-66f0-4f37-81f9-4bebd5d3ef14",
+      "title": "He killed Jon Snow. Now Owen Teale is coming to ruin your Christmas",
+      "url": "https://www.smh.com.au/culture/theatre/he-killed-jon-snow-now-owen-teale-is-coming-to-ruin-your-christmas-20231012-p5ebw7.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "7c2fed5f-9084-4e5a-b746-deb7cf1b3603": {
+      "corpus_id": "6 VCs explain how startups can capture and defend marketshare in the AI era",
+      "document_id": "7c2fed5f-9084-4e5a-b746-deb7cf1b3603",
+      "title": "6 VCs explain how startups can capture and defend marketshare in the AI era",
+      "url": "https://techcrunch.com/2023/10/13/6-vcs-explain-how-startups-can-capture-and-defend-marketshare-in-the-ai-era/"
+    },
+    "7ce2a358-b938-4112-b8c6-10e06beef8a8": {
+      "corpus_id": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
+      "document_id": "7ce2a358-b938-4112-b8c6-10e06beef8a8",
+      "title": "'They seemed primed to take over': How the Great Dying doomed the 'beast tooth' and set the stage for the dawn of the dinosaurs",
+      "url": "https://www.livescience.com/animals/extinct-species/they-seemed-primed-to-take-over-how-the-great-dying-doomed-the-beast-tooth-and-set-the-stage-for-the-dawn-of-the-dinosaurs"
+    },
+    "7ce3459d-9460-4528-90d4-2b6a924039dd": {
+      "corpus_id": "Meta and IBM form an AI Alliance, but to what end?",
+      "document_id": "7ce3459d-9460-4528-90d4-2b6a924039dd",
+      "title": "Meta and IBM form an AI Alliance, but to what end?",
+      "url": "https://techcrunch.com/2023/12/05/meta-and-ibm-form-an-ai-alliance-but-to-what-end/"
+    },
+    "7fb8cfd9-1fea-4511-8bf7-bdcd5c886bc1": {
+      "corpus_id": "Check Point sees 'fantastic' year ahead even as rival report disappointing billings",
+      "document_id": "7fb8cfd9-1fea-4511-8bf7-bdcd5c886bc1",
+      "title": "Check Point sees 'fantastic' year ahead even as rival report disappointing billings",
+      "url": "https://seekingalpha.com/news/4038301-check-point-sees-fantastic-year-ahead-even-as-rival-report-disappointing-billings?utm_source=feed_news_all&utm_medium=referral&feed_item_type=news"
+    },
+    "8091f5cd-0e10-47ab-98ba-1ec79e1e8bd5": {
+      "corpus_id": "The Apple Watch\u2019s double tap gesture points at a new way to use wearables",
+      "document_id": "8091f5cd-0e10-47ab-98ba-1ec79e1e8bd5",
+      "title": "The Apple Watch\u2019s double tap gesture points at a new way to use wearables",
+      "url": "https://www.theverge.com/23928706/double-tap-apple-watch-series-9-ultra-2"
+    },
+    "816587dd-b7c6-4f33-ac8e-97a0c9c9900c": {
+      "corpus_id": "Video games in 2023: Acquisitions, layoffs, unions",
+      "document_id": "816587dd-b7c6-4f33-ac8e-97a0c9c9900c",
+      "title": "Video games in 2023: Acquisitions, layoffs, unions",
+      "url": "https://www.engadget.com/video-games-in-2023-acquisitions-layoffs-unions-143037174.html?src=rss"
+    },
+    "81998b12-8eaf-43d1-909c-153f27cdf473": {
+      "corpus_id": "From Justin Timberlake to Sam Asghari: A timeline of Britney Spears\u2019 relationships",
+      "document_id": "81998b12-8eaf-43d1-909c-153f27cdf473",
+      "title": "From Justin Timberlake to Sam Asghari: A timeline of Britney Spears\u2019 relationships",
+      "url": "https://www.independent.co.uk/life-style/justin-timberlake-sam-asghari-britney-spears-b2431507.html"
+    },
+    "81b6de4e-9692-44e4-aff3-512201582747": {
+      "corpus_id": "The Steam Deck OLED improves much more than its screen",
+      "document_id": "81b6de4e-9692-44e4-aff3-512201582747",
+      "title": "The Steam Deck OLED improves much more than its screen",
+      "url": "https://www.polygon.com/reviews/23950861/steam-deck-oled-review-valve-handheld-gaming"
+    },
+    "81d0435a-7728-469d-96f4-bc7937016ce0": {
+      "corpus_id": "What to know about Fortnite maker Epic Games\u2019 antitrust battle with Google, starting today",
+      "document_id": "81d0435a-7728-469d-96f4-bc7937016ce0",
+      "title": "What to know about Fortnite maker Epic Games\u2019 antitrust battle with Google, starting today",
+      "url": "https://techcrunch.com/2023/11/06/what-to-know-about-fortnite-maker-epic-games-antitrust-battle-with-google-starting-today/"
+    },
+    "81de2ab3-255f-4b92-b840-44df4b6ce9f1": {
+      "corpus_id": "Digital twin market: Analyzing growth and 4 emerging trends",
+      "document_id": "81de2ab3-255f-4b92-b840-44df4b6ce9f1",
+      "title": "Digital twin market: Analyzing growth and 4 emerging trends",
+      "url": "https://iotbusinessnews.com/2023/11/18/77657-digital-twin-market-analyzing-growth-and-4-emerging-trends/"
+    },
+    "822863ea-15f4-4456-8919-9e3e681f6d58": {
+      "corpus_id": "French soccer players back African mobile video network StarNews Mobile in $3M round",
+      "document_id": "822863ea-15f4-4456-8919-9e3e681f6d58",
+      "title": "French soccer players back African mobile video network StarNews Mobile in $3M round",
+      "url": "https://techcrunch.com/2023/10/30/french-soccer-players-back-african-mobile-video-network-starnews-mobile-in-3m-round/"
+    },
+    "8234a78b-ae0c-477f-b115-c0cab68faff8": {
+      "corpus_id": "Power struggle in one of Canada\u2019s wealthiest clans has sister accusing chairman brother of \u2018vendetta\u2019",
+      "document_id": "8234a78b-ae0c-477f-b115-c0cab68faff8",
+      "title": "Power struggle in one of Canada\u2019s wealthiest clans has sister accusing chairman brother of \u2018vendetta\u2019",
+      "url": "https://fortune.com/2023/10/12/rogers-communications-family-heirs-sue-company-in-bitter-board-fight/"
+    },
+    "82830c29-a5d6-495e-acd5-346a62fe4197": {
+      "corpus_id": "Kick streamers consider leaving over CEO\u2019s comments in a sex worker \u2018prank\u2019 stream",
+      "document_id": "82830c29-a5d6-495e-acd5-346a62fe4197",
+      "title": "Kick streamers consider leaving over CEO\u2019s comments in a sex worker \u2018prank\u2019 stream",
+      "url": "https://techcrunch.com/2023/09/29/kick-streamers-leave-ceo-ice-poseidon-prank-sex-work/"
+    },
+    "83a11b95-ea79-4502-907e-9ebaf0961138": {
+      "corpus_id": "Sex, Signal messages, and sabotaging FTX's code: SBF execs and Bahamas roommates tell all in court",
+      "document_id": "83a11b95-ea79-4502-907e-9ebaf0961138",
+      "title": "Sex, Signal messages, and sabotaging FTX's code: SBF execs and Bahamas roommates tell all in court",
+      "url": "https://www.cnbc.com/2023/10/06/sex-signal-messages-and-sabotaging-ftxs-code-sbf-criminal-trial.html"
+    },
+    "84368388-c4f7-42ae-aa6e-b7375210dc07": {
+      "corpus_id": "The 5 biggest mistakes parents make at Christmastime, according to a parenting expert",
+      "document_id": "84368388-c4f7-42ae-aa6e-b7375210dc07",
+      "title": "The 5 biggest mistakes parents make at Christmastime, according to a parenting expert",
+      "url": "https://www.foxnews.com/lifestyle/5-biggest-mistakes-parents-make-christmastime-parenting-expert"
+    },
+    "84dd1811-e8ac-40d2-a1d3-b44d14bb747b": {
+      "corpus_id": "Fantasy Football TE PPR Rankings Week 14: Who to start, best sleepers at tight end",
+      "document_id": "84dd1811-e8ac-40d2-a1d3-b44d14bb747b",
+      "title": "Fantasy Football TE PPR Rankings Week 14: Who to start, best sleepers at tight end",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-te-ppr-rankings-week-14-tight-end-sleepers/8024d9faf02849b1d6dc068b"
+    },
+    "8600f456-3bec-43b4-a2b5-aed62986fcd0": {
+      "corpus_id": "54 Best Apple Black Friday Deals (2023): iPad, Apple Watch, AirPods",
+      "document_id": "8600f456-3bec-43b4-a2b5-aed62986fcd0",
+      "title": "54 Best Apple Black Friday Deals (2023): iPad, Apple Watch, AirPods",
+      "url": "https://www.wired.com/story/best-apple-black-friday-deals-2023-2/"
+    },
+    "86ef9591-7fb9-437a-ae5d-1f655b371870": {
+      "corpus_id": "If the Cybertruck is deadly for pedestrians, it\u2019s because all large trucks are",
+      "document_id": "86ef9591-7fb9-437a-ae5d-1f655b371870",
+      "title": "If the Cybertruck is deadly for pedestrians, it\u2019s because all large trucks are",
+      "url": "https://www.theverge.com/2023/12/12/23998308/tesla-cybertuck-safety-pedestrian-crash-test-nhtsa-iihs"
+    },
+    "8800039e-568c-4a1e-9b03-f41c030d6cfe": {
+      "corpus_id": "Manchester divided as ten Hag pressure mounts after United Hammered, Ange-ball pays off again as Spurs sink Everton",
+      "document_id": "8800039e-568c-4a1e-9b03-f41c030d6cfe",
+      "title": "Manchester divided as ten Hag pressure mounts after United Hammered, Ange-ball pays off again as Spurs sink Everton",
+      "url": "https://www.theroar.com.au/2023/12/24/manchester-divided-as-ten-hag-pressure-mounts-after-united-hammered-ange-ball-pays-off-again-as-spurs-sink-everton/"
+    },
+    "88ae66cd-ea0b-436b-b8b8-937639e8455d": {
+      "corpus_id": "What\u2019s up with Tesla\u2019s Cybertruck? Everything to know about much-hyped electric pickup",
+      "document_id": "88ae66cd-ea0b-436b-b8b8-937639e8455d",
+      "title": "What\u2019s up with Tesla\u2019s Cybertruck? Everything to know about much-hyped electric pickup",
+      "url": "https://techcrunch.com/2023/11/30/whats-up-with-teslas-cybertruck-everything-to-know-about-the-much-hyped-electric-pickup/"
+    },
+    "8a3678ab-6479-4ec6-936e-eccc226c7093": {
+      "corpus_id": "Donald Trump defrauded banks with 'fantasy' to build his real estate empire, judge rules in a major repudiation against the former president",
+      "document_id": "8a3678ab-6479-4ec6-936e-eccc226c7093",
+      "title": "Donald Trump defrauded banks with 'fantasy' to build his real estate empire, judge rules in a major repudiation against the former president",
+      "url": "https://fortune.com/2023/09/26/donald-trump-fraud-banks-insurers-real-estate-judge-new-york/"
+    },
+    "8a8e1a17-86be-4ef1-88bc-f517678f1048": {
+      "corpus_id": "The 26 best Amazon Prime Day deals you can still shop for today",
+      "document_id": "8a8e1a17-86be-4ef1-88bc-f517678f1048",
+      "title": "The 26 best Amazon Prime Day deals you can still shop for today",
+      "url": "https://www.engadget.com/the-26-best-amazon-prime-day-deals-you-can-still-shop-for-today-154416960.html?src=rss"
+    },
+    "8bb00762-9a08-467c-a6f0-444e15e8d955": {
+      "corpus_id": "Nike misses revenue expectations for the first time in two years, beats on earnings and gross margin",
+      "document_id": "8bb00762-9a08-467c-a6f0-444e15e8d955",
+      "title": "Nike misses revenue expectations for the first time in two years, beats on earnings and gross margin",
+      "url": "https://www.cnbc.com/2023/09/28/nike-nke-earnings-q1-2024.html"
+    },
+    "8c0358e9-0b69-4e21-9007-773a5de032a5": {
+      "corpus_id": "Merck, Novo Nordisk, Gilead, Biogen and more: Here are the investment opportunities in global Big Pharma",
+      "document_id": "8c0358e9-0b69-4e21-9007-773a5de032a5",
+      "title": "Merck, Novo Nordisk, Gilead, Biogen and more: Here are the investment opportunities in global Big Pharma",
+      "url": "https://www.thehindubusinessline.com/portfolio/big-story/merck-novo-nordisk-gilead-biogen-and-more-here-are-the-investment-opportunities-in-global-big-pharma/article67543437.ece"
+    },
+    "8c361c69-657f-4750-8b0e-1fc190409fac": {
+      "corpus_id": "Thursday Night Football FanDuel Picks: NFL DFS lineup advice for Week 4 Lions-Packers single-game tournaments",
+      "document_id": "8c361c69-657f-4750-8b0e-1fc190409fac",
+      "title": "Thursday Night Football FanDuel Picks: NFL DFS lineup advice for Week 4 Lions-Packers single-game tournaments",
+      "url": "https://www.sportingnews.com/us/nfl/news/thursday-night-football-fanduel-picks-lions-packers-nfl-dfs/723e1f9393bf3c74ba7efd78"
+    },
+    "8ce93964-2953-42e5-a1c4-cbdfb8ab3f5e": {
+      "corpus_id": "14 Best Deals: TVs, Keyboards, Mice, Chargers, and Earbuds",
+      "document_id": "8ce93964-2953-42e5-a1c4-cbdfb8ab3f5e",
+      "title": "14 Best Deals: TVs, Keyboards, Mice, Chargers, and Earbuds",
+      "url": "https://www.wired.com/story/midweek-deals-october-19-2023/"
+    },
+    "8d0c5ee1-89f8-4e93-a875-c0fc14677f22": {
+      "corpus_id": "Is Sam Bankman-Fried a bad \u2018man\u2019 or a good \u2018boy\u2019? Lawyers swap opening statements before first witnesses take the stand",
+      "document_id": "8d0c5ee1-89f8-4e93-a875-c0fc14677f22",
+      "title": "Is Sam Bankman-Fried a bad \u2018man\u2019 or a good \u2018boy\u2019? Lawyers swap opening statements before first witnesses take the stand",
+      "url": "https://fortune.com/crypto/2023/10/04/sam-bankman-fried-lawyers-opening-statements-witnesses-marc-antoine-julliard-adam-yedidia-ftx-commodities-trader-developer/"
+    },
+    "8d53fd1d-e1a1-44f0-ac73-9bef3d55478b": {
+      "corpus_id": "N.F.L. Executives on the Biggest Questions Facing Super Bowl Contenders",
+      "document_id": "8d53fd1d-e1a1-44f0-ac73-9bef3d55478b",
+      "title": "N.F.L. Executives on the Biggest Questions Facing Super Bowl Contenders",
+      "url": "https://theathletic.com/4964039/2023/10/16/nfl-news-week-6-super-bowl-favorites-broncos-dolphins/"
+    },
+    "8e4e826f-fb98-4ad4-b0cf-688ba9dbcca9": {
+      "corpus_id": "VTubers have reached their inevitable conclusion",
+      "document_id": "8e4e826f-fb98-4ad4-b0cf-688ba9dbcca9",
+      "title": "VTubers have reached their inevitable conclusion",
+      "url": "https://www.polygon.com/23919506/vtuber-hololive-gawr-gura-nijisanji-agency-model"
+    },
+    "90e85bcd-d446-4b09-b316-e49deae8e4a3": {
+      "corpus_id": "The Epic v. Google trial may come down to simple v. complicated",
+      "document_id": "90e85bcd-d446-4b09-b316-e49deae8e4a3",
+      "title": "The Epic v. Google trial may come down to simple v. complicated",
+      "url": "https://www.theverge.com/2023/11/7/23949849/epic-google-trial-day-one-recap-summary"
+    },
+    "92071537-ca48-4d19-a79d-a480d6f66c60": {
+      "corpus_id": "Save on the winners from the 2023 Game Awards this weekend",
+      "document_id": "92071537-ca48-4d19-a79d-a480d6f66c60",
+      "title": "Save on the winners from the 2023 Game Awards this weekend",
+      "url": "https://www.polygon.com/23993517/best-gaming-deals-game-awards-winners-xbox-series-x"
+    },
+    "92091db2-e9a1-4dc3-92ec-c83a58c2aaf9": {
+      "corpus_id": "78 Absolute Best October Prime Day Deals (2023)",
+      "document_id": "92091db2-e9a1-4dc3-92ec-c83a58c2aaf9",
+      "title": "78 Absolute Best October Prime Day Deals (2023)",
+      "url": "https://www.wired.com/story/best-october-prime-day-deals-2023-5/"
+    },
+    "924f3234-cccd-4a51-b0bb-2d42fe875d92": {
+      "corpus_id": "Inter Miami season tickets: Lionel Messi demand causes 2024 prices soar to most expensive in world",
+      "document_id": "924f3234-cccd-4a51-b0bb-2d42fe875d92",
+      "title": "Inter Miami season tickets: Lionel Messi demand causes 2024 prices soar to most expensive in world",
+      "url": "https://www.sportingnews.com/us/soccer/news/inter-miami-season-tickets-messi-2024-prices-expensive-world/94a7a0825eec97b57cc1df4a"
+    },
+    "927a5910-6c07-4ba0-870d-dfd3ad46deab": {
+      "corpus_id": "Founders, are events useful?",
+      "document_id": "927a5910-6c07-4ba0-870d-dfd3ad46deab",
+      "title": "Founders, are events useful?",
+      "url": "https://techcrunch.com/2023/10/13/founders-are-events-useful/"
+    },
+    "939fc675-3066-431e-b0a3-7b59d33d477f": {
+      "corpus_id": "2023 Kentucky online sports betting sites: Best legal sportsbooks, promos, bonuses, mobile apps, how to bet",
+      "document_id": "939fc675-3066-431e-b0a3-7b59d33d477f",
+      "title": "2023 Kentucky online sports betting sites: Best legal sportsbooks, promos, bonuses, mobile apps, how to bet",
+      "url": "https://www.cbssports.com/general/news/2023-kentucky-online-sports-betting-sites-best-legal-sportsbooks-promos-bonuses-mobile-apps-how-to-bet/"
+    },
+    "93ad843c-86ff-4cd6-bb85-70101db8be2f": {
+      "corpus_id": "Epic v. Google, explained",
+      "document_id": "93ad843c-86ff-4cd6-bb85-70101db8be2f",
+      "title": "Epic v. Google, explained",
+      "url": "https://www.theverge.com/23944251/epic-google-antitrust-trial-explainer-monopoly"
+    },
+    "93e3fbff-7b16-40d1-a307-54d863510112": {
+      "corpus_id": "The best new TV series on every streaming service",
+      "document_id": "93e3fbff-7b16-40d1-a307-54d863510112",
+      "title": "The best new TV series on every streaming service",
+      "url": "https://www.polygon.com/what-to-watch/23560732/best-new-tv-shows-netflix-prime-hbo-max-hulu-streaming"
+    },
+    "949f2c10-3197-45b6-ba6d-f1e66698aa82": {
+      "corpus_id": "Amazon\u2019s latest Echo Frames are more style than substance",
+      "document_id": "949f2c10-3197-45b6-ba6d-f1e66698aa82",
+      "title": "Amazon\u2019s latest Echo Frames are more style than substance",
+      "url": "https://www.theverge.com/23989893/amazon-echo-frames-review-alexa-carrera-cruiser-smart-glasses"
+    },
+    "94bc925f-4418-4fd9-bbf6-5b7270b38370": {
+      "corpus_id": "Is the Coverage on Taylor Swift and Travis Kelce\u2019s Romance Nothing but Hype or a Pivotal Shift in NFL\u2019s Century-Old Game Plan Towards Global Recognition?",
+      "document_id": "94bc925f-4418-4fd9-bbf6-5b7270b38370",
+      "title": "Is the Coverage on Taylor Swift and Travis Kelce\u2019s Romance Nothing but Hype or a Pivotal Shift in NFL\u2019s Century-Old Game Plan Towards Global Recognition?",
+      "url": "https://www.essentiallysports.com/nfl-active-perspective-news-is-the-coverage-on-taylor-swift-and-travis-kelces-romance-nothing-but-hype-or-a-pivotal-shift-in-nfls-century-old-game-plan-towards-global-recognition/"
+    },
+    "9506bd77-dedb-4dd3-b227-7af1672d08ff": {
+      "corpus_id": "Moneyline Betting - What is the Moneyline and How Does it Work?",
+      "document_id": "9506bd77-dedb-4dd3-b227-7af1672d08ff",
+      "title": "Moneyline Betting - What is the Moneyline and How Does it Work?",
+      "url": "https://www.sportingnews.com/us/betting/news/moneyline-betting/d3a60119341b3da02f1fb1ae"
+    },
+    "96057e84-0f13-4346-b6b5-1b6baf03cd86": {
+      "corpus_id": "NFL Fantasy Football Week 5 Lineup Decisions: Starts, Sits, Sleepers, Busts to know for every game",
+      "document_id": "96057e84-0f13-4346-b6b5-1b6baf03cd86",
+      "title": "NFL Fantasy Football Week 5 Lineup Decisions: Starts, Sits, Sleepers, Busts to know for every game",
+      "url": "https://www.cbssports.com/fantasy/football/news/nfl-fantasy-football-week-5-lineup-decisions-starts-sits-sleepers-busts-to-know-for-every-game/"
+    },
+    "970c34ec-e787-4bcb-b37c-20f5e7a357a5": {
+      "corpus_id": "See stunning images of STEVE and auroras from this weekend's powerful solar storm",
+      "document_id": "970c34ec-e787-4bcb-b37c-20f5e7a357a5",
+      "title": "See stunning images of STEVE and auroras from this weekend's powerful solar storm",
+      "url": "https://www.livescience.com/space/astronomy/see-stunning-images-of-steve-and-auroras-from-this-weekends-powerful-solar-storm"
+    },
+    "985add94-2df3-4c64-8d3a-0136bb966ad6": {
+      "corpus_id": "Emily Ratajkowski\u2019s latest photo shoot sparks fury",
+      "document_id": "985add94-2df3-4c64-8d3a-0136bb966ad6",
+      "title": "Emily Ratajkowski\u2019s latest photo shoot sparks fury",
+      "url": "https://www.independent.co.uk/life-style/fashion/emily-ratajkowski-photo-shoot-plus-size-b2456439.html"
+    },
+    "9867dec1-95e0-4815-ba93-d405eeb80985": {
+      "corpus_id": "Man United vs Fulham: Red Devils determined to get back to winning ways in PL",
+      "document_id": "9867dec1-95e0-4815-ba93-d405eeb80985",
+      "title": "Man United vs Fulham: Red Devils determined to get back to winning ways in PL",
+      "url": "https://www.insidesport.in/man-united-vs-fulham-live-red-devils-determined-to-get-back-to-winning-ways/"
+    },
+    "98c23482-3cfb-44a6-b065-e99bd4af7dbf": {
+      "corpus_id": "Liverpool vs Everton begins epic Saturday with World Cup semi-final as well as Chelsea vs Arsenal \u2013 and it could end with a bang",
+      "document_id": "98c23482-3cfb-44a6-b065-e99bd4af7dbf",
+      "title": "Liverpool vs Everton begins epic Saturday with World Cup semi-final as well as Chelsea vs Arsenal \u2013 and it could end with a bang",
+      "url": "https://talksport.com/football/1608383/liverpool-everton-chelsea-arsenal-england-saturday-sport/"
+    },
+    "99985ad4-8d01-464e-b388-3c11c66394f0": {
+      "corpus_id": "The best Sorcerer builds and skills in Diablo 4",
+      "document_id": "99985ad4-8d01-464e-b388-3c11c66394f0",
+      "title": "The best Sorcerer builds and skills in Diablo 4",
+      "url": "https://www.polygon.com/diablo-4-guides/23653283/sorcerer-best-build-skills"
+    },
+    "9a314218-f62e-4025-82a6-26c595e21527": {
+      "corpus_id": "Prop Betting - What is a Prop Bet?",
+      "document_id": "9a314218-f62e-4025-82a6-26c595e21527",
+      "title": "Prop Betting - What is a Prop Bet?",
+      "url": "https://www.sportingnews.com/us/betting/news/prop-betting/eca08189bf4e5c58e02bfeda"
+    },
+    "9a971388-18a7-41d2-a30e-0ecc4d3f0e5e": {
+      "corpus_id": "Is Sam Bankman-Fried\u2019s defense even trying to win?",
+      "document_id": "9a971388-18a7-41d2-a30e-0ecc4d3f0e5e",
+      "title": "Is Sam Bankman-Fried\u2019s defense even trying to win?",
+      "url": "https://www.theverge.com/2023/10/4/23903986/sam-bankman-fried-opening-statements-trial-fraud"
+    },
+    "9ad4d8c4-da4e-408e-9b44-5e1b29ece522": {
+      "corpus_id": "Reliance Industries: With the stock having underperformed Nifty 50 in last three years, is it time to buy?",
+      "document_id": "9ad4d8c4-da4e-408e-9b44-5e1b29ece522",
+      "title": "Reliance Industries: With the stock having underperformed Nifty 50 in last three years, is it time to buy?",
+      "url": "https://www.thehindubusinessline.com/portfolio/stock-fundamental-analysis-india/reliance-industries-with-the-stock-having-underperformed-nifty-50-in-last-three-years-is-it-time-to-buy/article67618354.ece"
+    },
+    "9bfe50b5-ef5d-43d3-b338-b7d96f85de05": {
+      "corpus_id": "Google fakes an AI demo, Grand Theft Auto VI goes viral and Spotify cuts jobs",
+      "document_id": "9bfe50b5-ef5d-43d3-b338-b7d96f85de05",
+      "title": "Google fakes an AI demo, Grand Theft Auto VI goes viral and Spotify cuts jobs",
+      "url": "https://techcrunch.com/2023/12/09/google-fakes-an-ai-demo-grand-theft-auto-vi-goes-viral-and-spotify-cuts-jobs/"
+    },
+    "9c91140d-a507-439d-a254-99ce8ee2c4a0": {
+      "corpus_id": "Leaky defence \u2018isn\u2019t good enough\u2019 and \u2018scars\u2019 grow from throwing away leads \u2013 It\u2019s all going wrong for Manchester United in Europe",
+      "document_id": "9c91140d-a507-439d-a254-99ce8ee2c4a0",
+      "title": "Leaky defence \u2018isn\u2019t good enough\u2019 and \u2018scars\u2019 grow from throwing away leads \u2013 It\u2019s all going wrong for Manchester United in Europe",
+      "url": "https://talksport.com/football/1659923/man-utd-defending-scars-champions-league/"
+    },
+    "9d0c4056-8790-4672-a2fb-5de7965a1286": {
+      "corpus_id": "Inside the Man United takeover and it\u2019s anything but smooth sailing for Sir Jim Ratcliffe as he seeks board vote",
+      "document_id": "9d0c4056-8790-4672-a2fb-5de7965a1286",
+      "title": "Inside the Man United takeover and it\u2019s anything but smooth sailing for Sir Jim Ratcliffe as he seeks board vote",
+      "url": "https://talksport.com/football/1605672/man-utd-takeover-board-ratcliffe-stake-premier-league/"
+    },
+    "9d7d07b5-3960-4d41-b4c8-ef50967ff7fb": {
+      "corpus_id": "Why do Americans celebrate Thanksgiving?",
+      "document_id": "9d7d07b5-3960-4d41-b4c8-ef50967ff7fb",
+      "title": "Why do Americans celebrate Thanksgiving?",
+      "url": "https://www.independent.co.uk/life-style/history-of-thanksgiving-americans-b2445625.html"
+    },
+    "9e10a21f-9671-4795-a209-873f121283ef": {
+      "corpus_id": "YouTube demonetizes popular content creator SSSniperwolf after doxxing accusations",
+      "document_id": "9e10a21f-9671-4795-a209-873f121283ef",
+      "title": "YouTube demonetizes popular content creator SSSniperwolf after doxxing accusations",
+      "url": "https://www.polygon.com/23930845/sssniperwolf-jacksfilms-doxxing-accusations-youtube-reaction-content-explained"
+    },
+    "9e4c7b58-ac13-412f-b6c6-325d6be0e2f3": {
+      "corpus_id": "NBA Rookie of the Year Odds - Wembanyama the early favorite",
+      "document_id": "9e4c7b58-ac13-412f-b6c6-325d6be0e2f3",
+      "title": "NBA Rookie of the Year Odds - Wembanyama the early favorite",
+      "url": "https://www.sportingnews.com/us/betting/news/nba-roty-odds/7af3a635d324b28ff4c554fd"
+    },
+    "9eadf3c3-7f23-4523-8412-f8197788fa82": {
+      "corpus_id": "Salah seals emphatic Europa League win for Liverpool against Toulouse",
+      "document_id": "9eadf3c3-7f23-4523-8412-f8197788fa82",
+      "title": "Salah seals emphatic Europa League win for Liverpool against Toulouse",
+      "url": "https://www.theguardian.com/football/2023/oct/26/liverpool-toulouse-europa-league-match-report"
+    },
+    "9f237d05-6658-437d-8c77-d67767aeaf9b": {
+      "corpus_id": "The best shows to stream in December",
+      "document_id": "9f237d05-6658-437d-8c77-d67767aeaf9b",
+      "title": "The best shows to stream in December",
+      "url": "https://www.smh.com.au/culture/tv-and-radio/the-best-shows-to-stream-in-december-20231129-p5enns.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "9f45dd0c-1988-4ba9-af28-7b5a7c6f2c9c": {
+      "corpus_id": "No. 17 Arizona dominates No. 22 Utah, 42-18",
+      "document_id": "9f45dd0c-1988-4ba9-af28-7b5a7c6f2c9c",
+      "title": "No. 17 Arizona dominates No. 22 Utah, 42-18",
+      "url": "https://arizona.rivals.com/news/recap-no-17-arizona-dominates-no-22-utah-42-18-on-senior-day"
+    },
+    "9f7bb9c3-01ff-44f0-9e5e-d8bcecdb43b3": {
+      "corpus_id": "City old boy has final say for Chelsea in eight-goal thriller, supreme Salah leads Liverpool surge",
+      "document_id": "9f7bb9c3-01ff-44f0-9e5e-d8bcecdb43b3",
+      "title": "City old boy has final say for Chelsea in eight-goal thriller, supreme Salah leads Liverpool surge",
+      "url": "https://www.theroar.com.au/2023/11/13/city-old-boy-has-final-say-for-chelsea-in-eight-goal-thriller-supreme-salah-leads-liverpool-surge/"
+    },
+    "a1687d12-e632-4131-adde-c2f7a4beac1e": {
+      "corpus_id": "Arteta reveals Pochettino influence on his career | Poch: He is family",
+      "document_id": "a1687d12-e632-4131-adde-c2f7a4beac1e",
+      "title": "Arteta reveals Pochettino influence on his career | Poch: He is family",
+      "url": "https://www.skysports.com/football/news/11095/12988292/chelsea-vs-arsenal-mauricio-pochettino-and-mikel-arteta-on-their-close-connection-since-psg-playing-days-ahead-of-london-derby"
+    },
+    "a27c5b3e-ef80-450c-ae6a-23be66e1ea32": {
+      "corpus_id": "Sam Bankman-Fried didn\u2019t ask where the $8 billion went",
+      "document_id": "a27c5b3e-ef80-450c-ae6a-23be66e1ea32",
+      "title": "Sam Bankman-Fried didn\u2019t ask where the $8 billion went",
+      "url": "https://www.theverge.com/2023/10/31/23940814/sam-bankman-fried-ftx-alameda-customer-funds-fraud-trial"
+    },
+    "a4e5034b-ddd6-4868-be9f-dd06cec7d8a8": {
+      "corpus_id": "Hipgnosis Songs Fund Chair, Andrew Sutch, to step down; all-important \u2018continuation vote\u2019 likely to take place on October 26",
+      "document_id": "a4e5034b-ddd6-4868-be9f-dd06cec7d8a8",
+      "title": "Hipgnosis Songs Fund Chair, Andrew Sutch, to step down; all-important \u2018continuation vote\u2019 likely to take place on October 26",
+      "url": "https://www.musicbusinessworldwide.com/hipgnosis-songs-fund-chair-andrew-sutch-to-step-down-all-important-continuation-vote/"
+    },
+    "a5688f99-8643-48a2-883f-7e2077d2fabf": {
+      "corpus_id": "Amazon brings conversational AI to kids with launch of \u2018Explore with Alexa\u2019",
+      "document_id": "a5688f99-8643-48a2-883f-7e2077d2fabf",
+      "title": "Amazon brings conversational AI to kids with launch of \u2018Explore with Alexa\u2019",
+      "url": "https://techcrunch.com/2023/10/25/amazon-brings-conversational-ai-to-kids-with-launch-of-explore-with-alexa/"
+    },
+    "a597bc4d-5569-4627-8c25-c8fcf03935f0": {
+      "corpus_id": "Jaguars vs. Saints live score, updates, highlights from NFL 'Thursday Night Football' game",
+      "document_id": "a597bc4d-5569-4627-8c25-c8fcf03935f0",
+      "title": "Jaguars vs. Saints live score, updates, highlights from NFL 'Thursday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/jaguars-saints-live-score-highlights-thursday-night-football/f1a6cc7fef54c6696ee03009"
+    },
+    "a5f3de87-24b7-453d-89bc-f00cb22bdc9f": {
+      "corpus_id": "We could end the AIDS epidemic in less than a decade. Here's how.",
+      "document_id": "a5f3de87-24b7-453d-89bc-f00cb22bdc9f",
+      "title": "We could end the AIDS epidemic in less than a decade. Here's how.",
+      "url": "https://www.livescience.com/health/hiv/we-could-end-the-aids-epidemic-in-less-than-a-decade-heres-how"
+    },
+    "a64d0cef-d888-4d6b-b115-549880e807c4": {
+      "corpus_id": "How the OpenAI fiasco could bolster Meta and the \u2018open AI\u2019 movement",
+      "document_id": "a64d0cef-d888-4d6b-b115-549880e807c4",
+      "title": "How the OpenAI fiasco could bolster Meta and the \u2018open AI\u2019 movement",
+      "url": "https://techcrunch.com/2023/11/21/how-the-openai-fiasco-could-bolster-meta-and-the-open-ai-movement/"
+    },
+    "a86fc975-eb41-486c-8747-c6eb6990d614": {
+      "corpus_id": "Inter Miami vs FC Cincinnati live score, result, updates, highlights with Lionel Messi's MLS playoffs on line",
+      "document_id": "a86fc975-eb41-486c-8747-c6eb6990d614",
+      "title": "Inter Miami vs FC Cincinnati live score, result, updates, highlights with Lionel Messi's MLS playoffs on line",
+      "url": "https://www.sportingnews.com/us/soccer/news/inter-miami-vs-fc-cincinnati-live-score-result-highlights-mls/6288f57a14a413f02512e266"
+    },
+    "a9852fee-7878-40ae-9efd-adf9ffd2adeb": {
+      "corpus_id": "7 of the best ski holidays in Canada",
+      "document_id": "a9852fee-7878-40ae-9efd-adf9ffd2adeb",
+      "title": "7 of the best ski holidays in Canada",
+      "url": "https://www.independent.co.uk/travel/skiing/best-ski-holidays-canada-b2432416.html"
+    },
+    "a9d84f13-9a11-4f82-a9f1-0f51a642bfd1": {
+      "corpus_id": "NASCAR Might Have Just Saved Themselves With the $7.7 Billion Media Rights Deal",
+      "document_id": "a9d84f13-9a11-4f82-a9f1-0f51a642bfd1",
+      "title": "NASCAR Might Have Just Saved Themselves With the $7.7 Billion Media Rights Deal",
+      "url": "https://www.essentiallysports.com/nascar-news-nascar-might-have-just-saved-themselves-with-the-seven-point-seven-billion-dollar-media-rights-deal/"
+    },
+    "aa1dcf1e-901e-4821-bf94-b8f6b17097ed": {
+      "corpus_id": "Can Alabama make College Football Playoff? How Texas, Oregon losses could impact Tide's 2023 chances",
+      "document_id": "aa1dcf1e-901e-4821-bf94-b8f6b17097ed",
+      "title": "Can Alabama make College Football Playoff? How Texas, Oregon losses could impact Tide's 2023 chances",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/alabama-college-football-playoff-texas-oregon-losses/02ba9161c845ab8490f4813a"
+    },
+    "aa5d3a6e-ff23-4e9c-80ec-2c8ed61294e8": {
+      "corpus_id": "M.L.B. Superstar Shohei Ohtani to Sign $700 Million Deal With Dodgers",
+      "document_id": "aa5d3a6e-ff23-4e9c-80ec-2c8ed61294e8",
+      "title": "M.L.B. Superstar Shohei Ohtani to Sign $700 Million Deal With Dodgers",
+      "url": "https://theathletic.com/5106526/2023/12/09/shohei-ohtani-signs/"
+    },
+    "aaea6abc-a613-491f-8de2-dc3c616cb3f9": {
+      "corpus_id": "SBF Trial: The latest updates from the FTX collapse\u2019s courtroom drama",
+      "document_id": "aaea6abc-a613-491f-8de2-dc3c616cb3f9",
+      "title": "SBF Trial: The latest updates from the FTX collapse\u2019s courtroom drama",
+      "url": "https://techcrunch.com/2023/10/06/sbf-trial-the-latest-updates-from-the-ftx-collapses-courtroom-drama/"
+    },
+    "ad6d61a3-4256-45a2-ad4f-8e3ea0f53bcd": {
+      "corpus_id": "Meta turned a blind eye to kids on its platforms for years, unredacted lawsuit alleges",
+      "document_id": "ad6d61a3-4256-45a2-ad4f-8e3ea0f53bcd",
+      "title": "Meta turned a blind eye to kids on its platforms for years, unredacted lawsuit alleges",
+      "url": "https://techcrunch.com/2023/11/27/meta-turned-a-blind-eye-to-kids-on-its-platforms-for-years-unredacted-lawsuit-alleges/"
+    },
+    "af015939-3064-4f48-8fe2-052ce2662f04": {
+      "corpus_id": "Vikings vs. Broncos live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "document_id": "af015939-3064-4f48-8fe2-052ce2662f04",
+      "title": "Vikings vs. Broncos live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/vikings-broncos-score-highlights-sunday-night-football/769a666fb9639b096c22b356"
+    },
+    "af4d20c7-b620-43c5-9141-271eda02eb0c": {
+      "corpus_id": "ASX set to open higher as Wall Street rebounds; $A rises",
+      "document_id": "af4d20c7-b620-43c5-9141-271eda02eb0c",
+      "title": "ASX set to open higher as Wall Street rebounds; $A rises",
+      "url": "https://www.theage.com.au/business/markets/asx-set-to-edge-up-as-wall-street-steadies-a-rises-20231005-p5e9va.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "b047db73-cb8f-45d8-9afd-847e6026dedb": {
+      "corpus_id": "People are turning to Snap Map for firsthand perspectives from Gaza",
+      "document_id": "b047db73-cb8f-45d8-9afd-847e6026dedb",
+      "title": "People are turning to Snap Map for firsthand perspectives from Gaza",
+      "url": "https://techcrunch.com/2023/11/03/snapchat-snap-map-israel-hamas-war-gaza-palestine/"
+    },
+    "b13b963b-0f92-45b0-945b-aa6ae37acfb3": {
+      "corpus_id": "NFL awards odds: Six longshots bettors should consider for MVP, OPOY, DPOY and more",
+      "document_id": "b13b963b-0f92-45b0-945b-aa6ae37acfb3",
+      "title": "NFL awards odds: Six longshots bettors should consider for MVP, OPOY, DPOY and more",
+      "url": "https://www.sportingnews.com/us/betting/news/nfl-awards-odds-longshots-mvp-opoy-dpoy/ed7dc8b5ba19eb3e71c53349"
+    },
+    "b1d60e34-39f0-499c-af64-a75e14e11c60": {
+      "corpus_id": "ASX set to open lower as Wall Street closes September with more losses",
+      "document_id": "b1d60e34-39f0-499c-af64-a75e14e11c60",
+      "title": "ASX set to open lower as Wall Street closes September with more losses",
+      "url": "https://www.smh.com.au/business/markets/asx-set-to-open-lower-as-wall-street-closes-september-with-more-losses-20231002-p5e8zn.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "b20fd028-82ea-48b6-8916-95461f8f6d83": {
+      "corpus_id": "What we expect at Apple's Scary Fast event: M3-powered MacBook Pros and new iMacs",
+      "document_id": "b20fd028-82ea-48b6-8916-95461f8f6d83",
+      "title": "What we expect at Apple's Scary Fast event: M3-powered MacBook Pros and new iMacs",
+      "url": "https://www.engadget.com/what-we-expect-at-apples-scary-fast-event-m3-powered-macbook-pros-and-new-imacs-191549274.html?src=rss"
+    },
+    "b22648c7-f3ff-4331-9e52-eaedb30bd43e": {
+      "corpus_id": "The best Barbarian builds and skills in Diablo 4",
+      "document_id": "b22648c7-f3ff-4331-9e52-eaedb30bd43e",
+      "title": "The best Barbarian builds and skills in Diablo 4",
+      "url": "https://www.polygon.com/23654868/barbarian-best-build-skills"
+    },
+    "b2a19c41-7783-40e8-9d2f-3a18feeb1ea1": {
+      "corpus_id": "The best Apple Cyber Monday deals of 2023: Save on AirPods, iPads, Apple Watches and more",
+      "document_id": "b2a19c41-7783-40e8-9d2f-3a18feeb1ea1",
+      "title": "The best Apple Cyber Monday deals of 2023: Save on AirPods, iPads, Apple Watches and more",
+      "url": "https://www.engadget.com/the-best-apple-cyber-monday-deals-of-2023-save-on-airpods-ipads-apple-watches-and-more-100030003.html?src=rss"
+    },
+    "b417dfbb-3d84-43f7-986e-53ff341e21d3": {
+      "corpus_id": "Lions vs. Packers live score, updates, highlights from NFL 'Thursday Night Football' game",
+      "document_id": "b417dfbb-3d84-43f7-986e-53ff341e21d3",
+      "title": "Lions vs. Packers live score, updates, highlights from NFL 'Thursday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/lions-packers-live-score-highlights-thursday-night-football/c8af29e6e4202ddb91a41437"
+    },
+    "b55c586f-076d-4922-84b9-168c631a7a9f": {
+      "corpus_id": "Creatives across industries are strategizing together around AI concerns",
+      "document_id": "b55c586f-076d-4922-84b9-168c631a7a9f",
+      "title": "Creatives across industries are strategizing together around AI concerns",
+      "url": "https://techcrunch.com/2023/10/06/creatives-across-industries-are-strategizing-together-around-ai-concerns/"
+    },
+    "b669b4ca-2ce4-419c-9174-6bb06d74118e": {
+      "corpus_id": "Northern Lights: Here are the best tips to help you spot the stunning display in the US and abroad",
+      "document_id": "b669b4ca-2ce4-419c-9174-6bb06d74118e",
+      "title": "Northern Lights: Here are the best tips to help you spot the stunning display in the US and abroad",
+      "url": "https://www.foxnews.com/lifestyle/northern-lights-here-best-tips-help-you-spot-stunning-display-us-abroad"
+    },
+    "b6814a6f-cc11-4e91-baee-130fed6be65c": {
+      "corpus_id": "Canada vs Jamaica live score, updates, highlights, result from CONCACAF Nations League quarterfinal second leg",
+      "document_id": "b6814a6f-cc11-4e91-baee-130fed6be65c",
+      "title": "Canada vs Jamaica live score, updates, highlights, result from CONCACAF Nations League quarterfinal second leg",
+      "url": "https://www.sportingnews.com/us/soccer/news/canada-vs-jamaica-live-score-result-highlights-second-leg/b49d5b0e0e9384800d431fe2"
+    },
+    "b72c3155-4930-436c-9f59-fac93402c075": {
+      "corpus_id": "Meta has a moderation bias problem, not just a \u2018bug,\u2019 that\u2019s suppressing Palestinian voices",
+      "document_id": "b72c3155-4930-436c-9f59-fac93402c075",
+      "title": "Meta has a moderation bias problem, not just a \u2018bug,\u2019 that\u2019s suppressing Palestinian voices",
+      "url": "https://techcrunch.com/2023/10/19/meta-instagram-palestine-israel-shadowban-censorship-moderation-bias/"
+    },
+    "b7dd4288-d9e7-4f01-8afa-8c91f344ad62": {
+      "corpus_id": "Patriots vs. Steelers FanDuel Picks: NFL DFS lineup advice for Week 14 TNF single-game tournaments",
+      "document_id": "b7dd4288-d9e7-4f01-8afa-8c91f344ad62",
+      "title": "Patriots vs. Steelers FanDuel Picks: NFL DFS lineup advice for Week 14 TNF single-game tournaments",
+      "url": "https://www.sportingnews.com/us/nfl/news/patriots-steelers-fanduel-picks-week-14-tnf-dfs/284bb38bb4e3a803cd9c1cc6"
+    },
+    "b87ee575-94b0-4731-8084-86e3a9e23a8f": {
+      "corpus_id": "Bringing aqueous rechargeable zinc iodine batteries to the mainstream energy market",
+      "document_id": "b87ee575-94b0-4731-8084-86e3a9e23a8f",
+      "title": "Bringing aqueous rechargeable zinc iodine batteries to the mainstream energy market",
+      "url": "https://www.advancedsciencenews.com/bringing-aqueous-rechargeable-zinc-iodine-batteries-to-the-mainstream-energy-market/"
+    },
+    "ba67ca57-9403-4075-b2f8-f7aa033821f3": {
+      "corpus_id": "Taylor Swift's 1989: The stories behind her biggest album",
+      "document_id": "ba67ca57-9403-4075-b2f8-f7aa033821f3",
+      "title": "Taylor Swift's 1989: The stories behind her biggest album",
+      "url": "https://www.bbc.co.uk/news/entertainment-arts-66910595?at_medium=RSS&at_campaign=KARANGA"
+    },
+    "bb28aa24-5e6f-4e2e-9f2b-32587fa7f640": {
+      "corpus_id": "5 things we learned so far about the Google antitrust case",
+      "document_id": "bb28aa24-5e6f-4e2e-9f2b-32587fa7f640",
+      "title": "5 things we learned so far about the Google antitrust case",
+      "url": "https://techcrunch.com/2023/10/30/5-things-we-learned-so-far-about-the-google-antitrust-case/"
+    },
+    "bb5289a5-0c7c-41c3-91b9-c972da84885c": {
+      "corpus_id": "Fantasy Football WR PPR Rankings Week 14: Who to start, best sleepers at wide receiver",
+      "document_id": "bb5289a5-0c7c-41c3-91b9-c972da84885c",
+      "title": "Fantasy Football WR PPR Rankings Week 14: Who to start, best sleepers at wide receiver",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-wr-ppr-rankings-week-14-wide-receiver/61c46f5567ecacb64e039100"
+    },
+    "bcd74654-f784-41c1-9fcc-68831e25180d": {
+      "corpus_id": "ASX set for bright start despite Wall Street slip; $A drops",
+      "document_id": "bcd74654-f784-41c1-9fcc-68831e25180d",
+      "title": "ASX set for bright start despite Wall Street slip; $A drops",
+      "url": "https://www.smh.com.au/business/markets/asx-set-for-bright-start-a-drops-20231206-p5epbi.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "bd077302-e063-4a55-9c24-295a09905635": {
+      "corpus_id": "The best October Prime Day gaming deals",
+      "document_id": "bd077302-e063-4a55-9c24-295a09905635",
+      "title": "The best October Prime Day gaming deals",
+      "url": "https://www.theverge.com/23909229/amazon-october-prime-day-best-gaming-game-deals-2023"
+    },
+    "bd2af520-6578-42d9-acf1-a52be5d6e21f": {
+      "corpus_id": "Best Golf Betting Sites and Apps - Top Sportsbooks for Golf 2023",
+      "document_id": "bd2af520-6578-42d9-acf1-a52be5d6e21f",
+      "title": "Best Golf Betting Sites and Apps - Top Sportsbooks for Golf 2023",
+      "url": "https://www.sportingnews.com/us/betting/news/golf-betting-sites/7735c28b8c223b35fb013517"
+    },
+    "be1a0ce8-a63c-4118-a830-0e7679cd1fe6": {
+      "corpus_id": "The Best NBA Betting Sites and Apps for the 2023-24 Season",
+      "document_id": "be1a0ce8-a63c-4118-a830-0e7679cd1fe6",
+      "title": "The Best NBA Betting Sites and Apps for the 2023-24 Season",
+      "url": "https://www.sportingnews.com/us/betting/news/nba-betting-sites/dba1ce5e986e58a12cacafd6"
+    },
+    "be4b4790-c485-4eb8-a67a-7e9c35e08555": {
+      "corpus_id": "West Indies clinch T20 series after Shai Hope edges hosts past England total",
+      "document_id": "be4b4790-c485-4eb8-a67a-7e9c35e08555",
+      "title": "West Indies clinch T20 series after Shai Hope edges hosts past England total",
+      "url": "https://www.theguardian.com/sport/2023/dec/21/west-indies-clinch-t20-series-after-shai-hope-edges-hosts-past-england-total"
+    },
+    "bf76683c-5ad2-4d11-bff8-90fcb362e59a": {
+      "corpus_id": "More from the US v Google trial: vertical search, pre-installs and the case of Firefox/Yahoo",
+      "document_id": "bf76683c-5ad2-4d11-bff8-90fcb362e59a",
+      "title": "More from the US v Google trial: vertical search, pre-installs and the case of Firefox/Yahoo",
+      "url": "https://techcrunch.com/2023/11/13/more-from-the-us-v-google-trial-vertical-search-pre-installs-and-the-case-of-firefox-yahoo/"
+    },
+    "c0e4540d-98d7-4dd2-abdd-aeca41d85f6b": {
+      "corpus_id": "Author Melissa Lucashenko on playing with black and white binaries",
+      "document_id": "c0e4540d-98d7-4dd2-abdd-aeca41d85f6b",
+      "title": "Author Melissa Lucashenko on playing with black and white binaries",
+      "url": "https://www.theage.com.au/culture/books/author-melissa-lucashenko-on-playing-with-black-and-white-binaries-20230919-p5e5uy.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "c1079c1d-a5b0-4025-b8dc-ef465fa64650": {
+      "corpus_id": "The 30 best Amazon Prime Day deals for October 2023",
+      "document_id": "c1079c1d-a5b0-4025-b8dc-ef465fa64650",
+      "title": "The 30 best Amazon Prime Day deals for October 2023",
+      "url": "https://www.engadget.com/best-october-amazon-prime-day-deals-100020186.html?src=rss"
+    },
+    "c16f0b1c-95d0-47d5-9542-f91bc344942d": {
+      "corpus_id": "News publisher files class action antitrust suit against Google, citing AI\u2019s harms to their bottom line",
+      "document_id": "c16f0b1c-95d0-47d5-9542-f91bc344942d",
+      "title": "News publisher files class action antitrust suit against Google, citing AI\u2019s harms to their bottom line",
+      "url": "https://techcrunch.com/2023/12/15/news-publisher-files-class-action-antitrust-suit-against-google-citing-ais-harms-to-their-bottom-line/"
+    },
+    "c20a032e-e41f-4f07-8a5f-9fdd29db8517": {
+      "corpus_id": "Day of Reckoning -- featuring Anthony Joshua, Deontay Wilder: Predictions, undercard, odds, picks, start time",
+      "document_id": "c20a032e-e41f-4f07-8a5f-9fdd29db8517",
+      "title": "Day of Reckoning -- featuring Anthony Joshua, Deontay Wilder: Predictions, undercard, odds, picks, start time",
+      "url": "https://www.cbssports.com/boxing/news/day-of-reckoning-featuring-anthony-joshua-deontay-wilder-predictions-undercard-odds-picks-start-time/"
+    },
+    "c2cc31f6-9a5f-4cc2-8a8c-28f149f5124a": {
+      "corpus_id": "Taylor Swift-Travis Kelce timeline: Everything to know about rumored romance between pop star, Chiefs TE",
+      "document_id": "c2cc31f6-9a5f-4cc2-8a8c-28f149f5124a",
+      "title": "Taylor Swift-Travis Kelce timeline: Everything to know about rumored romance between pop star, Chiefs TE",
+      "url": "https://www.cbssports.com/nfl/news/taylor-swift-travis-kelce-timeline-everything-to-know-about-rumored-romance-between-pop-star-chiefs-te/"
+    },
+    "c308f80d-73c4-4335-aba0-58e457e40ae9": {
+      "corpus_id": "The FTX trial is bigger than Sam Bankman-Fried",
+      "document_id": "c308f80d-73c4-4335-aba0-58e457e40ae9",
+      "title": "The FTX trial is bigger than Sam Bankman-Fried",
+      "url": "https://www.theverge.com/2023/9/28/23893269/ftx-sam-bankman-fried-trial-evidence-crypto"
+    },
+    "c46d247c-1bfa-4082-95e5-9b249675b58e": {
+      "corpus_id": "The inside story of Dave Clark's tumultuous last days at Flexport",
+      "document_id": "c46d247c-1bfa-4082-95e5-9b249675b58e",
+      "title": "The inside story of Dave Clark's tumultuous last days at Flexport",
+      "url": "https://www.cnbc.com/2023/10/02/the-inside-story-of-dave-clarks-tumultuous-last-days-at-flexport.html"
+    },
+    "c494f82f-9e3c-488e-90b9-b89ec5a11552": {
+      "corpus_id": "Comeback kings Richmond take the AFLW points in Cairns",
+      "document_id": "c494f82f-9e3c-488e-90b9-b89ec5a11552",
+      "title": "Comeback kings Richmond take the AFLW points in Cairns",
+      "url": "https://www.theage.com.au/sport/afl/aflw-round-eight-tigers-beat-hawks-to-stay-in-finals-race-20231021-p5edz4.html?ref=rss&utm_medium=rss&utm_source=rss_sport"
+    },
+    "c5c53004-2294-43c0-91a6-734d12abddf1": {
+      "corpus_id": "2023 NFL Week 11 injury roundup: Rams WR Cooper Kupp, Seahawks RB Kenneth Walker III among stars to exit",
+      "document_id": "c5c53004-2294-43c0-91a6-734d12abddf1",
+      "title": "2023 NFL Week 11 injury roundup: Rams WR Cooper Kupp, Seahawks RB Kenneth Walker III among stars to exit",
+      "url": "https://www.cbssports.com/nfl/news/2023-nfl-week-11-injury-roundup-rams-wr-cooper-kupp-seahawks-rb-kenneth-walker-iii-among-stars-to-exit/"
+    },
+    "c76ac593-de02-4a00-84a1-a118df56e91e": {
+      "corpus_id": "Paul Mitchell signed Tottenham and Chelsea superstars, fell out with Daniel Levy and has tailor-made plan for Manchester United",
+      "document_id": "c76ac593-de02-4a00-84a1-a118df56e91e",
+      "title": "Paul Mitchell signed Tottenham and Chelsea superstars, fell out with Daniel Levy and has tailor-made plan for Manchester United",
+      "url": "https://talksport.com/football/1603721/paul-mitchell-man-united-sporting-director-jim-ratcliffe-takeover/"
+    },
+    "c76cfca1-0063-4382-bfc7-f2704c2de95b": {
+      "corpus_id": "Concert movies are the future of pop music fandom",
+      "document_id": "c76cfca1-0063-4382-bfc7-f2704c2de95b",
+      "title": "Concert movies are the future of pop music fandom",
+      "url": "https://www.polygon.com/23945686/concert-movies-fandom-taylor-swift-bts-beyonce"
+    },
+    "c7907cce-aba8-4617-9e6f-5a59df93db50": {
+      "corpus_id": "England choose survival over oblivion and a chance of summer trip to France | Jonathan Liew",
+      "document_id": "c7907cce-aba8-4617-9e6f-5a59df93db50",
+      "title": "England choose survival over oblivion and a chance of summer trip to France | Jonathan Liew",
+      "url": "https://www.theguardian.com/football/2023/dec/01/england-choose-survival-over-oblivion-and-a-chance-of-summer-trip-to-france"
+    },
+    "c7bf8570-ea0b-4b92-98ac-c838582b418d": {
+      "corpus_id": "Dangerous 'superbugs' are a growing threat, and antibiotics can't stop their rise. What can?",
+      "document_id": "c7bf8570-ea0b-4b92-98ac-c838582b418d",
+      "title": "Dangerous 'superbugs' are a growing threat, and antibiotics can't stop their rise. What can?",
+      "url": "https://www.livescience.com/health/medicine-drugs/dangerous-superbugs-are-a-growing-threat-and-antibiotics-cant-stop-their-rise-what-can"
+    },
+    "c8a3bfee-4823-4eaa-bede-3396beb87e02": {
+      "corpus_id": "Taylor Swift reveals secret start to her relationship with Travis Kelce",
+      "document_id": "c8a3bfee-4823-4eaa-bede-3396beb87e02",
+      "title": "Taylor Swift reveals secret start to her relationship with Travis Kelce",
+      "url": "https://www.independent.co.uk/life-style/taylor-swift-travis-kelce-relationship-b2459441.html"
+    },
+    "c99d9152-8121-42eb-bbf0-d060a4e10639": {
+      "corpus_id": "UK View: \u2018A bridge too far\u2019 \u2013 Boycott, former greats tear into \u2018dysfunctional\u2019 Poms with World Cup defence all but dead",
+      "document_id": "c99d9152-8121-42eb-bbf0-d060a4e10639",
+      "title": "UK View: \u2018A bridge too far\u2019 \u2013 Boycott, former greats tear into \u2018dysfunctional\u2019 Poms with World Cup defence all but dead",
+      "url": "https://www.theroar.com.au/2023/10/27/uk-view-a-bridge-too-far-boycott-former-greats-tear-into-dysfunctional-poms-with-world-cup-defence-all-but-dead/"
+    },
+    "c9f38c65-f6b7-44dd-bcf9-b89061e8a515": {
+      "corpus_id": "OpenAI's ex-chairman accuses board of going rogue in firing Altman: 'Sam and I are shocked and saddened by what the board did'",
+      "document_id": "c9f38c65-f6b7-44dd-bcf9-b89061e8a515",
+      "title": "OpenAI's ex-chairman accuses board of going rogue in firing Altman: 'Sam and I are shocked and saddened by what the board did'",
+      "url": "https://fortune.com/2023/11/18/how-did-openai-fire-sam-altman-greg-brockman-rogue-board/"
+    },
+    "cb6b9c2e-a464-4702-a5c3-79c063397a66": {
+      "corpus_id": "Israel's prince of public diplomacy",
+      "document_id": "cb6b9c2e-a464-4702-a5c3-79c063397a66",
+      "title": "Israel's prince of public diplomacy",
+      "url": "https://en.globes.co.il/en/article-1001464023#utm_source=RSS"
+    },
+    "cc3a8b59-7f3e-4ea0-b4bf-99e854ac032d": {
+      "corpus_id": "Hitting the Books: We are the frogs in the boiling pot, it's time we started governing like it.",
+      "document_id": "cc3a8b59-7f3e-4ea0-b4bf-99e854ac032d",
+      "title": "Hitting the Books: We are the frogs in the boiling pot, it's time we started governing like it.",
+      "url": "https://www.engadget.com/hitting-the-books-democracy-in-a-hotter-time-david-orr-mit-press-143034391.html?src=rss"
+    },
+    "cc7ffdfc-5217-4a34-9c61-3c472078d15d": {
+      "corpus_id": "Norway seeks to extend ban on Meta\u2019s consentless tracking ads across the EU",
+      "document_id": "cc7ffdfc-5217-4a34-9c61-3c472078d15d",
+      "title": "Norway seeks to extend ban on Meta\u2019s consentless tracking ads across the EU",
+      "url": "https://techcrunch.com/2023/09/28/norway-meta-ads-edpb-referral/"
+    },
+    "cd044f04-b092-4cc1-97ca-caba679bd8f3": {
+      "corpus_id": "Patterns of Surface Warming Matter for Climate Sensitivity",
+      "document_id": "cd044f04-b092-4cc1-97ca-caba679bd8f3",
+      "title": "Patterns of Surface Warming Matter for Climate Sensitivity",
+      "url": "https://eos.org/features/patterns-of-surface-warming-matter-for-climate-sensitivity"
+    },
+    "cd65d9a9-5320-49be-995c-2821f9f50a0b": {
+      "corpus_id": "Christmas proves that love triumphs over hate \u2014 even amid war, suffering, tragedy and turmoil",
+      "document_id": "cd65d9a9-5320-49be-995c-2821f9f50a0b",
+      "title": "Christmas proves that love triumphs over hate \u2014 even amid war, suffering, tragedy and turmoil",
+      "url": "https://www.foxnews.com/lifestyle/christmas-proves-love-triumphs-hate-amid-war-suffering-tragedy-turmoil"
+    },
+    "cde0a0ff-3476-46c3-8c3a-ec5f29b020d6": {
+      "corpus_id": "In the end, the FTX trial was about the friends screwed along the way",
+      "document_id": "cde0a0ff-3476-46c3-8c3a-ec5f29b020d6",
+      "title": "In the end, the FTX trial was about the friends screwed along the way",
+      "url": "https://www.theverge.com/2023/10/26/23931777/ftx-sam-bankman-fried-prosecution-case-friends-family"
+    },
+    "d1beddf2-993d-43c6-bb69-ff915e37cf04": {
+      "corpus_id": "The Crown: What is fact and what is fiction on season 6?",
+      "document_id": "d1beddf2-993d-43c6-bb69-ff915e37cf04",
+      "title": "The Crown: What is fact and what is fiction on season 6?",
+      "url": "https://www.independent.co.uk/arts-entertainment/tv/news/crown-season-6-fact-fiction-diana-b2449430.html"
+    },
+    "d1dc46ce-0689-42f9-8624-a1225337f066": {
+      "corpus_id": "NFL Fantasy Football Week 6 Lineup Decisions: Starts, Sits, Sleepers, Busts to know for every game",
+      "document_id": "d1dc46ce-0689-42f9-8624-a1225337f066",
+      "title": "NFL Fantasy Football Week 6 Lineup Decisions: Starts, Sits, Sleepers, Busts to know for every game",
+      "url": "https://www.cbssports.com/fantasy/football/news/nfl-fantasy-football-week-6-lineup-decisions-starts-sits-sleepers-busts-to-know-for-every-game/"
+    },
+    "d314bac2-56ea-40af-9000-22548f1efe41": {
+      "corpus_id": "A timeline of Will Smith and Jada Pinkett Smith\u2019s relationship amid separation",
+      "document_id": "d314bac2-56ea-40af-9000-22548f1efe41",
+      "title": "A timeline of Will Smith and Jada Pinkett Smith\u2019s relationship amid separation",
+      "url": "https://www.independent.co.uk/life-style/love-sex/will-smith-jada-pinkett-relationship-timeline-divorce-b2427925.html"
+    },
+    "d46b1826-dbfd-45e0-af59-47354c9b21fd": {
+      "corpus_id": "Sam Altman backs teens\u2019 startup, Google unveils the Pixel 8 and TikTok tests an ad-free tier",
+      "document_id": "d46b1826-dbfd-45e0-af59-47354c9b21fd",
+      "title": "Sam Altman backs teens\u2019 startup, Google unveils the Pixel 8 and TikTok tests an ad-free tier",
+      "url": "https://techcrunch.com/2023/10/07/sam-altman-backs-a-teens-startup-google-unveils-the-pixel-8-and-tiktok-tests-an-ad-free-tier/"
+    },
+    "d54f6a25-849d-4036-b342-3c79fe881b79": {
+      "corpus_id": "Spider-Man 2 toys with Marvel history to be as much fun as possible",
+      "document_id": "d54f6a25-849d-4036-b342-3c79fe881b79",
+      "title": "Spider-Man 2 toys with Marvel history to be as much fun as possible",
+      "url": "https://www.polygon.com/reviews/23910756/spider-man-2-review-insomniac-release-date-ps5"
+    },
+    "d5903f85-8d4c-4af2-81fb-4350d75f7cb6": {
+      "corpus_id": "Britney Spears and Kevin Federline: A complete timeline of their relationship",
+      "document_id": "d5903f85-8d4c-4af2-81fb-4350d75f7cb6",
+      "title": "Britney Spears and Kevin Federline: A complete timeline of their relationship",
+      "url": "https://www.independent.co.uk/life-style/britney-spears-kevin-federline-relationship-timeline-b2143493.html"
+    },
+    "d6578b94-bf4d-4ec6-a574-5749605e4e33": {
+      "corpus_id": "The best places to see the Northern Lights in the UK",
+      "document_id": "d6578b94-bf4d-4ec6-a574-5749605e4e33",
+      "title": "The best places to see the Northern Lights in the UK",
+      "url": "https://www.independent.co.uk/travel/uk/northern-lights-uk-2023-b2467851.html"
+    },
+    "d819374e-d833-4beb-830e-2771137590ca": {
+      "corpus_id": "The best video games of the year so far",
+      "document_id": "d819374e-d833-4beb-830e-2771137590ca",
+      "title": "The best video games of the year so far",
+      "url": "https://www.polygon.com/23648669/best-video-games-2023"
+    },
+    "d8a46162-11be-4d6f-9032-93cc47105420": {
+      "corpus_id": "MLB Winter Meetings tracker: Live updates on news, rumors, signings and trades for 2023 free agency",
+      "document_id": "d8a46162-11be-4d6f-9032-93cc47105420",
+      "title": "MLB Winter Meetings tracker: Live updates on news, rumors, signings and trades for 2023 free agency",
+      "url": "https://www.sportingnews.com/us/mlb/news/mlb-winter-meetings-news-signings-trades-2023-free-agency/b6561c0450fe40cdfd39860e"
+    },
+    "d9566236-db7b-4cb6-94ac-b6b761ec791e": {
+      "corpus_id": "Warner Music Group boss Robert Kyncl on AI, why labels still exist, and 2 other things we learned from his Q&A at the Code Conference",
+      "document_id": "d9566236-db7b-4cb6-94ac-b6b761ec791e",
+      "title": "Warner Music Group boss Robert Kyncl on AI, why labels still exist, and 2 other things we learned from his Q&A at the Code Conference",
+      "url": "https://www.musicbusinessworldwide.com/warner-music-group-boss-robert-kyncl-on-ai-why-labels-still-exist-and-2-other-things-we-learned-from-his-qa-at-the-code-conference/"
+    },
+    "da58f619-6a05-4ff9-b9a1-ba6ed340ad5a": {
+      "corpus_id": "Gen Z just saw the worst war in Israel in 50 years break out all over the internet, but they were raised on 'disturbing images'",
+      "document_id": "da58f619-6a05-4ff9-b9a1-ba6ed340ad5a",
+      "title": "Gen Z just saw the worst war in Israel in 50 years break out all over the internet, but they were raised on 'disturbing images'",
+      "url": "https://fortune.com/2023/10/10/gen-z-disturbing-images-social-media-digital-native-israel-hamas-war/"
+    },
+    "db1d3587-61f6-499b-956e-cb8a6f473642": {
+      "corpus_id": "Microsoft Activision: What does deal mean for gamers?",
+      "document_id": "db1d3587-61f6-499b-956e-cb8a6f473642",
+      "title": "Microsoft Activision: What does deal mean for gamers?",
+      "url": "https://www.bbc.co.uk/news/technology-67066870?at_medium=RSS&at_campaign=KARANGA"
+    },
+    "dd3907d4-8316-4e53-a23f-5250cbe53071": {
+      "corpus_id": "How ego and fear fuelled the rise of artificial intelligence",
+      "document_id": "dd3907d4-8316-4e53-a23f-5250cbe53071",
+      "title": "How ego and fear fuelled the rise of artificial intelligence",
+      "url": "https://www.theage.com.au/business/entrepreneurship/how-ego-and-fear-fuelled-the-rise-of-artificial-intelligence-20231205-p5ep7j.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "ddd9542f-0e46-451b-822c-51119b039b35": {
+      "corpus_id": "Fantasy Football WR PPR Rankings Week 13: Who to start, best sleepers at wide receiver",
+      "document_id": "ddd9542f-0e46-451b-822c-51119b039b35",
+      "title": "Fantasy Football WR PPR Rankings Week 13: Who to start, best sleepers at wide receiver",
+      "url": "https://www.sportingnews.com/us/fantasy/news/fantasy-football-wr-ppr-rankings-week-13-wide-receiver/f23a9792af9a786607323864"
+    },
+    "ded07f32-2670-411b-9f70-b18e500ee2b1": {
+      "corpus_id": "Apple 16-inch M3 Max MacBook Pro review: A desktop among laptops",
+      "document_id": "ded07f32-2670-411b-9f70-b18e500ee2b1",
+      "title": "Apple 16-inch M3 Max MacBook Pro review: A desktop among laptops",
+      "url": "https://techcrunch.com/2023/11/06/apple-macbook-pro-review-m3-max/"
+    },
+    "df85bf06-1f60-4057-a324-1386e02314a6": {
+      "corpus_id": "The best portable chargers for your gear",
+      "document_id": "df85bf06-1f60-4057-a324-1386e02314a6",
+      "title": "The best portable chargers for your gear",
+      "url": "https://www.polygon.com/what-to-buy/23672627/best-power-bank-portable-chargers"
+    },
+    "dfb84b46-3472-4b65-b895-90f473e8c558": {
+      "corpus_id": "Sam Bankman-Fried was a terrible boyfriend",
+      "document_id": "dfb84b46-3472-4b65-b895-90f473e8c558",
+      "title": "Sam Bankman-Fried was a terrible boyfriend",
+      "url": "https://www.theverge.com/2023/10/10/23912036/sam-bankman-fried-ftx-caroline-ellison-alameda-research"
+    },
+    "e22485e0-4cd6-44e0-b9f2-857f7ea371ed": {
+      "corpus_id": "When it comes to generative AI in the enterprise, CIOs are taking it slow",
+      "document_id": "e22485e0-4cd6-44e0-b9f2-857f7ea371ed",
+      "title": "When it comes to generative AI in the enterprise, CIOs are taking it slow",
+      "url": "https://techcrunch.com/2023/12/15/when-it-comes-to-generative-ai-in-the-enterprise-cios-are-taking-it-slow/"
+    },
+    "e2bd8c29-6e44-4007-bfb8-6fe145f8b2b0": {
+      "corpus_id": "When pop culture and sport collide: A timeline of Taylor Swift\u2019s NFL takeover",
+      "document_id": "e2bd8c29-6e44-4007-bfb8-6fe145f8b2b0",
+      "title": "When pop culture and sport collide: A timeline of Taylor Swift\u2019s NFL takeover",
+      "url": "https://www.theage.com.au/culture/music/when-pop-culture-and-sport-collide-a-timeline-of-taylor-swift-s-nfl-takeover-20230926-p5e7lu.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "e2c255ee-df52-41f3-96ca-efd6fd6981c5": {
+      "corpus_id": "Biden\u2019s AI EO hailed as broad, but not deep without legislation to match",
+      "document_id": "e2c255ee-df52-41f3-96ca-efd6fd6981c5",
+      "title": "Biden\u2019s AI EO hailed as broad, but not deep without legislation to match",
+      "url": "https://techcrunch.com/2023/10/31/bidens-ai-eo-hailed-as-broad-but-not-deep-without-legislation-to-match/"
+    },
+    "e4f547cf-a5f0-41e9-a343-92eaa6da9622": {
+      "corpus_id": "New Alzheimer\u2019s drugs bring hope of slowing disease for UK patients",
+      "document_id": "e4f547cf-a5f0-41e9-a343-92eaa6da9622",
+      "title": "New Alzheimer\u2019s drugs bring hope of slowing disease for UK patients",
+      "url": "https://www.theguardian.com/society/2023/dec/17/new-alzheimers-drugs-bring-hope-of-slowing-disease-for-uk-patients"
+    },
+    "e5201339-8951-45a6-a1e9-661235c789f2": {
+      "corpus_id": "\u2018It happens\u2019: All Blacks defend star centre after spray as Cheika heaps pressure on \u2018favourites\u2019 New Zealand",
+      "document_id": "e5201339-8951-45a6-a1e9-661235c789f2",
+      "title": "\u2018It happens\u2019: All Blacks defend star centre after spray as Cheika heaps pressure on \u2018favourites\u2019 New Zealand",
+      "url": "https://www.theroar.com.au/2023/10/19/it-happens-all-blacks-defend-star-centre-after-spray-as-cheika-heaps-pressure-on-favourites-new-zealand/"
+    },
+    "e684c161-dd0a-40f1-894c-05996b7c67a5": {
+      "corpus_id": "THE GREATEST! Boks beat All Blacks in instant classic to claim record FOURTH RWC in controversial, dramatic final",
+      "document_id": "e684c161-dd0a-40f1-894c-05996b7c67a5",
+      "title": "THE GREATEST! Boks beat All Blacks in instant classic to claim record FOURTH RWC in controversial, dramatic final",
+      "url": "https://www.theroar.com.au/2023/10/29/the-greatest-boks-beat-all-blacks-in-instant-classic-to-claim-record-fourth-rwc-in-controversial-dramatic-final/"
+    },
+    "e9324ea5-c85c-4eee-ae29-a54193244308": {
+      "corpus_id": "Bride defended after asking mother to walk her down the aisle instead of stepfather",
+      "document_id": "e9324ea5-c85c-4eee-ae29-a54193244308",
+      "title": "Bride defended after asking mother to walk her down the aisle instead of stepfather",
+      "url": "https://www.independent.co.uk/life-style/mother-bride-wedding-reddit-b2454334.html"
+    },
+    "e9bd3736-7bfd-4bfa-b615-7c84867b286f": {
+      "corpus_id": "Spider-Man: Across the Spider-Verse on Netflix, A Haunting in Venice, and every new movie to watch this weekend",
+      "document_id": "e9bd3736-7bfd-4bfa-b615-7c84867b286f",
+      "title": "Spider-Man: Across the Spider-Verse on Netflix, A Haunting in Venice, and every new movie to watch this weekend",
+      "url": "https://www.polygon.com/2023/11/3/23938342/new-movies-watch-spider-man-across-spider-verse-netflix-jawan-haunting-venice-hulu"
+    },
+    "eb7e2409-0a72-45d8-9e84-9ee4763b78f2": {
+      "corpus_id": "Top 25 MLB offseason trade candidates",
+      "document_id": "eb7e2409-0a72-45d8-9e84-9ee4763b78f2",
+      "title": "Top 25 MLB offseason trade candidates",
+      "url": "https://www.yardbarker.com/mlb/articles/top_25_mlb_offseason_trade_candidates/s1_13237_39530247"
+    },
+    "ec4eeb5f-281b-4379-84aa-0918758876fa": {
+      "corpus_id": "Meta says it\u2019s prioritizing livestreaming checks during Israel-Hamas war",
+      "document_id": "ec4eeb5f-281b-4379-84aa-0918758876fa",
+      "title": "Meta says it\u2019s prioritizing livestreaming checks during Israel-Hamas war",
+      "url": "https://techcrunch.com/2023/10/13/meta-israel-hamas-war-response/"
+    },
+    "ec5a42f0-2068-4836-b69b-2e606384a609": {
+      "corpus_id": "EU says incoming rules for general purpose AIs can evolve over time",
+      "document_id": "ec5a42f0-2068-4836-b69b-2e606384a609",
+      "title": "EU says incoming rules for general purpose AIs can evolve over time",
+      "url": "https://techcrunch.com/2023/12/11/eu-ai-act-gpai-rules-evolve/"
+    },
+    "ed02d685-c7a2-493c-951d-b905744c64ca": {
+      "corpus_id": "One year later, ChatGPT is still alive and kicking",
+      "document_id": "ed02d685-c7a2-493c-951d-b905744c64ca",
+      "title": "One year later, ChatGPT is still alive and kicking",
+      "url": "https://techcrunch.com/2023/11/30/one-year-later-chatgpt-is-still-alive-and-kicking/"
+    },
+    "ed8aee38-376e-48c4-a701-06df47c397e4": {
+      "corpus_id": "The best Prime Day deals on headphones for October 2023",
+      "document_id": "ed8aee38-376e-48c4-a701-06df47c397e4",
+      "title": "The best Prime Day deals on headphones for October 2023",
+      "url": "https://www.engadget.com/best-amazon-prime-day-headphone-deals-104130119.html?src=rss"
+    },
+    "ee8a5fb7-4b8a-40ad-931d-8a16eb1512eb": {
+      "corpus_id": "He\u2019s Hockey\u2019s Brightest Young Star. This Is What Makes His Shot So Special.",
+      "document_id": "ee8a5fb7-4b8a-40ad-931d-8a16eb1512eb",
+      "title": "He\u2019s Hockey\u2019s Brightest Young Star. This Is What Makes His Shot So Special.",
+      "url": "https://theathletic.com/5028179/2023/11/16/blackhawks-connor-bedard-shot/"
+    },
+    "eedbb674-0be0-4cd5-85ea-672b6ca69f5e": {
+      "corpus_id": "Today the FTX jury suffered through a code review",
+      "document_id": "eedbb674-0be0-4cd5-85ea-672b6ca69f5e",
+      "title": "Today the FTX jury suffered through a code review",
+      "url": "https://www.theverge.com/2023/10/6/23906899/ftx-alameda-sam-bankman-fried-trial-gary-wang-testimony"
+    },
+    "ef68f4d2-2636-446b-9e88-f9515962a058": {
+      "corpus_id": "Sony Music\u2019s artists aren\u2019t involved in YouTube\u2019s new voice-cloning AI experiment. Not unrelated: Google\u2019s recent filing with the US Copyright Office.",
+      "document_id": "ef68f4d2-2636-446b-9e88-f9515962a058",
+      "title": "Sony Music\u2019s artists aren\u2019t involved in YouTube\u2019s new voice-cloning AI experiment. Not unrelated: Google\u2019s recent filing with the US Copyright Office.",
+      "url": "https://www.musicbusinessworldwide.com/sony-musics-artists-arent-involved-in-youtubes-new-cloned-voice-ai-experiment-not-unrelated-googles-recent-filing-with-the-us-copyright-office/"
+    },
+    "efa80a41-17ad-4ad7-811d-9f6ceae16e6c": {
+      "corpus_id": "How to tackle Black Friday shopping like a boss",
+      "document_id": "efa80a41-17ad-4ad7-811d-9f6ceae16e6c",
+      "title": "How to tackle Black Friday shopping like a boss",
+      "url": "https://www.polygon.com/23934751/black-friday-cyber-monday-2023-time-price-matching-returns"
+    },
+    "f05bc9ce-b1d3-42c5-b0e1-9061b5070cb4": {
+      "corpus_id": "Man United next manager: Assessing candidates to replace Erik ten Hag if Red Devils sack Dutch boss",
+      "document_id": "f05bc9ce-b1d3-42c5-b0e1-9061b5070cb4",
+      "title": "Man United next manager: Assessing candidates to replace Erik ten Hag if Red Devils sack Dutch boss",
+      "url": "https://www.sportingnews.com/us/soccer/news/man-united-next-manager-candidates-replace-erik-ten-hag/07c717a6ff83b771c4c5f538"
+    },
+    "f06f46d8-b85b-43fd-ae03-c8acfe252694": {
+      "corpus_id": "With hopes of victory fading, Ukraine's fight against Russia could get even harder in 2024",
+      "document_id": "f06f46d8-b85b-43fd-ae03-c8acfe252694",
+      "title": "With hopes of victory fading, Ukraine's fight against Russia could get even harder in 2024",
+      "url": "https://www.cnbc.com/2023/12/26/what-could-happen-in-the-russia-ukraine-war-in-2024.html"
+    },
+    "f1ed3192-185b-4e6c-bd27-1ff584be3f2c": {
+      "corpus_id": "ASX to rise after interest rate hopes boost US shares",
+      "document_id": "f1ed3192-185b-4e6c-bd27-1ff584be3f2c",
+      "title": "ASX to rise after interest rate hopes boost US shares",
+      "url": "https://www.smh.com.au/business/markets/asx-to-rise-after-interest-rate-hopes-boost-us-shares-20231106-p5ehsi.html?ref=rss&utm_medium=rss&utm_source=rss_business"
+    },
+    "f2df05a7-8c4e-4c57-82e4-6d1f05a09a5d": {
+      "corpus_id": "10 scorching-hot discoveries made about the sun in 2023",
+      "document_id": "f2df05a7-8c4e-4c57-82e4-6d1f05a09a5d",
+      "title": "10 scorching-hot discoveries made about the sun in 2023",
+      "url": "https://www.livescience.com/space/the-sun/10-scorching-hot-discoveries-made-about-the-sun-in-2023"
+    },
+    "f5157726-4733-49f5-bb5f-dd058eb69d81": {
+      "corpus_id": "Manchester United face Galatasaray with high hopes but bad memories",
+      "document_id": "f5157726-4733-49f5-bb5f-dd058eb69d81",
+      "title": "Manchester United face Galatasaray with high hopes but bad memories",
+      "url": "https://www.theguardian.com/football/2023/nov/27/manchester-united-head-for-istanbul-with-good-intentions-but-bad-memories-galatasaray-champions-league"
+    },
+    "f57ee254-d843-4691-a5db-45c478c28b7c": {
+      "corpus_id": "The Soccer Star on the Verge of Breaking an 89-Year-Old Record",
+      "document_id": "f57ee254-d843-4691-a5db-45c478c28b7c",
+      "title": "The Soccer Star on the Verge of Breaking an 89-Year-Old Record",
+      "url": "https://theathletic.com/5065646/2023/11/16/erling-haaland-longest-international-goal-records/"
+    },
+    "f644c735-281e-46c7-a8d3-8782186fa174": {
+      "corpus_id": "This horror flick boasts the best opening 13 minutes of a film you\u2019ll see this year",
+      "document_id": "f644c735-281e-46c7-a8d3-8782186fa174",
+      "title": "This horror flick boasts the best opening 13 minutes of a film you\u2019ll see this year",
+      "url": "https://www.theage.com.au/culture/movies/this-horror-flick-boasts-the-best-opening-13-minutes-of-a-film-you-ll-see-this-year-20231114-p5ejun.html?ref=rss&utm_medium=rss&utm_source=rss_culture"
+    },
+    "f699ea7f-64af-4fd9-bbcd-149b90958f6f": {
+      "corpus_id": "Legacy vs ego: The Springboks are playing for South Africa, the All Blacks are playing for themselves",
+      "document_id": "f699ea7f-64af-4fd9-bbcd-149b90958f6f",
+      "title": "Legacy vs ego: The Springboks are playing for South Africa, the All Blacks are playing for themselves",
+      "url": "https://www.theroar.com.au/2023/10/27/legacy-vs-ego-the-springboks-are-playing-for-south-africa-the-all-blacks-are-playing-for-themselves/"
+    },
+    "f7279768-1dc8-4997-bcb3-3ea1eebc6705": {
+      "corpus_id": "SBF\u2019s trial starts soon, but how did he \u2014 and FTX \u2014 get here?",
+      "document_id": "f7279768-1dc8-4997-bcb3-3ea1eebc6705",
+      "title": "SBF\u2019s trial starts soon, but how did he \u2014 and FTX \u2014 get here?",
+      "url": "https://techcrunch.com/2023/10/01/ftx-lawsuit-timeline/"
+    },
+    "f7b37e24-2f44-41ee-9e07-8e6d47568549": {
+      "corpus_id": "Shohei Ohtani rumors tracker: Latest news, updates on free agent's MLB future",
+      "document_id": "f7b37e24-2f44-41ee-9e07-8e6d47568549",
+      "title": "Shohei Ohtani rumors tracker: Latest news, updates on free agent's MLB future",
+      "url": "https://www.sportingnews.com/us/mlb/news/shohei-ohtani-rumors-tracker-latest-news-updates-free-agent/6593aa54c999febe209052e3"
+    },
+    "f9c11727-a206-4e4b-a7d5-8728548c340d": {
+      "corpus_id": "After a Stunning Snub, College Football Is Facing an Identity Crisis",
+      "document_id": "f9c11727-a206-4e4b-a7d5-8728548c340d",
+      "title": "After a Stunning Snub, College Football Is Facing an Identity Crisis",
+      "url": "https://theathletic.com/5108140/2023/12/03/college-football-playoff-florida-state-alabama/"
+    },
+    "f9e8dbd7-dbd9-4310-9cd0-0d7321b06efb": {
+      "corpus_id": "Here are the best deals on headphones and wireless earbuds we could find",
+      "document_id": "f9e8dbd7-dbd9-4310-9cd0-0d7321b06efb",
+      "title": "Here are the best deals on headphones and wireless earbuds we could find",
+      "url": "https://www.theverge.com/22307388/wireless-earbuds-deals-airpods-galaxy-buds-powerbeats"
+    },
+    "fa2b9f00-b51a-4119-b563-8f796ba654bf": {
+      "corpus_id": "West Indies v England: fifth and deciding men\u2019s T20 cricket international \u2013 live",
+      "document_id": "fa2b9f00-b51a-4119-b563-8f796ba654bf",
+      "title": "West Indies v England: fifth and deciding men\u2019s T20 cricket international \u2013 live",
+      "url": "https://www.theguardian.com/sport/live/2023/dec/21/west-indies-v-england-fifth-and-deciding-mens-t20-cricket-international-live"
+    },
+    "fa58208e-0611-4877-bf68-1a8df6b6d4d9": {
+      "corpus_id": "Tim Sweeney on Epic\u2019s victory royale over Google",
+      "document_id": "fa58208e-0611-4877-bf68-1a8df6b6d4d9",
+      "title": "Tim Sweeney on Epic\u2019s victory royale over Google",
+      "url": "https://www.theverge.com/23996474/epic-tim-sweeney-interview-win-google-antitrust-lawsuit-district-court"
+    },
+    "fb276033-3e32-4177-9353-0d8efb5349fe": {
+      "corpus_id": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
+      "document_id": "fb276033-3e32-4177-9353-0d8efb5349fe",
+      "title": "&#039;Massive intel failure by Mossad&#039;: Hamas&#039; surprise attack on Israel shocks internet",
+      "url": "https://www.businesstoday.in/latest/world/story/massive-intel-failure-by-mossad-hamas-surprise-attack-on-israel-shocks-internet-401106-2023-10-07?utm_source=rssfeed"
+    },
+    "fb9332a9-514d-4038-8066-c8dd3832f197": {
+      "corpus_id": "Chiefs vs. Packers live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "document_id": "fb9332a9-514d-4038-8066-c8dd3832f197",
+      "title": "Chiefs vs. Packers live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "url": "https://www.sportingnews.com/us/ncaa-football/news/chiefs-packers-live-score-highlights-sunday-night-football/515656cb05afc1845e0dd402"
+    },
+    "fca607b3-5c00-47a7-b39a-7ecdfd2e8ac5": {
+      "corpus_id": "European football: Eintracht Frankfurt hit Bayern for five in famous thrashing",
+      "document_id": "fca607b3-5c00-47a7-b39a-7ecdfd2e8ac5",
+      "title": "European football: Eintracht Frankfurt hit Bayern for five in famous thrashing",
+      "url": "https://www.theguardian.com/football/2023/dec/09/european-football-eintracht-frankfurt-hit-bayern-for-five-in-famous-thrashing"
+    },
+    "fd3aae3a-7444-4262-b3a5-e9abb86598f0": {
+      "corpus_id": "Bills vs. Bengals live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "document_id": "fd3aae3a-7444-4262-b3a5-e9abb86598f0",
+      "title": "Bills vs. Bengals live score, updates, highlights from NFL 'Sunday Night Football' game",
+      "url": "https://www.sportingnews.com/us/nfl/news/bills-bengals-score-updates-highlights-sunday-night-football/7b07ea47f2414e873f7eeade"
+    },
+    "fe39dacd-1679-442f-8d9b-75e1c2eecc8a": {
+      "corpus_id": "Another cruel comeback sees Newcastle perish in group of death",
+      "document_id": "fe39dacd-1679-442f-8d9b-75e1c2eecc8a",
+      "title": "Another cruel comeback sees Newcastle perish in group of death",
+      "url": "https://www.independent.co.uk/sport/football/newcastle-ac-milan-result-champions-league-b2463663.html"
+    }
+  }
+}

@@ -1,0 +1,628 @@
+{
+  "answer_mix": [
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "label": "reported only, never decisional; beating constant-Yes is not a default condition",
+      "mix": [
+        {
+          "arm": {
+            "insufficient_information": 0.1111111111111111,
+            "no": 0.19444444444444445,
+            "other": 0.08333333333333333,
+            "yes": 0.6111111111111112
+          },
+          "constant_no_answer_usable": 0.2777777777777778,
+          "constant_yes_answer_usable": 0.6666666666666666,
+          "gold": {
+            "no": 0.2777777777777778,
+            "other": 0.05555555555555555,
+            "yes": 0.6666666666666666
+          },
+          "n": 36,
+          "reference": {
+            "insufficient_information": 0.08333333333333333,
+            "no": 0.2222222222222222,
+            "other": 0.08333333333333333,
+            "yes": 0.6111111111111112
+          },
+          "subset": "comparison_query"
+        },
+        {
+          "arm": {
+            "insufficient_information": 0.14285714285714285,
+            "no": 0.17857142857142858,
+            "other": 0.08928571428571429,
+            "yes": 0.5892857142857143
+          },
+          "constant_no_answer_usable": 0.3392857142857143,
+          "constant_yes_answer_usable": 0.6607142857142857,
+          "gold": {
+            "no": 0.3392857142857143,
+            "other": 0.0,
+            "yes": 0.6607142857142857
+          },
+          "n": 56,
+          "reference": {
+            "insufficient_information": 0.14285714285714285,
+            "no": 0.21428571428571427,
+            "other": 0.03571428571428571,
+            "yes": 0.6071428571428571
+          },
+          "subset": "binary_gold"
+        }
+      ],
+      "non_binary_gold": {
+        "ci_hi": 0.0,
+        "ci_label": "unadjusted, estimation only",
+        "ci_lo": 0.0,
+        "delta": 0.0,
+        "mean_arm": 0.9411764705882353,
+        "mean_reference": 0.9411764705882353,
+        "n": 34
+      },
+      "transitions": {
+        "all": {
+          "abstain_to_correct": 2,
+          "answer_to_abstain": 3,
+          "correct_to_abstain": 3,
+          "correct_to_wrong": 2,
+          "n": 90,
+          "other_transitions": 1,
+          "unchanged": 82,
+          "wrong_to_correct": 0
+        },
+        "comparison_query": {
+          "abstain_to_correct": 0,
+          "answer_to_abstain": 2,
+          "correct_to_abstain": 2,
+          "correct_to_wrong": 2,
+          "n": 36,
+          "other_transitions": 1,
+          "unchanged": 31,
+          "wrong_to_correct": 0
+        },
+        "inference_query": {
+          "abstain_to_correct": 0,
+          "answer_to_abstain": 0,
+          "correct_to_abstain": 0,
+          "correct_to_wrong": 0,
+          "n": 31,
+          "other_transitions": 0,
+          "unchanged": 31,
+          "wrong_to_correct": 0
+        },
+        "temporal_query": {
+          "abstain_to_correct": 2,
+          "answer_to_abstain": 1,
+          "correct_to_abstain": 1,
+          "correct_to_wrong": 0,
+          "n": 23,
+          "other_transitions": 0,
+          "unchanged": 20,
+          "wrong_to_correct": 0
+        }
+      }
+    }
+  ],
+  "ci_statement": "Bootstrap CIs are 95% percentile intervals, labelled 'unadjusted, estimation only'. A CI that excludes 0 without a Holm rejection is not significant.",
+  "context": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "context_tokens_mean": 1748.7111111111112,
+      "evidence_hits_at_4": 0.9,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 3778.8444444444444
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "context_tokens_mean": 1747.8555555555556,
+      "evidence_hits_at_4": 0.9,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 3963.222222222222
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "context_tokens_mean": 565.5888888888888,
+      "evidence_hits_at_4": 0.9,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 2548.9555555555557
+    },
+    {
+      "arm": "small/hybrid+graph+rerank+metadata",
+      "context_tokens_mean": 565.6333333333333,
+      "evidence_hits_at_4": 0.9,
+      "label": "descriptive, decides nothing",
+      "n": 90,
+      "prompt_tokens_mean": 2754.3
+    }
+  ],
+  "default_decisions": [
+    {
+      "answer_usable_decision": "not significant",
+      "decision": "stays off: not significant",
+      "delta": -0.033333333333333326,
+      "gate_reads": null,
+      "hits_at_4_note": null,
+      "hits_at_4_support": null,
+      "interaction_caveat": "If two levers win, D-157 flips both. The combination is never tested decisionally; hybrid+all is its only, descriptive, evidence.",
+      "kind": "default_decision",
+      "lever": "merged/hybrid+graph+rerank+metadata",
+      "reasons": [
+        "no Holm rejection"
+      ]
+    }
+  ],
+  "descriptive_rows": [],
+  "families": [
+    {
+      "alpha": 0.05,
+      "comparisons": [
+        {
+          "adjusted_p": 0.453125,
+          "arm": "merged/hybrid+graph+rerank+metadata",
+          "ci_hi": 0.022222222222222223,
+          "ci_label": "unadjusted, estimation only",
+          "ci_lo": -0.08888888888888889,
+          "ci_note": null,
+          "coverage": 1.0,
+          "decision": "not significant",
+          "delta": -0.033333333333333326,
+          "evaluable": true,
+          "exclusions": {
+            "of_which_reference_own_failure": 0,
+            "of_which_reference_provenance": 0,
+            "of_which_rerank_degrade": 0,
+            "own_failure": 0,
+            "own_provenance": 0,
+            "reference_only_failure": 0
+          },
+          "mean_arm": 0.8333333333333334,
+          "mean_reference": 0.8666666666666667,
+          "n_neg": 5,
+          "n_pairs": 90,
+          "n_pos": 2,
+          "raw_p": 0.453125,
+          "reference": "merged/hybrid+rerank+metadata",
+          "rejected": false,
+          "strata": [
+            {
+              "ci_hi": -0.027777777777777776,
+              "ci_lo": -0.2222222222222222,
+              "delta": -0.11111111111111105,
+              "n": 36,
+              "stratum": "comparison_query"
+            },
+            {
+              "ci_hi": 0.0,
+              "ci_lo": 0.0,
+              "delta": 0.0,
+              "n": 31,
+              "stratum": "inference_query"
+            },
+            {
+              "ci_hi": 0.17391304347826086,
+              "ci_lo": -0.08695652173913043,
+              "delta": 0.04347826086956519,
+              "n": 23,
+              "stratum": "temporal_query"
+            }
+          ]
+        }
+      ],
+      "m": 1,
+      "matching_rule": null,
+      "primary": "answer_usable",
+      "role": "decisional"
+    }
+  ],
+  "fwer_statement": "Two Holm families, one per primary, each at its family-wise error rate (m fixed at the registered arm count). Across both families the family-wise error rate can reach 0.10 (the Bonferroni bound over two families), and this report states it. Defaults read only the decisional family (at most 0.05). The guards can only veto a rejection, so they never raise the error rate.",
+  "gate_readings": null,
+  "graph_state": [
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "degree_capped_count": 279,
+      "records": 100,
+      "records_with_degree_capped_field": 100
+    },
+    {
+      "arm": "small/hybrid+graph+rerank+metadata",
+      "degree_capped_count": 362,
+      "records": 100,
+      "records_with_degree_capped_field": 100
+    }
+  ],
+  "null_guards": [
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "b": 0,
+      "c": 0,
+      "decisional": true,
+      "evaluable": true,
+      "margin": 0.1,
+      "min_pairs": 8,
+      "n_heldout_null": 10,
+      "n_pairs": 10,
+      "net_loss_rate": 0.0,
+      "ni_label": null,
+      "note": "net loss 0 of 10, at most the margin 0.1",
+      "passes": true,
+      "predicate": "metrics.is_abstention",
+      "status": "PASS",
+      "upper_bound_95": 0.0
+    }
+  ],
+  "populations": {
+    "floor": 0.8,
+    "n_heldout_g": 90,
+    "n_heldout_null": 10,
+    "p_all_label": "all-arm P_all, not the decisional population",
+    "population": "dev",
+    "provenance_block_passed": true
+  },
+  "preregistration": {
+    "answer_mix_strata": [
+      "comparison_query",
+      "binary_gold"
+    ],
+    "bootstrap_b": 10000,
+    "bootstrap_seed": 42,
+    "complete_case_floor": 0.8,
+    "default_rule": "The merged-store half of PREREGISTRATION_S1's graph rule (D-263): read only if S1 adopts merged. The graph joins iff the paired answer_usable delta of merged/hybrid+graph+rerank+metadata against merged/hybrid+rerank+metadata on G is at least +0.05 and its null guard passes (D-264). Applied by hand in EXPERIMENT-S1.md",
+    "descriptive_arms": [
+      "small/hybrid+rerank+metadata",
+      "small/hybrid+graph+rerank+metadata"
+    ],
+    "external_pipelines": [],
+    "families": [
+      {
+        "alpha": 0.05,
+        "arms": [
+          "merged/hybrid+graph+rerank+metadata"
+        ],
+        "primary": "answer_usable",
+        "role": "decisional"
+      }
+    ],
+    "matching_rule": "chunk_id_via_gold_chunks",
+    "non_evaluable_rule": "p=1_m_unchanged",
+    "null_guard_arms": [
+      "merged/hybrid+graph+rerank+metadata"
+    ],
+    "null_guard_margin": 0.1,
+    "null_guard_min_pair_fraction": 0.8,
+    "null_guard_predicate": "metrics.is_abstention",
+    "population": "pairwise_per_comparison",
+    "provenance": "v1.1 S1, D-252 and D-263: the merged-store graph comparison as its own reference pairing, because the lever comparison pairs every family arm with the constant's reference. Numbers as PREREGISTRATION_S1 (D-262, D-264). Written 2026-10-30, before any S1 data.",
+    "readers": [],
+    "reference_arm": "merged/hybrid+rerank+metadata",
+    "rerank_consecutive_degrade_halt": 5,
+    "rerank_degrade_tripwire_min_calls": 50,
+    "rerank_degrade_tripwire_rate": 0.2,
+    "sc2_timeout_rate_floor": 0.025,
+    "test": "paired_sign_flip_exact_two_sided"
+  },
+  "provenance_counts": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    },
+    {
+      "arm": "small/hybrid+graph+rerank+metadata",
+      "clause_h_failures": 0,
+      "clause_i_degraded": 0,
+      "clause_j_failures": 0,
+      "query_embedding_retries": 0,
+      "records": 100
+    }
+  ],
+  "rerank_operation": [
+    {
+      "arm": "merged/hybrid+rerank+metadata",
+      "attempts": 100,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.02783126,
+      "degrade_rate": 0.0,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 1259.0,
+      "latency_ms_p50": 361.5,
+      "latency_ms_p95": 716.0,
+      "records": 100
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "attempts": 100,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.0286539,
+      "degrade_rate": 0.0,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 1231.0,
+      "latency_ms_p50": 367.0,
+      "latency_ms_p95": 656.8,
+      "records": 100
+    },
+    {
+      "arm": "small/hybrid+rerank+metadata",
+      "attempts": 100,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.01290948,
+      "degrade_rate": 0.0,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 710.0,
+      "latency_ms_p50": 276.0,
+      "latency_ms_p95": 400.54999999999995,
+      "records": 100
+    },
+    {
+      "arm": "small/hybrid+graph+rerank+metadata",
+      "attempts": 100,
+      "calls_without_reported_cost": 0,
+      "cost_credits_reported_sum": 0.01361272,
+      "degrade_rate": 0.0,
+      "degrades": 0,
+      "degrades_by_class": {
+        "malformed": 0,
+        "status": 0,
+        "timeout": 0,
+        "transport": 0,
+        "unknown": 0
+      },
+      "latency_ms_max": 792.0,
+      "latency_ms_p50": 280.5,
+      "latency_ms_p95": 440.45,
+      "records": 100
+    }
+  ],
+  "run": {
+    "arms": [
+      "merged/hybrid+graph+rerank+metadata",
+      "merged/hybrid+rerank+metadata",
+      "small/hybrid+graph+rerank+metadata",
+      "small/hybrid+rerank+metadata"
+    ],
+    "corpus": "multihop_rag_s1_dev",
+    "index_generation": "merged/hybrid+graph+rerank+metadata=lance-693; merged/hybrid+rerank+metadata=lance-693; small/hybrid+graph+rerank+metadata=lance-703; small/hybrid+rerank+metadata=lance-703",
+    "journal_created_at": 1793498943.1007257,
+    "judged": false,
+    "preregistration_token": "PREREGISTRATION_S1",
+    "reference_arm": "merged/hybrid+rerank+metadata",
+    "run": "2026-10-31-s1-multihop_rag_s1_dev"
+  },
+  "schema_version": 1,
+  "secondaries": [
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "paper_hits_at_10",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "paper_mrr_at_10",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "paper_map_at_10",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.5648148148148149,
+      "mean_reference": 0.5648148148148149,
+      "metric": "coverage_at_4",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "all_gold_at_4",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": -0.13333333333333333,
+      "delta": -0.06666666666666665,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.7777777777777778,
+      "mean_reference": 0.8444444444444444,
+      "metric": "final_answer_em",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": -0.011111111111111112,
+      "ci_lo": -0.08888888888888889,
+      "delta": -0.0444444444444444,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.9,
+      "mean_reference": 0.9444444444444444,
+      "metric": "gold_containment",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": 0.0,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.0,
+      "mean_reference": 0.0,
+      "metric": "final_answer_missing_rate",
+      "n_pairs": 90,
+      "n_unscorable": 0,
+      "parser_parity_review": false
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.05555555555555555,
+      "ci_lo": -0.05555555555555555,
+      "delta": 0.0,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.1,
+      "mean_reference": 0.1,
+      "metric": "abstention_rate_g",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 229.2,
+      "ci_lo": 141.2,
+      "delta": 184.37777777777774,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 3963.222222222222,
+      "mean_reference": 3778.8444444444444,
+      "metric": "prompt_tokens_mean",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 582.1888888888889,
+      "ci_lo": 241.86666666666667,
+      "delta": 413.37777777777774,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 3752.733333333333,
+      "mean_reference": 3339.3555555555554,
+      "metric": "latency_total_ms_mean",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 107.55555555555556,
+      "ci_lo": 22.2,
+      "delta": 64.30000000000007,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 687.8111111111111,
+      "mean_reference": 623.5111111111111,
+      "metric": "retrieve_node_ms_mean",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 4.596177777777781e-05,
+      "ci_lo": -3.458888888888882e-06,
+      "delta": 2.1875777777777706e-05,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 0.001244984,
+      "mean_reference": 0.0012231082222222223,
+      "metric": "spend_usd_mean",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    },
+    {
+      "arm": "merged/hybrid+graph+rerank+metadata",
+      "ci_hi": 0.0,
+      "ci_lo": -2.566666666666667,
+      "delta": -0.8555555555556111,
+      "label": "unadjusted, estimation only",
+      "mean_arm": 1747.8555555555556,
+      "mean_reference": 1748.7111111111112,
+      "metric": "context_tokens_mean",
+      "n_pairs": 90,
+      "n_unscorable": 0
+    }
+  ],
+  "sensitivity": {
+    "p_dec": {
+      "comparisons": [
+        {
+          "adjusted_p": 0.453125,
+          "arm": "merged/hybrid+graph+rerank+metadata",
+          "decision": "not significant",
+          "delta": -0.033333333333333326,
+          "n_neg": 5,
+          "n_pairs": 90,
+          "n_pos": 2,
+          "raw_p": 0.453125
+        }
+      ],
+      "coverage": 1.0,
+      "evaluable": true,
+      "label": "sensitivity line, decides nothing",
+      "n_pdec": 90,
+      "population": "P_dec: ok on the reference and on every decisional lever arm"
+    },
+    "rerank_itt": null
+  }
+}
