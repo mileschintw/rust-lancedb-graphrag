@@ -102,6 +102,7 @@ Every open issue, once. "Order" is the wave (1 = can start now). "Kind" is `free
 | Issue | Order | Blocked by (GitHub) | Same-section wait | Files it owns | Kind |
 |---|---|---|---|---|---|
 | #58 | deferred | — (after #44, #56) | none set | `.github/workflows/ci.yml` (parallel clippy/test engine jobs), `scripts/engine-test-targets.sh`, `scripts/test_test_targets.py` (`cargo nextest list`), `docs/testing.md` (opened 2026-10-30 from a forked side session on the user's "可以，就這樣進行") | limited: no lane. Start only once #44 and #56 are merged, `main` has a warm Rust cache, and an `engine/**` PR's engine job still takes > 8 min. Check the engine job time when #47 or #56 merges; if it stays under 8 min, close #58 as not planned (ask the user first) |
+| #139 | 2 | — | none | `comparison.py` › reader table `batch_spend` for sync arms (Sonnet printed at half; S2 Result states the true ~$7.02) | free; not urgent |
 | #108 | pilot | — | none | engine answer schema vs Anthropic structured outputs; settle in the paid pilot, then a D-ID if needed | limited: paid pilot |
 | #114 | 2 | — | none | `.github/workflows/ci.yml` › eval path filter misses RUN-S2.md/EXPERIMENT-S2.md (opened by lane 110) | free; not urgent |
 | #117 | after S2 submit | — | none | writer pilot: Haiku/Sonnet subset extraction (30-50 docs), cost and quality, no store; BYOK check (user: "是，排在 S2 後 (Recommended)") | limited: paid, before the credit expires 2026-11-03 |
