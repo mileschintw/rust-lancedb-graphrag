@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +63,10 @@ WRITERS: dict[str, wp.Writer] = {
 
 DEFAULT_OUT = Path("experiments") / "v1.1" / "s3m-writers"
 PILOT_OUT = wp.DEFAULT_OUT
+
+#: Writers that extract only the pilot's chunks: a spot check with no graph
+#: (coordinator 2026-11-01; the whole grid does not fit the Claude credit).
+SPOT_CHECK = frozenset({OPUS})
 
 
 def grid_chunks(documents: Sequence[dict[str, Any]]) -> list[wp.PilotChunk]:
@@ -107,19 +111,34 @@ def reuse(writer: wp.Writer, pilot: Path, out: Path) -> int:
 
 
 def pending(
-    writer: wp.Writer, out: Path, *, freeze: bool = True
+    writer: wp.Writer,
+    out: Path,
+    *,
+    freeze: bool = True,
+    only: Collection[str] | None = None,
 ) -> list[wp.PilotChunk]:
     """The chunks the writer still needs bought, frozen in its directory at first use.
 
     Freezing keeps a staged submit's parts stable when more answers arrive later.
-    ``freeze=False`` (the estimate) reads a frozen set but writes none.
+    ``freeze=False`` (the estimate) reads a frozen set but writes none. ``only``
+    limits a new set to those chunk IDs (a spot-check writer's).
     """
     work = _work(writer, out)
     if (work / "chunks.jsonl").is_file():
         return wp.read_chunks(work)
+    if writer.name in wp.WRITERS and not _reused_path(writer, out).is_file():
+        # A pilot writer without its reused answers would buy the pilot's chunks again.
+        raise wp.PilotError(
+            f"{writer.name}: no {_reused_path(writer, out).name}; run `plan --pilot` "
+            "first"
+        )
     reused = wp.read_results(_reused_path(writer, out))
     done = {cid for cid, r in reused.items() if r["status"] == "succeeded"}
-    chunks = [c for c in wp.read_chunks(out) if c.custom_id not in done]
+    chunks = [
+        c
+        for c in wp.read_chunks(out)
+        if c.custom_id not in done and (only is None or c.custom_id in only)
+    ]
     if freeze:
         wp.write_chunks(work, chunks)
     return chunks
@@ -143,9 +162,10 @@ def submit(
     *,
     echo: Callable[[str], None] = print,
     limit: int | None = None,
+    only: Collection[str] | None = None,
 ) -> list[str]:
     """The pilot's batch submit over the writer's pending chunks."""
-    chunks = pending(writer, out)
+    chunks = pending(writer, out, only=only)
     return wp.submit_batch(
         writer, chunks, client, _work(writer, out), echo=echo, limit=limit
     )
@@ -160,6 +180,13 @@ def fetch(
 ) -> bool:
     """The pilot's fetch, in the writer's directory."""
     return wp.fetch_batch(writer, client, _work(writer, out), echo=echo)
+
+
+def scope(writer: wp.Writer, pilot: Path) -> frozenset[str] | None:
+    """The chunk IDs a spot-check writer extracts (the pilot's); None for the rest."""
+    if writer.name not in SPOT_CHECK:
+        return None
+    return frozenset(c.custom_id for c in wp.read_chunks(pilot))
 
 
 def _output_tokens(writer: wp.Writer, out: Path) -> float:
@@ -208,7 +235,9 @@ def plan(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
             typer.echo(f"{writer.name}: {n} answer(s) reused from {pilot}")
         typer.echo(
             wp.estimate(
-                writer, pending(writer, out, freeze=False), _output_tokens(writer, out)
+                writer,
+                pending(writer, out, freeze=False, only=scope(writer, pilot)),
+                _output_tokens(writer, out),
             )
         )
 
@@ -249,13 +278,14 @@ def canary(writer: str, out: Path = DEFAULT_OUT) -> None:
 def submit_command(
     writer: str,
     out: Path = DEFAULT_OUT,
+    pilot: Path = PILOT_OUT,
     parts: int | None = typer.Option(None, help="Submit at most this many batches."),
 ) -> None:
     """Paid: OpenRouter batches of a Claude writer's pending chunks."""
     w = _writer(writer)
-    out = wp._out(out)
-    typer.echo(wp.estimate(w, pending(w, out), _output_tokens(w, out)))
-    submit(w, _client(), out, echo=typer.echo, limit=parts)
+    out, only = wp._out(out), scope(w, wp._out(pilot))
+    typer.echo(wp.estimate(w, pending(w, out, only=only), _output_tokens(w, out)))
+    submit(w, _client(), out, echo=typer.echo, limit=parts, only=only)
 
 
 @app.command("fetch")
@@ -265,22 +295,30 @@ def fetch_command(writer: str, out: Path = DEFAULT_OUT) -> None:
 
 
 @app.command()
-def report(out: Path = DEFAULT_OUT) -> None:
-    """Free: every writer's figures over the whole grid as JSON (``summary.json``)."""
-    out = wp._out(out)
+def report(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
+    """Free: every writer's figures as JSON (``summary.json``): over the whole grid,
+    then over the pilot's chunks, where the spot-check writers answered too."""
+    out, pilot = wp._out(out), wp._out(pilot)
     chunks = wp.read_chunks(out)
+    ids = {c.custom_id for c in wp.read_chunks(pilot)}
     publishers = wp._publishers()
     reference = results(WRITERS[wp.DEEPSEEK], out)
-    summary = [
-        wp.summarise(
-            w,
-            chunks,
-            results(w, out),
-            publishers,
-            None if w.name == wp.DEEPSEEK else reference,
-        )
-        for w in WRITERS.values()
-    ]
+    summary = []
+    for label, scoped in (
+        ("grid", chunks),
+        ("pilot", [c for c in chunks if c.custom_id in ids]),
+    ):
+        for w in WRITERS.values():
+            if label == "grid" and w.name in SPOT_CHECK:
+                continue
+            row = wp.summarise(
+                w,
+                scoped,
+                results(w, out),
+                publishers,
+                None if w.name == wp.DEEPSEEK else reference,
+            )
+            summary.append({"chunks_of": label} | row)
     text = json.dumps(summary, indent=2, ensure_ascii=False)
     (out / "summary.json").write_text(text + "\n", encoding="utf-8")
     typer.echo(text)

@@ -176,3 +176,21 @@ def test_an_estimate_freezes_no_pending_set(tmp_path: Path) -> None:
     w = wg.WRITERS["opus-5.5"]
     assert len(wg.pending(w, tmp_path, freeze=False)) == 1
     assert not (tmp_path / "opus-5.5" / "chunks.jsonl").exists()
+
+
+def test_opus_is_a_spot_check_on_the_pilots_chunks(tmp_path: Path) -> None:
+    pilot = tmp_path / "pilot"
+    wp.write_chunks(pilot, [_chunk("d001-c000")])
+    out = tmp_path / "grid"
+    wp.write_chunks(out, [_chunk("d000-c000"), _chunk("d001-c000")])
+    opus, sonnet = wg.WRITERS["opus-5.5"], wg.WRITERS["sonnet-5.5"]
+    assert wg.scope(sonnet, pilot) is None
+    client = FakeBatch()
+    wg.submit(opus, client, out, echo=lambda _: None, only=wg.scope(opus, pilot))
+    assert [r.custom_id for r in client.submitted[0]] == ["d001-c000"]
+
+
+def test_a_pilot_writer_without_its_reused_file_is_refused(tmp_path: Path) -> None:
+    wp.write_chunks(tmp_path, [_chunk("d000-c000")])
+    with pytest.raises(wp.PilotError, match="plan --pilot"):
+        wg.pending(wg.WRITERS["sonnet-5.5"], tmp_path)
