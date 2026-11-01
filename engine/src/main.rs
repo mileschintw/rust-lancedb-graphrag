@@ -161,7 +161,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         } else {
             tracing::info!("[engine.graph] ingest_extraction = false: ingestion extracts no graph");
-            Arc::new(graph::extraction::NoExtractionGenerator)
+            Arc::new(graph::no_extraction::NoExtractionGenerator)
         };
 
     // D-202: every fallible startup step runs before the ingest worker spawns and before any

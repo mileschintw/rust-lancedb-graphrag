@@ -2231,7 +2231,8 @@ mod snapshot_graph_index {
 
 #[tokio::test]
 async fn no_extraction_generator_yields_nothing_for_any_chunk() {
-    use super::extraction::{ExtractionGenerator, ExtractionRequest, NoExtractionGenerator};
+    use super::extraction::{ExtractionGenerator, ExtractionRequest};
+    use super::no_extraction::NoExtractionGenerator;
 
     let output = NoExtractionGenerator
         .extract(ExtractionRequest {

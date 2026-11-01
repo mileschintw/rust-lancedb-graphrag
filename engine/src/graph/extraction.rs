@@ -358,25 +358,6 @@ impl ExtractionGenerator for OpenRouterExtractionGenerator {
     }
 }
 
-/// The extraction generator of a store built without a graph (`[engine.graph]
-/// ingest_extraction = false`, #149): every chunk yields no entity and no relation, and no
-/// provider is called.
-pub struct NoExtractionGenerator;
-
-impl ExtractionGenerator for NoExtractionGenerator {
-    fn extract<'a>(
-        &'a self,
-        _request: ExtractionRequest,
-    ) -> BoxFuture<'a, Result<ExtractionOutput, GenerationError>> {
-        Box::pin(async {
-            Ok(ExtractionOutput {
-                entities: Vec::new(),
-                relations: Vec::new(),
-            })
-        })
-    }
-}
-
 /// Fake extraction generator for unit tests.
 pub struct FakeExtractionGenerator {
     pub call_count: AtomicUsize,
