@@ -392,3 +392,53 @@ async fn get_or_create_table_fails_closed_on_non_missing_table_error() {
 
     let _ = std::fs::remove_dir_all(path);
 }
+
+#[test]
+fn graph_table_set_names_are_checked_and_suffixed() {
+    let set = super::GraphTableSet::new("sonnet_5_5").unwrap();
+    assert_eq!(set.entities(), "entities__sonnet_5_5");
+    assert_eq!(set.entity_edges(), "entity_edges__sonnet_5_5");
+    for bad in ["", "Sonnet", "sonnet-5.5", "a/b", &"x".repeat(33)] {
+        assert!(super::GraphTableSet::new(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_graph_table_set_is_created_empty_and_used_without_touching_base_tables() {
+    let path = database_path("graph-table-set");
+    let base = DatabaseManager::initialize(&path).await.unwrap();
+    let set = super::GraphTableSet::new("haiku").unwrap();
+
+    // Using a set that does not exist fails closed; nothing is created.
+    let missing = base.clone().with_graph_table_set(set.clone()).await;
+    assert!(missing.unwrap_err().contains("entities__haiku"));
+
+    base.create_graph_table_set(&set).await.unwrap();
+    assert!(base
+        .create_graph_table_set(&set)
+        .await
+        .unwrap_err()
+        .contains("already exists"));
+    let on_set = base.clone().with_graph_table_set(set.clone()).await.unwrap();
+    assert_eq!(on_set.graph_table_set(), Some(&set));
+
+    let entities = on_set.entities_table().await.unwrap();
+    let edges = on_set.entity_edges_table().await.unwrap();
+    assert_eq!(entities.name(), "entities__haiku");
+    assert_eq!(edges.name(), "entity_edges__haiku");
+    assert_eq!(base.entities_table().await.unwrap().name(), "entities");
+    assert_eq!(
+        base.entity_edges_table().await.unwrap().name(),
+        "entity_edges"
+    );
+    assert_eq!(base.graph_table_set(), None);
+    // A store with a set still opens and validates as before.
+    DatabaseManager::open_and_validate(&path).await.unwrap();
+
+    // Dropping the set removes its two tables only; it can then be created again.
+    base.drop_graph_table_set(&set).await.unwrap();
+    assert!(base.clone().with_graph_table_set(set.clone()).await.is_err());
+    assert_eq!(base.entities_table().await.unwrap().name(), "entities");
+    base.drop_graph_table_set(&set).await.unwrap();
+    base.create_graph_table_set(&set).await.unwrap();
+}

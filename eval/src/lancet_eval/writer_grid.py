@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -148,11 +148,40 @@ def results(writer: wp.Writer, out: Path) -> dict[str, dict[str, Any]]:
     """Every chunk's answer: reused or bought, a succeeded row winning over a failed
     one."""
     merged = wp.read_results(_reused_path(writer, out))
-    bought = wp.read_results(_work(writer, out) / f"{writer.name}.results.jsonl")
-    for cid, record in bought.items():
-        if record["status"] == "succeeded" or cid not in merged:
-            merged[cid] = record
+    work = _work(writer, out)
+    files = [work / f"{writer.name}.results.jsonl"]
+    files += sorted(work.glob(f"{writer.name}.shard*.results.jsonl"))
+    for path in files:
+        for cid, record in wp.read_results(path).items():
+            if record["status"] == "succeeded" or cid not in merged:
+                merged[cid] = record
     return merged
+
+
+def shard(
+    writer: wp.Writer, out: Path, index: int, count: int
+) -> tuple[wp.Writer, list[wp.PilotChunk]]:
+    """One of ``count`` disjoint parts of a sync writer's pending chunks still without a
+    succeeded answer, and the writer that records it in its own results file
+    (``<writer>.shard<index>.results.jsonl``), so parallel runs never share a file.
+    """
+    if not 0 <= index < count:
+        raise wp.PilotError(f"shard {index} is not in 0..{count - 1}")
+    done = {
+        cid for cid, r in results(writer, out).items() if r["status"] == "succeeded"
+    }
+    chunks = [
+        c
+        for i, c in enumerate(pending(writer, out))
+        if i % count == index and c.custom_id not in done
+    ]
+    part = wp.Writer(
+        f"{writer.name}.shard{index}",
+        writer.price,
+        writer.price_factor,
+        writer.declaration,
+    )
+    return part, chunks
 
 
 def submit(
@@ -187,6 +216,31 @@ def scope(writer: wp.Writer, pilot: Path) -> frozenset[str] | None:
     if writer.name not in SPOT_CHECK:
         return None
     return frozenset(c.custom_id for c in wp.read_chunks(pilot))
+
+
+def runaways(records: Iterable[Mapping[str, Any]]) -> int:
+    """Answers stopped by the token cap (``finish_reason`` ``length``), #156's
+    runaways."""
+    return sum(
+        r["status"] == "succeeded" and r.get("finish_reason") == "length"
+        for r in records
+    )
+
+
+def answers(
+    writer: wp.Writer, out: Path, chunks: Sequence[wp.PilotChunk]
+) -> list[dict[str, str]]:
+    """The import bin's input: ``{"text", "content"}`` for every chunk whose answer the
+    engine accepts (``writer_pilot.parse_extraction``). A chunk with none is left out,
+    so the import drops it as a failed extraction."""
+    got = results(writer, out)
+    rows = []
+    for c in chunks:
+        r = got.get(c.custom_id)
+        if r is not None and r["status"] == "succeeded":
+            if wp.parse_extraction(r["content"])[0] is not None:
+                rows.append({"text": c.text, "content": r["content"]})
+    return rows
 
 
 def _output_tokens(writer: wp.Writer, out: Path) -> float:
@@ -243,15 +297,18 @@ def plan(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
 
 
 @app.command()
-def deepseek(out: Path = DEFAULT_OUT) -> None:
-    """Paid: deepseek's pending chunks through the sync API (D-278)."""
+def deepseek(
+    out: Path = DEFAULT_OUT,
+    shard_index: int = typer.Option(0, "--shard", help="This run's shard."),
+    shards: int = typer.Option(1, help="Parallel runs, each with its own --shard."),
+) -> None:
+    """Paid: one shard of deepseek's pending chunks, sync API (D-278)."""
     out = wp._out(out)
-    writer = WRITERS[wp.DEEPSEEK]
-    chunks = pending(writer, out)
-    typer.echo(wp.estimate(writer, chunks, _output_tokens(writer, out)))
-    wp.run_sync(
-        writer, chunks, batch_client.chat_client(), _work(writer, out), echo=typer.echo
-    )
+    base = WRITERS[wp.DEEPSEEK]
+    writer, chunks = shard(base, out, shard_index, shards)
+    typer.echo(wp.estimate(writer, chunks, _output_tokens(base, out)))
+    client = batch_client.chat_client()
+    wp.run_sync(writer, chunks, client, _work(base, out), echo=typer.echo)
 
 
 @app.command()
@@ -311,17 +368,31 @@ def report(out: Path = DEFAULT_OUT, pilot: Path = PILOT_OUT) -> None:
         for w in WRITERS.values():
             if label == "grid" and w.name in SPOT_CHECK:
                 continue
+            got = results(w, out)
             row = wp.summarise(
                 w,
                 scoped,
-                results(w, out),
+                got,
                 publishers,
                 None if w.name == wp.DEEPSEEK else reference,
             )
-            summary.append({"chunks_of": label} | row)
+            ran = runaways(got[c.custom_id] for c in scoped if c.custom_id in got)
+            summary.append({"chunks_of": label} | row | {"runaways": ran})
     text = json.dumps(summary, indent=2, ensure_ascii=False)
     (out / "summary.json").write_text(text + "\n", encoding="utf-8")
     typer.echo(text)
+
+
+@app.command("answers")
+def answers_command(writer: str, to: Path, out: Path = DEFAULT_OUT) -> None:
+    """Free: writes the import bin's input for a writer (one JSON object a line)."""
+    w = _writer(writer)
+    out = wp._out(out)
+    rows = answers(w, out, wp.read_chunks(out))
+    with to.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(wp._dumps(row) + "\n")
+    typer.echo(f"{w.name}: {len(rows)} accepted answer(s) -> {to}")
 
 
 if __name__ == "__main__":

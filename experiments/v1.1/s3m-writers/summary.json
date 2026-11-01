@@ -1,0 +1,562 @@
+[
+  {
+    "chunks_of": "grid",
+    "writer": "deepseek",
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "thinking": "reasoning effort none (engine body)",
+    "price_factor": 1.0,
+    "chunks": 15264,
+    "documents": 346,
+    "answered": 15264,
+    "valid": 15019,
+    "invalid": 245,
+    "missing": 0,
+    "prompt_tokens": 1531514,
+    "completion_tokens": 7359487,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "False"
+    ],
+    "cost_usd": 2.2764579272,
+    "cost_per_chunk_usd": 0.00014913901514675054,
+    "cost_per_document_usd": 0.006579358171098266,
+    "prompt_per_chunk": 100.33503668763103,
+    "completion_per_chunk": 482.1466850104822,
+    "entities": 61273,
+    "relations": 48338,
+    "entities_per_chunk": 4.079699047872695,
+    "relations_per_chunk": 3.218456621612624,
+    "dangling_relations": 2987,
+    "ungrounded_entities": 1955,
+    "junk": {
+      "date": 1037,
+      "publisher": 240
+    },
+    "top_junk": [
+      [
+        "TechCrunch",
+        71
+      ],
+      [
+        "2023",
+        70
+      ],
+      [
+        "2024",
+        42
+      ],
+      [
+        "2022",
+        37
+      ],
+      [
+        "The Verge",
+        33
+      ],
+      [
+        "WIRED",
+        31
+      ],
+      [
+        "Polygon",
+        27
+      ],
+      [
+        "Engadget",
+        26
+      ],
+      [
+        "November",
+        23
+      ],
+      [
+        "1989",
+        21
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": null,
+    "relation_pair_jaccard_vs_deepseek": null,
+    "runaways": 245
+  },
+  {
+    "chunks_of": "grid",
+    "writer": "haiku-5.5",
+    "model": "anthropic/claude-haiku-5.5",
+    "thinking": "off",
+    "price_factor": 0.5,
+    "chunks": 15264,
+    "documents": 346,
+    "answered": 15264,
+    "valid": 15264,
+    "invalid": 0,
+    "missing": 0,
+    "prompt_tokens": 9405486,
+    "completion_tokens": 4661265,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "True"
+    ],
+    "cost_usd": 1.63559055,
+    "cost_per_chunk_usd": 0.00010715346894654088,
+    "cost_per_document_usd": 0.004727140317919075,
+    "prompt_per_chunk": 616.1875,
+    "completion_per_chunk": 305.3763757861635,
+    "entities": 76132,
+    "relations": 67958,
+    "entities_per_chunk": 4.987683438155137,
+    "relations_per_chunk": 4.452175052410902,
+    "dangling_relations": 2056,
+    "ungrounded_entities": 4054,
+    "junk": {
+      "date": 1904,
+      "publisher": 285
+    },
+    "top_junk": [
+      [
+        "2023",
+        101
+      ],
+      [
+        "TechCrunch",
+        74
+      ],
+      [
+        "2021",
+        64
+      ],
+      [
+        "2022",
+        62
+      ],
+      [
+        "WIRED",
+        59
+      ],
+      [
+        "2024",
+        50
+      ],
+      [
+        "2019",
+        37
+      ],
+      [
+        "2020",
+        37
+      ],
+      [
+        "The Verge",
+        33
+      ],
+      [
+        "2018",
+        32
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": 0.6721255781079067,
+    "relation_pair_jaccard_vs_deepseek": 0.433647550692023,
+    "runaways": 0
+  },
+  {
+    "chunks_of": "grid",
+    "writer": "sonnet-5.5",
+    "model": "anthropic/claude-sonnet-5.5",
+    "thinking": "on (effort low)",
+    "price_factor": 0.5,
+    "chunks": 15264,
+    "documents": 346,
+    "answered": 15264,
+    "valid": 15264,
+    "invalid": 0,
+    "missing": 0,
+    "prompt_tokens": 9420750,
+    "completion_tokens": 4763005,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "True"
+    ],
+    "cost_usd": 33.235775,
+    "cost_per_chunk_usd": 0.0021773961609014673,
+    "cost_per_document_usd": 0.09605715317919074,
+    "prompt_per_chunk": 617.1875,
+    "completion_per_chunk": 312.0417321802935,
+    "entities": 79523,
+    "relations": 68952,
+    "entities_per_chunk": 5.209840146750524,
+    "relations_per_chunk": 4.517295597484277,
+    "dangling_relations": 129,
+    "ungrounded_entities": 6893,
+    "junk": {
+      "date": 1845,
+      "publisher": 290
+    },
+    "top_junk": [
+      [
+        "2023",
+        106
+      ],
+      [
+        "TechCrunch",
+        74
+      ],
+      [
+        "WIRED",
+        65
+      ],
+      [
+        "2022",
+        59
+      ],
+      [
+        "2021",
+        57
+      ],
+      [
+        "2024",
+        56
+      ],
+      [
+        "2019",
+        44
+      ],
+      [
+        "2020",
+        39
+      ],
+      [
+        "2018",
+        38
+      ],
+      [
+        "The Verge",
+        36
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": 0.6288620270009986,
+    "relation_pair_jaccard_vs_deepseek": 0.3893021288110047,
+    "runaways": 0
+  },
+  {
+    "chunks_of": "pilot",
+    "writer": "deepseek",
+    "model": "deepseek/deepseek-v4-flash-0731",
+    "thinking": "reasoning effort none (engine body)",
+    "price_factor": 1.0,
+    "chunks": 1803,
+    "documents": 40,
+    "answered": 1803,
+    "valid": 1780,
+    "invalid": 23,
+    "missing": 0,
+    "prompt_tokens": 182903,
+    "completion_tokens": 790714,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "False"
+    ],
+    "cost_usd": 0.24540825439999997,
+    "cost_per_chunk_usd": 0.00013611106733222406,
+    "cost_per_document_usd": 0.006135206359999999,
+    "prompt_per_chunk": 101.44370493621742,
+    "completion_per_chunk": 438.55463117027176,
+    "entities": 7548,
+    "relations": 6029,
+    "entities_per_chunk": 4.240449438202247,
+    "relations_per_chunk": 3.3870786516853935,
+    "dangling_relations": 363,
+    "ungrounded_entities": 259,
+    "junk": {
+      "date": 112,
+      "publisher": 39
+    },
+    "top_junk": [
+      [
+        "WIRED",
+        24
+      ],
+      [
+        "2023",
+        7
+      ],
+      [
+        "TechCrunch",
+        6
+      ],
+      [
+        "2022",
+        5
+      ],
+      [
+        "2018",
+        5
+      ],
+      [
+        "October 29, 2023",
+        3
+      ],
+      [
+        "2020",
+        3
+      ],
+      [
+        "2015",
+        3
+      ],
+      [
+        "1989",
+        3
+      ],
+      [
+        "Polygon",
+        2
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": null,
+    "relation_pair_jaccard_vs_deepseek": null,
+    "runaways": 23
+  },
+  {
+    "chunks_of": "pilot",
+    "writer": "haiku-5.5",
+    "model": "anthropic/claude-haiku-5.5",
+    "thinking": "off",
+    "price_factor": 0.5,
+    "chunks": 1803,
+    "documents": 40,
+    "answered": 1803,
+    "valid": 1803,
+    "invalid": 0,
+    "missing": 0,
+    "prompt_tokens": 1114656,
+    "completion_tokens": 583782,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "True"
+    ],
+    "cost_usd": 0.20167829999999998,
+    "cost_per_chunk_usd": 0.00011185707154742095,
+    "cost_per_document_usd": 0.005041957499999999,
+    "prompt_per_chunk": 618.2229617304492,
+    "completion_per_chunk": 323.783693843594,
+    "entities": 9444,
+    "relations": 8612,
+    "entities_per_chunk": 5.237936772046589,
+    "relations_per_chunk": 4.776483638380477,
+    "dangling_relations": 238,
+    "ungrounded_entities": 514,
+    "junk": {
+      "date": 209,
+      "publisher": 58
+    },
+    "top_junk": [
+      [
+        "WIRED",
+        43
+      ],
+      [
+        "2023",
+        12
+      ],
+      [
+        "November 6, 2023",
+        8
+      ],
+      [
+        "2020",
+        8
+      ],
+      [
+        "2022",
+        7
+      ],
+      [
+        "2018",
+        7
+      ],
+      [
+        "October 29, 2023",
+        6
+      ],
+      [
+        "TechCrunch",
+        6
+      ],
+      [
+        "2021",
+        6
+      ],
+      [
+        "November 28, 2023",
+        5
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": 0.6664929440648212,
+    "relation_pair_jaccard_vs_deepseek": 0.43086929297264664,
+    "runaways": 0
+  },
+  {
+    "chunks_of": "pilot",
+    "writer": "sonnet-5.5",
+    "model": "anthropic/claude-sonnet-5.5",
+    "thinking": "on (effort low)",
+    "price_factor": 0.5,
+    "chunks": 1803,
+    "documents": 40,
+    "answered": 1803,
+    "valid": 1803,
+    "invalid": 0,
+    "missing": 0,
+    "prompt_tokens": 1116459,
+    "completion_tokens": 596478,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "True"
+    ],
+    "cost_usd": 4.098849,
+    "cost_per_chunk_usd": 0.0022733494176372716,
+    "cost_per_document_usd": 0.10247122500000001,
+    "prompt_per_chunk": 619.2229617304492,
+    "completion_per_chunk": 330.8252911813644,
+    "entities": 9853,
+    "relations": 8727,
+    "entities_per_chunk": 5.464780920687742,
+    "relations_per_chunk": 4.840266222961731,
+    "dangling_relations": 14,
+    "ungrounded_entities": 853,
+    "junk": {
+      "date": 177,
+      "publisher": 64
+    },
+    "top_junk": [
+      [
+        "WIRED",
+        49
+      ],
+      [
+        "2023",
+        13
+      ],
+      [
+        "November 6, 2023",
+        9
+      ],
+      [
+        "2018",
+        9
+      ],
+      [
+        "October 29, 2023",
+        7
+      ],
+      [
+        "2022",
+        6
+      ],
+      [
+        "2021",
+        6
+      ],
+      [
+        "TechCrunch",
+        6
+      ],
+      [
+        "November 28, 2023",
+        5
+      ],
+      [
+        "2030",
+        5
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": 0.6229775334087958,
+    "relation_pair_jaccard_vs_deepseek": 0.38128461610590175,
+    "runaways": 0
+  },
+  {
+    "chunks_of": "pilot",
+    "writer": "opus-5.5",
+    "model": "anthropic/claude-opus-5.5",
+    "thinking": "on (effort low)",
+    "price_factor": 0.5,
+    "chunks": 1803,
+    "documents": 40,
+    "answered": 1803,
+    "valid": 1801,
+    "invalid": 2,
+    "missing": 0,
+    "prompt_tokens": 1116459,
+    "completion_tokens": 497456,
+    "reasoning_tokens": 0,
+    "reasoning_unreported": 0,
+    "is_byok": [
+      "True"
+    ],
+    "cost_usd": 7.207478,
+    "cost_per_chunk_usd": 0.0039974919578480315,
+    "cost_per_document_usd": 0.18018695,
+    "prompt_per_chunk": 619.2229617304492,
+    "completion_per_chunk": 275.90460343871325,
+    "entities": 8239,
+    "relations": 7040,
+    "entities_per_chunk": 4.5746807329261525,
+    "relations_per_chunk": 3.9089394780677402,
+    "dangling_relations": 3,
+    "ungrounded_entities": 890,
+    "junk": {
+      "date": 118,
+      "publisher": 82
+    },
+    "top_junk": [
+      [
+        "WIRED",
+        66
+      ],
+      [
+        "2023",
+        10
+      ],
+      [
+        "November 6, 2023",
+        9
+      ],
+      [
+        "October 29, 2023",
+        6
+      ],
+      [
+        "TechCrunch",
+        6
+      ],
+      [
+        "2018",
+        5
+      ],
+      [
+        "2021",
+        4
+      ],
+      [
+        "November 28, 2023",
+        4
+      ],
+      [
+        "2022",
+        3
+      ],
+      [
+        "The Verge",
+        3
+      ]
+    ],
+    "entity_jaccard_vs_deepseek": 0.6613906425212521,
+    "relation_pair_jaccard_vs_deepseek": 0.4278294107885789,
+    "runaways": 0
+  }
+]

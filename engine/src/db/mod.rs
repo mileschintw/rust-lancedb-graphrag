@@ -10,6 +10,53 @@ const EMBEDDING_DIMENSIONS: i32 = 2048;
 #[derive(Clone)]
 pub struct DatabaseManager {
     connection: Connection,
+    /// The graph table set `entities_table` and `entity_edges_table` open; `None` opens the
+    /// store's own `entities` and `entity_edges`.
+    graph_tables: Option<GraphTableSet>,
+}
+
+/// A named pair of graph side tables, `entities__<name>` and `entity_edges__<name>`, beside a
+/// store's own graph tables. It holds another writer's graph over the same chunks (#148); the
+/// store's other tables are shared.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GraphTableSet(String);
+
+impl GraphTableSet {
+    /// Validates a set name: 1 to 32 characters of `a-z`, `0-9` and `_`.
+    ///
+    /// # Errors
+    /// Returns an error naming the value if it is empty, too long or has another character.
+    pub fn new(name: &str) -> Result<Self, String> {
+        // 32 keeps `entity_edges__<set>` a short, readable table name; no store limit is
+        // nearer.
+        let valid = !name.is_empty()
+            && name.len() <= 32
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+        if valid {
+            Ok(Self(name.to_owned()))
+        } else {
+            Err(format!(
+                "graph table set {name:?} must be 1 to 32 characters of a-z, 0-9 and _"
+            ))
+        }
+    }
+
+    /// The set's name.
+    pub fn name(&self) -> &str {
+        &self.0
+    }
+
+    /// The set's entities table name.
+    pub fn entities(&self) -> String {
+        format!("entities__{}", self.0)
+    }
+
+    /// The set's entity edges table name.
+    pub fn entity_edges(&self) -> String {
+        format!("entity_edges__{}", self.0)
+    }
 }
 
 impl std::fmt::Debug for DatabaseManager {
@@ -25,7 +72,10 @@ impl DatabaseManager {
             .execute()
             .await
             .map_err(|error| format!("failed to connect to LanceDB at {path}: {error}"))?;
-        let manager = Self { connection };
+        let manager = Self {
+            connection,
+            graph_tables: None,
+        };
         manager.initialize_tables().await?;
         Ok(manager)
     }
@@ -60,7 +110,108 @@ impl DatabaseManager {
             validate_schema(name, &table, &expected).await?;
         }
 
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            graph_tables: None,
+        })
+    }
+
+    /// Points `entities_table` and `entity_edges_table` at a graph table set, which must exist
+    /// with the base tables' schemas. Nothing is created.
+    ///
+    /// # Errors
+    /// Returns an error if either table of the set is missing or its schema differs.
+    pub async fn with_graph_table_set(mut self, set: GraphTableSet) -> Result<Self, String> {
+        for (name, expected) in [
+            (set.entities(), entities_schema()),
+            (set.entity_edges(), entity_edges_schema()),
+        ] {
+            let table = self
+                .connection
+                .open_table(&name)
+                .execute()
+                .await
+                .map_err(|error| {
+                    format!(
+                        "graph table set {}: failed to open {name}: {error}",
+                        set.name()
+                    )
+                })?;
+            validate_schema(&name, &table, &expected).await?;
+        }
+        self.graph_tables = Some(set);
+        Ok(self)
+    }
+
+    /// Creates a graph table set's two tables, empty, with the base tables' schemas. The
+    /// store's own tables are not touched.
+    ///
+    /// # Errors
+    /// Returns an error if either table already exists or cannot be created.
+    pub async fn create_graph_table_set(&self, set: &GraphTableSet) -> Result<(), String> {
+        let existing = self
+            .connection
+            .table_names()
+            .execute()
+            .await
+            .map_err(|error| format!("failed to list LanceDB tables: {error}"))?;
+        // Both names are checked before either table is created, so a refusal creates nothing.
+        for name in [set.entities(), set.entity_edges()] {
+            if existing.contains(&name) {
+                return Err(format!(
+                    "graph table set {}: {name} already exists",
+                    set.name()
+                ));
+            }
+        }
+        for (name, schema) in [
+            (set.entities(), entities_schema()),
+            (set.entity_edges(), entity_edges_schema()),
+        ] {
+            self.connection
+                .create_empty_table(&name, schema)
+                .execute()
+                .await
+                .map_err(|error| format!("failed to create LanceDB table {name}: {error}"))?;
+        }
+        Ok(())
+    }
+
+    /// Drops a graph table set's two tables where they exist (a failed import's partial set).
+    /// Only `entities__<set>` and `entity_edges__<set>` can be named, so the store's own tables
+    /// are never dropped.
+    ///
+    /// # Errors
+    /// Returns an error if the tables cannot be listed or a table cannot be dropped.
+    pub async fn drop_graph_table_set(&self, set: &GraphTableSet) -> Result<(), String> {
+        let existing = self
+            .connection
+            .table_names()
+            .execute()
+            .await
+            .map_err(|error| format!("failed to list LanceDB tables: {error}"))?;
+        for name in [set.entities(), set.entity_edges()] {
+            if existing.contains(&name) {
+                self.connection
+                    .drop_table(&name, &[])
+                    .await
+                    .map_err(|error| format!("failed to drop LanceDB table {name}: {error}"))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The graph table set this manager reads and writes; `None` for the store's own tables.
+    pub fn graph_table_set(&self) -> Option<&GraphTableSet> {
+        self.graph_tables.as_ref()
+    }
+
+    async fn open_set_table(&self, name: &str) -> Result<Table, String> {
+        self.connection
+            .open_table(name)
+            .execute()
+            .await
+            .map_err(|error| format!("failed to open LanceDB table {name}: {error}"))
     }
 
     async fn initialize_tables(&self) -> Result<(), String> {
@@ -177,12 +328,20 @@ impl DatabaseManager {
         self.get_or_create_table("edges").await
     }
 
+    /// The entities table: the graph table set's when one is set (never created here).
     pub async fn entities_table(&self) -> Result<Table, String> {
-        self.get_or_create_table("entities").await
+        match &self.graph_tables {
+            Some(set) => self.open_set_table(&set.entities()).await,
+            None => self.get_or_create_table("entities").await,
+        }
     }
 
+    /// The entity edges table: the graph table set's when one is set (never created here).
     pub async fn entity_edges_table(&self) -> Result<Table, String> {
-        self.get_or_create_table("entity_edges").await
+        match &self.graph_tables {
+            Some(set) => self.open_set_table(&set.entity_edges()).await,
+            None => self.get_or_create_table("entity_edges").await,
+        }
     }
 
     /// Accessor added for 06.3.4.1-04: the store has seven LanceDB tables

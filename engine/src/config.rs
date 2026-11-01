@@ -296,6 +296,11 @@ pub struct GraphConfigSettings {
     /// (06.4 D-207). A request's explicit `false` (on) or `true` (off) overrides this default.
     #[serde(default = "default_context_default_enabled")]
     pub context_default_enabled: bool,
+    /// The graph table set (`db::GraphTableSet`) the engine reads its graph from: another
+    /// writer's graph over the same chunks (#148). Empty, the default, reads the store's own
+    /// `entities` and `entity_edges`. Set only in an eval overlay; the set must exist.
+    #[serde(default)]
+    pub table_set: String,
     /// Whether ingestion extracts a graph from each chunk (#149).
     #[serde(default = "default_ingest_extraction")]
     pub ingest_extraction: bool,
@@ -313,6 +318,7 @@ impl Default for GraphConfigSettings {
             max_graph_chunk_candidates: default_max_graph_chunk_candidates(),
             graph_v2_chunk_precision: default_graph_v2_chunk_precision(),
             context_default_enabled: default_context_default_enabled(),
+            table_set: String::new(),
             ingest_extraction: default_ingest_extraction(),
         }
     }

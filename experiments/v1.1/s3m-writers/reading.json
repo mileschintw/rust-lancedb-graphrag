@@ -1,0 +1,142 @@
+{
+  "preregistration": "PREREGISTRATION_S3M",
+  "reference_runs": [
+    "eval\\runs\\2026-11-01-s3m-ref1-multihop_rag_s3m_dev",
+    "eval\\runs\\2026-11-01-s3m-ref2-multihop_rag_s3m_dev"
+  ],
+  "writers": [
+    {
+      "writer": "deepseek",
+      "runs": 2,
+      "all": {
+        "n_questions": 90,
+        "n_pairs": 90,
+        "evaluable": true,
+        "arm_mean": 0.8777777777777778,
+        "reference_mean": 0.8611111111111112,
+        "delta": 0.016666666666666666,
+        "n_pos": 8,
+        "n_neg": 5,
+        "p_signflip": 0.653564453125
+      },
+      "yes_no": {
+        "n_questions": 56,
+        "n_pairs": 56,
+        "evaluable": true,
+        "arm_mean": 0.8303571428571429,
+        "reference_mean": 0.8035714285714286,
+        "delta": 0.026785714285714284,
+        "n_pos": 7,
+        "n_neg": 4,
+        "p_signflip": 0.63671875
+      },
+      "open": {
+        "n_questions": 34,
+        "n_pairs": 34,
+        "evaluable": true,
+        "arm_mean": 0.9558823529411765,
+        "reference_mean": 0.9558823529411765,
+        "delta": 0.0,
+        "n_pos": 1,
+        "n_neg": 1,
+        "p_signflip": 1.0
+      },
+      "null_guard": {
+        "n_nulls": 10,
+        "n_pairs": 10,
+        "evaluable": true,
+        "net_drop": 0.0,
+        "passes": true
+      }
+    },
+    {
+      "writer": "haiku-5.5",
+      "runs": 2,
+      "all": {
+        "n_questions": 90,
+        "n_pairs": 90,
+        "evaluable": true,
+        "arm_mean": 0.8277777777777777,
+        "reference_mean": 0.8611111111111112,
+        "delta": -0.03333333333333333,
+        "n_pos": 4,
+        "n_neg": 10,
+        "p_signflip": 0.33349609375
+      },
+      "yes_no": {
+        "n_questions": 56,
+        "n_pairs": 56,
+        "evaluable": true,
+        "arm_mean": 0.7410714285714286,
+        "reference_mean": 0.8035714285714286,
+        "delta": -0.0625,
+        "n_pos": 3,
+        "n_neg": 10,
+        "p_signflip": 0.23486328125
+      },
+      "open": {
+        "n_questions": 34,
+        "n_pairs": 34,
+        "evaluable": true,
+        "arm_mean": 0.9705882352941176,
+        "reference_mean": 0.9558823529411765,
+        "delta": 0.014705882352941176,
+        "n_pos": 1,
+        "n_neg": 0,
+        "p_signflip": 1.0
+      },
+      "null_guard": {
+        "n_nulls": 10,
+        "n_pairs": 10,
+        "evaluable": true,
+        "net_drop": 0.0,
+        "passes": true
+      }
+    },
+    {
+      "writer": "sonnet-5.5",
+      "runs": 2,
+      "all": {
+        "n_questions": 90,
+        "n_pairs": 90,
+        "evaluable": true,
+        "arm_mean": 0.8277777777777777,
+        "reference_mean": 0.8611111111111112,
+        "delta": -0.03333333333333333,
+        "n_pos": 4,
+        "n_neg": 10,
+        "p_signflip": 0.2681884765625
+      },
+      "yes_no": {
+        "n_questions": 56,
+        "n_pairs": 56,
+        "evaluable": true,
+        "arm_mean": 0.7410714285714286,
+        "reference_mean": 0.8035714285714286,
+        "delta": -0.0625,
+        "n_pos": 3,
+        "n_neg": 10,
+        "p_signflip": 0.170166015625
+      },
+      "open": {
+        "n_questions": 34,
+        "n_pairs": 34,
+        "evaluable": true,
+        "arm_mean": 0.9705882352941176,
+        "reference_mean": 0.9558823529411765,
+        "delta": 0.014705882352941176,
+        "n_pos": 1,
+        "n_neg": 0,
+        "p_signflip": 1.0
+      },
+      "null_guard": {
+        "n_nulls": 10,
+        "n_pairs": 10,
+        "evaluable": true,
+        "net_drop": 0.0,
+        "passes": true
+      }
+    }
+  ],
+  "verdict": "open"
+}

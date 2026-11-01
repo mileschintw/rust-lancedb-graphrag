@@ -1,0 +1,11 @@
+# S3M writer-grid overlay (#148, LANCET_ENV=eval-s3m-sonnet), for the engine only.
+# The v1.0 eval store with the graph read from the s3m_sonnet graph table set
+# (entities__s3m_sonnet, entity_edges__s3m_sonnet), which import_graph_extractions builds
+# from sonnet's extraction of the store's chunks. Every other table is the store's own.
+# The gateway and the harness keep LANCET_ENV=eval.
+
+[engine]
+lancedb_path = "./data/lancedb-eval"
+
+[engine.graph]
+table_set = "s3m_sonnet"

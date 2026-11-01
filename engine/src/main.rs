@@ -40,7 +40,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let effective_settings = EffectiveRagSettings::try_from_settings(&settings)
         .map_err(|err| format!("invalid RAG configuration: {err}"))?;
-    let database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
+    let mut database = DatabaseManager::initialize(&settings.engine.lancedb_path).await?;
+    // #148: an eval overlay may point the graph at another writer's graph table set.
+    if !settings.engine.graph.table_set.is_empty() {
+        let set = engine::db::GraphTableSet::new(&settings.engine.graph.table_set)?;
+        tracing::info!(graph_table_set = set.name(), "graph_table_set");
+        database = database.with_graph_table_set(set).await?;
+    }
     let nodes = database.nodes_table().await?;
     let nodes_version = nodes
         .version()
