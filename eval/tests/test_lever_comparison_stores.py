@@ -12,7 +12,6 @@ import dataclasses
 from pathlib import Path
 
 import pytest
-import tiktoken
 from levers_fixture import (
     CORPUS,
     TOKEN,
@@ -28,6 +27,7 @@ from test_lever_comparison import _minimal_report
 from lancet_eval import thresholds
 from lancet_eval.journal import Journal
 from lancet_eval.lever_comparison import build_lever_comparison
+from lancet_eval.metrics import context_tokens
 
 SMALL = "small/hybrid+rerank+metadata"
 SMALL_GRAPH = "small/hybrid+graph+rerank+metadata"
@@ -37,9 +37,7 @@ CHUNK_ID_METRICS = ("paper_hits_at_10", "paper_mrr_at_10", "paper_map_at_10")
 
 
 def _fact_tokens() -> int:
-    return len(
-        tiktoken.get_encoding("o200k_base").encode_ordinary(fact("lv-g000", "a"))
-    )
+    return context_tokens([fact("lv-g000", "a")])
 
 
 def _build(
@@ -58,14 +56,13 @@ def _build(
         encoding="utf-8",
     )
     monkeypatch.setattr("lancet_eval.corpus._repo_root", lambda: root)
+    template = make_prereg(())
     prereg = dataclasses.replace(
-        make_prereg(()),
+        template,
         reference_arm=SMALL,
         families=(
-            dataclasses.replace(
-                make_prereg(()).families[0], arms=(SMALL_GRAPH, MERGED)
-            ),
-            dataclasses.replace(make_prereg(()).families[1], arms=()),
+            dataclasses.replace(template.families[0], arms=(SMALL_GRAPH, MERGED)),
+            dataclasses.replace(template.families[1], arms=()),
         ),
         null_guard_arms=(SMALL_GRAPH, MERGED),
     )
