@@ -232,10 +232,13 @@ def test_no_run_of_a_run_plan_is_scored_or_read_out(
 
 
 def test_no_judge_or_gate_reads_a_run_of_a_run_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from lancet_eval import judge_stage, unpark_gates
     from lancet_eval.answer_judge import AnswerJudgeError, judge_answers
+    from lancet_eval.diagnostic import DiagnosticError, build_rows
 
     run, _, _, _ = _setup(tmp_path, monkeypatch)
     closed_book_init(run=run, corpus=fx.CORPUS)
@@ -250,10 +253,17 @@ def test_no_judge_or_gate_reads_a_run_of_a_run_plan(
             unpark_gates.HELDOUT_STAGE,
             "--run",
             str(run),
+            "--engine-pid-before",
+            "1",
+            "--engine-pid-after",
+            "1",
             "--out",
             str(tmp_path / "gates.json"),
         ])
+    assert "D-291" in capsys.readouterr().err
     assert not (tmp_path / "gates.json").exists()
+    with pytest.raises(DiagnosticError, match="D-291"):
+        build_rows(fx.CORPUS, run / "journal.jsonl", tmp_path / "gold.json")
 
 
 def test_the_estimate_counts_output_before_deepseek_has_answered(

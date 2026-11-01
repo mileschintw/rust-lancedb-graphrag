@@ -14,8 +14,9 @@ The grid drives and replays the 900 held-out questions of the D-243 split
   committed (ATTRIBUTION.md). It holds the gold answers the drive journals and a later
   scoring reads; nothing in this lane prints or reads them (D-291).
 - ``twowiki/.cache/question_types.heldout.json``: ``{question ID: 2Wiki type}`` for the
-  900, with no answer or evidence. Each run directory of the grid keeps a copy, so the
-  analysis can split by question type (#167) from the run directories alone.
+  900, with no answer or evidence. RUN-S3-HELDOUT.md's record step copies it into each
+  run directory of the grid, so the analysis can split by question type (#167) from
+  the run directories alone.
 
 `python -m lancet_eval.twowiki_h` rewrites both and prints the split's digest and the
 questions file's sha256; `python -m lancet_eval.twowiki_h split` rewrites the split
