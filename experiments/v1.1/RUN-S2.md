@@ -68,9 +68,10 @@ tokens a request, about $0.02. The ceiling assumes every request uses the engine
 plus about 500 of policy and question, and 2,048 completion tokens, reasoning included. That is at most $0.00095 for
 Haiku, $0.019 for Sonnet and $0.038 for Opus.
 
-deepseek's replicates run on OpenRouter credit, pinned to wafer/us under D-271's cap ($0.07 / $0.45 per M tokens),
-and no batch discount is assumed: `batch submit` prices them at the engine's deepseek list price in `measure`, at full
-rate, and prints about $0.17 for step 6. `--retry-errors` resubmits only requests that were never billed.
+deepseek's replicates run on OpenRouter credit, pinned to wafer/us under D-271's cap ($0.07 / $0.45 per M tokens).
+They go through sync `/chat/completions`, since deepseek-v4-flash-0731 has no batch variant (D-278), so there is no
+batch discount: about $0.08 for step 6's 400 requests. `--retry-errors` resubmits only requests that were never
+billed.
 
 The answer judges (step 7.1, D-276) run at sync list price, one request per distinct line: at most 90 G questions × 4
 arms × 5 answers = 1,800 a judge, fewer where lines repeat. Sonnet judges on Claude credit through BYOK (about 252
@@ -84,21 +85,19 @@ outside it, about $1.40 (ceiling about $3.40) more on OpenRouter credit.
 | Step | Claude credit (BYOK) | Claude ceiling | OpenRouter credit | OpenRouter ceiling |
 |---|---|---|---|---|
 | 2 Pilot readers, 5 questions × 5 answers × 3 readers | about $0.63 | about $1.44 | – | – |
-| 2 Pilot deepseek, 5 questions × 4 answers | – | – | about $0.01 to $0.04 | about $0.06 |
+| 2 Pilot deepseek, 5 questions × 4 answers | – | – | about $0.01 | about $0.06 |
 | 3 Native Sonnet re-pilot, only if needed | about $0.13 | about $0.47 | – | – |
 | 6 Haiku 5.5 arm, 100 questions × 5 | about $0.13 | about $0.47 | – | – |
 | 6 Sonnet 5.5 arm, 100 questions × 5 | about $2.50 | about $9.47 | – | – |
 | 6 Opus 5.5 arm, 100 questions × 5 (descriptive, D-267) | about $10.00 | about $18.93 | – | – |
-| 6 deepseek replicates 2 to 5, 100 questions × 4 | – | – | about $0.20 | about $1.10 |
+| 6 deepseek replicates 2 to 5, 100 questions × 4, sync (D-278) | – | – | about $0.08 | about $1.10 |
 | 7.1 Sonnet judge, at most 1,800 requests | about $2.20 to $2.35 | about $6.31 | – | – |
 | 7.1 gpt-4o-mini judge, at most 1,800 requests | – | – | about $0.14 to $0.15 | about $0.39 |
 | BYOK fee, inside the free allowance | – | – | about $0 | about $0 |
-| **Total, without the native re-pilot** | **about $15.50** | **about $36.60** | **about $0.30 to $0.90** | **about $1.55** |
+| **Total, without the native re-pilot** | **about $15.50** | **about $36.60** | **about $0.25** | **about $1.55** |
 
-The OpenRouter total's upper end allows deepseek at this guide's 3,500-token method (about $0.70 for step 6) instead
-of the $0.17 `batch submit` prints. The judges' lower figures are the audit's; `judge-answers --estimate-only` prints
-the higher ones, since it allows 80 output tokens a verdict. Claude credit stays far below the $200 of Claude credit
-(PLAN.md › Budget sketch).
+The judges' lower figures are the audit's; `judge-answers --estimate-only` prints the higher ones, since it allows 80
+output tokens a verdict. Claude credit stays far below the $200 of Claude credit (PLAN.md › Budget sketch).
 
 ## Step 0: blockers, prerequisites, build
 
@@ -172,7 +171,7 @@ which skips once the snippet has run.
 ## Step 2: pilot (Paid)
 
 Ask once for steps 2.1 to 2.5: **about $0.65, ceiling about $1.50** (Claude credit about $0.63, ceiling about $1.44;
-OpenRouter credit about $0.01 to $0.04, ceiling about $0.06). The pilot checks what the code cannot settle offline:
+OpenRouter credit about $0.01, ceiling about $0.06). The pilot checks what the code cannot settle offline:
 
 - `is_byok` and the provider;
 - `reasoning_tokens`;
@@ -331,8 +330,8 @@ included. These are its replicate-1 answers.
 
 ## Step 6: batch arms (Paid)
 
-Ask once for steps 6.1 to 6.3: **about $12.85, ceiling about $30.00** (Claude credit about $12.65, ceiling about
-$28.90; OpenRouter credit, deepseek, about $0.20 (up to $0.70 by this guide's token method), ceiling about $1.10). The four batch arms run in parallel (D-267): a
+Ask once for steps 6.1 to 6.3: **about $12.75, ceiling about $30.00** (Claude credit about $12.65, ceiling about
+$28.90; OpenRouter credit, deepseek, about $0.08, ceiling about $1.10). The four batch arms run in parallel (D-267): a
 pending batch blocks only another submit of its own arm.
 
 1. Submit the four arms, one after the other, without waiting. Read each cost estimate line as it prints; Opus's
