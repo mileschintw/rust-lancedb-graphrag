@@ -1320,3 +1320,76 @@ PREREGISTRATION_06_3_6 = LeverPreRegistration(
         "seen."
     ),
 )
+
+
+# #148, exploratory (experiments/v1.1/EXPLORE-S3-MHR-WRITERS.md): S1's small-store graph
+# reading, one graph per writer. Each writer's graph is read in its own runs: the arm
+# small/hybrid+graph+rerank+metadata against the v1.0 store with that writer's graph
+# side tables, paired with this constant's reference, driven in runs of its own. Every
+# number is PREREGISTRATION_S1's except the test, which is the replicate test at K = 2
+# (a test pins this). It decides nothing and changes no S1, S2 or S3 decision. Added in
+# one commit before any reading run (D-73).
+PREREGISTRATION_S3M = StagePreRegistration(
+    reference_arm="small/hybrid+rerank+metadata",
+    families=(
+        FamilySpec(
+            primary="answer_usable",
+            role="decisional",
+            arms=("small/hybrid+graph+rerank+metadata",),
+            alpha=0.05,
+        ),
+    ),
+    descriptive_arms=(),
+    test="paired_sign_flip_permutation_exact_two_sided",
+    non_evaluable_rule="p=1_m_unchanged",
+    population="pairwise_per_comparison",
+    complete_case_floor=0.80,
+    matching_rule="chunk_id_via_gold_chunks",
+    bootstrap_b=10_000,
+    bootstrap_seed=42,
+    null_guard_arms=("small/hybrid+graph+rerank+metadata",),
+    null_guard_predicate="metrics.is_abstention",
+    null_guard_margin=0.10,
+    null_guard_min_pair_fraction=0.80,
+    answer_mix_strata=("comparison_query", "binary_gold"),
+    sc2_timeout_rate_floor=0.025,
+    rerank_degrade_tripwire_rate=0.20,
+    rerank_degrade_tripwire_min_calls=50,
+    rerank_consecutive_degrade_halt=5,
+    default_rule=(
+        "Exploratory: this run decides nothing and changes no S1, S2 or S3 decision; "
+        "the graph stays out (EXPERIMENT-S1.md). The family is decisional only because "
+        "the lever comparison needs one. Writers: deepseek, Haiku 5.5 and Sonnet 5.5, "
+        "each extracting every chunk of the small store with the engine's extraction "
+        "prompt and schema, each in its own graph side tables; the v1.0 graph S1 read "
+        "is not a writer here (it was extracted at another granularity). Opus 5.5 "
+        "extracts only the pilot's 1,803 chunks, a spot check with no graph and no "
+        "reading. Per writer, the graph-on arm on that writer's graph is paired with "
+        "the reference on the 90 G questions; each arm answers every question 2 times "
+        "in 2 separate runs, a question's score is the mean of its 2 answer_usable "
+        "values, and the test is the exact sign-flip permutation on the per-question "
+        "mean differences (D-274). Read in EXPLORE-S3-MHR-WRITERS.md, by hand: per "
+        "writer, the paired answer_usable delta (points, with n_pos and n_neg), split "
+        "by yes/no against open questions; the null guard on the 10 nulls with these "
+        "numbers; #126's junk entity counts (dates, publishers) per writer. The writer "
+        "is said to explain the loss iff a Claude writer's delta is at least 0 and at "
+        "least 5 points above deepseek's delta; not to explain it iff every Claude "
+        "writer's delta is below 0 and within 5 points of deepseek's; otherwise, or "
+        "without a deepseek graph, the reading is open. p-values are reported, not "
+        "used. The written predictions are checked, never tuned after the data"
+    ),
+    provenance=(
+        "#148, owner 2026-11-01: '全部接受' (item E of the coordinator's package: a "
+        "writer grid on MultiHop-RAG). Source: S1's run of record "
+        "eval/runs/2026-10-31-s1-multihop_rag_s1_dev, small store graph delta -8.9 "
+        "points (EXPERIMENT-S1.md); #126 (junk month and publisher entities in "
+        "deepseek's extraction). Every number is PREREGISTRATION_S1's (D-262, D-264); "
+        "the replicate test at K = 2 is D-274's. Writers' thinking per the owner's "
+        "ruling 2026-11-01: deepseek off, Haiku off, Sonnet and Opus effort low, "
+        "Claude on the Batch API. Scope, coordinator 2026-11-01 within the owner's "
+        "spend approval: the full four-writer grid (about $105) does not fit the "
+        "Claude credit, so Opus is a spot check; deepseek is re-extracted, not the "
+        "v1.0 graph. Dev only (D-237), no held-out read. Written 2026-11-01, before "
+        "any extraction of the grid and any reading run."
+    ),
+)
