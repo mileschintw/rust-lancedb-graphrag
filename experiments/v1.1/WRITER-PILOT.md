@@ -150,24 +150,25 @@ deepseek's over 960. `relation_precision sample` (seed 169) drew 100 distinct ch
 50 with a deepseek one, one relation each. Each was then judged supported by its chunk text (stated or directly
 implied, both ends things the text talks about; loose relation-type wording allowed) or not, twice:
 
-- by hand, by the lane's agent (Claude Opus 5.5) reading a shuffled list that hid the writer;
+- by the lane's agent (Claude Opus 5.5, not a human), reading a shuffled list that hid the writer;
 - by `meta-llama/llama-3.3-70b-instruct` on OpenRouter, temperature 0, one request each: 150 requests, 25,832 tokens
   in and 900 out, about $0.003 (estimate printed first: $0.0062, ceiling $1). No Claude credit.
 
 | Extra relations of | Judge | Judged | Supported | Precision [Wilson 95%] |
 |---|---|---|---|---|
-| Haiku 5.5 (over deepseek) | by hand | 100 | 85 | 0.85 [0.77, 0.91] |
+| Haiku 5.5 (over deepseek) | agent, writer hidden | 100 | 85 | 0.85 [0.77, 0.91] |
 | Haiku 5.5 (over deepseek) | Llama 3.3 70B | 100 | 91 | 0.91 [0.84, 0.95] |
-| deepseek (over Haiku 5.5) | by hand | 50 | 39 | 0.78 [0.65, 0.87] |
+| deepseek (over Haiku 5.5) | agent, writer hidden | 50 | 39 | 0.78 [0.65, 0.87] |
 | deepseek (over Haiku 5.5) | Llama 3.3 70B | 50 | 45 | 0.90 [0.79, 0.96] |
 
-- The two judges agree on 128 of 150. The model judge is the more lenient: it passes 17 relations the hand judge
+- The two judges agree on 128 of 150. The model judge is the more lenient: it passes 17 relations the agent
   fails, and fails 5 it passes.
-- Haiku's 15 unsupported relations by hand: 9 with a wrong end or meaning (`Jamaica competed_against Fulham`, where
+- Haiku's 15 relations the agent fails: 9 with a wrong end or meaning (`Jamaica competed_against Fulham`, where
   Fulham is a player's club), 3 that need outside knowledge (`COPPA is abbreviation of Children's Online Privacy
   Protection Act`), 2 from page furniture (`verifyErrors contains message`) and 1 vacuous.
-- Scaled to the pools, about 3,900 of Haiku's extra relations are supported, against about 1,700 of deepseek's.
-- Caveats: the hand judge is a Claude model judging a Claude writer, which hiding the writer only partly offsets; the
+- Each precision is a mean over chunks (one relation per chunk), not over relations, so it does not scale to a count
+  of supported relations.
+- Caveats: the agent is a Claude model judging a Claude writer, which hiding the writer only partly offsets; the
   model judge is not a Claude model. The sample covers the pilot's 40 documents, not S3M's full grid. Precision here
   is support by the chunk, not usefulness for retrieval.
 - The judged sample, with both verdicts: [relation-precision/sample.jsonl](relation-precision/sample.jsonl). Rerun

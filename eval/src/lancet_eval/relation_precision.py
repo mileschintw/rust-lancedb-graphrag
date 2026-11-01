@@ -11,11 +11,13 @@ relation is then judged supported by its chunk's text or not:
 
 - ``judge``: by a cheap non-Claude model on OpenRouter (``JUDGE_MODEL``, temperature 0),
   one sync request per relation, after printing an estimate against ``--ceiling``;
-- by hand: a ``hand`` field filled into the sample file, without the writer shown.
+- ``hand``: filled into the sample file by the lane's agent (a Claude model) from a
+  shuffled list that hides the writer; not a human's labels.
 
 ``report`` prints each writer's precision under each judge (Wilson 95% interval) and
-the two judges' agreement. It reads committed pilot files and decides nothing. Run it
-as ``python -m lancet_eval.relation_precision sample|judge|report``.
+the two judges' agreement. The sample takes one relation per chunk, so a precision is
+a mean over chunks, not over relations. It reads committed pilot files and decides
+nothing. Run it as ``python -m lancet_eval.relation_precision sample|judge|report``.
 """
 
 from __future__ import annotations
@@ -40,6 +42,8 @@ JUDGE_MODEL = "meta-llama/llama-3.3-70b-instruct"
 #: USD per million tokens, input and output (OpenRouter's list price, 2026-11-01).
 JUDGE_PRICE = (0.10, 0.32)
 JUDGE_MAX_TOKENS = 60
+#: How `report` names the ``hand`` verdicts.
+HAND_LABEL = "agent, writer hidden"
 
 JUDGE_PROMPT = """You check a knowledge-graph relation against a news text.
 
@@ -162,9 +166,12 @@ def parse_verdict(content: str) -> bool | None:
 
 def estimate_usd(bodies: Sequence[str]) -> float:
     """An upper estimate: about 4 characters a token in, every reply at the cap."""
-    prompt = sum(len(b) for b in bodies) / 4
-    completion = JUDGE_MAX_TOKENS * len(bodies)
-    return (prompt * JUDGE_PRICE[0] + completion * JUDGE_PRICE[1]) / 1e6
+    return usd(sum(len(b) for b in bodies) / 4, JUDGE_MAX_TOKENS * len(bodies))
+
+
+def usd(prompt_tokens: float, completion_tokens: float) -> float:
+    """The judge's price of the given tokens, at ``JUDGE_PRICE``."""
+    return (prompt_tokens * JUDGE_PRICE[0] + completion_tokens * JUDGE_PRICE[1]) / 1e6
 
 
 @dataclass(frozen=True)
@@ -201,11 +208,13 @@ def agreement(rows: Sequence[Relation]) -> tuple[int, int]:
 
 
 def read_sample(path: Path) -> list[Relation]:
+    """The sample file's relations, in file order."""
     with open(path, encoding="utf-8") as f:
         return [Relation(**json.loads(line)) for line in f if line.strip()]
 
 
 def write_sample(path: Path, rows: Sequence[Relation]) -> None:
+    """Writes ``rows`` as JSON lines, LF line ends."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         for r in rows:
@@ -270,14 +279,14 @@ def _judge(args: argparse.Namespace) -> None:
         for r in rows
     ]
     write_sample(args.sample, merged)
-    usd = (spent_tokens[0] * JUDGE_PRICE[0] + spent_tokens[1] * JUDGE_PRICE[1]) / 1e6
     print(
         f"judged {len(done)}; tokens in {spent_tokens[0]}, "
-        f"out {spent_tokens[1]}, ~${usd:.4f}"
+        f"out {spent_tokens[1]}, ~${usd(*spent_tokens):.4f}"
     )
 
 
 def render_markdown(rows: Sequence[Relation]) -> str:
+    """Each writer's precision under each judge, then the judges' agreement."""
     lines = [
         "| writer (extra over) | judge | judged | supported | precision [Wilson 95%] |",
         "|---|---|---|---|---|",
@@ -285,7 +294,7 @@ def render_markdown(rows: Sequence[Relation]) -> str:
     other = {r.writer: r.other for r in rows}
     for judge in ("judge", "hand"):
         for p in precision(rows, judge):
-            name = JUDGE_MODEL if judge == "judge" else "by hand"
+            name = JUDGE_MODEL if judge == "judge" else HAND_LABEL
             lines.append(
                 f"| {p.writer} (over {other[p.writer]}) | {name} "
                 f"| {p.judged} | {p.supported} "

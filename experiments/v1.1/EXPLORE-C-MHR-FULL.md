@@ -178,7 +178,9 @@ prediction 4 holds for Sonnet and Opus only. The run decides nothing.
   correct when its lower-cased text, split on whitespace, shares any token with the lower-cased gold. It has no
   abstention case. On an answerable question an "Insufficient information" answer shares no token with a Yes, No or
   entity gold, so it scores 0, exactly as `answer_usable` scores it. Run on this run's answers and on S2's
-  (`official_scorer`, which runs the official file's own `main`), scoring the `Answer:` line:
+  (`official_scorer`), scoring the `Answer:` line. The per-reader rates call the official `extract_answer` and
+  `has_intersection`; the official `main`, run on every answer (null ones too), reproduces their pooled accuracy
+  (C 0.7697, S2 0.7883):
 
   | Reader | C: `answer_usable` | C: official | S2: `answer_usable` | S2: official | abstentions the official scorer passes |
   |---|---|---|---|---|---|

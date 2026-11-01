@@ -105,4 +105,6 @@ def test_the_report_gives_precision_per_writer_and_judge_and_agreement(
     assert by[("haiku-5.5", "hand")].supported == 2
     assert ("deepseek", "hand") not in by
     assert rp.agreement(rows) == (1, 2)
-    assert "| haiku-5.5 (over deepseek) | by hand | 2 | 2 |" in rp.render_markdown(rows)
+    assert rp.usd(1_000_000, 1_000_000) == pytest.approx(sum(rp.JUDGE_PRICE))
+    text = rp.render_markdown(rows)
+    assert "| haiku-5.5 (over deepseek) | agent, writer hidden | 2 | 2 |" in text
