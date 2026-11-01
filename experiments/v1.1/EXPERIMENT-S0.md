@@ -112,6 +112,8 @@ rejected. Neither arm leads.
 - Spend: observed $1.01 (Lancet drive $0.0461 + $0.3190, `run-external` $0.6417). The LlamaIndex export prints no
   cost; about $0.25 is estimated for it.
 - Every `lancet-eval` command ran with `PYTHONUTF8=1` to work around #84 (cp950 decoding of `psql` output).
+- Re-scored under D-276's normalisation (2026-10-31, in memory; the run directory was not rewritten): no
+  `answer_usable` value changes on either arm (224 of 308 G each, D-70 and D-276 alike), so the reading above stands.
 
 ### Validity checks (2026-10-31, read only, no paid call)
 

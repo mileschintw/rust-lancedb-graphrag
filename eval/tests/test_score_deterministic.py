@@ -15,6 +15,7 @@ from lancet_eval.dimensions import (
     NOTICE_CODE_GRAPH_UNAVAILABLE,
 )
 from lancet_eval.journal import Journal, RunRecord
+from lancet_eval.metrics import answer_rule
 from lancet_eval.score import ScoreError, score_run
 
 
@@ -585,7 +586,8 @@ def test_rescore_of_the_recorded_drive2_reproduces_its_report(
     copy = tmp_path / "drive2"
     copy.mkdir()
     shutil.copy2(journal, copy / "journal.jsonl")
-    score_run(run_dir=copy, no_judge=True)
+    with answer_rule("d70"):  # the rule the drive-2 report was written under (D-276)
+        score_run(run_dir=copy, no_judge=True)
 
     committed = json.loads(report.read_text(encoding="utf-8"))["dimensions"]
     rescored = json.loads((copy / "report.json").read_text(encoding="utf-8"))

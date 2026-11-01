@@ -432,6 +432,42 @@ file is [EXPERIMENT-S2.md](EXPERIMENT-S2.md); its draft constant enters `eval/sr
   old winner could be picked by noise. The pre-registration states the expected smallest detectable effect, about 8.4
   points at K = 5 and n = 90 (two-sided 0.05, power 0.8; #127), so picking the cheapest reads as "no larger difference
   detected", not as equivalence. Opus 5.5 stays descriptive (D-267), and D-245's default-model switch is unchanged.
+- **D-276 Answer normalisation and a dual-judge secondary** (owner: "正規化＋裁判當次要 (Recommended)" and
+  "gpt-4o-mini＋Sonnet 雙裁判", 2026-10-31; #124). Amends D-70's `answer_usable` for v1.1, applied to every arm.
+  - *Normalisation (primary).* `gold_contained` keeps D-70's whole-token containment ("no" never matches "not") and
+    adds two folds. A token also matches its plural or singular: a token of four letters or more ending in `s` (not
+    `ss`, `us` or `is`, holding no digit, and not a listed non-plural such as "news") may drop its `s`, drop `es`
+    after s, x, z, ch or sh when three letters or more remain, or turn `ies` into `y` ("houses"/"house",
+    "boxes"/"box", "movies"/"movie"); nothing else changes, so "plane" never meets "plan", "1990s" never meets
+    "1990", and "uses" never meets "US". A list gold, with items separated by
+    commas (not inside a number such as "1,200"), semicolons, `&` or "and", also matches when every item is
+    contained in a span of its own, in any order ("Johnson & Johnson" needs two "johnson" tokens). Both folds only
+    turn misses into hits. Known looseness, left to the judges: the list fold reads "and" inside a name ("Barnes and
+    Noble") as a separator, and matches items under a negation ("neither Alice nor Bob"). S1's three artifact cases: "Travis
+    Kelce and Taylor Swift" and "sportsbook" now match; "no lack of functionality" for a "no" gold still matches,
+    since the folds are lexical, and is left to the judges. `final_answer_em` (exact equality) and the null guard's
+    abstention predicate (`is_abstention`, equality with "insufficient information") are unchanged. The
+    `gold_containment` diagnostics, which call `gold_contained` on the whole answer, take the folds too.
+    `metrics.answer_rule("d70")` keeps the old rule selectable: v1.0's recorded reports were written under D-70, and
+    their re-read guards pin it.
+  - *Dual judge (secondary).* `lancet-eval judge-answers --run <dir>` asks `openai/gpt-4o-mini` (the v1.0 judge) and
+    Claude Sonnet 5.5 over OpenRouter BYOK whether each G record's extracted final line is equivalent to the gold.
+    Each judge sees only the question, the gold answer and the line as written (citation markers removed, not
+    normalised), never the arm, so one verdict serves every arm that wrote the same line. Each replicate is judged.
+    It writes `answer-judge.json`: per-arm rates for the primary and both judges (a judge's rate over the records
+    it judged; failed requests are counted apart), and every record where the three disagree, for the owner to
+    review. A cost estimate is printed first (D-258). The
+    judges decide nothing; the primary stays `answer_usable`.
+  - *Same-family exception.* The v1.0 rule that a judge is never the generator (`score.py`) stays for v1.0 scoring.
+    The Sonnet judge is allowed for this secondary only, because the dual-judge design measures self-preference:
+    Sonnet's verdicts on Claude readers' lines are compared with gpt-4o-mini's, a family distinct from every S2
+    reader.
+  - *S0 and S1 re-scored* (in memory, 2026-10-31; nothing under `eval/runs/` rewritten). S0: no `answer_usable`
+    value changes on either arm (224 of 308 G each), so its reading stands. S1: six records turn usable (the order
+    and plural cases). Small graph-off 0.8778 to 0.9000, merged graph-off 0.8667 to 0.8778, small graph-on 0.7889
+    to 0.8111, merged graph-on 0.8333 to 0.8444. Chunking delta -1.1 to -2.2 points (n_pos 4 to 3, n_neg 5), so
+    small is still kept; small-store graph delta -8.9 points both ways and merged-store graph -3.3 points both ways;
+    every null guard passes. No S0 or S1 decision changes.
 
 ## Model access
 

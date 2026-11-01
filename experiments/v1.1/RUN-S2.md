@@ -69,9 +69,11 @@ rate. `--retry-errors` resubmits only requests that were never billed.
 | 6 Sonnet 5.5 arm, 100 questions × 5 | about $2.50 | about $9.50 |
 | 6 Opus 5.5 arm, 100 questions × 5 (descriptive, D-267) | about $10.00 | about $19.00 |
 | 6 deepseek replicates 2 to 5, 100 questions × 4 (OpenRouter credit) | about $0.70 | about $1.10 |
-| **Total** | **about $14** (Claude about $13) | **about $32** (Claude about $30) |
+| 7.1 Answer judges (D-276), 90 G questions × 4 arms × 5 answers | at most about $2.50 | about $2.50 |
+| **Total** | **about $16.50** (Claude about $13) | **about $34.50** (Claude about $30) |
 
-A native Sonnet re-pilot (step 3) adds about $0.13.
+A native Sonnet re-pilot (step 3) adds about $0.13. The judges' figure is Step 7.1's $0.5 for one answer per question
+and arm, times 5; lines that repeat across arms and answers are asked once, so it is an upper bound.
 
 ## Step 0: blockers, prerequisites, build
 
@@ -349,6 +351,27 @@ read the result by EXPERIMENT-S2.md › Decision rule:
   (D-274).
 
 Ignore `default_decisions`. S2 is applied by hand.
+
+### Step 7.1: answer judges (Paid, D-276)
+
+The secondary: gpt-4o-mini and Sonnet 5.5 judge whether each G record's final line is equivalent to the gold. Each
+sees only the question, the gold answer and the line. It decides nothing. Print the estimate first, free:
+
+```bash
+uv run --project eval lancet-eval judge-answers --run <S2_RUN> --estimate-only
+```
+
+Ask the user, with that estimate (about $0.5 for one run of 90 G questions × 4 arms, most of it Sonnet; lines that
+repeat across arms are asked once). Then run it with `OPENROUTER_API_KEY` set:
+
+```bash
+uv run --project eval lancet-eval judge-answers --run <S2_RUN>
+```
+
+It writes `<S2_RUN>/answer-judge.json` and caches each verdict in `<S2_RUN>/answer-judge-cache.json`, so a rerun asks
+only the requests that failed. If it prints `judge request(s) failed`, run it again, at most twice, and name what is
+left in the run report. Report each judge's per-arm rate beside the primary in EXPERIMENT-S2.md › Result, and give the
+owner the `disagreements` list to review.
 
 ## Step 8: record
 

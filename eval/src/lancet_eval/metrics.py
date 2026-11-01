@@ -7,7 +7,9 @@ import math
 import re
 import string
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import StrEnum
 from functools import cache
 from pathlib import Path
@@ -98,21 +100,141 @@ def extract_final_answer(answer: str | None) -> str | None:
     return norm or None
 
 
+AnswerRule = Literal["d70", "d276"]
+# D-276 is the answer rule; D-70 stays selectable so a re-read of a v1.0 run of record
+# reproduces the report written under it (`answer_rule`).
+_ANSWER_RULE: ContextVar[AnswerRule] = ContextVar("answer_rule", default="d276")
+
+
+@contextmanager
+def answer_rule(rule: AnswerRule) -> Iterator[None]:
+    """Scores `gold_contained` (and so `answer_usable`) under `rule` inside the block.
+
+    `"d276"` is the default. `"d70"` is the whole-token rule without D-276's folds,
+    the rule v1.0's recorded reports were written under.
+
+    Raises:
+        ValueError: If `rule` is neither.
+    """
+    if rule not in ("d70", "d276"):
+        raise ValueError(f"unknown answer rule {rule!r}; known: d70, d276")
+    token = _ANSWER_RULE.set(rule)
+    try:
+        yield
+    finally:
+        _ANSWER_RULE.reset(token)
+
+
+# D-276: words ending in "s" that are not plurals, so they never fold.
+_NOT_PLURAL = frozenset({"news", "series", "species", "always", "perhaps", "whereas"})
+# D-276: the endings after which a plural adds "es" (boxes, matches, buses).
+_ES_AFTER = ("s", "x", "z", "ch", "sh")
+# D-276: the separators of a list answer, read on the raw gold before normalisation
+# drops its punctuation. A comma between digits ("1,200") separates nothing.
+_LIST_SEPARATOR = re.compile(r"\s*(?:(?<!\d),|,(?!\d)|;|&|\band\b)\s*", re.IGNORECASE)
+
+
+@cache
+def _singulars(token: str) -> frozenset[str]:
+    """D-276: the singulars a normalised token may be the plural of; empty if none.
+
+    A token of four letters or more ending in `s` (not `ss`, `us` or `is`, not in
+    `_NOT_PLURAL`, and holding no digit) may drop its `s`, its `es` after s, x, z, ch
+    or sh when three letters or more remain, or turn `ies` into `y`: `houses` ->
+    `house`, `boxes` -> `box`, `movies` -> `movie`. Nothing else changes, so `plane`
+    never meets `plan`, `1990s` never meets `1990`, and `uses` never meets `us`.
+    """
+    if (
+        len(token) <= 3
+        or not token.endswith("s")
+        or token.endswith(("ss", "us", "is"))
+        or token in _NOT_PLURAL
+        or any(ch.isdigit() for ch in token)
+    ):
+        return frozenset()
+    forms = {token[:-1]}
+    stem = token[:-2]
+    if token.endswith("es") and len(stem) >= 3 and stem.endswith(_ES_AFTER):
+        forms.add(stem)  # never shorter than three: "uses" is not the plural of "us"
+    if token.endswith("ies") and len(token) > 4:
+        forms.add(token[:-3] + "y")
+    return frozenset(forms)
+
+
+def _same_word(a: str, b: str) -> bool:
+    """D-276: equal tokens, or one is a plural of the other (`_singulars`)."""
+    return a == b or a in _singulars(b) or b in _singulars(a)
+
+
+def _tokens(text: str) -> list[str]:
+    return squad_normalize(text).split()
+
+
+def _span_at(needle: list[str], haystack: list[str], i: int) -> bool:
+    return all(_same_word(n, h) for n, h in zip(needle, haystack[i:], strict=False))
+
+
+def _contains_span(needle: list[str], haystack: list[str]) -> bool:
+    span = len(needle)
+    return bool(needle) and any(
+        _span_at(needle, haystack, i) for i in range(len(haystack) - span + 1)
+    )
+
+
 def gold_contained(gold: str, text: str) -> bool:
-    """Whole-token containment of `squad_normalize(gold)` in `squad_normalize(text)`.
+    """Whole-token containment of the normalised gold in the normalised text.
 
     Token-boundary aware, so a gold of "no" never matches inside "not" or
-    "know" (D-70) the way a raw substring check would.
+    "know" (D-70) the way a raw substring check would. D-276 adds two folds, applied
+    to every arm: a token also matches its plural or singular (`_same_word`), and a
+    list gold (items separated by commas, semicolons, `&` or `and`) also matches when
+    every item is contained in a span of its own, in any order. Both folds only turn
+    misses into hits. Under `answer_rule("d70")` neither fold applies.
     """
-    gold_tokens = squad_normalize(gold).split()
-    text_tokens = squad_normalize(text).split()
-    if not gold_tokens:
-        return False
-    span = len(gold_tokens)
-    return any(
-        text_tokens[i : i + span] == gold_tokens
-        for i in range(len(text_tokens) - span + 1)
-    )
+    gold_tokens, text_tokens = _tokens(gold), _tokens(text)
+    if _ANSWER_RULE.get() == "d70":
+        span = len(gold_tokens)
+        return bool(gold_tokens) and any(
+            text_tokens[i : i + span] == gold_tokens
+            for i in range(len(text_tokens) - span + 1)
+        )
+    if _contains_span(gold_tokens, text_tokens):
+        return True
+    items = [t for t in (_tokens(i) for i in _LIST_SEPARATOR.split(gold)) if t]
+    return len(items) > 1 and _contains_items(items, text_tokens)
+
+
+def _contains_items(items: list[list[str]], haystack: list[str]) -> bool:
+    """Whether every item has a span of its own in `haystack`, none overlapping.
+
+    Longest items are placed first, each at its leftmost free span, so "Johnson &
+    Johnson" needs two separate "johnson" tokens.
+    """
+    used: set[int] = set()
+    for item in sorted(items, key=len, reverse=True):
+        span = len(item)
+        for i in range(len(haystack) - span + 1):
+            cells = set(range(i, i + span))
+            if not cells & used and _span_at(item, haystack, i):
+                used |= cells
+                break
+        else:
+            return False
+    return True
+
+
+def final_answer_line(answer: str | None) -> str | None:
+    """The last `Answer:` line as written, citation markers and emphasis removed.
+
+    The same line `extract_final_answer` reads, before D-70's normalisation, so a
+    reader of it (the D-276 judges) sees "3.5" and "$1,200" as the model wrote them.
+    None where `extract_final_answer` is None.
+    """
+    if extract_final_answer(answer) is None:
+        return None
+    matches = list(_ANSWER_LINE.finditer(answer or ""))
+    text = _MARKER.sub("", matches[-1].group("a")).replace("*", "")
+    return " ".join(text.split())
 
 
 def final_answer_em(question: GoldQuestion, answer: str) -> MetricOutcome:
