@@ -55,6 +55,7 @@ from lancet_eval.arms import (
     resolve_arm,
 )
 from lancet_eval.batch import DEEPSEEK_PRICE_FACTOR
+from lancet_eval.config import V1_STORE, get_eval_store
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
@@ -2005,7 +2006,12 @@ def build_lever_comparison(
     # lets an external arm that breaks one into a comparison.
     try:
         if any(is_external_arm(r.graph_arm) for r in records):
-            doc_map = load_document_map(config.name)
+            # #164: the store `[documents] external_store` names, else the v1.0 store.
+            external_store = getattr(config, "external_store", None)
+            doc_map = load_document_map(
+                config.name,
+                V1_STORE if external_store is None else get_eval_store(external_store),
+            )
             require_external_provenance(
                 records, journal, config, {*doc_map.entries, *doc_map.aliases}
             )

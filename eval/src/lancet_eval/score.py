@@ -2314,7 +2314,8 @@ def score_run(
     # Load gold questions and config
     config = load_corpus_config(corpus_name)
     if any(is_external_arm(r.graph_arm) for r in records):
-        ext_map = doc_map_of(None)
+        # #164: the store `[documents] external_store` names, else the v1.0 store.
+        ext_map = doc_map_of(config.external_store)
         require_external_provenance(
             records, journal_path, config, {*ext_map.entries, *ext_map.aliases}
         )
