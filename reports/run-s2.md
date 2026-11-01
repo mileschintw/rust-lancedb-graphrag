@@ -124,6 +124,8 @@
 - 沒有花錢。main checkout 沒有改動，維持乾淨的 `f3f036ee`。步驟 1 的改動之前已經還原，所以這次沒有再貼回去。
 - 要執行的話：owner 必須在這個 session 繼承的環境裡設定 `ANTHROPIC_API_KEY`（必須是持有 Claude credit 的那個 org 的 key），之後 coordinator 再給 GO。
 
+- **更新**：native 探測取消。owner 選了「同步＋between_tools，pilot 驗證 (Recommended)」（D-280）：Sonnet 改走 OpenRouter BYOK 的 sync `/chat/completions`，保留 `between_tools`，由 lane 137 實作。重做 pilot 時，Sonnet 必須是 `reasoning_tokens` 0 而且沒有 thinking block，否則停下來詢問。Sonnet 的送出方式依 lane 137 更新後的 RUN-S2 進行。
+
 ## 給 coordinator 的問題
 
 1. **#138 要 owner 給 D-ID**，選項見 issue：(1) Sonnet 改走 sync API 並保留 `between_tools`（約 $5，上限約 $18.9，要寫程式）；(2) Sonnet 走 batch，thinking 改 off（只改常數）；(3) Sonnet 走 batch，thinking 改 on 加 effort（只改常數）。常數還沒 commit，D-73 不受影響。
