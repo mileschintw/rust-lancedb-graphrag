@@ -81,9 +81,8 @@ supporting sentence, and there every reader except Opus answers almost nothing u
 the point estimates. The run decides nothing.
 
 - Runs: the deepseek drive `eval/runs/2026-11-01-explore-b-drive-twowiki_s3b_dev`, carried by `replay-init` into the
-  run of record `eval/runs/2026-11-01-explore-b-twowiki_s3b_dev`. Neither is committed: they hold retrieved Wikipedia
-  passages, which the repository keeps out (#145, `eval/corpora/ATTRIBUTION.md`). They stay in the main checkout,
-  under the gitignored `data/`. [`explore-bc-runs.json`](explore-bc-runs.json) records every file's size and sha256.
+  run of record `eval/runs/2026-11-01-explore-b-twowiki_s3b_dev`. Both are committed, uncompressed.
+  [`explore-bc-runs.json`](explore-bc-runs.json) records every file's size and sha256.
   Both ran on `main` at `68c100a5` (#157). Pre-registration `PREREGISTRATION_EXPLORE_B`, frozen by `45633be1`. Dev
   only (D-243); none of the 900 held-out questions was read.
 - Store `eval-2wiki`: 6,119 of 6,119 passages completed, all fixed-size 8,192/0 (one chunk each), no graph. As on C,

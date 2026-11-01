@@ -90,10 +90,9 @@ deepseek; at this size that gap is gone, and Opus leads. Prediction 1 does not h
 prediction 4 holds for Sonnet and Opus only. The run decides nothing.
 
 - Runs: the deepseek drive `eval/runs/2026-11-01-explore-c-drive-multihop_rag_full_dev`, carried by `replay-init`
-  into the run of record `eval/runs/2026-11-01-explore-c-multihop_rag_full_dev`. Neither is committed: their journals,
-  context exports and batch manifests hold retrieved excerpts of all 609 articles, and the repository commits only the
-  346-article subset's text (`eval/corpora/ATTRIBUTION.md`). They stay in the main checkout, under the gitignored
-  `data/`. [`explore-bc-runs.json`](explore-bc-runs.json) records every file's size and sha256.
+  into the run of record `eval/runs/2026-11-01-explore-c-multihop_rag_full_dev`. Both are committed; every file over
+  10 MB is gzipped (each directory's `README.md`). [`explore-bc-runs.json`](explore-bc-runs.json) records every
+  uncompressed file's size and sha256.
   Both ran on `main` at `68c100a5`
   (#157). Pre-registration `PREREGISTRATION_EXPLORE_C`, frozen by `6b5274b7`. Dev only (1,000 fresh dev questions: 882
   G, 118 null). No held-out question was read.
