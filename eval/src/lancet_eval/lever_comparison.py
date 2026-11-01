@@ -46,7 +46,9 @@ from typing import Any
 from lancet_eval import gitcheck, preregistration, provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval.arms import (
+    STORE_PREFIXES,
     arm_reader,
+    arm_store,
     canonical_arm,
     in_registry_order,
     is_external_arm,
@@ -54,13 +56,19 @@ from lancet_eval.arms import (
     reader_base_arm,
     resolve_arm,
 )
+from lancet_eval.config import V1_STORE
 from lancet_eval.context_export import (
     CONTEXT_EXPORT_FILE,
     ContextExportError,
     ContextExportRow,
     read_export,
 )
-from lancet_eval.corpus import GoldQuestion, load_corpus_config, load_sample_questions
+from lancet_eval.corpus import (
+    GoldQuestion,
+    StoreChunking,
+    load_corpus_config,
+    load_sample_questions,
+)
 from lancet_eval.journal import RunRecord, load_records, read_journal_header
 from lancet_eval.measure import (
     BATCH_PRICE_FACTOR,
@@ -565,6 +573,8 @@ class _Ctx:
     pops: dict[tuple[str, bool], p4_mod.P4Population]
     export: dict[tuple[str, str], ContextExportRow] | None = None
     readers: dict[str, ReaderDeclaration] | None = None
+    # #125: each non-v1.0 store's chunking, by store name, from `[stores.<prefix>]`.
+    store_chunking: Mapping[str, StoreChunking] | None = None
 
     @property
     def g_ids(self) -> list[str]:
@@ -634,8 +644,38 @@ def _ranking_ids(rec: RunRecord) -> list[str]:
 def _chunk_id_scorable(rec: RunRecord) -> bool:
     """Chunk-ID retrieval metrics are Lancet-only (D-250): an external arm's chunks are
     not Lancet chunks, so its records have no value and leave every such pairing. A
-    reader arm (D-257) replays another arm's retrieval and has none either."""
-    return not (is_external_arm(rec.graph_arm) or is_reader_arm(rec.graph_arm))
+    reader arm (D-257) replays another arm's retrieval and has none either. The
+    gold-chunk table holds v1.0-store chunk IDs, so an arm on another store (D-251) is
+    not evaluable either, instead of scoring 0 (#125)."""
+    if is_external_arm(rec.graph_arm) or is_reader_arm(rec.graph_arm):
+        return False
+    return arm_store(rec.graph_arm) in (None, V1_STORE.name)
+
+
+# D-251: `structure-merge` counts its chunk sizes in o200k tokens, the others in
+# characters (`corpus.CHUNK_STRATEGIES`).
+_TOKEN_SIZED_STRATEGIES = frozenset({"structure-merge"})
+
+
+def _coverage_inputs(
+    ctx: _Ctx, rec: RunRecord, gold: GoldQuestion
+) -> tuple[GoldQuestion, int] | None:
+    """The gold question and character chunk size `recall_at_k` reads for `rec` (#125).
+
+    A record is scored against its own store's chunk size: the run-wide size is the
+    v1.0 store's. A token-sized store drops the gold facts longer than its size in
+    o200k tokens here and passes a character size no remaining fact exceeds. None when
+    no gold fact fits that store's chunk.
+    """
+    chunking = (ctx.store_chunking or {}).get(arm_store(rec.graph_arm) or "")
+    if chunking is None:
+        return gold, ctx.chunk_size
+    if chunking.chunk_strategy not in _TOKEN_SIZED_STRATEGIES:
+        return gold, chunking.chunk_size
+    facts = [f for f in gold.gold_facts if context_tokens([f]) <= chunking.chunk_size]
+    if not facts:
+        return None
+    return gold.model_copy(update={"gold_facts": facts}), max(map(len, facts))
 
 
 def _values(
@@ -1202,8 +1242,12 @@ def _secondary_fns(ctx: _Ctx) -> dict[str, Callable[[RunRecord], float | None]]:
     def recall4(r: RunRecord) -> float | None:
         if r.snapshot is None:
             return None
+        inputs = _coverage_inputs(ctx, r, gold(r))
+        if inputs is None:
+            return None
+        question, chunk_size = inputs
         out = recall_at_k(
-            gold(r), r.snapshot.retrieved_chunks, k=4, chunk_size=ctx.chunk_size
+            question, r.snapshot.retrieved_chunks, k=4, chunk_size=chunk_size
         )
         return (
             float(out.score) if out.status == "ok" and out.score is not None else None
@@ -1786,6 +1830,10 @@ def build_lever_comparison(
         pops={},
         export=_load_export(run),
         readers=_reader_declarations(prereg, sorted(arm_set)),
+        store_chunking={
+            STORE_PREFIXES[prefix]: chunking
+            for prefix, chunking in config.store_chunking.items()
+        },
     )
 
     families = [_family_block(ctx, f) for f in prereg.families]
