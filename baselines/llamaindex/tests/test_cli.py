@@ -305,3 +305,110 @@ def test_the_export_sends_to_the_endpoint_override(
     }
     # An override is never silent: a paid run left pointing at the stub would be wasted.
     assert "http://127.0.0.1:8099/embeddings" in capsys.readouterr().err
+
+
+# --- #146: the 609-document corpus and a persisted index ------------------------------
+
+
+def test_a_full_corpus_reads_its_pinned_file_and_its_stores_map():
+    from lancet_eval.config import get_eval_store
+    from lancet_eval.corpus import load_corpus
+
+    files = cli.corpus_files(
+        load_corpus("multihop_rag_confirm_dev"),
+        "multihop_rag_confirm_dev",
+        get_eval_store("eval-full"),
+    )
+
+    corpora = repo_root() / "eval" / "corpora"
+    assert files == (
+        corpora / "multihop_rag" / ".cache" / "corpus.json",
+        corpora / "multihop_rag_full" / "document_map.eval-full.json",
+        "20b61b5ab84de84a927420c5d265b7ec8d859ae49980699958a787ade9e4d28f",
+    )
+
+
+def test_the_v1_corpus_keeps_its_subset_file_and_map():
+    from lancet_eval.config import V1_STORE
+    from lancet_eval.corpus import load_corpus
+
+    files = cli.corpus_files(load_corpus("multihop_rag"), "multihop_rag", V1_STORE)
+
+    corpus = repo_root() / "eval" / "corpora" / "multihop_rag"
+    assert files == (
+        corpus / "documents.subset.jsonl",
+        corpus / "document_map.json",
+        None,
+    )
+
+
+def _build_argv(corpus_dir, index_dir):
+    return [
+        "build",
+        "--corpus",
+        "fixture",
+        "--index-dir",
+        str(index_dir),
+        "--documents",
+        str(corpus_dir / "documents.jsonl"),
+        "--document-map",
+        str(corpus_dir / "document_map.json"),
+    ]
+
+
+class _QueryOnlyEmbedding(HashEmbedding):
+    def _get_text_embedding(self, text: str) -> list[float]:
+        raise AssertionError("an export over a persisted index embedded a document")
+
+
+def test_build_persists_an_index_that_export_reads_without_embedding_documents(
+    corpus_dir, tmp_path, embedding, reranker, capsys
+):
+    index_dir = tmp_path / "index"
+    manifest = cli.run_build(
+        _parser().parse_args(_build_argv(corpus_dir, index_dir)), embed_model=embedding
+    )
+    assert "D-258" in capsys.readouterr().err
+    assert embedding.seen_queries == []
+    built = json.loads(manifest.read_text(encoding="utf-8"))
+
+    argv = [*_argv(corpus_dir, tmp_path / "out"), "--index-dir", str(index_dir)]
+    _, echo_path = run_export(
+        _parser().parse_args(argv),
+        embed_model=_QueryOnlyEmbedding(seen_texts=[], seen_queries=[]),
+        reranker=reranker,
+    )
+
+    echo = json.loads(echo_path.read_text(encoding="utf-8"))
+    assert echo["index_fingerprint"] == built["index_fingerprint"]
+    assert "indexing about $0.0000" in capsys.readouterr().err
+
+
+def test_build_without_a_key_stops_before_any_call(
+    corpus_dir, tmp_path, monkeypatch, capsys
+):
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    code = main(_build_argv(corpus_dir, tmp_path / "index"))
+
+    assert code == 1
+    assert "OPENROUTER_API_KEY" in capsys.readouterr().err
+    assert not (tmp_path / "index").exists()
+
+
+def test_an_unknown_store_is_reported_and_exits_1(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-not-used")
+
+    code = main([
+        "build",
+        "--corpus",
+        "multihop_rag_confirm_dev",
+        "--store",
+        "eval-nowhere",
+        "--index-dir",
+        str(tmp_path / "index"),
+    ])
+
+    assert code == 1
+    assert "eval-nowhere" in capsys.readouterr().err
+    assert not (tmp_path / "index").exists()

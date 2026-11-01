@@ -191,3 +191,43 @@ def test_the_reranker_gets_the_chunk_text_with_no_metadata_header(
             assert "source:" not in text
             assert "published_at:" not in text
             assert text.startswith("Report ")
+
+
+# --- #146: the full corpus is a pinned `.json` array ----------------------------------
+
+
+def _as_json_array(corpus_dir: Path) -> Path:
+    rows = [
+        json.loads(line)
+        for line in (corpus_dir / "documents.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    path = corpus_dir / "corpus.json"
+    path.write_text(json.dumps(rows), encoding="utf-8")
+    return path
+
+
+def test_a_json_array_of_documents_loads_as_the_jsonl_rows_do(corpus_dir):
+    from lancet_eval.split import lf_sha256
+
+    path = _as_json_array(corpus_dir)
+
+    documents = load_documents(
+        path, corpus_dir / "document_map.json", sha256=lf_sha256(path)
+    )
+
+    jsonl = load_documents(
+        corpus_dir / "documents.jsonl", corpus_dir / "document_map.json"
+    )
+    assert [(d.doc_id, d.text, d.metadata) for d in documents] == [
+        (d.doc_id, d.text, d.metadata) for d in jsonl
+    ]
+
+
+def test_a_documents_file_off_its_pin_is_a_load_error(corpus_dir):
+    path = _as_json_array(corpus_dir)
+
+    with pytest.raises(CorpusLoadError, match="pinned"):
+        load_documents(path, corpus_dir / "document_map.json", sha256="0" * 64)

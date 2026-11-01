@@ -13,6 +13,12 @@ when every row passes `read_export`. A question whose reranked list is shorter t
 
 Chunk IDs are `<document ID>#<chunk index>`, so a rebuild gives the same IDs and the
 same `index_fingerprint`.
+
+`Pipeline.persist` writes the index and an `index_manifest.json` to a directory, and
+`Pipeline.load` reads them back (#146): the documents are embedded once, by
+`lancet-llamaindex build`, and an export over a loaded index embeds only its questions.
+`load` splits the current documents again (free) and refuses an index whose manifest
+does not match them.
 """
 
 from __future__ import annotations
@@ -34,7 +40,12 @@ from lancet_eval.context_export import (
 )
 from lancet_eval.corpus import GoldQuestion
 from lancet_eval.evidence_meta import normalise
-from llama_index.core import Document, VectorStoreIndex
+from llama_index.core import (
+    Document,
+    StorageContext,
+    VectorStoreIndex,
+    load_index_from_storage,
+)
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.postprocessor.types import BaseNodePostprocessor
@@ -51,6 +62,8 @@ from lancet_llamaindex.providers import (
 )
 
 PIPELINE_CONFIG_FILE = "pipeline_config.json"
+#: What `Pipeline.persist` writes beside the index files (#146).
+INDEX_MANIFEST_FILE = "index_manifest.json"
 
 CHUNK_SIZE = 256
 CHUNK_OVERLAP = 25
@@ -63,6 +76,10 @@ CONTENT_TYPE = "text/plain"
 
 class ExportError(Exception):
     """The export cannot be built or a row breaks the context-export contract."""
+
+
+class IndexMismatchError(ExportError):
+    """A persisted index is missing, or was built from other chunks or settings."""
 
 
 class Reranker(Protocol):
@@ -131,6 +148,38 @@ def _evidence(rank: int, scored: NodeWithScore) -> dict[str, Any]:
     }
 
 
+def _split(documents: Sequence[Document]) -> list[BaseNode]:
+    splitter = SentenceSplitter(
+        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP, id_func=_chunk_id
+    )
+    return splitter.get_nodes_from_documents(list(documents))
+
+
+def _fingerprint(nodes: Sequence[BaseNode]) -> str:
+    digest = hashlib.sha256()
+    for node in nodes:
+        embedded = node.get_content(metadata_mode=MetadataMode.EMBED)
+        record = [node.node_id, node.ref_doc_id, embedded]
+        digest.update(json.dumps(record, ensure_ascii=False).encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _manifest(nodes: Sequence[BaseNode]) -> dict[str, Any]:
+    """What a persisted index must match before an export reads it (#146)."""
+    return {
+        "framework_version": version("llama-index-core"),
+        "chunk_size": CHUNK_SIZE,
+        "chunk_overlap": CHUNK_OVERLAP,
+        "embedding_model": EMBEDDING_MODEL,
+        "embedding_dimensions": EMBEDDING_DIMENSIONS,
+        "embedded_metadata_keys": list(EMBEDDED_METADATA_KEYS),
+        "documents": len({node.ref_doc_id for node in nodes}),
+        "chunks": len(nodes),
+        "index_fingerprint": _fingerprint(nodes),
+    }
+
+
 class Pipeline:
     """An index over the documents plus the retriever and reranker that read it."""
 
@@ -142,6 +191,7 @@ class Pipeline:
         reranker: Reranker,
     ) -> None:
         self._nodes = nodes
+        self._index = index
         self._embed_model = embed_model
         self._reranker = reranker
         self._retriever = index.as_retriever(similarity_top_k=DENSE_TOP_K)
@@ -156,25 +206,61 @@ class Pipeline:
         reranker: Reranker,
     ) -> Pipeline:
         """Chunks and embeds `documents` into an in-memory vector index."""
-        splitter = SentenceSplitter(
-            chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP, id_func=_chunk_id
-        )
-        nodes = splitter.get_nodes_from_documents(list(documents))
+        nodes = _split(documents)
         index = VectorStoreIndex(nodes, embed_model=embed_model)
         return cls(nodes, index, embed_model, reranker)
+
+    @classmethod
+    def load(
+        cls,
+        documents: Sequence[Document],
+        index_dir: Path,
+        *,
+        embed_model: BaseEmbedding,
+        reranker: Reranker,
+    ) -> Pipeline:
+        """Loads the index `persist` wrote for `documents`; embeds no document.
+
+        Raises `IndexMismatchError` when `index_dir` has no manifest, or its manifest
+        is not the one these documents and this configuration would write.
+        """
+        nodes = _split(documents)
+        manifest_path = index_dir / INDEX_MANIFEST_FILE
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise IndexMismatchError(f"{manifest_path}: {exc}") from exc
+        expected = _manifest(nodes)
+        wrong = sorted(
+            key
+            for key in {*manifest, *expected}
+            if manifest.get(key) != expected.get(key)
+        )
+        if wrong:
+            raise IndexMismatchError(
+                f"{manifest_path} differs from the current documents and "
+                f"configuration in {wrong}; rebuild the index"
+            )
+        storage = StorageContext.from_defaults(persist_dir=str(index_dir))
+        index = load_index_from_storage(storage, embed_model=embed_model)
+        return cls(nodes, index, embed_model, reranker)
+
+    def persist(self, index_dir: Path) -> Path:
+        """Writes the index and its manifest into `index_dir`; returns the manifest."""
+        index_dir.mkdir(parents=True, exist_ok=True)
+        self._index.storage_context.persist(persist_dir=str(index_dir))
+        manifest_path = index_dir / INDEX_MANIFEST_FILE
+        with open(manifest_path, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(_manifest(self._nodes), f, indent=2)
+            f.write("\n")
+        return manifest_path
 
     def chunk_ids(self) -> list[str]:
         return [node.node_id for node in self._nodes]
 
     def index_fingerprint(self) -> str:
         """SHA-256 over every chunk's ID, document ID and embedded text."""
-        digest = hashlib.sha256()
-        for node in self._nodes:
-            embedded = node.get_content(metadata_mode=MetadataMode.EMBED)
-            record = [node.node_id, node.ref_doc_id, embedded]
-            digest.update(json.dumps(record, ensure_ascii=False).encode("utf-8"))
-            digest.update(b"\n")
-        return digest.hexdigest()
+        return _fingerprint(self._nodes)
 
     def export_row(self, corpus: str, arm: str, question: GoldQuestion) -> dict:
         """One question's context-export row; raises `ExportError` naming it."""

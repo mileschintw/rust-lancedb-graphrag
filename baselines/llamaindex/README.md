@@ -20,7 +20,9 @@ and checks its rows with the harness's own `validate_row` and `read_export`; it 
 | Rerank | `voyageai/rerank-2.5-lite` through `https://openrouter.ai/api/v1/rerank`, keep 8 |
 | Embedded metadata | `title`, `source`, `published_at`, raw values from the corpus row |
 
-- **Documents.** `documents.subset.jsonl` and `document_map.json` from the corpus's `map_corpus` directory, the files
+- **Documents.** The corpus's documents file (`documents.subset.jsonl` for the 346 documents; the cached
+  `corpus.json` for all 609, pinned by its sha256, #146) and the document map `lancet-eval seed` wrote for `--store`
+  (default `eval`: `document_map.json`; any other store: `document_map.<store>.json`), the files
   `lancet-eval seed` reads and writes. Each article's ID is its Lancet document ID, looked up by the corpus ID the
   seeder records (the title). An article with no map entry fails the run.
 - **Metadata.** LlamaIndex embeds the three metadata keys with the text by default, as in the paper. In the export the
@@ -70,6 +72,23 @@ It needs `OPENROUTER_API_KEY`, and the stage's D-246 spend cap applies. The ques
 `--corpus multihop_rag_heldout` (or any held-out corpus) is a held-out read under D-237.
 
 `--questions`, `--documents` and `--document-map` override the corpus files, for a fixture run.
+
+### A persisted index (#146)
+
+`build` embeds the documents once and writes the index, plus `index_manifest.json`, to `--index-dir`. It reads no
+question and makes no rerank call, so it is the paid part of a rebuild alone (embeddings, estimate printed first).
+`export --index-dir` then loads that index and embeds only the questions. `export` splits the current documents
+again (free) and refuses an index whose manifest differs from them in any field: framework version, chunking,
+embedding model and dimensions, embedded metadata keys, document and chunk counts, or `index_fingerprint`.
+
+The 609-document index of the confirmation stage (experiments/v1.1/RUN-CONFIRM.md), with document IDs from the
+`eval-full` store:
+
+```bash
+PYTHONUTF8=1 uv run --project baselines/llamaindex lancet-llamaindex build --corpus multihop_rag_confirm_dev --store eval-full --index-dir data/llamaindex-full
+```
+
+`data/` is gitignored; the manifest is the record of what was built.
 
 ## Tests
 
