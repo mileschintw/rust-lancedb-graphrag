@@ -20,7 +20,7 @@ ingestion, reader runs and S3's analysis pre-registration come later.
   the pinned one.
 - **Spend.**
   - The owner pre-approved spend within reason (2026-11-01, relayed: "預算現在不用拿給我看了，只要是在合理範圍我們的credit可支付的情況下都直接同意").
-  - This lane's ceilings are $60 of Claude credit for all four Claude-credit writers and $1.50 of OpenRouter credit for deepseek.
+  - This lane's ceilings are $70 of Claude credit (raised from $60 by the coordinator, 2026-11-01) for all four Claude-credit writers and $1.50 of OpenRouter credit for deepseek.
   - Each estimate is printed before its submit (D-258). An estimate over a ceiling stops the lane and goes back to the owner.
 - **Deadline.** Every Claude batch must be submitted by the morning of 2026-11-02 (Pacific), because the Claude credit expires on 2026-11-03.
 
@@ -43,7 +43,7 @@ settings) and scaled to the 2Wiki units.
 | **Claude total** | | | **about $58-62** |
 | deepseek (OpenRouter) | about 1M | about 2.5M | under $1 at full price |
 
-The Claude total sits at the $60 ceiling, so the run goes in stages. Haiku and Sonnet go first. Opus's first part
+The Claude total is close to the ceiling, so the run goes in stages. Haiku and Sonnet go first. Opus's first part
 then gives a measured projection before the rest of Opus is submitted.
 
 ## Spend record
