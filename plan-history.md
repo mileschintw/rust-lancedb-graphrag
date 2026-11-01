@@ -153,3 +153,5 @@ Finished work moved out of `plan.md`, newest first, for checking only; the plan 
 - **S1 recorded** 2026-10-31: PR #122 merged (16b9ebe5), run `eval/runs/2026-10-31-s1-multihop_rag_s1_dev`. Keep small, graph out; S2 `replay_source_arm` = `small/hybrid+rerank+metadata`. S1 total spend about $3.1-3.7 (step 1 ~$2.4-3.0, step 4 $0.67).
 
 - **Lane 125 merged (2026-10-31):** PR #129 at a858a339, merge b3f50d49, closes #125. Session local_7141a026-cb3b-4eaa-8c8c-0fe3f215cb87 (reused). Merged-store chunk-ID secondaries are now not evaluable; coverage_at_4 uses each store's chunk size; S1 decision rows byte-identical; EXPERIMENT-S1.md › Result carries the note.
+
+- **Lane 124 merged (2026-10-31):** PR #131 at b5d4c7b8, merge 95d98ff0, closes #124. D-276: answer normalisation (plural folding, order-free lists), dual judge gpt-4o-mini + Sonnet 5.5 (`judge-answers`), S0 0 flips, S1 6 records flip, no decision change.
