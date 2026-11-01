@@ -207,3 +207,43 @@
   `git log -S PREREGISTRATION_S2` 只列出這個提交。已推送 `origin/lane-run-s2-freeze`。
 - PR 內文草稿：`pr-bodies/run-s2.md`。狀態 `done`，等合併與「continue step 5」。
 - 注意：分支名不是 worktree 的 `claude/lane-run-s2-464f82`，因為那個分支被 worktree 佔用，主 checkout 無法切過去。
+
+- 業主裁示（2026-11-01，協調者轉述，業主原話「Confirm」）：step 8 的 EXPERIMENT-S2 › Result 要寫出各 arm 實際使用的
+  thinking 設定，以及實測 `reasoning_tokens`（各 arm 總數與每筆平均）。Opus：effort low（無法關閉 thinking）；
+  Sonnet：sync + `between_tools`（D-280）；Haiku 與 deepseek：照設定。
+
+## Steps 5 到 8（2026-11-01）
+
+- **Step 4.4：** PR #141 已合併（`15a20fdd`）。主 checkout 已切回 `main` 並 `pull --ff-only`；`thresholds.py` 最後一個提交是「Pre-register S2」，`git status --short -- eval/src/lancet_eval` 為空。
+- **Step 5：** `replay-init` 把 100 筆紀錄帶進 `eval/runs/2026-11-01-s2-multihop_rag_s2_dev`。計數：`small/hybrid+rerank+metadata success 100`。
+- **Step 6：** 四個 arm 的估價、batch ID 與結果如下：
+
+  | Arm | 送法 | 估價（about / 上限） | Batch ID | 結果 |
+  |---|---|---|---|---|
+  | Haiku | batch | 只截到上限 $0.3194 | `batch-1793517683-8OIO5z15LFzeGHgXpyAO` | 500 success |
+  | Opus | batch | 只截到上限 $12.7760 | `batch-1793517687-Hpud2vURLvRukD1nCgqF` | 500 success |
+  | Sonnet | sync | about $4.0203 / $12.7760 | `sync-…sonnet_5_5-1-1793517695` | 500 success |
+  | deepseek | sync | about $0.0811 / $0.2912 | `sync-…metadata-1-1793519858` | 493 success、7 error |
+
+  - Haiku 與 Opus 的 about 數字被 `tail` 截掉，只留下上限。所有估價都在天花板之內。
+  - 每條 Routing 行都是 0 misrouted。
+  - deepseek 的 7 筆 error 都是 `answer basis 'mixed' requires at least one cited evidence ID`，屬於 render 拒收：已計費，依指南不重試。分布在三題：`mhr-dd03ecc9ba3d` ×4、`mhr-3c8f1e201011` ×2、`mhr-a759db86980a` ×1，三題都是 null 題。
+- **Step 7：** `score` 與 `compare-levers` 都 exit 0。
+  - Claude readers 對 deepseek 的 null guard 全部 NOT EVALUABLE（35 對，需要 40）。所以沒有 Claude reader 成為候選，deepseek 勝出。
+  - 即使把兩個 Claude reader 當成候選，三組 Holm 的結果仍然是 deepseek。
+  - D-245 不成立。
+  - Judges：估價 $0.2646，實際 gpt-4o-mini $0.0125、Sonnet $0.3417，0 失敗，14 個分歧。
+- **花費：** 約 $14.38（Haiku $0.1668、Sonnet 約 $7.02（同步牌價）、Opus $6.7523、deepseek $0.0806、judges $0.354）。我沒有讀 OpenRouter activity 頁面。
+- **已有 issue：** `lever-comparison.json` 的 Sonnet `batch_spend` 以 batch 費率計算，是實際的一半。已由 #139 追蹤，沒有另開 issue。
+- **Step 8：** 在主 checkout 開分支 `lane-run-s2-record`。
+  - `2658a303`：run dir 加上 EXPERIMENT-S2 › Result。
+  - `95dc5922`：把 deepseek 的 thinking 欄改成「engine 的 pack body 原樣送出、temperature 0」，不寫成 reasoning off，因為它的請求沒有被改寫。
+  - 已推送；S2 測試 `22 passed, 1 skipped`。
+  - run dir 大小 59 MB，最大的檔案 journal.jsonl 為 34 MB。grep 過，沒有任何 key 或 Authorization。
+- **主 checkout 目前停在 `lane-run-s2-record`。** 合併後請切回 `main`。
+- **給協調者的開放問題：**
+  - 這次的 null guard 不可評估，原因是參照臂（deepseek）的 render error，而不是 Claude reader 本身。結論不受影響，但 guard 的設計可能值得另開 issue 檢討。
+  - 14 個 judge 分歧留給業主審閱。
+- **CI 修正（PR #142）：** `test_every_committed_journal_parses_with_the_new_defaulted_fields` 用目錄名的標籤豁免 lever run，原本只有 `-levers-`、`-s0-`、`-s1-`，沒有 `-s2-`。
+  - 補上 `-s2-`，註解改為涵蓋 S0/S1/S2 runs（RUN-S0-S1.md、RUN-S2.md）。為了符合 88 欄，tuple 抽成 `run_tags`。
+  - 提交 `1ac01fc4`，已推送。`test_journal.py` 15 passed，ruff check 與 ruff format 都通過。
