@@ -56,6 +56,7 @@ __all__ = [
     "arms_of",
     "external_pipelines_of",
     "readers_of",
+    "blinded_corpus_problem",
     "require_unblinded",
     "resolve",
     "resolve_corpus",
@@ -152,6 +153,25 @@ def require_unblinded(config: CorpusConfig) -> None:
             f"{config.preregistration_token}; no run of it is scored or read for its "
             "answers before its analysis plan is frozen"
         )
+
+
+def blinded_corpus_problem(corpus_name: str) -> str | None:
+    """``require_unblinded`` by corpus name: why reading a run of it is refused, or None.
+
+    A corpus that does not load is None here: the caller fails on it anyway, and only a
+    corpus that loads can name a run-plan column.
+    """
+    from lancet_eval.corpus import CorpusError, load_corpus
+
+    try:
+        config = load_corpus(corpus_name)
+    except CorpusError:
+        return None
+    try:
+        require_unblinded(config)
+    except PreregistrationError as exc:
+        return str(exc)
+    return None
 
 
 def arms_of(prereg: Any) -> tuple[str, ...]:

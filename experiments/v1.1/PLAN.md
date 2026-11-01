@@ -591,7 +591,8 @@ the owner's budget answer.
      hypotheses, decisional metric, Holm family) is frozen in its own commit. Then every run is scored once. Run
      directories and spend are recorded before then.
   The harness enforces both. A corpus reads one column of the plan (`[preregistration] column`), and
-  `preregistration.resolve` refuses a run plan without one, so `score` and `compare-levers` refuse its runs.
+  `preregistration.resolve` refuses a run plan without one, so `score` and `compare-levers` refuse its runs, as do
+  both readouts, both judges and the unpark gates (`preregistration.require_unblinded`).
   `replay-init` replays a held-out corpus only when it names such a column (amending its D-237 dev-only gate for
   this plan alone). The closed-book column asks the question with no evidence through the engine's own model-only
   prompt (`allow_model_only_answers` on for those rows only). It has no drive: `lancet-eval closed-book-init`

@@ -280,6 +280,8 @@ def _refuse_blinded(corpus_name: str) -> None:
     try:
         config = load_corpus_config(corpus_name)
     except CorpusError:
+        # Not a refusal here: a corpus that does not load fails `score` further on,
+        # and a corpus that loads is the only one that can name a run-plan column.
         return
     try:
         preregistration.require_unblinded(config)

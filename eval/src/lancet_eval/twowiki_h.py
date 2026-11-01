@@ -13,6 +13,9 @@ The grid drives and replays the 900 held-out questions of the D-243 split
   adapter's MultiHop-RAG shape (``twowiki_b.question_row``). Wikipedia text, so never
   committed (ATTRIBUTION.md). It holds the gold answers the drive journals and a later
   scoring reads; nothing in this lane prints or reads them (D-291).
+- ``twowiki/.cache/question_types.heldout.json``: ``{question ID: 2Wiki type}`` for the
+  900, with no answer or evidence. Each run directory of the grid keeps a copy, so the
+  analysis can split by question type (#167) from the run directories alone.
 
 `python -m lancet_eval.twowiki_h` rewrites both and prints the split's digest and the
 questions file's sha256; `python -m lancet_eval.twowiki_h split` rewrites the split
@@ -33,6 +36,7 @@ from lancet_eval.split import HeldOutSplit, lf_sha256, split_sha256
 CORPORA = twowiki_b.CORPORA
 HELDOUT_SPLIT_REL = "twowiki/s3h_split.json"
 HELDOUT_QUESTIONS_REL = "twowiki/.cache/questions.heldout.jsonl"
+QUESTION_TYPES_REL = "twowiki/.cache/question_types.heldout.json"
 
 DERIVATION_RULE = (
     "#163 (D-291): the D-243 split (eval/corpora/twowiki/split.json) as written, dev "
@@ -70,6 +74,14 @@ def heldout_question_rows(
     return sorted(rows, key=lambda r: r["question_id"])
 
 
+def question_types(rows: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    """``{question ID: question type}`` of question rows, sorted by ID; nothing else."""
+    return {
+        str(r["question_id"]): str(r["question_type"])
+        for r in sorted(rows, key=lambda r: str(r["question_id"]))
+    }
+
+
 def write_split(corpora: Path = CORPORA) -> str:
     """Rewrites the held-out drive split; returns its digest (``split_sha256``)."""
     d243_path = corpora / twowiki.SPLIT_REL
@@ -86,18 +98,29 @@ def write_split(corpora: Path = CORPORA) -> str:
 def write(
     corpora: Path = CORPORA, cache_dir: Path = twowiki.CACHE_DIR
 ) -> dict[str, str]:
-    """Rewrites both files; returns the split's digest and the questions' sha256."""
+    """Rewrites the three files; returns the split's digest and each file's sha256."""
     digest = write_split(corpora)
     d243 = twowiki.load_split(corpora / twowiki.SPLIT_REL)
     questions_path = cache_dir / twowiki.QUESTIONS_FILE
     twowiki.check_source(questions_path)
     questions = json.loads(questions_path.read_text(encoding="utf-8"))
+    rows = heldout_question_rows(questions, d243.heldout_ids)
     out = corpora / HELDOUT_QUESTIONS_REL
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as f:
-        for row in heldout_question_rows(questions, d243.heldout_ids):
+        for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return {"split_sha256": digest, HELDOUT_QUESTIONS_REL: lf_sha256(out)}
+    types = corpora / QUESTION_TYPES_REL
+    types.write_text(
+        json.dumps(question_types(rows), indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    return {
+        "split_sha256": digest,
+        HELDOUT_QUESTIONS_REL: lf_sha256(out),
+        QUESTION_TYPES_REL: lf_sha256(types),
+    }
 
 
 if __name__ == "__main__":

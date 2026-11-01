@@ -402,10 +402,17 @@ def _base_records(run: _Run, base_arm: str) -> dict[str, RunRecord]:
     The closed-book arm (D-291) has no drive and so no carried record. Each of its
     export rows (``closed_book.closed_book_init``) stands in as a success with the
     row's correlation ID, never journalled: every question is replayed, and deepseek's
-    replicates 1 to K are sent like a reader's.
+    replicates 1 to K are sent like a reader's. A stand-in carries the token usage of
+    deepseek's latest answer to that question, once there is one, for the cost
+    estimate.
     """
     if not is_closed_book_arm(base_arm):
         return _latest(run.records, base_arm)
+    usage = {
+        rec.question_id: rec.workflow_meta
+        for rec in run.records
+        if rec.graph_arm == base_arm and rec.workflow_meta is not None
+    }
     return {
         qid: RunRecord(
             corpus=run.corpus,
@@ -413,6 +420,7 @@ def _base_records(run: _Run, base_arm: str) -> dict[str, RunRecord]:
             graph_arm=base_arm,
             outcome="success",
             correlation_id=row.correlation_id,
+            workflow_meta=usage.get(qid),
         )
         for (qid, arm), row in _export_rows(run.journal.parent).items()
         if arm == base_arm
@@ -768,17 +776,18 @@ def cost_estimate(
 
     Each request is priced at the reader's sync list price times `rate`
     (`price_factor`), with the deepseek record's token counts as the expected usage
-    and the body's `max_completion_tokens` as the output bound.
+    and the body's `max_completion_tokens` as the output bound. A closed-book question
+    with no deepseek answer yet (D-291) is expected at about 4 characters a prompt
+    token and at its output bound.
     """
     price = declaration.price
     expected = bound = 0.0
     for item in packed:
         meta = base[item.qid].workflow_meta
-        # A closed-book stand-in (D-291) has no usage: about 4 characters a token.
-        prompt = meta.prompt_tokens if meta else len(item.request.body_json) // 4
-        completion = meta.completion_tokens if meta else 0
         body = item.request.body
         max_out = int(body.get("max_completion_tokens", body.get("max_tokens", 0)))
+        prompt = meta.prompt_tokens if meta else len(item.request.body_json) // 4
+        completion = meta.completion_tokens if meta else max_out
         expected += prompt * price.input_per_mtok + completion * price.output_per_mtok
         bound += prompt * price.input_per_mtok + max_out * price.output_per_mtok
     factor = rate / 1_000_000.0

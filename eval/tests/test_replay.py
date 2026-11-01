@@ -875,3 +875,29 @@ def test_a_run_plan_replays_only_a_source_run_of_its_own_corpus(
     with pytest.raises(ReplayError, match="D-291"):
         _init(other, tmp_path / "s2")
     assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_a_heldout_pilot_needs_a_column_that_resolves_to_a_run_plan(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _ = _grid(tmp_path, monkeypatch)
+    # The same corpus and column, under a constant that is not a run plan.
+    monkeypatch.setattr(thresholds, fx.TOKEN, rf.s2_prereg(), raising=False)
+    with pytest.raises(ReplayError, match="D-237"):
+        _init(s1, tmp_path / "s2", pilot=True)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()
+
+
+def test_a_run_plan_source_run_is_carried_only_into_its_own_corpus(
+    tmp_path, monkeypatch
+) -> None:
+    s1, _ = _grid(tmp_path, monkeypatch)
+    # S1_CORPUS is a dev corpus; the source run was driven on the grid corpus.
+    s1_toml = tmp_path / "repo" / "eval" / "corpora" / f"{rf.S1_CORPUS}.toml"
+    s1_toml.write_text(
+        s1_toml.read_text(encoding="utf-8").replace('role = "heldout"', 'role = "dev"'),
+        encoding="utf-8",
+    )
+    with pytest.raises(ReplayError, match="D-291"):
+        _init(s1, tmp_path / "s2", corpus=rf.S1_CORPUS, arms=(rf.BASE,), pilot=True)
+    assert not (tmp_path / "s2" / "journal.jsonl").exists()

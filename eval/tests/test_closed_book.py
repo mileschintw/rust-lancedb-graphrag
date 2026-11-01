@@ -229,3 +229,41 @@ def test_no_run_of_a_run_plan_is_scored_or_read_out(
     for module in (explore_readout, evidence_split):
         with pytest.raises(SystemExit, match="D-291"):
             module.main(["--run", str(run), "--corpus", fx.CORPUS])
+
+
+def test_no_judge_or_gate_reads_a_run_of_a_run_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lancet_eval import judge_stage, unpark_gates
+    from lancet_eval.answer_judge import AnswerJudgeError, judge_answers
+
+    run, _, _, _ = _setup(tmp_path, monkeypatch)
+    closed_book_init(run=run, corpus=fx.CORPUS)
+    batch.submit(run=run, arm=CB, echo=lambda _: None)
+    with pytest.raises(AnswerJudgeError, match="D-291"):
+        judge_answers(run, estimate_only=True, echo=lambda _: None)
+    with pytest.raises(judge_stage.JudgeStageError, match="D-291"):
+        judge_stage.load_inputs(run)
+    with pytest.raises(SystemExit):
+        unpark_gates.main([
+            "--stage",
+            unpark_gates.HELDOUT_STAGE,
+            "--run",
+            str(run),
+            "--out",
+            str(tmp_path / "gates.json"),
+        ])
+    assert not (tmp_path / "gates.json").exists()
+
+
+def test_the_estimate_counts_output_before_deepseek_has_answered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, _, _, _ = _setup(tmp_path, monkeypatch)
+    closed_book_init(run=run, corpus=fx.CORPUS)
+    lines: list[str] = []
+    batch.submit(run=run, arm=CB_READER, echo=lines.append)
+    [estimate] = [line for line in lines if line.startswith("Cost estimate")]
+    expected = float(estimate.split("about $")[1].split(" ")[0])
+    bound = float(estimate.split("at most $")[1].split(" ")[0])
+    assert expected > 0 and expected == bound

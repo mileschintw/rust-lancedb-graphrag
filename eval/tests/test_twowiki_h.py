@@ -65,3 +65,9 @@ def test_heldout_rows_are_the_heldout_ids_only_sorted() -> None:
 def test_a_heldout_id_without_a_question_is_refused() -> None:
     with pytest.raises(ValueError, match="1 held-out ID"):
         twowiki_h.heldout_question_rows([_raw("a")], ["a", "b"])
+
+
+def test_the_type_map_holds_the_question_type_and_nothing_else() -> None:
+    rows = twowiki_h.heldout_question_rows([_raw("c"), _raw("a")], ["a", "c"])
+    rows[0]["question_type"] = "comparison"
+    assert twowiki_h.question_types(rows) == {"a": "comparison", "c": "compositional"}

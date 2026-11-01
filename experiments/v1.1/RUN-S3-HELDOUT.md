@@ -6,9 +6,9 @@ Sonnet 5.5, Opus 5.5) and six context columns (closed-book, hybrid, and graph wi
 over 2Wiki's 900 D-243 held-out questions.
 
 **Blinding (D-291).** No run of this grid is scored or read for its answers until the analysis constant is frozen in
-its own commit. Never run `score`, `compare-levers`, `explore_readout` or `evidence_split` on these runs (the harness
-refuses them on these corpora), and never open a journal, export or questions file to read an answer or a gold answer.
-The counts below read outcomes only. Record run directories, counts, error lines, batch IDs and spend.
+its own commit. Never run `score`, `compare-levers`, `explore_readout`, `evidence_split`, `judge`, `judge-answers`
+or the unpark gates on these runs (the harness refuses each on these corpora), and never open a journal, export or
+questions file to read an answer or a gold answer. The counts below read outcomes only. Record run directories, counts, error lines, batch IDs and spend.
 
 ## Rules for the whole run
 
@@ -120,7 +120,8 @@ total passes a ceiling.
 
    `twowiki_b` must print `twowiki/.cache/documents.jsonl: 57d038e26b2b…`. `twowiki_h` must print split
    `7590e2b3281d…` and writes `twowiki/.cache/questions.heldout.jsonl`, whose sha256 goes into the report. It holds the
-   held-out gold answers: never open it.
+   held-out gold answers: never open it. It also writes `twowiki/.cache/question_types.heldout.json`, each question's
+   2Wiki type and nothing else (#167); its sha256 goes into the report too.
 4. Check each column's gates: D-73, the split's inputs and the 900 held-out IDs. Each prints `900`:
 
    ```bash
@@ -135,8 +136,16 @@ Write the rows (free; one model-only row per question, packed by the bin):
 PYTHONUTF8=1 uv run --project eval lancet-eval closed-book-init --run <CB_RUN> --corpus twowiki_s3h_closed_book
 ```
 
-It must print 900 rows. Submit the three Claude batches one after the other without waiting, then deepseek's 1,800
-sync answers (run it with `run_in_background`):
+It must print 900 rows. Send deepseek's 1,800 sync answers first, with `run_in_background` (about $0.10):
+
+```bash
+PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <CB_RUN> --arm twowiki/closed-book
+```
+
+A closed-book question has no drive record, so each Claude submit estimates from deepseek's answer to that question.
+Where deepseek has none yet, it assumes the request's full output limit, so the estimate is a high bound. With
+deepseek's answers in (or, if the deadline presses, on that bound), submit the three Claude batches one after the
+other without waiting:
 
 ```bash
 PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <CB_RUN> --arm twowiki/closed-book@opus-5.5
@@ -148,10 +157,6 @@ PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <CB_RUN> --arm
 
 ```bash
 PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <CB_RUN> --arm twowiki/closed-book@haiku-5.5
-```
-
-```bash
-PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run <CB_RUN> --arm twowiki/closed-book
 ```
 
 Go on to step 2 while these run. Fetch about every 10 minutes until it reports `0 batch(es) still pending`; each
@@ -253,6 +258,8 @@ below; push it and leave the main checkout on `main`, clean:
   each directory that holds a `.gz`, saying how to unpack it: `find <dir> -name '*.gz' -exec gunzip -k {} \;`.
 - Give each directory a `.gitattributes` of `* -text`: the runs write some files with CRLF, and `core.autocrlf` would
   change their bytes.
+- Copy `eval/corpora/twowiki/.cache/question_types.heldout.json` into each run directory as `question_types.json`
+  (#167), so the analysis can split by 2Wiki question type from the run directories alone. It holds no answer.
 - The run files hold Wikipedia passage text; the owner chose to commit run directories in full ("全都公開repo備份全文").
 
 ## Result

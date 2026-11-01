@@ -36,9 +36,9 @@ from lancet_eval.replay import (
     ReplayError,
     ReplayInitResult,
     _declared_source_arm,
-    _dev_corpus,
     _listed,
     _refuse_populated,
+    _replayable_corpus,
     export_row_sha256,
     require_d73,
 )
@@ -67,7 +67,7 @@ def closed_book_init(*, run: Path | str, corpus: str) -> ReplayInitResult:
     export_path = target / CONTEXT_EXPORT_FILE
     _refuse_populated(journal_path)
     _refuse_populated(export_path)
-    config = _dev_corpus(corpus, "corpus")
+    config = _replayable_corpus(corpus, "corpus")
     if config.preregistration_column is None:
         raise ReplayError(
             f"D-291: the corpus {corpus!r} names no run-plan column; a closed-book run "

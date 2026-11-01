@@ -806,6 +806,14 @@ class ColumnRunPlan:
         plan: The name of the frozen run-plan constant.
         column: The column's name in it.
         graph_writer: The column's graph writer, or None.
+        reference_arm, replay_source_arm: The column's source arm.
+        descriptive_arms: The column's reader arms, one per Claude-reader cell.
+        readers, replicates, reader_replicates, reference_price: The plan's, for
+            those readers.
+        rerank_degrade_tripwire_rate, rerank_degrade_tripwire_min_calls,
+        rerank_consecutive_degrade_halt: The plan's drive guards; None for a column
+            with no drive (closed-book).
+        families: Always empty: a run plan names no Holm family.
     """
 
     plan: str
