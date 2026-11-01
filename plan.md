@@ -150,6 +150,19 @@ The S2 grill reminder was given 2026-10-30 14:42 -0700. The round ran in decisio
   3. An issue and a lane: pin `{order: ["wafer/us"], allow_fallbacks: false}` plus `max_price` (about in 0.07 / out 0.45 $/M) for both generation and extraction; extraction applies `generation_provider_order`; a new D-ID amends D-191 and notes that S0 used sail-research. It merges before S1 step 4.2.
 - **Delete D:/s0-run-backup/ by hand** (user: "直接合併 (Recommended)", which included deleting it). The coordinator's `Remove-Item` was blocked as a protected path. Its 33 files match the run dir committed by PR #89 (merged 2026-10-31 as b3fba1c5). The worktree D:/Repos/lancet-run-s01 was removed.
 
+- **Paper direction (idea only; revisit after v1.1).** Relayed 2026-10-31 from the user's fork session local_61630ec3-101b-4299-adac-414c68995054, with the user's words: "先記成issue或plan中嗎？等v1.1做完再來考慮要不要真的往論文方向走". This is a plan note, not an issue, and not a decision.
+  - Framing: an empirical/methodology paper, not a new method. Targets: arXiv, then a workshop or ACL/EMNLP Findings.
+  - Candidate contributions:
+    1. The graph-harm mechanism: S1's -8.9 pt, with junk month and publisher entities (#126).
+    2. The graph-gain × reader-strength interaction: the S3 writer × reader grid, pre-registered as the main hypothesis.
+    3. Evaluation methodology:
+       - about 4% temperature-0 binary flips, handled by K=5 resampling (D-274);
+       - lexical scoring bias across readers, with the dual judge measuring self-preference (D-276);
+       - pre-registration and the held-out read budget.
+  - Weaknesses: n=90 dev, one dataset, one system.
+  - Needs: a second dataset (2Wiki in S3), a second graph method (LightRAG or HippoRAG), and first of all a literature review, to check novelty against the 2025 systematic RAG-vs-GraphRAG evaluations and benchmarks.
+  - First step when revisited: the literature review, about half a day.
+
 S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; user's words: "已經merge了")
 - **S3 grill input (not yet a decision; for the S3 grill → spec → tickets session to read).** Relayed 2026-10-31 from the user's side session local_97b7d7f4-6748-4ee2-a8b6-9343471d99e4, with the user's words: "可以，把這點補進去到時候可以參考到的地方，並且我甚至覺得我們用的deepseek模型都太強，可能可以再多找一個更便宜的模型來測".
   - **Ceiling risk:** a strong fixed reader (S2's winner) may compress the graph-vs-hybrid and writer-vs-writer gaps. Add weaker-model arms whose test content is identical to the other arms.
