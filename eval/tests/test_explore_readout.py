@@ -88,3 +88,17 @@ def test_the_markdown_has_a_row_per_reader_and_a_column_per_type() -> None:
     text = explore_readout.render_markdown(rows)
     assert "| deepseek | 1 | 1 | 1.000 |" in text
     assert "| reader | comparison | compositional |" in text
+    assert "| deepseek | – | 1.000 (n=1) | – | – |" in text
+
+
+def test_yes_no_answers_get_the_balanced_accuracy() -> None:
+    questions = {
+        "y": _question("y", "Yes", "comparison_query"),
+        "n": _question("n", "No", "comparison_query"),
+    }
+    rows = explore_readout.readout(
+        [_record("y", BASE, "Answer: Yes"), _record("n", BASE, "Answer: Yes")],
+        questions,
+    )
+    kinds = rows[0].kinds
+    assert (kinds.yes_no.mean, kinds.balanced_accuracy) == (0.5, 0.5)

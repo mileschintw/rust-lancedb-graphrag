@@ -7,7 +7,9 @@ and its reader arms (error records left out, as in ``evidence_split``):
 
 - ``answer_usable`` and the abstention rate (``metrics.is_abstention``) on the G
   questions, and the abstention rate on the null questions;
-- ``answer_usable`` per question type;
+- ``answer_usable`` per question type, and #147's yes/no figures
+  (``answer_kinds.kind_split`` over every answer): yes/no and open ``answer_usable``,
+  and the yes/no balanced accuracy beside the better constant's share;
 - the paired difference against deepseek: the mean over the G questions both answered
   of (the reader's per-question mean minus deepseek's), with a bootstrap 95% interval
   (``stats.bootstrap_mean_ci``, seed 42, 10,000 resamples);
@@ -25,6 +27,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from lancet_eval.answer_kinds import KindSplit, kind_split
 from lancet_eval.corpus import GoldQuestion, load_corpus
 from lancet_eval.evidence_split import BASE_READER, reader_of
 from lancet_eval.journal import RunRecord, load_records
@@ -50,6 +53,7 @@ class ReaderReadout:
     paired_ci: tuple[float, float] | None
     reasoning_tokens: int
     answers: int
+    kinds: KindSplit
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -70,6 +74,7 @@ def readout(
     by_type: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     reasoning: dict[str, int] = defaultdict(int)
     answered: dict[str, int] = defaultdict(int)
+    kind_answers: dict[str, list[tuple[GoldQuestion, float]]] = defaultdict(list)
     for record in records:
         if record.outcome != "success":
             continue
@@ -85,6 +90,7 @@ def readout(
         usable[reader][record.question_id].append(ok)
         abstain[reader].append(float(is_abstention(record)))
         by_type[reader][question.question_type].append(ok)
+        kind_answers[reader].append((question, ok))
     base = {qid: _mean(v) for qid, v in usable.get(BASE_READER, {}).items()}
     out: list[ReaderReadout] = []
     for reader, per_question in usable.items():
@@ -114,6 +120,7 @@ def readout(
                 paired_ci=ci,
                 reasoning_tokens=reasoning[reader],
                 answers=answered[reader],
+                kinds=kind_split(kind_answers[reader]),
             )
         )
     return out
@@ -150,7 +157,28 @@ def render_markdown(rows: Sequence[ReaderReadout]) -> str:
             for t in types
         ]
         lines.append(f"| {r.reader} | " + " | ".join(cells) + " |")
+    lines += [
+        "",
+        "| reader | yes/no usable | open usable | yes/no balanced accuracy "
+        "| better constant |",
+        "|---|---|---|---|---|",
+    ]
+    for r in rows:
+        k = r.kinds
+        lines.append(
+            f"| {r.reader} | {_share(k.yes_no.n, k.yes_no.mean)} "
+            f"| {_share(k.open.n, k.open.mean)} | {_figure(k.balanced_accuracy)} "
+            f"| {_figure(k.better_constant)} |"
+        )
     return "\n".join(lines)
+
+
+def _figure(value: float | None) -> str:
+    return "–" if value is None else f"{value:.3f}"
+
+
+def _share(n: int, mean: float | None) -> str:
+    return "–" if mean is None else f"{mean:.3f} (n={n})"
 
 
 def main(argv: Sequence[str] | None = None) -> None:
