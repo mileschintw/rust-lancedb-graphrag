@@ -1337,10 +1337,11 @@ PREREGISTRATION_06_3_6 = LeverPreRegistration(
     ),
 )
 
-# #149 item C, exploratory (experiments/v1.1/EXPLORE-C-MHR-FULL.md): PREREGISTRATION_S2X's
-# readers on the full 609-document small store (`full/`, no graph), over 1,000 fresh dev
-# questions no earlier run read (fresh_split.json). Sonnet and Opus answer once, deepseek
-# and Haiku twice. It decides nothing. Added in one commit before the run's drive (D-73).
+# #149 item C, exploratory (experiments/v1.1/EXPLORE-C-MHR-FULL.md):
+# PREREGISTRATION_S2X's readers on the full 609-document small store (`full/`, no
+# graph), over 1,000 fresh dev questions no earlier run read (fresh_split.json). Sonnet
+# and Opus answer once, deepseek and Haiku twice. It decides nothing. Added in one
+# commit before the run's drive (D-73).
 PREREGISTRATION_EXPLORE_C = ReplayStagePreRegistration(
     replay_source_arm="full/hybrid+rerank+metadata",
     reference_arm="full/hybrid+rerank+metadata",
@@ -1435,10 +1436,10 @@ PREREGISTRATION_EXPLORE_C = ReplayStagePreRegistration(
 )
 
 
-# #149 item B, exploratory (experiments/v1.1/EXPLORE-B-2WIKI-READERS.md): the same readers
-# and K as PREREGISTRATION_EXPLORE_C on a hybrid 2Wiki store (`twowiki/`, no graph), over
-# the 100 D-243 dev questions. It decides nothing. Added in one commit before the run's
-# drive (D-73).
+# #149 item B, exploratory (experiments/v1.1/EXPLORE-B-2WIKI-READERS.md): the same
+# readers and K as PREREGISTRATION_EXPLORE_C on a hybrid 2Wiki store (`twowiki/`, no
+# graph), over the 100 D-243 dev questions. It decides nothing. Added in one commit
+# before the run's drive (D-73).
 PREREGISTRATION_EXPLORE_B = ReplayStagePreRegistration(
     replay_source_arm="twowiki/hybrid+rerank+metadata",
     reference_arm="twowiki/hybrid+rerank+metadata",
