@@ -172,6 +172,27 @@ impl DatabaseManager {
         Ok(())
     }
 
+    /// Drops a graph table set's two tables where they exist (a failed import's partial set).
+    /// Only `entities__<set>` and `entity_edges__<set>` can be named, so the store's own tables
+    /// are never dropped.
+    pub async fn drop_graph_table_set(&self, set: &GraphTableSet) -> Result<(), String> {
+        let existing = self
+            .connection
+            .table_names()
+            .execute()
+            .await
+            .map_err(|error| format!("failed to list LanceDB tables: {error}"))?;
+        for name in [set.entities(), set.entity_edges()] {
+            if existing.contains(&name) {
+                self.connection
+                    .drop_table(&name, &[])
+                    .await
+                    .map_err(|error| format!("failed to drop LanceDB table {name}: {error}"))?;
+            }
+        }
+        Ok(())
+    }
+
     /// The graph table set this manager reads and writes; `None` for the store's own tables.
     pub fn graph_table_set(&self) -> Option<&GraphTableSet> {
         self.graph_tables.as_ref()

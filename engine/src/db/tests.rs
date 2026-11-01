@@ -434,4 +434,11 @@ async fn a_graph_table_set_is_created_empty_and_used_without_touching_base_table
     assert_eq!(base.graph_table_set(), None);
     // A store with a set still opens and validates as before.
     DatabaseManager::open_and_validate(&path).await.unwrap();
+
+    // Dropping the set removes its two tables only; it can then be created again.
+    base.drop_graph_table_set(&set).await.unwrap();
+    assert!(base.clone().with_graph_table_set(set.clone()).await.is_err());
+    assert_eq!(base.entities_table().await.unwrap().name(), "entities");
+    base.drop_graph_table_set(&set).await.unwrap();
+    base.create_graph_table_set(&set).await.unwrap();
 }

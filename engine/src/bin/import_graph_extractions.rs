@@ -17,7 +17,8 @@
 //! ```
 //!
 //! `--check` stops after the counts line (documents, extractable chunks, chunks with a recorded
-//! answer) and writes nothing.
+//! answer) and writes nothing. `--replace` first drops the set's two tables where they exist
+//! (a failed import's partial set); without it an existing set is refused.
 //!
 //! `answers.jsonl` holds one `{"text": <chunk text>, "content": <answer>}` object a line.
 //! Needs `OPENROUTER_API_KEY` for the embeddings.
@@ -43,16 +44,22 @@ struct Args {
     extractions: String,
     chunk_settings: ChunkSettings,
     check: bool,
+    replace: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
     let mut values: HashMap<String, String> = HashMap::new();
     let mut check = false;
+    let mut replace = false;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let key = match flag.as_str() {
             "--check" => {
                 check = true;
+                continue;
+            }
+            "--replace" => {
+                replace = true;
                 continue;
             }
             "--extractions" | "--chunk-strategy" | "--chunk-size" | "--chunk-overlap" => flag,
@@ -80,6 +87,7 @@ fn parse_args() -> Result<Args, String> {
             overlap: number("--chunk-overlap")?,
         },
         check,
+        replace,
     })
 }
 
@@ -244,6 +252,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    if args.replace {
+        database.drop_graph_table_set(&set).await?;
+    }
     database.create_graph_table_set(&set).await?;
     let database = database.with_graph_table_set(set.clone()).await?;
     let mut written_edges = 0usize;
