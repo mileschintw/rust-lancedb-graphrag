@@ -66,6 +66,7 @@ from lancet_eval.dimensions import (
     make_wire_contract_conformance,
 )
 from lancet_eval.gate import AGREEMENT_TARGET, derive_judged_slice_size
+from lancet_eval.evidence_split import evidence_complete, is_yes_no
 from lancet_eval.journal import RunRecord, completeness_comparison
 from lancet_eval.judge import (
     JudgeCache,
@@ -91,6 +92,7 @@ from lancet_eval.arms import (
     is_external_arm,
     is_reader_arm,
     judged_arms,
+    reader_base_arm,
     resolve_arm,
 )
 from lancet_eval.metrics import (
@@ -114,7 +116,7 @@ from lancet_eval.metrics import (
     squad_f1,
 )
 from lancet_eval.metrics import answer_usable as compute_answer_usable
-from lancet_eval import gitcheck, preregistration, provenance
+from lancet_eval import answer_kinds, gitcheck, preregistration, provenance
 from lancet_eval.reader_request import ReaderDeclaration
 from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval import p4 as p4_mod
@@ -911,6 +913,97 @@ def _evidence_metrics(
     ]
 
 
+def _answer_kind_dimensions(
+    usable_by_arm: Mapping[str, Mapping[str, float]],
+    *,
+    gold_map: Mapping[str, Any],
+    qtype_of: Mapping[str, str],
+    index: Mapping[tuple[str, str], RunRecord],
+    export_rows: Mapping[tuple[str, str], ContextExportRow] | None,
+    detail: Mapping[str, float],
+    empty_reason: str,
+) -> list[DimensionResult]:
+    """#147, D-286: `answer_usable_p4` read apart, per arm; reported, never decisional.
+
+    By kind (yes/no and open), the guessing-adjusted yes/no figure (balanced accuracy,
+    `answer_kinds`), and, with a context export, by evidence: complete when every gold
+    fact is in the evidence the arm's reader saw (a reader arm's is its base arm's row).
+    A question with no export row is left out of the evidence split and counted.
+    """
+    dims: list[DimensionResult] = []
+    for arm, values in usable_by_arm.items():
+        slug = arm_slug(arm)
+        yes_no = {q: v for q, v in values.items() if is_yes_no(gold_map[q])}
+        open_ = {q: v for q, v in values.items() if q not in yes_no}
+        for name, subset in (("yes_no", yes_no), ("open", open_)):
+            dims.append(
+                _per_arm_dimension(
+                    f"answer_usable_{name}__{slug}",
+                    subset,
+                    kind="wilson",
+                    qtype_of=qtype_of,
+                    detail=detail,
+                    empty_reason=f"no {name} question in P4",
+                )
+            )
+        split = answer_kinds.kind_split((gold_map[q], v) for q, v in yes_no.items())
+        balanced_detail = {
+            **detail,
+            "n_gold_yes": float(split.gold_yes.n),
+            "n_gold_no": float(split.gold_no.n),
+        }
+        for key, value in (
+            ("usable_gold_yes", split.gold_yes.mean),
+            ("usable_gold_no", split.gold_no.mean),
+            ("better_constant", split.better_constant),
+        ):
+            if value is not None:
+                balanced_detail[key] = float(value)
+        dims.append(
+            DimensionResult(
+                name=f"answer_usable_yes_no_balanced__{slug}",
+                status="ok",
+                score=split.balanced_accuracy,
+                detail=balanced_detail,
+                n=split.yes_no.n,
+            )
+            if split.balanced_accuracy is not None
+            else DimensionResult(
+                name=f"answer_usable_yes_no_balanced__{slug}",
+                status="skipped",
+                reason="P4 lacks a gold-Yes or a gold-No question",
+                detail=balanced_detail,
+                n=0,
+            )
+        )
+        if export_rows is None:
+            continue
+        complete: dict[str, float] = {}
+        partial: dict[str, float] = {}
+        no_row = 0
+        for q, v in values.items():
+            base = reader_base_arm(index[(q, arm)].graph_arm)
+            row = export_rows.get((q, base))
+            if row is None:
+                no_row += 1
+            elif evidence_complete(gold_map[q], row):
+                complete[q] = v
+            else:
+                partial[q] = v
+        for name, subset in (("complete", complete), ("partial", partial)):
+            dims.append(
+                _per_arm_dimension(
+                    f"answer_usable_evidence_{name}__{slug}",
+                    subset,
+                    kind="wilson",
+                    qtype_of=qtype_of,
+                    detail={**detail, "n_no_export_row": float(no_row)},
+                    empty_reason=f"no P4 question has {name} evidence",
+                )
+            )
+    return dims
+
+
 def _four_arm_dimensions(
     *,
     records: Sequence[RunRecord],
@@ -1176,6 +1269,16 @@ def _four_arm_dimensions(
             a for a in arms if not (metric.own_ranking and is_reader_arm(a))
         ]
         by_arm, n_unscorable = p4_values(metric.value, metric_arms)
+        if metric.name == "answer_usable_p4":
+            dims += _answer_kind_dimensions(
+                by_arm,
+                gold_map=gold_map,
+                qtype_of=qtype_of,
+                index=index,
+                export_rows=export_rows,
+                detail={"n_excluded": n_excluded, "n_unscorable": float(n_unscorable)},
+                empty_reason=empty,
+            )
         for arm in metric_arms:
             values = by_arm[arm]
             detail = {
