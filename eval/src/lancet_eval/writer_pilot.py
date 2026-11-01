@@ -12,8 +12,11 @@ writer-vs-writer question (``experiments/v1.1/PLAN.md``).
   ``split_window``). The port covers text without markdown headings only, and refuses
   a document with a heading-like line; no MultiHop-RAG document has one. Chunks the
   engine would not extract (``MIN_CHUNK_CONTENT_LENGTH``) are dropped.
-- **Request.** deepseek gets the engine's own extraction body
-  (``OpenRouterExtractionGenerator::build_request_payload``): its system and user
+- **Request.** deepseek gets the engine's extraction body
+  (``OpenRouterExtractionGenerator::build_request_payload``), with the same fields and
+  values; only the key order differs, since the engine's ``serde_json`` (no
+  ``preserve_order``) sorts a ``json!`` object's keys and this body keeps the Rust
+  source's order. The body carries its system and user
   messages, strict ``json_schema``, ``max_completion_tokens`` 16,384 (D-272) and
   ``reasoning: {effort: none}``, pinned to ``config.toml``'s D-271 provider pin, posted
   alone to the sync API (D-278). Each Claude writer gets that body rewritten as S2's
@@ -282,7 +285,7 @@ def pilot_chunks(
 
 
 def _dumps(value: Any) -> str:
-    # serde_json's compact form, the bytes the engine posts.
+    # serde_json's compact form; the engine's keys are sorted, these keep source order.
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -688,6 +691,7 @@ def summarise(
     junk_names: dict[str, int] = {}
     byok: set[Any] = set()
     overlaps: list[float] = []
+    relation_overlaps: list[float] = []
     for c in chunks:
         r = results.get(c.custom_id)
         if r is None or r["status"] != "succeeded":
@@ -722,13 +726,24 @@ def summarise(
             ref_data, _ = parse_extraction(ref["content"])
             if ref_data is not None:
                 ref_names = {_norm(e["name"]) for e in ref_data["entities"]}
-                union = names | ref_names
-                overlaps.append(len(names & ref_names) / len(union) if union else 1.0)
+                overlaps.append(_jaccard(names, ref_names))
+                relation_overlaps.append(
+                    _jaccard(_relation_pairs(data), _relation_pairs(ref_data))
+                )
     answered = len(chunks) - missing
     docs = len({c.doc_index for c in chunks})
     cost = usd(writer, prompt, completion)
+    declaration = writer.declaration
     return {
         "writer": writer.name,
+        "model": declaration.slug if declaration else _engine_settings()[0],
+        "thinking": (
+            f"{declaration.thinking}"
+            + (f" (effort {declaration.effort})" if declaration.effort else "")
+            if declaration
+            else "reasoning effort none (engine body)"
+        ),
+        "price_factor": writer.price_factor,
         "chunks": len(chunks),
         "documents": docs,
         "answered": answered,
@@ -755,6 +770,24 @@ def summarise(
         "entity_jaccard_vs_deepseek": (
             sum(overlaps) / len(overlaps) if overlaps else None
         ),
+        "relation_pair_jaccard_vs_deepseek": (
+            sum(relation_overlaps) / len(relation_overlaps)
+            if relation_overlaps
+            else None
+        ),
+    }
+
+
+def _jaccard(a: set[Any], b: set[Any]) -> float:
+    union = a | b
+    return len(a & b) / len(union) if union else 1.0
+
+
+def _relation_pairs(data: Mapping[str, Any]) -> set[tuple[str, str]]:
+    # A relation as its unordered pair of normalised ends; the type's wording varies.
+    return {
+        tuple(sorted((_norm(r["source"]), _norm(r["target"]))))
+        for r in data["relations"]
     }
 
 
@@ -822,7 +855,9 @@ def canary(writer: str, out: Path = DEFAULT_OUT) -> None:
     chunk = read_chunks(out)[:1]
     canary_writer = Writer(f"{w.name}.canary", w.price, 1.0, w.declaration)
     typer.echo(estimate(canary_writer, chunk, _output_tokens(out)))
-    for r in run_sync(canary_writer, chunk, batch_client.chat_client(), out):
+    run_sync(canary_writer, chunk, batch_client.chat_client(), out, echo=typer.echo)
+    # A rerun sends nothing once the chunk is answered; show the recorded answer.
+    for r in read_results(out / f"{canary_writer.name}.results.jsonl").values():
         data, why = parse_extraction(r.get("content") or "")
         typer.echo(
             f"{r['custom_id']}: {r['status']} is_byok={r.get('is_byok')} "

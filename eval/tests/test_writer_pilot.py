@@ -374,4 +374,15 @@ def test_summary_counts_tokens_cost_junk_and_overlap() -> None:
     assert s["junk"] == {"date": 1, "publisher": 1}
     assert s["cost_usd"] == pytest.approx((300 * 2.0 + 120 * 10.0) * 0.5 / 1e6)
     assert s["entity_jaccard_vs_deepseek"] == pytest.approx(1.0)
+    assert s["relation_pair_jaccard_vs_deepseek"] == pytest.approx(1.0)
+    assert (s["model"], s["thinking"]) == (
+        "anthropic/claude-sonnet-5.5",
+        "on (effort low)",
+    )
     assert s["is_byok"] == ["True"]
+
+
+def test_relation_pairs_ignore_direction_and_type() -> None:
+    a = {"relations": [{"source": "A", "target": "B", "relation_type": "x"}]}
+    b = {"relations": [{"source": "b", "target": "a", "relation_type": "y"}]}
+    assert wp._relation_pairs(a) == wp._relation_pairs(b)
