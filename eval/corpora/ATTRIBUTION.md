@@ -31,3 +31,15 @@ Because the GraphRAG-Bench dataset card does not specify an explicit dataset lic
 
 ### Provenance
 The quickstart sample is project-authored fiction (06.4 D-221). Every person, company, place and event in it is invented, and it contains no third-party text, no MultiHop-RAG article text and no text from any other dataset. It is bundled so that a reader can ingest a small, licence-clean corpus with document metadata and ask a question that needs three of the five documents. The MultiHop-RAG article texts are not used here because their redistribution terms are unclear.
+
+---
+
+## 2WikiMultiHopQA (HippoRAG 2 subset)
+
+- **Authors:** Xanh Ho, Anh-Khoa Duong Nguyen, Saku Sugawara and Akiko Aizawa (2020)
+- **Dataset:** *Constructing A Multi-hop QA Dataset for Comprehensive Evaluation of Reasoning Steps* (COLING 2020)
+- **Original source:** [https://github.com/Alab-NII/2wikimultihop](https://github.com/Alab-NII/2wikimultihop), licensed under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (the repository's `LICENSE` file, read 2026-11-01)
+- **Packaging used:** [https://huggingface.co/datasets/osunlp/HippoRAG_2](https://huggingface.co/datasets/osunlp/HippoRAG_2) at revision `5ec05b38deecc3318bb432c69865959c56058990` (`2wikimultihopqa.json`, 1,000 questions; `2wikimultihopqa_corpus.json`, 6,119 passages), from the HippoRAG 2 authors (Bernal Jiménez Gutiérrez et al., 2025). The dataset card states no licence of its own; the HippoRAG code repository is MIT.
+
+### Licensing & Fixture Rationale
+The passages are paragraphs of English Wikipedia, whose text is licensed CC BY-SA. No question or passage text is committed: `python -m lancet_eval.twowiki fetch` downloads both files into the gitignored `eval/corpora/twowiki/.cache/` and refuses any file whose sha256 differs from the pinned bytes. The repository commits only `eval/corpora/twowiki/split.json`, the D-243 dev / held-out split, which holds question IDs and no question content.

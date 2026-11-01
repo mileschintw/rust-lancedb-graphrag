@@ -614,6 +614,84 @@ class ReplayStagePreRegistration(StagePreRegistration):
             )
 
 
+#: The transports a writer's extraction may run on.
+WRITER_TRANSPORTS = ("openrouter_batch",)
+_LOWER_HEX = frozenset("0123456789abcdef")
+
+
+@dataclass(frozen=True, kw_only=True)
+class WriterPreRegistration:
+    """v1.1 S3 (#145): what the writer extraction fixes, frozen before any spend (D-73).
+
+    S3 compares graph writers (D-235). Each writer extracts every passage of the pinned
+    2Wiki corpus once; the store builds, the reader runs and S3's analysis
+    pre-registration (arms, K, Holm family, metrics) come later, in their own constant.
+    A writer added after the freeze (Opus 5.5, if the owner adds it) gets its own
+    constant of this type in its own commit, so a frozen one never changes.
+
+    Attributes:
+        dataset: The Hugging Face dataset the passages come from.
+        dataset_revision: Its git revision (``twowiki.REVISION``).
+        passages_file: The passages file at that revision.
+        passages_sha256: sha256 of that file's bytes.
+        passage_count: How many passages, so how many requests per writer.
+        unit: What one request extracts.
+        extraction_source: The repo file whose request body every writer starts from.
+        extraction_source_blob: That file's git blob ID at the freeze, so a later edit
+            to the prompt or schema is caught.
+        request_rule: How each writer's request is built from that body.
+        writers: ``(writer name, reader_request.ReaderDeclaration)`` pairs: slug,
+            target, thinking, effort and sync list price per writer.
+        transports: ``(writer name, transport)`` pairs, one per writer, out of
+            ``WRITER_TRANSPORTS``.
+        report_rule: What is stored and reported per writer.
+        provenance: Where the values come from.
+    """
+
+    dataset: str
+    dataset_revision: str
+    passages_file: str
+    passages_sha256: str
+    passage_count: int
+    unit: str
+    extraction_source: str
+    extraction_source_blob: str
+    request_rule: str
+    writers: tuple[tuple[str, ReaderDeclaration], ...]
+    transports: tuple[tuple[str, str], ...]
+    report_rule: str
+    provenance: str
+
+    def __post_init__(self) -> None:
+        names = [name for name, _ in self.writers]
+        if not names or len(set(names)) != len(names):
+            raise ThresholdError(f"writers must be non-empty and unique, got {names}")
+        transports = dict(self.transports)
+        if sorted(transports) != sorted(names) or len(transports) != len(names):
+            raise ThresholdError(
+                f"transports name {sorted(transports)}, writers {sorted(names)}"
+            )
+        bad = {n: t for n, t in transports.items() if t not in WRITER_TRANSPORTS}
+        if bad:
+            raise ThresholdError(f"unknown transports {bad}; known {WRITER_TRANSPORTS}")
+        between = [n for n, d in self.writers if d.thinking == "between_tools"]
+        if between:
+            raise ThresholdError(
+                f"{between}: the Batch API refuses between_tools thinking (D-280)"
+            )
+        for field, value, size in (
+            ("dataset_revision", self.dataset_revision, 40),
+            ("passages_sha256", self.passages_sha256, 64),
+            ("extraction_source_blob", self.extraction_source_blob, 40),
+        ):
+            if len(value) != size or not set(value) <= _LOWER_HEX:
+                raise ThresholdError(f"{field} must be {size} lower-case hex digits")
+        if self.passage_count < 1:
+            raise ThresholdError(
+                f"passage_count must be positive, not {self.passage_count}"
+            )
+
+
 # v1.1 S0 (D-238, D-252, D-261, D-262; experiments/v1.1/EXPERIMENT-S0.md): Lancet's
 # shipped default against the MultiHop-RAG paper's LlamaIndex pipeline, read once on the
 # held-out split (the first of D-237's two reads). Every number a reading uses is inside
