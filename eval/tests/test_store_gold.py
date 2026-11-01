@@ -134,3 +134,49 @@ def test_only_lancet_arms_on_the_v1_store_read_the_table() -> None:
     assert not reads_gold_chunk_table("merged/hybrid+rerank+metadata")
     assert not reads_gold_chunk_table("full/hybrid+rerank+metadata")
     assert not reads_gold_chunk_table("small/hybrid+rerank+metadata@haiku-5.5")
+
+
+def test_the_cli_passes_each_chunk_text_dump_by_store(monkeypatch, tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval import lever_comparison
+    from lancet_eval.cli import app
+
+    seen: dict[str, object] = {}
+
+    def fake_write(run, *, chunk_text=None):  # type: ignore[no-untyped-def]
+        seen["chunk_text"] = chunk_text
+        raise lever_comparison.LeverComparisonError("stop here")
+
+    monkeypatch.setattr(lever_comparison, "write_lever_comparison", fake_write)
+    args = ["compare-levers", "--run", str(tmp_path)]
+    result = CliRunner().invoke(
+        app, [*args, "--chunk-text", "merged=m.jsonl", "--chunk-text", "full=f.jsonl"]
+    )
+    assert result.exit_code == 1
+    assert seen["chunk_text"] == {"merged": Path("m.jsonl"), "full": Path("f.jsonl")}
+    bad = CliRunner().invoke(app, [*args, "--chunk-text", "merged"])
+    assert bad.exit_code == 2
+    assert "STORE=PATH" in bad.output
+
+
+def test_chunk_ids_lists_one_stores_ranked_ids_and_its_generation(tmp_path) -> None:
+    from typer.testing import CliRunner
+
+    from lancet_eval.cli import app
+    from lancet_eval.journal import Journal
+
+    run = tmp_path / "run"
+    journal = Journal(run / "journal.jsonl")
+    journal.write_header(corpus="c", partial=False)
+    journal.append(_record("small/hybrid+rerank+metadata", ["v:1", "v:2"]))
+    journal.append(_record("merged/hybrid+rerank+metadata", ["m:2", "m:1"]))
+    journal.append(_record("merged/hybrid+rerank+metadata", ["m:1", "m:3"], "q2"))
+    out = tmp_path / "ids.jsonl"
+    args = ["chunk-ids", "--run", str(run), "--out", str(out)]
+    result = CliRunner().invoke(app, [*args, "--store", "merged"])
+    assert result.exit_code == 0, result.output
+    assert "index_generation g" in result.output
+    lines = out.read_text("utf-8").splitlines()
+    assert [json.loads(line)["chunk_id"] for line in lines] == ["m:2", "m:1", "m:3"]
+    assert CliRunner().invoke(app, [*args, "--store", "full"]).exit_code == 1

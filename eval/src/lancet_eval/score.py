@@ -85,6 +85,7 @@ from lancet_eval.measure import (
 )
 from lancet_eval.arms import (
     LEGACY_ARM_LABELS,
+    STORE_PREFIXES,
     arm_slug,
     arm_store,
     canonical_arm,
@@ -122,6 +123,13 @@ from lancet_eval.replay import ReplayError, require_replay_provenance
 from lancet_eval import p4 as p4_mod
 from lancet_eval import strata
 from lancet_eval.split import HeldOutSplit, load_split, split_sha256
+from lancet_eval.store_gold import (
+    StoreGold,
+    StoreGoldError,
+    coverage_inputs,
+    load_store_gold,
+    reads_gold_chunk_table,
+)
 from lancet_eval.stats import (
     BOOTSTRAP_B,
     BOOTSTRAP_SEED,
@@ -596,10 +604,11 @@ class _SplitInputs:
 
     `split` is scoped to the population the corpus's role reads (`scope_split`);
     `on_disk` is the split as written, which the journal's split marker hashes.
+    `gold_sets` gives each arm the gold sets of its own store (#128).
     """
 
     split: HeldOutSplit
-    gold_sets: dict[str, list[frozenset[str]]]
+    gold_sets: StoreGold
     on_disk: HeldOutSplit
     population: str
 
@@ -608,16 +617,20 @@ def _load_split_inputs(
     config: Any,
     gold_map: Mapping[str, Any],
     gold_chunks_path: Path | str | None,
+    records: Sequence[RunRecord] = (),
+    chunk_text: Mapping[str, Path | str] | None = None,
 ) -> _SplitInputs:
     """Loads the split and the gold chunk sets; fails closed on any gap.
 
     A dev-role corpus reads the dev population (`scope_split`); every other role reads
-    the held-out lists.
+    the held-out lists. An arm on another store than v1.0 reads the gold sets built
+    from its store's `chunk_text` dump and the ranking `records` (#128).
 
     Raises:
-        ScoreError: If the split or the gold-chunk table cannot be read, or a G
-            question of the population has no gold question, is a null question, is
-            not one of the three G question types, or has no gold set.
+        ScoreError: If the split, the gold-chunk table or a chunk-text dump cannot be
+            read, or a G question of the population has no gold question, is a null
+            question, is not one of the three G question types, or has no gold set
+            while an arm reads the table.
     """
     try:
         on_disk = load_split(config.split_path)
@@ -641,6 +654,9 @@ def _load_split_inputs(
         gold_sets = load_gold_chunk_sets(path)
     except (OSError, ValueError, KeyError) as exc:
         raise ScoreError(f"Could not read the gold-chunk table {path}: {exc}") from exc
+    # #128: only an arm on the v1.0 store reads the gold-chunk table, so a run with
+    # none (a full-corpus store's fresh questions) needs no row in it.
+    reads_v1 = any(reads_gold_chunk_table(a) for a in config.arms)
     problems: list[str] = []
     for qid in split.heldout_g_ids:
         gold = gold_map.get(qid)
@@ -652,15 +668,19 @@ def _load_split_inputs(
             problems.append(
                 f"{qid}: question_type {gold.question_type!r} is not a G stratum"
             )
-        elif not gold_sets.get(qid):
+        elif reads_v1 and not gold_sets.get(qid):
             problems.append(f"{qid}: no row in the gold-chunk table")
     if problems:
         raise ScoreError(
             f"{len(problems)} {population} G question(s) cannot be scored: "
             + "; ".join(problems[:20])
         )
+    try:
+        store_gold = load_store_gold(gold_sets, records, gold_map, chunk_text)
+    except StoreGoldError as exc:
+        raise ScoreError(f"#128: {exc}") from exc
     return _SplitInputs(
-        split=split, gold_sets=gold_sets, on_disk=on_disk, population=population
+        split=split, gold_sets=store_gold, on_disk=on_disk, population=population
     )
 
 
@@ -863,6 +883,9 @@ class _Metric:
     # Hits@4, Hits@10, MRR, MAP). A reader arm replays its base arm's retrieval, so
     # it is left out of such a metric rather than scored as a miss.
     own_ranking: bool = False
+    # #128: a chunk-ID metric reads the arm's store's gold sets; an arm whose store has
+    # none (no chunk-text dump) is left out of it rather than scored as a miss.
+    chunk_ids: bool = False
 
 
 def _load_export_rows(
@@ -1044,6 +1067,10 @@ def _four_arm_dimensions(
     p4_ids = list(pop.question_ids)
     n_excluded = float(n_g - len(p4_ids))
     chunk_size = int(config.chunk_size)
+    store_chunking = {
+        STORE_PREFIXES[prefix]: chunking
+        for prefix, chunking in getattr(config, "store_chunking", {}).items()
+    }
     readers = _readers_of(config) if any(map(is_reader_arm, arms)) else None
 
     def spend(rec: RunRecord) -> float:
@@ -1052,10 +1079,28 @@ def _four_arm_dimensions(
         except ReaderPriceError as exc:
             raise ScoreError(f"D-257: {exc}") from exc
 
-    def paper(rec: RunRecord) -> dict[str, Any]:
-        return paper_question_scores(
-            _record_ranking_ids(rec), gold_sets[rec.question_id], id_matcher
+    def paper(key: str) -> Callable[[RunRecord], float | None]:
+        def value(rec: RunRecord) -> float | None:
+            sets = gold_sets.sets_for(rec)
+            if sets is None:
+                return None
+            scores = paper_question_scores(_record_ranking_ids(rec), sets, id_matcher)
+            return float(scores[key])
+
+        return value
+
+    def coverage(rec: RunRecord) -> float | None:
+        # #125, #128: the arm's own store's chunk size, in that store's unit.
+        if rec.snapshot is None:
+            return None
+        inputs = coverage_inputs(
+            store_chunking, chunk_size, rec, gold_map[rec.question_id]
         )
+        if inputs is None:
+            return None
+        gold, size = inputs
+        out = recall_at_k(gold, rec.snapshot.retrieved_chunks, k=4, chunk_size=size)
+        return float(out.score) if out.status == "ok" else None
 
     def retrieval(fn: Callable[..., Any]) -> Callable[[RunRecord], float | None]:
         def value(rec: RunRecord) -> float | None:
@@ -1079,30 +1124,34 @@ def _four_arm_dimensions(
     metrics = [
         _Metric(
             "paper_hits_at_4",
-            lambda r: float(paper(r)["hit4"]),
+            paper("hit4"),
             "wilson",
             own_ranking=True,
+            chunk_ids=True,
         ),
         _Metric(
             "paper_hits_at_10",
-            lambda r: float(paper(r)["hit10"]),
+            paper("hit10"),
             "wilson",
             "paper_hits_at_10_delta",
             own_ranking=True,
+            chunk_ids=True,
         ),
         _Metric(
             "paper_mrr_at_10",
-            lambda r: float(paper(r)["rr"]),
+            paper("rr"),
             "bootstrap",
             "paper_mrr_at_10_delta",
             own_ranking=True,
+            chunk_ids=True,
         ),
         _Metric(
             "paper_map_at_10",
-            lambda r: float(paper(r)["ap"]),
+            paper("ap"),
             "bootstrap",
             "paper_map_at_10_delta",
             own_ranking=True,
+            chunk_ids=True,
         ),
         _Metric(
             "answer_usable_p4",
@@ -1142,7 +1191,7 @@ def _four_arm_dimensions(
         ),
         _Metric(
             "coverage_at_4",
-            retrieval(lambda g, c: recall_at_k(g, c, k=4, chunk_size=chunk_size)),
+            coverage,
             "bootstrap",
             "coverage_at_4_delta",
         ),
@@ -1265,7 +1314,10 @@ def _four_arm_dimensions(
 
     for metric in metrics:
         metric_arms = [
-            a for a in arms if not (metric.own_ranking and is_reader_arm(a))
+            a
+            for a in arms
+            if not (metric.own_ranking and is_reader_arm(a))
+            and not (metric.chunk_ids and not gold_sets.evaluable(a))
         ]
         by_arm, n_unscorable = p4_values(metric.value, metric_arms)
         if metric.name == "answer_usable_p4":
@@ -1305,7 +1357,7 @@ def _four_arm_dimensions(
         if metric.delta_name is None:
             continue
         for arm in comparison_arms:
-            if arm not in by_arm:
+            if arm not in by_arm or reference not in by_arm:
                 continue
             dims.append(
                 _delta_dimension(
@@ -1346,7 +1398,7 @@ def _four_arm_dimensions(
     # valid ranking scores as an empty ranking (a miss). Labelled, never decisive. A
     # reader arm has no ranking of its own (#54, D-257) and has no such line.
     for arm in arms:
-        if is_reader_arm(arm):
+        if is_reader_arm(arm) or not gold_sets.evaluable(arm):
             continue
         scores: dict[str, dict[str, Any]] = {}
         no_ranking = 0
@@ -1356,7 +1408,10 @@ def _four_arm_dimensions(
             if not valid:
                 no_ranking += 1
             ids = _record_ranking_ids(rec) if valid and rec is not None else []
-            scores[qid] = paper_question_scores(ids, gold_sets[qid], id_matcher)
+            # A dump-built store holds only the questions its arm ranked (#128); a
+            # question it never ranked scores as an empty ranking either way.
+            sets = gold_sets.sets(arm, qid) or []
+            scores[qid] = paper_question_scores(ids, sets, id_matcher)
         for name, key, kind in (
             ("paper_hits_at_4_script_faithful", "hit4", "wilson"),
             ("paper_hits_at_10_script_faithful", "hit10", "wilson"),
@@ -2121,6 +2176,7 @@ def score_run(
     gold_chunks_path: Path | str | None = None,
     judged: bool = False,
     calibration_key: Path | str | None = None,
+    chunk_text: Mapping[str, Path | str] | None = None,
 ) -> CorpusReport:
     """Read a run journal and produce a scored evaluation report.
 
@@ -2136,6 +2192,11 @@ def score_run(
     corpus: it first proves the emit -> scores -> reveal order from git, reads the
     salt from `calibration-salt.txt` beside the key, makes no API call, and writes
     `judged-result.json` next to `report.json`.
+
+    `chunk_text` maps a non-v1.0 store (prefix or name) to an `inspect_lancedb
+    --chunk-text` dump of the chunks its arms ranked; those arms' chunk-ID metrics
+    read gold sets built from it, and an arm on a store with none is left out of
+    them (#128).
     """
     dir_path = Path(run_dir)
     journal_path = dir_path / "journal.jsonl"
@@ -2284,6 +2345,11 @@ def score_run(
         )
     sampled_questions = load_sample_questions(corpus_name)
     gold_map = {q.question_id: q for q in sampled_questions}
+    # #125, #128: each store-prefixed arm's own chunking, by store name.
+    store_chunking = {
+        STORE_PREFIXES[prefix]: chunking
+        for prefix, chunking in getattr(config, "store_chunking", {}).items()
+    }
 
     # D-274: every replicate has passed the replay clauses above and passes the
     # provenance scan below; report.json reads each unit's first replicate, and the
@@ -2317,7 +2383,9 @@ def score_run(
                 "AI-SPEC §6); D-110 allows one bounded re-drive after a plumbing fix: "
                 f"{listed}{tail}"
             )
-        split_inputs = _load_split_inputs(config, gold_map, gold_chunks_path)
+        split_inputs = _load_split_inputs(
+            config, gold_map, gold_chunks_path, all_records, chunk_text
+        )
         _require_split_marker_matches(header_split_marker, split_inputs.on_disk)
 
     # D-113 / D-120 step 7: nothing judged exists before the order is proven.
@@ -2397,13 +2465,17 @@ def score_run(
                     payload_excluded_answerable_count += 1
                 continue
 
-            # Retrieval dimensions strictly read snapshot.retrieved_chunks
+            # Retrieval dimensions strictly read snapshot.retrieved_chunks. Recall@4
+            # and nDCG@10 use the arm's own store's chunk size; with no gold fact
+            # fitting that chunk they have no value (#128).
             if rec.snapshot is not None and not gold.is_null:
                 chunks = rec.snapshot.retrieved_chunks
+                sized = coverage_inputs(store_chunking, config.chunk_size, rec, gold)
                 # Recall@4
-                r_out = recall_at_k(gold, chunks, k=4, chunk_size=config.chunk_size)
-                if r_out.status == "ok" and r_out.score is not None:
-                    recalls.append(r_out.score)
+                if sized is not None:
+                    r_out = recall_at_k(sized[0], chunks, k=4, chunk_size=sized[1])
+                    if r_out.status == "ok" and r_out.score is not None:
+                        recalls.append(r_out.score)
                 # Precision@4
                 p_out = context_precision_at_k(gold, chunks, k=4)
                 if p_out.status == "ok" and p_out.score is not None:
@@ -2413,9 +2485,10 @@ def score_run(
                 if m_out.status == "ok" and m_out.score is not None:
                     mrrs.append(m_out.score)
                 # nDCG@10
-                n_out = ndcg_at_k(gold, chunks, k=10, chunk_size=config.chunk_size)
-                if n_out.status == "ok" and n_out.score is not None:
-                    ndcgs.append(n_out.score)
+                if sized is not None:
+                    n_out = ndcg_at_k(sized[0], chunks, k=10, chunk_size=sized[1])
+                    if n_out.status == "ok" and n_out.score is not None:
+                        ndcgs.append(n_out.score)
 
             # Answer metrics
             if rec.answer is not None and not gold.is_null:
@@ -2645,7 +2718,10 @@ def score_run(
                 elif cached_entry.error is not None:
                     judge_errors += 1
             else:
-                if stage_spend_cap is not None and accumulated_judge_spend >= stage_spend_cap:
+                if (
+                    stage_spend_cap is not None
+                    and accumulated_judge_spend >= stage_spend_cap
+                ):
                     cap_stopped = True
                     break
 
@@ -3692,15 +3768,18 @@ def score_run(
 
     record_corpora = {r.corpus for r in records if r.corpus}
     records_corpus = next(iter(record_corpora)) if len(record_corpora) == 1 else None
-    corpus_disagreement = (
-        records_corpus is None
-        or (header_corpus is not None and header_corpus != records_corpus)
+    corpus_disagreement = records_corpus is None or (
+        header_corpus is not None and header_corpus != records_corpus
     )
 
     effective_partial = True
     missing_units_note: str | None = None
 
-    if header_partial is False and not corpus_disagreement and records_corpus is not None:
+    if (
+        header_partial is False
+        and not corpus_disagreement
+        and records_corpus is not None
+    ):
         is_complete, missing = completeness_comparison(journal_path, records_corpus)
         if is_complete:
             effective_partial = False
@@ -3733,9 +3812,7 @@ def score_run(
         )
     if fallback_note:
         final_notes = (
-            f"{final_notes} {fallback_note}".strip()
-            if final_notes
-            else fallback_note
+            f"{final_notes} {fallback_note}".strip() if final_notes else fallback_note
         )
     if missing_units_note:
         final_notes = (

@@ -157,18 +157,25 @@ class StoreGold:
     v1: GoldSets
     stores: Mapping[str, GoldSets]
 
+    def _table(self, arm: str) -> GoldSets | None:
+        store = arm_store(arm)
+        return self.v1 if store in (None, V1_STORE.name) else self.stores.get(store)
+
+    def sets(self, arm: str, question_id: str) -> list[frozenset[str]] | None:
+        """An arm's gold sets for a question; None when it has none (not evaluable).
+
+        A store built from a dump holds only the questions its arms ranked.
+        """
+        table = self._table(arm)
+        return None if table is None else table.get(question_id)
+
     def sets_for(self, rec: RunRecord) -> list[frozenset[str]] | None:
         """The record's gold sets; None when its store has none (not evaluable)."""
-        store = arm_store(rec.graph_arm)
-        table = self.v1 if store in (None, V1_STORE.name) else self.stores.get(store)
-        if table is None:
-            return None
-        return table.get(rec.question_id)
+        return self.sets(rec.graph_arm, rec.question_id)
 
-    def evaluable(self, rec: RunRecord) -> bool:
-        """Whether the record's store has gold sets."""
-        store = arm_store(rec.graph_arm)
-        return store in (None, V1_STORE.name) or store in self.stores
+    def evaluable(self, arm: str) -> bool:
+        """Whether an arm's store has gold sets at all."""
+        return self._table(arm) is not None
 
 
 def load_store_gold(
@@ -231,3 +238,36 @@ def coverage_inputs(
     if not facts:
         return None
     return gold.model_copy(update={"gold_facts": facts}), max(map(len, facts))
+
+
+def write_ranked_ids(records: Iterable[RunRecord], store: str, out: Path) -> str:
+    """Writes one store's distinct ranked chunk IDs for `inspect_lancedb --chunk-text`.
+
+    Args:
+        records: The run's records.
+        store: A store prefix or name.
+        out: JSONL file of `{"chunk_id": ...}` lines, in first-seen order.
+
+    Returns:
+        The single `index_generation` the store's records ranked at; pass it to
+        `inspect_lancedb --generation` so the dump is the text that was ranked.
+
+    Raises:
+        StoreGoldError: If no record ranks on the store, or its records name mixed or
+            no index generations.
+    """
+    name = store_name(store)
+    mine = [r for r in records if arm_store(r.graph_arm) == name and r.snapshot]
+    if not mine:
+        raise StoreGoldError(f"no record ranks on store {store!r}")
+    generations = {r.index_generation for r in mine if r.index_generation}
+    if len(generations) != 1:
+        raise StoreGoldError(
+            f"store {store!r} records name index generations {sorted(generations)}; "
+            "a dump pins exactly one"
+        )
+    ids = dict.fromkeys(c for r in mine for c in ranked_chunk_ids(r))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.writelines(json.dumps({"chunk_id": c}) + "\n" for c in ids)
+    return next(iter(generations))
