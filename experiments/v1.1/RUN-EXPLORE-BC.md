@@ -158,7 +158,10 @@ docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT chunk_strategy
 docker exec lancet-postgres psql -U postgres -d lancet -c "SELECT id, status, error_message FROM lancet_eval_full.documents WHERE status <> 'completed';"
 ```
 
-Then preflight the store (store isolation, index identity, chunking, reachability, one generation probe):
+Then preflight the store (store isolation, index identity, chunking, reachability, one generation probe). If
+`corpus_generation` fails with an index generation mismatch, the seed's last probe ran before the engine's background
+index work settled: rerun the same `seed` command, which uploads nothing and records the live generation, then rerun
+preflight.
 
 ```bash
 LANCET_ENV=eval-full PYTHONUTF8=1 uv run --project eval lancet-eval preflight --store eval-full --corpus multihop_rag_full_dev
@@ -166,13 +169,7 @@ LANCET_ENV=eval-full PYTHONUTF8=1 uv run --project eval lancet-eval preflight --
 
 ### C3: deepseek drive (Paid, about $0.30 to $0.60)
 
-A one-question smoke drive first, then the rest into the same journal (`run` resumes by default):
-
-```bash
-LANCET_ENV=eval-full PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus multihop_rag_full_dev --arms full/hybrid+rerank+metadata --out <C_DRIVE>/journal.jsonl --stage-cap 3 --limit 1
-```
-
-Check its one record is `success` with a non-empty answer, then:
+Drive every question in one command:
 
 ```bash
 LANCET_ENV=eval-full PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus multihop_rag_full_dev --arms full/hybrid+rerank+metadata --out <C_DRIVE>/journal.jsonl --stage-cap 3
@@ -180,6 +177,11 @@ LANCET_ENV=eval-full PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus
 
 Read the output for `Drive stopped early`. Count: `full/hybrid+rerank+metadata` must reach 1,000.
 `<C_DRIVE>/context_export.jsonl` must exist with one row per `success` record. Stop the C stack.
+
+`run` leaves `partial: true` in the journal header, and `replay-init` refuses a partial source run.
+`lancet-eval reconcile` cannot flip it here: the corpus also lists the reader arms, which the drive never runs. With
+every question holding a record, set that one header field to `false` by hand and keep the rest of the file
+byte-identical (EXPLORE-C-MHR-FULL.md › Result). Do the same for `<B_DRIVE>` after B3.
 
 ### C4: carry into the run of record (free)
 
@@ -274,10 +276,6 @@ LANCET_ENV=eval-2wiki PYTHONUTF8=1 uv run --project eval lancet-eval preflight -
 ### B3: deepseek drive (Paid, about $0.05)
 
 ```bash
-LANCET_ENV=eval-2wiki PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus twowiki_s3b_dev --arms twowiki/hybrid+rerank+metadata --out <B_DRIVE>/journal.jsonl --stage-cap 3 --limit 1
-```
-
-```bash
 LANCET_ENV=eval-2wiki PYTHONUTF8=1 uv run --project eval lancet-eval run --corpus twowiki_s3b_dev --arms twowiki/hybrid+rerank+metadata --out <B_DRIVE>/journal.jsonl --stage-cap 3
 ```
 
@@ -308,5 +306,7 @@ and one K for every arm. No answer judges.
 
 Fill each EXPLORE file's Result: the run directories, both readout tables, each prediction held or not on the point
 estimates, the counts and every `error` line, each arm's batch IDs (`<RUN>/batches/`) and the spend per arm from the
-records' usage at the declared prices. Commit the four run directories and the two Results on a new branch, never on
-`main`, push it, and leave the main checkout on `main`, clean.
+records' usage at the declared prices. The run directories hold retrieved article and passage text, which the
+repository does not commit (`eval/corpora/ATTRIBUTION.md`, #145): move them under the gitignored `data/` and commit
+`explore-bc-runs.json`, each file's size and sha256, instead. Commit that, both stores' document maps and the two
+Results on a new branch, never on `main`, push it, and leave the main checkout on `main`, clean.
