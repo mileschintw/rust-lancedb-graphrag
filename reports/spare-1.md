@@ -249,3 +249,11 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - 實際花費 $10.738，校準估計是 $10.73。
 - Claude 累計實際花費：$33.44（closed-book $6.09 + hybrid $16.61 + Opus graph-deepseek $10.74），距上限 $36.50 剩 $3.06。依擁有者裁示，其餘 graph 欄位的 Claude cells 等下一筆額度，不跑部分 cell。
 - 備份：graph-deepseek run of record 已推到 `lane-spare-1-s3-runs`，commit `97778554`，push 前金鑰掃描 0 筆命中。
+- graph-haiku drive（`eval/runs/2026-11-01-s3h-drive-twowiki_s3h_graph_haiku`）：記下 900 個 work unit，895 筆成功、5 筆錯誤（重試 2 次後仍失敗），觀察到的花費 $0.8256；rerank degrade 8 次，都不連續。
+  - 2 筆是 GenerateAnswer 拒絕：`answer basis 'mixed' requires at least one cited evidence ID`，題號 `90ecd947…`、`ae85fccd…`。
+  - 3 筆是 `RetrieveHybrid timed out`，題號 `a3ac1ca2…`、`5498821a…`、`122324e8…`。發生時間和我同時跑 graph-deepseek 的 Opus fetch、gzip、金鑰掃描重疊，大量讀檔可能拖慢了檢索。之後 drive 進行中不再同時跑重 I/O 的工作。
+  - 按 harness 的設計，這些是最終紀錄，未重跑。header 的 partial 欄已改為 false。
+- replay-init 進 `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_haiku`：900 筆 record、895 列 export row；錯誤題沒有 context，讀者也不會收到。
+- 備份：graph-haiku drive 已推上去，commit `22798898`，金鑰掃描 0 筆命中。
+- graph-haiku 的 deepseek replicate 2：背景執行中，跑完後 fetch。
+- graph-sonnet：engine 換到 `s3h_sonnet`，preflight PASS，OpenRouter 餘額 $16.28，drive 執行中。
