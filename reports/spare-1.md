@@ -231,3 +231,14 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
 - graph-deepseek 的 deepseek replicate 2：經 sync API 送出，背景執行中。
 - OpenRouter 餘額 $16.81（帳面可能有延遲）。
 - graph-haiku：engine 換到 `s3h_haiku`，preflight PASS，drive 執行中（`eval/runs/2026-11-01-s3h-drive-twowiki_s3h_graph_haiku`）。
+
+### 備份規則（使用者，經另一個 session 轉達）
+
+- 使用者原話：「可以，讓他commit/push好了，每一輪實驗跑完都應該要做備份，這才是好習慣」。
+- 執行方式：每個 run 一跑完（drive、replicate、batch fetch）就 commit 並 push 到 WIP 分支 `lane-spare-1-s3-runs`。用暫時的 git index 建 commit，主 checkout 不切分支；超過 50 MB 的檔案以 gzip 提交，並附 README 列出 sha256；push 前掃描金鑰。
+- 第一次備份：commit `0bbf794f`（parent main `19998782`），共 101 個檔案，包含：
+  - closed-book run
+  - hybrid 的 drive 和 run of record
+  - graph-deepseek drive
+- 金鑰掃描：OpenRouter key 及所有 KEY/TOKEN/SECRET 類環境變數的值，0 筆命中。唯一出現的 "Bearer " 是語料裡的 "Standard-Bearer"。
+- 最終 PR（Closes #163）可以從這個分支開。
