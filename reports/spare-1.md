@@ -116,13 +116,20 @@
 - #167，2026-11-01：「Keep the run plan's cells unchanged; just make sure the per-question type is recorded in the run dirs so the analysis can split by it.」
   - 依此執行：cells 沒有改動；`twowiki_h` 寫出題型對照表，RUN 指南的紀錄步驟把它複製進每個 run 目錄。
 
-本 session 中沒有使用者本人的決定。
+- 付費階段開始（2026-11-01）：「continue」。PR #173 已 merge（512a48a6），可進主 checkout 跑付費步驟 2–3。
+
+## 使用者（owner）本人的決定（由 coordinator 轉述，2026-11-01 在 coordinator session 輸入）
+
+1. Claude 上限：「Raise cap to ~$36.5」。新上限 $36.50（餘額 $37.52，2026-11-03 到期）。closed-book 與 hybrid 全部讀者先跑（約 $22），接著完整跑 Opus × graph-deepseek。其他 graph 格（含 Haiku、Sonnet 的 graph 格與 Opus 的其他三個 graph 格）等下一筆額度；不跑部分格，所以不改 harness。
+2. OpenRouter 上限：「Raise to $6 (Recommended)」。涵蓋所有 deepseek 格（含 replicate）。
+
+本 session 中使用者沒有直接對我下的決定。
 
 ## Decided while unattended
 
 無。依 coordinator 指示，模式是 normal，scope 決定記在上面的「Coordinator 的裁示」。
 
-## 給 coordinator 的待決問題（付費階段之前）
+## 給 coordinator 的待決問題（付費階段之前；1、2 已由上面 owner 裁示解決，3 由本 lane 處理）
 
 （#172 的四個 writer 抽取結果已 merge 進 main，步驟 3 可在 continue 後匯入。）
 
@@ -137,3 +144,80 @@
    - 選 (c) 前要注意：目前 `batch submit --limit` 只允許 pilot run；run of record 要跑部分 cell，需要另外加 harness 支援。
 2. **OpenRouter 上限 $3 不夠。** 五次 deepseek drive（每次約 $0.70）加上各欄 replicate 2，約 $5。請決定是否提高上限，或只先跑 hybrid 與 deepseek 的 graph 欄。
 3. **步驟 3 的前置工作還沒做**，等 #145 deepseek 抽取 merge 後由本 lane 補上：把各 writer 的抽取結果轉成 `import_graph_extractions` 讀的 `answers.jsonl`（`{text, content}`）。
+
+## 付費階段紀錄（進行中，2026-11-01 起，主 checkout `D:/Repos/lancet`，main `19998782`）
+
+Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，上限 $36.50；OpenRouter 上限 $6，步驟開始前餘額 $17.85。
+
+### 步驟 1：closed-book（`eval/runs/2026-11-01-s3h-twowiki_s3h_closed_book`）
+
+- `closed-book-init`：900 列。
+- deepseek，經 sync API：
+  - 1,800 筆請求，sync 批次 `sync-twowiki_closed_book-1-1793575483`。
+  - 結果：replicate 1 成功 892、replicate 2 成功 891；另有 17 筆 `NODE_ERROR_KIND_LLM_GENERATION_FAILED`，都是已計費的 render 失敗（`finish_reason 'length'`、notice 超長），列為最終紀錄，不重送。
+  - Routing 檢查：0 筆違規。
+  - 依 usage 計算的實際花費：$0.0842。
+- Claude batches，2026-11-01 送出，估計值以 deepseek 的 usage 為基準：
+
+  | Arm | 批次 ID | 請求數 | 估計 | 最壞上限 |
+  |---|---|---|---|---|
+  | Opus 5.5 | `batch-1793578463-ZRhDqLcyj0dnjGpGV102` | 900 | $1.41 | $18.57 |
+  | Sonnet 5.5 | `batch-1793578469-ft4pcsEQRV5uzXI1hYaI` | 900 | $0.71 | $9.28 |
+  | Haiku 5.5 | `batch-1793578474-zHxjRSpMpBLXvaVgEKEZ` | 1,800 | $0.07 | $0.93 |
+
+  Claude 累計估計：約 $2.19。
+- closed-book Claude batches fetched：3,600 筆成功、0 錯誤、routing 0 筆違規。依 usage 計算的實際花費：
+
+  | Arm | 筆數 | prompt / completion / reasoning tokens | 實際花費 |
+  |---|---|---|---|
+  | Haiku 5.5 | 1,800 | 969,268 / 434,620 / 0 | $0.157 |
+  | Sonnet 5.5 | 900 | 485,534 / 244,111 / 2,006 | $1.706 |
+  | Opus 5.5 | 900 | 485,534 / 325,449 / 127,523 | $4.226 |
+
+  closed-book 的 Claude 合計 $6.09。估計只有 $2.19，原因是 Claude prompt 加上輸出 schema 約 540 tokens，而 deepseek 只有 75 tokens；另外 Opus 在 effort low 下每題仍約有 140 個 reasoning tokens。
+
+### 步驟 2：hybrid（drive 在 `eval/runs/2026-11-01-s3h-drive-twowiki_s3h_hybrid`，run of record 在 `eval/runs/2026-11-01-s3h-twowiki_s3h_hybrid`）
+
+- 開始前 preflight 全部 PASS：store eval-2wiki，generation `lance-12239`。
+- drive：900/900 成功，觀察到的花費 $0.7822（OpenRouter）。header 的 partial 欄已手改為 false，其餘 bytes 不變。
+- replay-init：900 筆 record、900 列 export row。
+- Claude batches 已送出，估計值以 deepseek 的 token 數為基準，依 closed-book 的經驗實際約為 1.5–2.8 倍：
+
+  | Arm | 批次 ID | 估計 | 最壞上限 |
+  |---|---|---|---|
+  | Opus 5.5 | `batch-1793579350-THfK2ZEuPLAB9L6pGK6l` | $6.34 | $22.95 |
+  | Sonnet 5.5 | `batch-1793579358-oJdno8lb1X06n3Mu1eRR` | $3.17 | $11.47 |
+  | Haiku 5.5 | `batch-1793579368-4p04yiR2ZhqjbCJaVlQz` | $0.32 | $1.15 |
+
+- deepseek replicate 2 經 sync API 送出，背景執行中。
+- deepseek replicate 2，經 sync API：sync 批次 `sync-twowiki_hybrid_rerank_metadata-1-1793579380`，892 筆成功、8 筆錯誤；routing 0 筆違規；花費 $0.157。
+- hybrid 的 Claude batches 已 fetch，routing 0 筆違規。依 usage 計算的實際花費：
+
+  | Arm | 筆數（成功 / 錯誤） | prompt / completion / reasoning tokens | 實際花費 |
+  |---|---|---|---|
+  | Haiku 5.5，K=2 | 1,796 / 4 | 8,306,304 / 465,879 / 0 | $0.532 |
+  | Sonnet 5.5 | 898 / 2 | 4,154,052 / 238,286 / 0 | $5.346 |
+  | Opus 5.5 | 898 / 2 | 4,154,052 / 241,834 / 2,086 | $10.726 |
+
+- 錯誤明細，都是已計費、被引擎拒絕的答案，列為最終紀錄、不重送：
+  - deepseek r2 有 8 筆：6 筆是 `answer basis 'mixed' requires at least one cited evidence ID`，2 筆是 `finish_reason 'length'`。
+  - 每個 Claude 讀者在同兩題（`f06252fc…`、`a1d9a65c…`）上被拒，原因是 `OpenRouter prompt_tokens 10218/8702 exceeds budget 8192`：Claude tokenizer 算出的 prompt 超過引擎的 8,192 預算。
+- Claude 累計實際花費：$22.70（closed-book $6.09 + hybrid $16.61），距上限 $36.50 還剩 $13.80。
+
+### 步驟 3：graph 欄位
+
+- 圖譜匯入（`import_graph_extractions`，各 writer 一組側表 `entities__s3h_<w>`、`entity_edges__s3h_<w>`）：
+  - deepseek：33,811 個實體、41,187 條 entity edges，exit 0（16:37–20:10）。逐份文件寫入，表版本累積上萬個，越跑越慢。
+  - Haiku、Sonnet、Opus：18:06 起改為三個並行程序執行（寫不同的側表）。原本的串行迴圈跑到這三組時，因側表已存在而被拒（exit 1，什麼都沒寫），這是預期中的。
+- graph-deepseek stack：engine 用 `LANCET_ENV=eval-2wiki-s3h-deepseek`，log 有 `graph_table_set="s3h_deepseek"`。
+  - 前兩次 preflight 的 `corpus_generation` FAIL：探測沒帶回 snapshot。直接重放探測三次都正常；第三次 preflight 全部 PASS（`lance-12239`）。推測是 engine 剛起、圖表未暖。
+- OpenRouter 餘額 $17.18（起始 $17.85，至今 $0.67，含匯入的 entity embedding）。
+- 第一次 graph-deepseek drive 在第 5 題被 rerank tripwire 擋下：5 次連續 `rerank_degraded error_class=timeout`，花費 $0.0052。
+  - 原因：dense 檢索花了 2,686 ms，把 3,080 ms 的 retrieve 預算用光，rerank 只剩約 0–300 ms。三個並行匯入正在搶 CPU、磁碟和 embedding API。
+  - 處理：`config/` 不改。這 5 筆 record 的目錄已移到 scratchpad（`aborted-drive-graph-deepseek-1`），不進 run of record。等三個匯入跑完再重新 drive。
+- store 原有的表未被寫入：匯入前後比對 communities、documents、edges、entities、entity_edges、nodes、staged_documents_v2 這 7 張表的 116,282 個檔案（路徑、大小、mtime），完全一致。只有 `__manifest` 因登記側表而變動。
+- Haiku、Sonnet、Opus 的匯入都 exit 0（22:2x 前完成）。背景任務本身回報 exit 1，是收尾那行 `tail -3` 的語法錯誤，與匯入無關：
+  - s3h_haiku：36,476 個實體、49,416 條 entity edges
+  - s3h_sonnet：35,658 個實體、50,111 條 entity edges
+  - s3h_opus：34,108 個實體、47,953 條 entity edges
+- 機器空下來後 preflight 再次全部 PASS，dense 檢索回到約 1.2 秒。22:3x 重新 drive graph-deepseek，前 20 題沒有 rerank degrade。
