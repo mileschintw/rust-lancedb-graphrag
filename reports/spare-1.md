@@ -242,3 +242,10 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - graph-deepseek drive
 - 金鑰掃描：OpenRouter key 及所有 KEY/TOKEN/SECRET 類環境變數的值，0 筆命中。唯一出現的 "Bearer " 是語料裡的 "Standard-Bearer"。
 - 最終 PR（Closes #163）可以從這個分支開。
+- graph-deepseek 的 deepseek replicate 2：sync 批次 `sync-twowiki_hybrid_graph_rerank_metadata-1-1793605866`，890 筆成功、10 筆錯誤（全部是 `answer basis 'mixed' requires at least one cited evidence ID`，已計費），routing 0 筆違規，花費 $0.157。
+- Opus × graph-deepseek fetch：898 筆成功、2 筆錯誤，routing 0 筆違規。
+  - 2 筆錯誤和 hybrid 是同樣兩題，原因相同：`prompt_tokens 10219/8703 exceeds budget 8192`。
+  - prompt / completion / reasoning tokens：4,157,567 / 242,323 / 2,115。
+  - 實際花費 $10.738，校準估計是 $10.73。
+- Claude 累計實際花費：$33.44（closed-book $6.09 + hybrid $16.61 + Opus graph-deepseek $10.74），距上限 $36.50 剩 $3.06。依擁有者裁示，其餘 graph 欄位的 Claude cells 等下一筆額度，不跑部分 cell。
+- 備份：graph-deepseek run of record 已推到 `lane-spare-1-s3-runs`，commit `97778554`，push 前金鑰掃描 0 筆命中。
