@@ -267,3 +267,74 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - 讓正在跑的 graph-sonnet drive 跑完，帶入 run of record，並備份。
   - 不再開始新工作：sonnet r2、graph-opus 的 drive 和 r2、任何新批次，都留到下次。
   - 寫下續跑點，status 設為 blocked，不開最終 PR。
+- graph-sonnet drive（`eval/runs/2026-11-01-s3h-drive-twowiki_s3h_graph_sonnet`）：897 筆成功、3 筆錯誤，觀察到的花費 $0.7901。
+  - 錯誤：`cea1f56e…` 是 `RetrieveHybrid timed out`；`90ecd947…`、`48c0c6fa…` 是 `answer basis 'mixed'` 拒絕。
+  - header 的 partial 欄已改為 false。
+- replay-init 進 `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_sonnet`：900 筆 record、897 列 export row。
+- 備份：graph-sonnet 的 drive 和 run 已推上去，commit `0f110c46`，金鑰掃描 0 筆命中。
+
+## 續跑點（2026-11-02 03:0x，依擁有者裁示暫停）
+
+### 已完成，都已推上 `lane-spare-1-s3-runs`（tip `0f110c46`）
+
+所有 run 目錄都在 `eval/runs/` 下，名稱開頭是 `2026-11-01-s3h-`。
+
+| Run | 內容 | Commit |
+|---|---|---|
+| `twowiki_s3h_closed_book` | deepseek K=2 + Haiku K=2 + Sonnet + Opus | `0bbf794f` |
+| `drive-twowiki_s3h_hybrid` + `twowiki_s3h_hybrid` | deepseek K=2 + Haiku K=2 + Sonnet + Opus | `0bbf794f` |
+| `drive-twowiki_s3h_graph_deepseek` | drive，即 deepseek r1 | `0bbf794f` |
+| `twowiki_s3h_graph_deepseek` | deepseek K=2 + Opus | `97778554` |
+| `drive-twowiki_s3h_graph_haiku` | drive | `22798898` |
+| `twowiki_s3h_graph_haiku` | deepseek K=2 | `733626e0` |
+| `drive-twowiki_s3h_graph_sonnet` + `twowiki_s3h_graph_sonnet` | 只有 deepseek r1 | `0f110c46` |
+
+- 分支 parent 是 main `19998782`。主 checkout `D:/Repos/lancet` 在 `main` 上、乾淨；上述目錄在主 checkout 裡仍是 untracked 原檔，未 gzip。
+- 四組圖譜側表都已匯入 `data/lancedb-eval-2wiki`：`s3h_deepseek`、`s3h_haiku`、`s3h_sonnet`、`s3h_opus`。store 原有的表未變。
+
+### 剩下的工作，依序
+
+1. **sonnet r2**：deepseek replicate 2 on graph-sonnet。不需要 stack：
+   - `PYTHONUTF8=1 uv run --project eval lancet-eval batch submit --run eval/runs/2026-11-01-s3h-twowiki_s3h_graph_sonnet --arm "twowiki/hybrid+graph+rerank+metadata"`
+   - 接著 `batch fetch --run <同一個目錄>`，然後備份。
+2. **graph-opus drive**：
+   - 起 stack，engine 用 `LANCET_ENV=eval-2wiki-s3h-opus ./engine/target/debug/engine`，log 要出現 `graph_table_set="s3h_opus"`。gateway 和 harness 用 `eval-2wiki`，指令同 RUN-S3-HELDOUT.md。
+   - 先用 probe 暖機，再 preflight `--corpus twowiki_s3h_graph_opus`。
+   - drive `twowiki/hybrid+graph+rerank+metadata`，輸出到 `eval/runs/<日期>-s3h-drive-twowiki_s3h_graph_opus`。
+   - header 的 partial 改為 false，replay-init 進 `<日期>-s3h-twowiki_s3h_graph_opus`，然後備份。
+3. **graph-opus r2**：同步驟 1，然後備份。
+4. **Claude 的 graph cells**：等下一筆額度，不跑部分 cell。依 RUN-S3-HELDOUT.md 的順序：Haiku 的三個 graph 欄位、Sonnet × graph-deepseek、Opus × 其餘 graph 欄位；Sonnet × graph-haiku/sonnet/opus 為 optional。
+5. **收尾**：
+   - 寫 RUN-S3-HELDOUT.md 的 Result 段，含兩條擁有者額度裁示的原話。
+   - 寫 PR body（Closes #163），最終 PR 從 `lane-spare-1-s3-runs` 開。
+   - 不計分（D-291）。
+
+### 環境現況
+
+- stack 已停：engine 和 gateway 都已關。最後一次 engine 用的是 `LANCET_ENV=eval-2wiki-s3h-sonnet`。下次依步驟 2 換成 `s3h-opus`；`config/` 沒有任何修改。
+- 注意事項：
+  - drive 進行中不要同時跑重 I/O 的工作（gzip、大檔掃描），否則檢索會 timeout，甚至觸發 rerank tripwire。
+  - engine 剛起時第一次 preflight 可能 `corpus_generation` FAIL，先用 probe 打一次暖機。
+- 這輪寫的腳本（備份、花費、probe、Opus 估計、answers）已複製到共享筆記資料夾 `side-session-notes/local_e5497074-…/spare-1-scripts/`。
+
+### 花費
+
+- **Claude**：$33.44 / 上限 $36.50，剩 $3.06。
+  - closed-book $6.09
+  - hybrid $16.61
+  - Opus × graph-deepseek $10.74
+- **OpenRouter**：
+  - 依紀錄計算約 $3.72：
+    - 4 次 drive：$0.782 + $0.774 + $0.826 + $0.790
+    - 4 組 sync r2：closed-book $0.084、hybrid $0.157、graph-deepseek $0.157、graph-haiku $0.156
+    - 另有匯入時的 entity embedding，未單獨計。
+  - 帳戶餘額從 $17.85 降到 $15.76，差 $2.09。餘額比紀錄算的少，可能是帳面延遲或快取折扣。
+  - 上限 $6。剩下的 sonnet r2、graph-opus drive 和 r2，估計約 $1.1。
+
+### 待決問題（給協調者或擁有者）
+
+- **drive 錯誤是否重跑**：有 4 筆 `RetrieveHybrid timed out`，都已重試 2 次，目前當最終紀錄：
+  - graph-haiku：`a3ac1ca2…`、`5498821a…`、`122324e8…`
+  - graph-sonnet：`cea1f56e…`
+  - 是否只重跑這 4 筆，由擁有者決定。其他錯誤都是模型答案被引擎拒絕，屬正常結果。
+- **第一次 graph-deepseek drive 的 5 筆**：因 rerank tripwire 中止，紀錄已移出 `eval/runs`，複製到共享筆記資料夾的 `spare-1-aborted-drive-graph-deepseek-1`，花費 $0.0052。不屬於 run of record，要不要另外保存，請指示。
