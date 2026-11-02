@@ -259,3 +259,11 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
 - graph-sonnet：engine 換到 `s3h_sonnet`，preflight PASS，OpenRouter 餘額 $16.28，drive 執行中。
 - graph-haiku 的 deepseek replicate 2：sync 批次 `sync-twowiki_hybrid_graph_rerank_metadata-1-1793611501`，送出 895 筆（drive 失敗的 5 題沒有 context，不送），882 筆成功、13 筆錯誤（都是 `answer basis 'mixed'` 拒絕），routing 0 筆違規，花費 $0.156。
 - 備份：graph-haiku run of record 已推上去，commit `733626e0`，金鑰掃描 0 筆命中。這次備份在 graph-sonnet drive 進行中以低優先權執行，檔案都小於 50 MB、不需 gzip，期間 drive 沒有出錯。
+
+### 擁有者裁示：本輪收尾（經協調者轉達）
+
+- 擁有者原話：「這一輪還開著、還在進行的工作做完就收尾，下次繼續」。
+- 執行方式：
+  - 讓正在跑的 graph-sonnet drive 跑完，帶入 run of record，並備份。
+  - 不再開始新工作：sonnet r2、graph-opus 的 drive 和 r2、任何新批次，都留到下次。
+  - 寫下續跑點，status 設為 blocked，不開最終 PR。
