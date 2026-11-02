@@ -196,6 +196,8 @@ S3 input below. (PR #55 merged by the user 2026-10-30 15:23 -0700 as a81021d0; u
     4. Timing: the current Claude credit (expires 2026-11-03) covers S2 only; S3 uses the later credit. This grid is a main topic for the S3 grill round.
 
 ## Deadlines
+
+- **S3 ceilings raised 2026-11-01 (user, here):** Claude $36.50 ("Raise cap to ~$36.5": closed-book + hybrid ~$22, then Opus x graph-deepseek ~$14; other graph cells wait for the next credit); OpenRouter $6 ("Raise to $6 (Recommended)").
 - **Next Claude credit ($200, expected next month) — standing ruling, relayed 2026-11-01 14:08 -0800 from side session local_44b9fe70 (owner: "可以，就這樣做"; CONFIRMED here 2026-11-01, user: "Confirm"):** #146 stays paused as the credit fallback; no #146 prep (store, #128, LlamaIndex, run plan) until the credit has arrived and the owner picks #146. When it arrives, propose in this order: (1) if agentic retrieval / graph community summaries are built or in progress, spend first on evaluating them (multi-turn Claude calls); (2) if not started, start #146 and run agentic work in parallel; (3) leftover → S3's three optional Sonnet cells. Main line now: finish #163 (must-run cells), one-page results summary, then agentic retrieval / community summaries with a light dev-set eval.
   - **Amended 2026-11-01 14:19 -0800 (user here: "可以，就這麼辦"):** #128 and #164 resume now as S3 prerequisites (S3 scoring needs #164; retrieval metrics on 2Wiki/full MHR need #128), done in that order by spare-2 (both touch `score.py`). Lane 146 merges only its merged-store code and leaves the run plan/prereg as an unfrozen draft on its branch; #146 gets a progress comment. No D-73 freeze, store build or LlamaIndex rebuild for #146 until the credit arrives.
 

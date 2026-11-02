@@ -9,7 +9,7 @@ Waits for (same section): none
   2. Paid, in the main checkout `D:/Repos/lancet` (free now; no other lane holds it): submit the closed-book and hybrid Claude cells first (Batch API; Haiku off, Sonnet and Opus effort low; BYOK checks as in S2/#149). deepseek cells via OpenRouter.
   3. Graph cells after lane 145's deepseek extraction merges (#145): import the four writers' graphs into the 2Wiki store as new side tables with `import_graph_extractions` (#148's path; never write existing tables), Opus x graph-deepseek first.
 - **Never score held-out runs** in this lane. Record run dirs and spend only.
-- **Ceilings:** Claude credit $34.50 (owner's balance $37.52, keep ~$3 margin); OpenRouter $3. Print each estimate; over a ceiling, ask. Every Claude batch must be submitted before 2026-11-03 (Pacific), ideally today.
+- **Ceilings:** Claude credit $36.50 (owner 2026-11-01: "Raise cap to ~$36.5"; balance $37.52): closed-book + hybrid, then Opus x graph-deepseek in full; other graph cells wait for the next credit. OpenRouter $6 (owner: "Raise to $6 (Recommended)"). Print each estimate; over a ceiling, ask. Every Claude batch must be submitted before 2026-11-03 (Pacific), ideally today.
 - **Held-out:** use the D-243 split (`eval/corpora/twowiki/split.json`) as frozen; no reading of held-out answers.
 - **Run artifacts:** commit full run dirs (owner: "全都公開repo備份全文"); gzip files over 50 MB.
 - **Rules:** no keys or env values in any record; prefix commands with `PYTHONUTF8=1`.
