@@ -221,3 +221,13 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - s3h_sonnet：35,658 個實體、50,111 條 entity edges
   - s3h_opus：34,108 個實體、47,953 條 entity edges
 - 機器空下來後 preflight 再次全部 PASS，dense 檢索回到約 1.2 秒。22:3x 重新 drive graph-deepseek，前 20 題沒有 rerank degrade。
+- graph-deepseek drive（`eval/runs/2026-11-01-s3h-drive-twowiki_s3h_graph_deepseek`）：900/900 成功，觀察到的花費 $0.7740（OpenRouter），重試後無錯誤；本次 drive 中 rerank degrade 2 次，不連續。header 的 partial 欄已手改為 false，其餘 bytes 不變。
+- replay-init 進 `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_deepseek`：900 筆 record、900 列 export row。
+- Opus × graph-deepseek 的估計（送出前印出）：
+  - 工具印的估計：$6.36（以 deepseek token 數為基準），最壞上限 $22.95。
+  - 校準估計：$10.73。依據是兩次 deepseek drive 的平均 prompt 長度比（graph / hybrid = 1.001，因為兩者都被 8,192 prompt 預算封頂），乘上 hybrid Opus 實際的 input $8.31 + output $2.42。輸出多抓 20% 則為 $11.22。
+  - 剩餘 Claude 額度 $13.80，放得下，所以送出。
+- Opus × graph-deepseek 批次：`batch-1793605854-cSuRCk8qjIA1WkyU7ZOt`，900 筆。
+- graph-deepseek 的 deepseek replicate 2：經 sync API 送出，背景執行中。
+- OpenRouter 餘額 $16.81（帳面可能有延遲）。
+- graph-haiku：engine 換到 `s3h_haiku`，preflight PASS，drive 執行中（`eval/runs/2026-11-01-s3h-drive-twowiki_s3h_graph_haiku`）。
