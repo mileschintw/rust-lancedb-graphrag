@@ -12,5 +12,6 @@ Waits for (same section): none
 - **Ceilings:** Claude credit $36.50 (owner 2026-11-01: "Raise cap to ~$36.5"; balance $37.52): closed-book + hybrid, then Opus x graph-deepseek in full; other graph cells wait for the next credit. OpenRouter $6 (owner: "Raise to $6 (Recommended)"). Print each estimate; over a ceiling, ask. Every Claude batch must be submitted before 2026-11-03 (Pacific), ideally today.
 - **Held-out:** use the D-243 split (`eval/corpora/twowiki/split.json`) as frozen; no reading of held-out answers.
 - **Run artifacts:** commit full run dirs (owner: "全都公開repo備份全文"); gzip files over 50 MB.
+- **Backup (owner 2026-11-01: "每一輪實驗跑完都應該要做備份，這才是好習慣"):** commit and push each finished S3 run dir to your WIP branch as soon as the run ends, not only in the final record PR. A local copy exists at D:/s3-run-backup/20261101-2355.
 - **Rules:** no keys or env values in any record; prefix commands with `PYTHONUTF8=1`.
 - **Closes:** #163 (in the final record PR; the freeze PR says Refs #163)
