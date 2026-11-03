@@ -286,8 +286,8 @@ deepseek drive, replay run and replicate 2 are already here.
 
 ### Owner's rulings during the run
 
-- Claude credit: "Raise cap to ~$36.5". Run closed-book and hybrid for all readers, then Opus × graph-deepseek in
-  full; every other graph Claude cell waits for the next credit, and no cell runs in part.
+- Claude credit: "Raise cap to ~$36.5". As the coordinator relayed it: run closed-book and hybrid for all readers, then
+  Opus × graph-deepseek in full; every other graph Claude cell waits for the next credit, and no cell runs in part.
 - OpenRouter credit: "Raise to $6 (Recommended)", enough for every deepseek cell with its replicate.
 - Backups: "每一輪實驗跑完都應該要做備份，這才是好習慣". Each run directory was committed and pushed as soon as its run
   finished, on this branch.
@@ -333,36 +333,40 @@ taken before the first import. Only `__manifest` changed, as it registers the ne
      header's `replay_source.row_sha256`, as `replay-init` computes it.
   4. The `-rerun` directory then trimmed to its header, the rerun records and their export rows.
 
+  Order on 2026-11-02: Haiku × graph-deepseek submitted, then these reruns, then Haiku × graph-haiku.
   `122324e8…` and `cea1f56e…` succeeded. `a3ac1ca2…` and `5498821a…` timed out again on all three attempts with the
   machine otherwise idle, so they stay errors.
 - **`122324e8…` has one deepseek answer.** Its replicate-2 slot holds the `base_error` record that the replicate-2
   submit wrote while its drive record was still an error, and `batch submit` treats that as final. Sending its
   replicate 2 would need a harness change. The Haiku batch on graph-haiku went after the rerun and includes it.
-- **Two over-length prompts.** Every Claude reader on the hybrid and graph columns failed `f06252fc…` and
-  `a1d9a65c…`: `OpenRouter prompt_tokens 10218` and `8702 exceeds budget 8192`. Claude's tokenizer counts those
-  packed contexts above the engine's 8,192 budget. The errors are billed and final.
+- **Two over-length prompts.** Every Claude reader on the hybrid and graph columns failed `f06252fc…` and `a1d9a65c…`:
+  `OpenRouter prompt_tokens 10218` and `8702 exceeds budget 8192`. Claude's tokenizer most likely counts those packed
+  contexts above the engine's 8,192 budget. The errors are billed and final.
 
 ### Spend
 
 - **Claude:** $34.50 of the $36.50 ceiling, at half list price from the records' usage.
   - closed-book $6.09
-  - hybrid $16.61
+  - hybrid $16.60
   - Opus × graph-deepseek $10.74
   - Haiku × graph-deepseek $0.53
   - Haiku × graph-haiku $0.53
-- **OpenRouter:** $4.82 by the records, of the $6 ceiling: $3.95 for the five column drives at their observed
-  spend, $0.87 for the six sync runs at the reference price, and $0.005 for the drive set aside. That covers
-  the deepseek cells, but not the entity-name embeddings of the four imports, which are not itemised. The account
-  balance fell only $2.80 ($17.85 to $15.05), so the drives' observed spend overstates what was billed.
+- **OpenRouter:** $4.82 by the records, of the $6 ceiling: $3.95 for the five column drives at their observed spend,
+  $0.87 for the seven sync runs (closed-book's two and one replicate 2 per other column) at the reference price, and
+  $0.005 for the drive set aside. That covers the deepseek cells, but not the entity-name embeddings of the four
+  imports, which are not itemised. The account balance fell only $2.80 ($17.85 to $15.05), so the drives' observed spend
+  overstates what was billed.
 
 ### Per run directory
 
-Counts are per arm and replicate after #75's deduplication; an error line lists every question ID that ended in
-it. A drive row's spend is the drive's observed spend; a sync or batch row's is from usage at the declared prices.
-Each graph and hybrid run of record carries its drive's records, so its replicate-1 deepseek row is the drive. The
-drive directories (`<date>-s3h-drive-…`) and the two `-rerun` directories are committed alongside the six below.
+Counts are per arm and replicate after #75's deduplication; an error line lists the 8-character prefix of every question
+ID that ended in it. "Success" is the record outcome, not a judgement of the answer. A drive row's spend is the drive's
+observed spend (graph-haiku's and graph-sonnet's include their reruns), and a drive measures no reasoning tokens; a sync
+or batch row's is from usage at the declared prices. Each graph and hybrid run of record carries its drive's records, so
+its replicate-1 deepseek row is the drive. The drive directories (`<date>-s3h-drive-…`) and the two `-rerun` directories
+are committed alongside the six below.
 
-### `eval/runs/2026-11-01-s3h-twowiki_s3h_closed_book`
+#### `eval/runs/2026-11-01-s3h-twowiki_s3h_closed_book`
 
 Corpus `twowiki_s3h_closed_book`, column `closed-book`.
 
@@ -382,13 +386,13 @@ Errors (each a final record; the later record of a question wins, #75):
 - `twowiki/closed-book` r2, 4: OpenRouter completion incomplete: finish_reason 'length' (0495b7fc…, 5674280a…, a6160eee…, d323fb02…)
 - `twowiki/closed-book` r2, 5: notice length exceeds limit 1024 (036c8248…, 08b4d30e…, b6aec5ee…, e2c19fd8…, f3a16239…)
 
-### `eval/runs/2026-11-01-s3h-twowiki_s3h_hybrid`
+#### `eval/runs/2026-11-01-s3h-twowiki_s3h_hybrid`
 
 Corpus `twowiki_s3h_hybrid`, column `hybrid`.
 
 | Arm | Replicate | Success | Error | Prompt / completion tokens | Reasoning tokens (per answer) | Thinking | Spend | Batch IDs |
 |---|---|---|---|---|---|---|---|---|
-| `twowiki/hybrid+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | 0 (0.0) | off (D-271) | $0.7822 (drive, observed) | drive |
+| `twowiki/hybrid+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | n/a | off (D-271) | $0.7822 (drive, observed) | drive |
 | `twowiki/hybrid+rerank+metadata` | 2 | 892 | 8 | 2,258,893 / 187,045 | 0 (0.0) | off (D-271) | $0.1573 | `sync-twowiki_hybrid_rerank_metadata-1-1793579380` |
 | `twowiki/hybrid+rerank+metadata@haiku-5.5` | 1 | 898 | 2 | 4,153,152 / 232,438 | 0 (0.0) | off | $0.2658 | `batch-1793579368-4p04yiR2ZhqjbCJaVlQz` |
 | `twowiki/hybrid+rerank+metadata@haiku-5.5` | 2 | 898 | 2 | 4,153,152 / 233,441 | 0 (0.0) | off | $0.2660 | `batch-1793579368-4p04yiR2ZhqjbCJaVlQz` |
@@ -408,13 +412,13 @@ Errors (each a final record; the later record of a question wins, #75):
 - `twowiki/hybrid+rerank+metadata@sonnet-5.5` r1, 1: OpenRouter prompt_tokens 10219 exceeds budget 8192 (f06252fc…)
 - `twowiki/hybrid+rerank+metadata@sonnet-5.5` r1, 1: OpenRouter prompt_tokens 8703 exceeds budget 8192 (a1d9a65c…)
 
-### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_deepseek`
+#### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_deepseek`
 
 Corpus `twowiki_s3h_graph_deepseek`, column `graph-deepseek`.
 
 | Arm | Replicate | Success | Error | Prompt / completion tokens | Reasoning tokens (per answer) | Thinking | Spend | Batch IDs |
 |---|---|---|---|---|---|---|---|---|
-| `twowiki/hybrid+graph+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | 0 (0.0) | off (D-271) | $0.7740 (drive, observed) | drive |
+| `twowiki/hybrid+graph+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | n/a | off (D-271) | $0.7740 (drive, observed) | drive |
 | `twowiki/hybrid+graph+rerank+metadata` | 2 | 890 | 10 | 2,261,169 / 184,930 | 0 (0.0) | off (D-271) | $0.1568 | `sync-twowiki_hybrid_graph_rerank_metadata-1-1793605866` |
 | `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` | 1 | 898 | 2 | 4,156,667 / 234,502 | 0 (0.0) | off | $0.2665 | `batch-1793668571-Ci1mWuUJYmemW8ITBPOb` |
 | `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` | 2 | 898 | 2 | 4,156,667 / 235,526 | 0 (0.0) | off | $0.2667 | `batch-1793668571-Ci1mWuUJYmemW8ITBPOb` |
@@ -430,13 +434,13 @@ Errors (each a final record; the later record of a question wins, #75):
 - `twowiki/hybrid+graph+rerank+metadata@opus-5.5` r1, 1: OpenRouter prompt_tokens 10219 exceeds budget 8192 (f06252fc…)
 - `twowiki/hybrid+graph+rerank+metadata@opus-5.5` r1, 1: OpenRouter prompt_tokens 8703 exceeds budget 8192 (a1d9a65c…)
 
-### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_haiku`
+#### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_haiku`
 
 Corpus `twowiki_s3h_graph_haiku`, column `graph-haiku`.
 
 | Arm | Replicate | Success | Error | Prompt / completion tokens | Reasoning tokens (per answer) | Thinking | Spend | Batch IDs |
 |---|---|---|---|---|---|---|---|---|
-| `twowiki/hybrid+graph+rerank+metadata` | 1 | 896 | 4 | n/a (drive) | 0 (0.0) | off (D-271) | $0.8263 (drive, observed) | drive |
+| `twowiki/hybrid+graph+rerank+metadata` | 1 | 896 | 4 | n/a (drive) | n/a | off (D-271) | $0.8263 (drive, observed) | drive |
 | `twowiki/hybrid+graph+rerank+metadata` | 2 | 882 | 18 | 2,248,577 / 182,942 | 0 (0.0) | off (D-271) | $0.1556 | `sync-twowiki_hybrid_graph_rerank_metadata-1-1793611501` |
 | `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` | 1 | 894 | 6 | 4,138,210 / 237,603 | 0 (0.0) | off | $0.2663 | `batch-1793669092-R22CVvoloMK9FrymB9G2` |
 | `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` | 2 | 894 | 6 | 4,138,210 / 233,293 | 0 (0.0) | off | $0.2652 | `batch-1793669092-R22CVvoloMK9FrymB9G2` |
@@ -454,13 +458,13 @@ Errors (each a final record; the later record of a question wins, #75):
 - `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` r2, 1: OpenRouter prompt_tokens 8702 exceeds budget 8192 (a1d9a65c…)
 - `twowiki/hybrid+graph+rerank+metadata@haiku-5.5` r2, 4: the base arm's record is an error (None): nothing to replay (5498821a…, 90ecd947…, a3ac1ca2…, ae85fccd…)
 
-### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_sonnet`
+#### `eval/runs/2026-11-01-s3h-twowiki_s3h_graph_sonnet`
 
 Corpus `twowiki_s3h_graph_sonnet`, column `graph-sonnet`.
 
 | Arm | Replicate | Success | Error | Prompt / completion tokens | Reasoning tokens (per answer) | Thinking | Spend | Batch IDs |
 |---|---|---|---|---|---|---|---|---|
-| `twowiki/hybrid+graph+rerank+metadata` | 1 | 898 | 2 | n/a (drive) | 0 (0.0) | off (D-271) | $0.7911 (drive, observed) | drive |
+| `twowiki/hybrid+graph+rerank+metadata` | 1 | 898 | 2 | n/a (drive) | n/a | off (D-271) | $0.7911 (drive, observed) | drive |
 | `twowiki/hybrid+graph+rerank+metadata` | 2 | 882 | 18 | 2,254,270 / 183,288 | 0 (0.0) | off (D-271) | $0.1560 | `sync-twowiki_hybrid_graph_rerank_metadata-1-1793669209` |
 
 Errors (each a final record; the later record of a question wins, #75):
@@ -469,13 +473,13 @@ Errors (each a final record; the later record of a question wins, #75):
 - `twowiki/hybrid+graph+rerank+metadata` r2, 16: answer basis 'mixed' requires at least one cited evidence ID (0277d678…, 11854514…, 1d507a43…, 3f04140e…, 821e65dc…, 82de9a9f…, 899ecc9e…, 8bb8b730…, 9301d39a…, ace717d0…, c9238c7c…, d88af85e…, e1a69e46…, e7f8e988…, f34d1886…, f7ff22da…)
 - `twowiki/hybrid+graph+rerank+metadata` r2, 2: the base arm's record is an error (None): nothing to replay (48c0c6fa…, 90ecd947…)
 
-### `eval/runs/2026-11-02-s3h-twowiki_s3h_graph_opus`
+#### `eval/runs/2026-11-02-s3h-twowiki_s3h_graph_opus`
 
 Corpus `twowiki_s3h_graph_opus`, column `graph-opus`.
 
 | Arm | Replicate | Success | Error | Prompt / completion tokens | Reasoning tokens (per answer) | Thinking | Spend | Batch IDs |
 |---|---|---|---|---|---|---|---|---|
-| `twowiki/hybrid+graph+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | 0 (0.0) | off (D-271) | $0.7761 (drive, observed) | drive |
+| `twowiki/hybrid+graph+rerank+metadata` | 1 | 900 | 0 | n/a (drive) | n/a | off (D-271) | $0.7761 (drive, observed) | drive |
 | `twowiki/hybrid+graph+rerank+metadata` | 2 | 880 | 20 | 2,258,154 / 185,543 | 0 (0.0) | off (D-271) | $0.1568 | `sync-twowiki_hybrid_graph_rerank_metadata-1-1793674094` |
 
 Errors (each a final record; the later record of a question wins, #75):
