@@ -367,3 +367,8 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - × graph-haiku：1,788 筆成功、4 筆錯誤（同上），另有 8 筆 base-error 占位，是 drive 仍失敗的 2 題 × 2 個 replicate × 2 次寫入。prompt / completion tokens 8,276,420 / 470,896，實際 $0.532。
 - Claude 累計實際花費：$34.51 / 上限 $36.50，剩 $1.99。
 - 備份：graph-deepseek 和 graph-haiku 的 run of record 已推上去，commit `b3369b58`；兩個 journal 都超過 50 MB，以 gzip 提交。
+- graph-opus drive（`eval/runs/2026-11-02-s3h-drive-twowiki_s3h_graph_opus`）：900/900 成功，觀察到的花費 $0.7761；rerank degrade 4 次，都不連續。header 的 partial 欄已改為 false。已備份，commit `942456b5`。
+- replay-init 進 `eval/runs/2026-11-02-s3h-twowiki_s3h_graph_opus`：900 筆 record、900 列 export row。graph-opus 的 deepseek r2 背景執行中。
+- stack 已停：engine 和 gateway 都已關，之後不再需要。
+- 備份分支已 merge origin/main（`1aa0ad34`，#175 等 6 個 commit，都不碰 S3 檔案），merge commit `36e5aa52` 已推上去。
+- 正在重新比對 store 原有的表：上次比對時另外三組匯入還在跑，這次在四組都匯入完之後再確認一次。
