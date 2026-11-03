@@ -180,6 +180,8 @@ The merged store does not remove the Claude readers' abstention on partial yes/n
   | Opus 5.5 | 0.736 / 0.211 | 0.741 / 0.179 | 0.971 / 0.029 | 0.971 / 0.015 |
 
   Open questions are near the ceiling on both stores for all but Haiku. Every reader's losses sit in yes/no questions.
+  A constant `Yes` scores 0.661 on these 56 (37 gold Yes, 19 gold No; #165, `constant_baseline`), above Haiku 5.5 on
+  both stores.
 - The 15 moved questions (partial on small, complete on merged; 9 yes/no, 6 open), usable / abstain:
 
   | Reader | small (S2) | merged (this run) |
