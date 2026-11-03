@@ -361,3 +361,9 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
 - 備份：兩個 drive 和兩個 rerun 目錄已推上去，commit `184e1aea`，金鑰掃描 0 筆命中。
 - graph-sonnet 的 deepseek r2：背景執行中。
 - graph-opus：engine 換到 `s3h_opus`，preflight PASS，OpenRouter 餘額 $15.75，drive 執行中（`eval/runs/2026-11-02-s3h-drive-twowiki_s3h_graph_opus`）。
+- graph-sonnet 的 deepseek r2：sync 批次 `sync-twowiki_hybrid_graph_rerank_metadata-1-1793669209`，送出 898 筆（含重跑成功的 `cea1f56e…`），882 筆成功、16 筆錯誤（`answer basis 'mixed'` 拒絕），routing 0 筆違規，花費 $0.156。已備份，commit `179e765c`。
+- Haiku 批次 fetch，routing 都 0 筆違規：
+  - × graph-deepseek：1,796 筆成功、4 筆錯誤，是 Claude 超長的同兩題（`prompt_tokens 10218/8702 exceeds budget 8192`）各 2 個 replicate。prompt / completion tokens 8,313,334 / 470,028，實際 $0.533。
+  - × graph-haiku：1,788 筆成功、4 筆錯誤（同上），另有 8 筆 base-error 占位，是 drive 仍失敗的 2 題 × 2 個 replicate × 2 次寫入。prompt / completion tokens 8,276,420 / 470,896，實際 $0.532。
+- Claude 累計實際花費：$34.51 / 上限 $36.50，剩 $1.99。
+- 備份：graph-deepseek 和 graph-haiku 的 run of record 已推上去，commit `b3369b58`；兩個 journal 都超過 50 MB，以 gzip 提交。
