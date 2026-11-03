@@ -1,8 +1,8 @@
 # spare-1 status
 
-- state: working
-- branch: main
-- head: 19998782
+- state: done
+- branch: lane-spare-1-s3-runs
+- head: f3ec0124
 - PR body draft: D:\Repos\lancet-coord\pr-bodies\spare-1.md
-- time: 2026-11-02 18:49 -0800
-- doing: graph-opus drive 900/900 backed up @942456b5; still running graph-opus deepseek r2; then Result section + PR body
+- time: 2026-11-02 19:26 -0800
+- doing: S3 held-out record on lane-spare-1-s3-runs @f3ec0124: 15/24 cells (9 Claude cells wait for credit), Result in RUN-S3-HELDOUT.md, PR body Closes #163

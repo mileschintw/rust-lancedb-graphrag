@@ -1,73 +1,82 @@
-Freezes the run plan of S3's held-out reader grid on 2Wiki, and adds what its cells need to run, before any held-out cell runs.
+Records S3's held-out reader grid on 2Wiki: 15 of its 24 cells, run blind, with every run directory committed in full. The other 9 Claude cells wait for new credit.
 
-Refs #163
+Closes #163
 
 ## Why
 
-#163 asks for S3's held-out reader grid: 4 readers by 6 context columns over 2Wiki's 900 held-out questions. Claude batches go in stages before the credit expires on 2026-11-03, and nothing is scored until an analysis plan is frozen. The harness could not run any of it:
-
-- `replay-init` refused every non-dev corpus (D-237).
-- There was no closed-book path.
-- A replay pre-registration had to carry a Holm family, which is analysis.
-- There was no held-out split or question file for 2Wiki.
-
-The coordinator ruled that this harness code belongs in #163's scope.
+#163 asks for S3's held-out reader grid: 4 readers by 6 context columns over 2Wiki's 900 held-out questions. #173 froze its run plan (`RUN_PLAN_S3_HELDOUT`, D-291) and added the harness it needs. This PR is the run of record. Nothing is scored until a separate analysis constant is frozen (D-291).
 
 ## What changes
 
-- **D-291** (`experiments/v1.1/PLAN.md`) freezes the plan in two steps:
-  - the run plan first: which cells run, K, transports and thinking, and no analysis;
-  - then blinding: no run is scored or read for its answers until a separate analysis constant is frozen; then every run is scored once.
-- **`RUN_PLAN_S3_HELDOUT`** (`thresholds.py`, type `ReaderGridRunPlan`) is frozen alone in commit `99b9d29e` (D-73). It holds:
-  - 24 cells: Sonnet's graph-haiku, graph-sonnet and graph-opus cells are `optional`, every other cell is `core`;
-  - Claude on OpenRouter's Batch API: Haiku thinking off, Sonnet and Opus on at effort low;
-  - deepseek: replicate 1 from the engine drive, replicate 2 through the sync API;
-  - K: deepseek and Haiku 2, Sonnet and Opus 1 (D-283).
-- **Run-plan plumbing:**
-  - A corpus names one column with `[preregistration] column`, and `preregistration.resolve(token, column)` returns that column's `ColumnRunPlan`.
-  - A run plan without a column is refused.
-  - `score`, `compare-levers`, `explore_readout`, `evidence_split`, `judge`, `judge-answers` and the unpark gates refuse a run-plan corpus.
-- **Held-out replay gate:**
-  - `replay-init` carries a held-out corpus only when its token and column resolve to a run-plan column.
-  - The source run must come from the same corpus.
-  - A run-plan source run is carried into no other corpus.
-- **Closed-book column:**
-  - A new arm, `twowiki/closed-book`, sits outside the engine registry, so no drive sends it.
-  - `lancet-eval closed-book-init` writes one export row per question with no evidence, packed with the engine's own model-only prompt. The bin runs with `allow_model_only_answers` on for these rows only.
-  - `batch submit` sends deepseek's replicates 1..K through the sync API, then the readers over the same rows.
-- **2Wiki held-out files** (`twowiki_h`):
-  - `twowiki/s3h_split.json`: the D-243 split with every held-out ID in G. It is built from IDs alone, since every 2Wiki question has an answer.
-  - The held-out questions file, gitignored.
-  - A question-type map with no answers, so the analysis can split by question type (#167).
-- **Six column corpora** (`twowiki_s3h_*.toml`) and four engine overlays (`config.eval-2wiki-s3h-<writer>.toml`, graph table set `s3h_<writer>`) for the graph columns.
-- **`experiments/v1.1/RUN-S3-HELDOUT.md`**: the run guide, with cost estimates against the lane's ceilings.
+- **Run directories** under `eval/runs/` (13 directories), committed in full, as the owner asked ("全都公開repo備份全文"):
+  - the six runs of record: closed-book, hybrid, graph-deepseek, graph-haiku, graph-sonnet and graph-opus;
+  - the five deepseek drives they were carried from;
+  - two `-rerun` directories for the retrieval-timeout reruns.
+- **Large files:** the 4 files over 50 MB are gzipped, each beside a `README.md` with its unpack command and the SHA-256 of the unpacked file, checked before the commit.
+- **Per directory:** a `.gitattributes` of `* -text`, and `question_types.json` (#167, no answers).
+- **`experiments/v1.1/RUN-S3-HELDOUT.md`, Result section:**
+  - which cells ran and which wait;
+  - the owner's rulings, quoted;
+  - the four graph table sets' counts, and a check that the store's own tables are unchanged;
+  - where the run differed from the guide;
+  - spend;
+  - per run directory: counts per arm and replicate, every error line, batch IDs, thinking, reasoning tokens and spend.
+
+## Cells
+
+| Column | deepseek (K=2) | Haiku (K=2) | Sonnet (K=1) | Opus (K=1) |
+|---|---|---|---|---|
+| closed-book | ran | ran | ran | ran |
+| hybrid | ran | ran | ran | ran |
+| graph-deepseek | ran | ran | waits | ran |
+| graph-haiku | ran | ran | waits (optional) | waits |
+| graph-sonnet | ran | waits | waits (optional) | waits |
+| graph-opus | ran | waits | waits (optional) | waits |
+
+A waiting cell needs only `batch submit` and `batch fetch` on its committed run directory.
+
+## Spend
+
+- **Claude:** $34.50 of the $36.50 ceiling, which the owner raised from $34.50 ("Raise cap to ~$36.5").
+- **OpenRouter:** $4.82 by the records, of the $6 ceiling, which the owner raised from $3 ("Raise to $6 (Recommended)"). The account balance fell $2.80.
+
+## How it differed from the guide
+
+- **A drive was set aside.** The first graph-deepseek drive ran while three graph imports were still writing. Retrieval slowed, the rerank tripwire stopped the drive after 5 records ($0.005), and the drive was rerun from empty.
+- **Four `RetrieveHybrid timed out` records were rerun**, blind, as the owner approved. The rerun records are appended after the original errors, which stay in the journal. Two succeeded; two timed out again with the machine idle and stay errors.
+- **One question has a single deepseek answer.** On graph-haiku, `122324e8…` succeeded only on its rerun. Its replicate-2 slot already holds a `base_error` record, which `batch submit` treats as final, so its second deepseek answer would need a harness change.
+- **Two questions are over length for Claude.** On the hybrid and graph columns, every Claude reader failed `f06252fc…` and `a1d9a65c…`: Claude's tokenizer counts their packed prompts above the engine's 8,192 budget. The errors are billed and final.
 
 ## Testing
 
-- `uv run --project eval pytest -n auto --dist loadfile`: 3252 passed, 14 skipped.
-- New tests, each against a fake bin and fake endpoints:
-  - the run-plan type and its column views;
-  - corpus column resolution;
-  - the held-out replay gate, including a pilot run and the cross-corpus case;
-  - the closed-book run from end to end, init through fetch, with `model_only` on every bin call;
-  - blinding refusals for score, compare-levers, both readouts, both judges and the unpark gates;
-  - the 2Wiki held-out split, pinned;
-  - the frozen constant, the corpora and the overlays, pinned.
-- Cargo and Go tiers not run: the lane changes no Rust or Go code, only adds `config/` overlay files the engine reads under their own `LANCET_ENV`.
+- No code changes. `eval/src` is unchanged, so `batch submit` passed its D-73 check on every submit.
+- Every submit reported 0 routing breaks: no answer was billed outside BYOK or the declared provider.
+- Before each push, the files were scanned for the OpenRouter key and every KEY/TOKEN/SECRET environment value: 0 hits. "Bearer" appears only in corpus text ("Standard-Bearer").
+- The store's own tables were compared against a listing taken before the first import: all 116,282 files are unchanged.
 
 ## Review
 
-Two-axis code review (standards, spec) at origin/main, then a second round on the fix commit.
+There is no code change, so one review ran on the Result section, against the guide's **Record** list and the lane brief. It cross-checked counts against the journals and found no blocker:
 
-- **Spec blocker, fixed:** `judge-answers`, the judge stage and the unpark gates could read a run-plan run. They now refuse it.
-- **Spec blocker, fixed:** the held-out replay gate checked only that a `column` key was present (a pilot skipped the token check), and a dev corpus could carry a source run from a run-plan corpus. Both are closed now.
-- **Spec blocker, fixed:** the closed-book cost estimate counted zero output. It now uses deepseek's usage, or the output bound.
-- **Standards note, fixed:** `_dev_corpus` renamed to `_replayable_corpus`; docstrings completed.
-- **Standards note, kept:** the fail-open in `score._refuse_blinded` on an unloadable corpus is commented. A corpus that does not load fails `score` later anyway.
-- **Standards notes, left:**
-  - grid cells are string triples, as the existing constants use pair tuples;
-  - `closed_book.py` imports private helpers from `replay.py`, which is repo practice;
-  - `is_closed_book_arm` branches five times in `batch.py`.
-- **Left:** the frozen `blinding_rule` text names only score, compare-levers and the readouts. The harness now refuses more, and the constant cannot change after its freeze.
+- every arm and replicate count matches the journals;
+- every error line sums to its row;
+- the 15-of-24 cell table is correct;
+- the Claude total checks;
+- no answers, gold or scores appear.
+
+**Notes fixed:**
+- Hybrid's Claude spend is $16.60, its rows' sum, not $16.61.
+- There are seven sync runs, not six.
+- The order of the Haiku batches and the reruns is stated.
+- Drive rows show `n/a` reasoning tokens instead of 0.
+- Error lines are said to give 8-character ID prefixes.
+- The coordinator's relayed plan is set apart from the owner's quote.
+- Directory headings moved one level down.
+- The tokenizer explanation for the two over-length prompts is marked as likely.
+
+**Notes left:**
+- The rerun drives' spend and the import embeddings are not itemised; the Result says so.
+- "core" and "optional" are defined in the guide's **Cells** section, not repeated in the Result.
+- Sonnet's 0 reasoning tokens on hybrid against 2,006 on closed-book is measured, not explained.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

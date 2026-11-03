@@ -372,3 +372,36 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
 - stack 已停：engine 和 gateway 都已關，之後不再需要。
 - 備份分支已 merge origin/main（`1aa0ad34`，#175 等 6 個 commit，都不碰 S3 檔案），merge commit `36e5aa52` 已推上去。
 - 正在重新比對 store 原有的表：上次比對時另外三組匯入還在跑，這次在四組都匯入完之後再確認一次。
+- 四組都匯入完後重新比對：store 原有 7 張表的 116,282 個檔案（路徑、大小、mtime）與匯入前完全一致。
+- graph-opus 的 deepseek r2：sync 批次 `sync-twowiki_hybrid_graph_rerank_metadata-1-1793674094`，送出 900 筆。880 筆成功、20 筆錯誤，routing 0 筆違規，花費 $0.157：
+  - 18 筆 `answer basis 'mixed'` 拒絕
+  - 1 筆 `finish_reason 'length'`
+  - 1 筆 `notice length exceeds limit 1024`
+- OpenRouter 餘額 $15.05。依紀錄計算的花費是 $4.82：五次 drive $3.95、七組 sync $0.87、被擋下的 drive $0.005。帳戶餘額實際只少了 $2.80。
+
+## 收尾（2026-11-02 19:4x）
+
+- **分支**：`lane-spare-1-s3-runs`，head `f3ec0124`，已 push；含 merge origin/main（`1aa0ad34`）。最終 PR 從這個分支開（Closes #163），body 在 `pr-bodies/spare-1.md`。
+- **改了什麼**：
+  - `eval/runs/` 下 13 個目錄：6 個 run of record、5 個 drive、2 個 `-rerun`。4 個超過 50 MB 的檔案以 gzip 提交，各目錄附 README（解壓指令與 sha256，已驗證）、`.gitattributes`（`* -text`）和 `question_types.json`。
+  - `experiments/v1.1/RUN-S3-HELDOUT.md`：Result 段，以及 Spend 規則註明額度已被調高。
+  - 沒有改任何程式碼。
+- **完成的 cells**：24 格中 15 格完成；9 格 Claude cell 等新額度：
+  - Sonnet × graph-deepseek
+  - Opus × graph-haiku、graph-sonnet、graph-opus
+  - Haiku × graph-sonnet、graph-opus
+  - Sonnet × 三個 optional graph 欄位
+- **花費**：Claude $34.50 / $36.50；OpenRouter 依紀錄 $4.82 / $6。
+- **Checks**：`uv run --project eval pytest -n auto --dist loadfile`：3315 passed、14 skipped、42 subtests passed（153.8 s），在 `f3ec0124` 上跑。cargo 和 Go 沒跑，因為沒改 Rust、Go 或 config。
+- **Review**：用 Sonnet 的 review agent 對照 guide 的 Record 規格和 brief 檢查 Result 段，並與 journal 交叉核對計數。0 個 blocker、11 條 notes：
+  - 修了 8 條：hybrid 金額改為 $16.60、sync 次數改為七組、寫明順序、drive 的 reasoning 欄改為 n/a、ID 改稱前綴、把轉述的計畫和原話分開、標題降一級、tokenizer 解釋標為推測。
+  - 留下 3 條，列在 PR body。
+- **repo 外的變更**：
+  - 啟動 Docker Desktop 和 `lancet-postgres` 容器（機器重開後的正常 stack 啟動），沒有撤回。
+  - 主 checkout 的 13 個 untracked run 目錄（原始、未壓縮）移到 `D:/s3-run-backup/20261102-final-main-checkout/`，共 706 MB。原因是它們都已在分支上，留在主 checkout 會讓 merge 後的 pull 失敗。主 checkout 現在在 `main` 上、乾淨。
+  - `data/lancedb-eval-2wiki` 新增四組圖譜側表，原有的表未變。
+  - 腳本副本放在共享筆記資料夾的 `spare-1-scripts/`。
+- **開的 issue**：無。
+- **待決問題**：
+  - graph-haiku 的 `122324e8…` 只有一個 deepseek 答案。它重跑成功前，r2 槽已有一筆 `base_error` 占位紀錄，submit 視為最終錯誤。要補送得改 harness；要不要另開 issue，請協調者決定。
+  - 被擋下的第一次 graph-deepseek drive 的 5 筆紀錄，存在共享筆記資料夾的 `spare-1-aborted-drive-graph-deepseek-1`，不在 PR 內。
