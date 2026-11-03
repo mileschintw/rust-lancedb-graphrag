@@ -338,3 +338,26 @@ Run 目錄日期 `<D>` = 2026-11-01。下表是 Claude 額度的累計估計，�
   - graph-sonnet：`cea1f56e…`
   - 是否只重跑這 4 筆，由擁有者決定。其他錯誤都是模型答案被引擎拒絕，屬正常結果。
 - **第一次 graph-deepseek drive 的 5 筆**：因 rerank tripwire 中止，紀錄已移出 `eval/runs`，複製到共享筆記資料夾的 `spare-1-aborted-drive-graph-deepseek-1`，花費 $0.0052。不屬於 run of record，要不要另外保存，請指示。
+
+## 續跑（2026-11-02 17:15 起，擁有者：「Yes, resume today」）
+
+- 機器重開過：Docker Desktop 和 `lancet-postgres` 容器都停了。已用 `docker start lancet-postgres` 起來，gateway 重啟；這是正常的 stack 啟動，不是新安裝。
+- **Haiku × graph-deepseek**（K=2）：
+  - 估計：Haiku 在 hybrid 的實際花費是 K=2 共 $0.532；graph 的 prompt 長度和 hybrid 相同，所以每格約 $0.53，兩格約 $1.07。用協調者保守的每格 $1.15 算，兩格 $2.30，仍在剩下的 $3.06 內。
+  - 工具估計 $0.318，最壞 $1.148。
+  - 批次 `batch-1793668571-Ci1mWuUJYmemW8ITBPOb`，1,800 筆，17:1x PST 送出。
+- **4 筆 `RetrieveHybrid timed out` 重跑**（不計分；原錯誤保留）：
+  - 方法：harness 沒有單題重跑指令。複製 drive journal、只拿掉這 4 筆 timeout，放進 `eval/runs/2026-11-02-s3h-drive-twowiki_s3h_graph_<w>-rerun/`，用 `run --resume` 只重跑這幾題（`load_done` 把其他所有紀錄都當作完成）。
+  - 新紀錄 byte 不變地附加到原 drive journal 和 run of record 的 journal；replay-init 帶入的紀錄和 drive 紀錄 byte 相同，因為同一個 corpus，已驗證 900/900。原錯誤保留，依 #75「後寫的勝出」。
+  - 重跑成功題的 export row 附加到兩個 export；run 那份用 replay-init 的序列化。它的 hash（`export_row_sha256`）以文字插入 run header 的 `replay_source.row_sha256`，header 其餘 bytes 不變。
+  - rerun 目錄最後只留 header、這幾筆重跑紀錄和它們的 export row，作為重跑紀錄。
+  - 結果：
+    - graph-haiku：`122324e8…` 成功。`a3ac1ca2…`、`5498821a…` 在空機時（dense 約 1.2–1.3 秒）三次嘗試又都 timeout，所以是這兩題本身的問題，保留為最終錯誤。
+    - graph-sonnet：`cea1f56e…` 成功。
+  - graph-haiku 的 `122324e8…` 送不出 deepseek r2：它的 r2 槽有一筆 `BASE_ERROR` 占位紀錄（r1 還失敗時、r2 送出時寫下），submit 把它算成最終錯誤。要補送得改 harness 或刪紀錄，兩者都超出授權，所以這題 deepseek 暫為 K=1（見待決問題）。
+  - graph-sonnet 的 r2 在重跑之後才送，所以 `cea1f56e…` 有 r2。
+- **Haiku × graph-haiku**（K=2）：批次 `batch-1793669092-R22CVvoloMK9FrymB9G2`，1,792 筆，涵蓋 896 題，含重跑成功的 `122324e8…`。工具估計 $0.316，最壞 $1.143。
+  - 兩個 Haiku 批次最壞合計 $2.29，少於剩下的 $3.06，不可能超過上限。
+- 備份：兩個 drive 和兩個 rerun 目錄已推上去，commit `184e1aea`，金鑰掃描 0 筆命中。
+- graph-sonnet 的 deepseek r2：背景執行中。
+- graph-opus：engine 換到 `s3h_opus`，preflight PASS，OpenRouter 餘額 $15.75，drive 執行中（`eval/runs/2026-11-02-s3h-drive-twowiki_s3h_graph_opus`）。
