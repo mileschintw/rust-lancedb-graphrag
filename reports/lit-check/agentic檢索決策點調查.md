@@ -170,9 +170,22 @@ Lancet 已經有一條 model-only 路徑：`allow_model_only`，回答時帶 `NO
 - **所以 Claude 當 reader 時，便宜對照組只能用其他作法。** 例如小分類器、自我評分（另一次呼叫，不算便宜），或檢索端的訊號（rerank 分數分布）。
 
 **尚未驗證：**
-- **metadata 宣告支援，不等於實際有回傳。** 要確認 `wafer/us` 真的回傳 logprobs，以及它在 reasoning 輸出和 content 上的行為，需要送一個極小的付費請求（約 0.0001 美元以下）。這要先得到業主同意。
 - **nvfp4 量化對 logprobs 校準的影響**未知。不確定度門檻要在 dev 上校準，不能沿用論文的數值。
 
 **對第 5 節第 4 點的影響：**
 - **DeepSeek reader 的便宜對照組可以用 logprobs 觸發。**
 - **跨 reader 一致的便宜對照組，應該優先考慮檢索端的訊號（rerank 分數分布）。** 這個訊號 Lancet 已經有，而且不依賴 provider 或 reader。
+
+### 實測確認（2026-11-05 15:36 -0800，業主同意後送出一個付費請求）
+
+**請求。** `deepseek/deepseek-v4-flash-0731`，`provider.order = ["wafer/us"]`，`allow_fallbacks = false`，`require_parameters = true`，價格上限沿用 D-271，`logprobs = true`，`top_logprobs = 3`，`temperature = 0`。題目是「Answer with one word: what is the capital of France?」。
+
+**結果：**
+- **logprobs 確實有回傳。** 回應的 provider 是 Wafer，`finish_reason` 為 `stop`，content 是 `Paris`。logprob 是 -0.0，top-3 依序是 `Paris` -0.0、` Paris` -11.5、`Capital` -12.0。
+- **沒有 reasoning 輸出。** `reasoning_tokens` 為 0，所以 logprobs 直接對應 content。
+- **logprob 筆數比 completion tokens 少一筆。** completion tokens 是 2，logprob 只有 1 筆，推測少掉的是結束 token。之後如果要算整段答案的不確定度，要留意這一點。
+- **成本 0.0000013 美元。**
+- **`require_parameters = true` 時 OpenRouter 仍然路由到 `wafer/us`**，代表這個 provider 實際接受 logprobs 參數。
+
+**尚未驗證：** 長答案和帶 Lancet 實際 prompt（含證據區塊）時的行為；nvfp4 對校準的影響。
+
