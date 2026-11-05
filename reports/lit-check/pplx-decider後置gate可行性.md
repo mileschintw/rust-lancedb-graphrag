@@ -1,6 +1,6 @@
 # pplx-decider 當後置 gate 的可行性
 
-2026-11-05 整理。延續 [`agentic檢索決策點調查.md`](agentic檢索決策點調查.md)：想用一個非 reader 的 decision model，在檢索之後判斷證據夠不夠、下一步做什麼。目前沒有開 issue，也還沒實測。
+2026-11-05 整理。延續 [`agentic檢索決策點調查.md`](agentic檢索決策點調查.md)：想用一個非 reader 的 decision model，在檢索之後判斷證據夠不夠、下一步做什麼。目前沒有開 issue。2026-11-05 做了一次單次呼叫和一次小規模區分測試，結果見「實測結果」。
 
 ## 結論
 
@@ -69,15 +69,80 @@
 ## 風險與未確認事項
 
 - **OpenRouter 端點是 alpha 版。** 介面可能會變，跑實驗時要記下呼叫當天的端點和請求格式。
-- **OpenRouter 上的價格未確認。** 背景 agent 抓 OpenRouter 的模型頁面得到 404，公開的 `/api/v1/models` 列表裡也沒有這兩個模型，但業主在 OpenRouter 上看得到。
-- **能不能釘住 provider 未確認。** 這會影響「LLM provider 不是受控變數」這個已知限制，gate 模型同樣適用。
+- **OpenRouter 上的價格已實測確認（2026-11-05）。** 每 1M 輸入 token $0.02，和 Perplexity 直連相同，回應的 `usage.cost` 有直接列出。公開的 `/api/v1/models` 列表裡仍然沒有這兩個模型。
+- **能不能釘住 provider 仍未確認。** 實測回應的 provider 是 Perplexity，模型解析為 `perplexity/pplx-decider-v1.2-20261016`。這種帶日期的版本 ID 應該寫進 journal。這個問題會影響「LLM provider 不是受控變數」這個已知限制，gate 模型同樣適用。
 - **Lancet 現有的 OpenRouter client 只走 chat、embed、rerank。** 接 decisions 端點需要新增一個 port，形狀要另外設計。
 - **權重：** 搜尋結果說早期的 v1-27b 以 Apache 2.0 開源在 Hugging Face，基底是 Qwen3.8-27B，但官方文件沒有提到，v1.2 是否開源也不知道。如果有開源，之後可以本地跑來消掉延遲，也能把 provider 變成受控變數。
 
-## 下一步（免費或極便宜）
+## 實測結果（2026-11-05）
 
-- 用業主的 key 呼叫一次 `alpha/decisions`，記下三件事：實際延遲、回應的 `usage`、計費金額。
-- 從 MHR 的 dev 結果抽幾題，分別放 `answer_usable` 為是和否的證據，看看 `noul` 的機率能不能把兩組分開。
+業主說「都做」之後，兩項下一步都做完了。腳本和逐題結果在 [`pplx-decider-smoke/`](pplx-decider-smoke/)（`sep_test.py`、`sep_ref1.jsonl`）。
+
+### 1. 單次呼叫
+
+- **呼叫方式：** `POST https://openrouter.ai/api/alpha/decisions`，直接用現有的 `OPENROUTER_API_KEY`。
+- **請求格式：** 跟 Perplexity 官方文件一致。題目文字的欄位叫 `instructions`，不是 `question`。
+- **回應：** 帶 `usage.cost`，也就是 OpenRouter 會直接回報花費。
+- **127 個輸入 token：** 花費 $0.00000254，延遲 0.48 到 0.64 秒。
+- **同一個請求連送三次，機率完全相同**（0.99805），看起來是確定性的。
+
+### 2. MHR dev 的區分測試
+
+- **資料：** S3m dev 的 reference arm，也就是 run `2026-11-01-s3m-ref1-multihop_rag_s3m_dev`：hybrid+rerank+metadata，DeepSeek reader，100 題（90 題非 null、10 題 null），rerank 全部是 `completed`。
+- **輸入：** 送給 decider 的 `state` 是問題加上 context export 裡的 8 段證據，每段帶標題、來源和發布日期。**沒有送 reader 的答案或標準答案。**
+- **題型：** `noul`，instructions 是「只根據上面的證據，一個仔細的讀者能不能正確且完整地回答這個問題？只有在問題需要的每個事實都在證據裡時才回答 true」。
+- **標籤：** reader 答案的 `answer_usable`，在非 null 題目裡 78 題為是、12 題為否。
+
+**區分能力**（非 null 題目，usable 為是 vs 否；95% CI 是逐題 bootstrap 2,000 次）：
+
+| 訊號 | ROC-AUC | 95% CI |
+|---|---|---|
+| pplx-decider P(足夠) | **0.768** | 0.611 – 0.898 |
+| rerank 最高分（免費基準） | 0.613 | 0.442 – 0.769 |
+| rerank 第 1、2 名分差 | 0.588 | — |
+
+- **decider 和 rerank 最高分的 AUC 差：** 95% CI 為 -0.051 到 0.343，**沒有顯著差異**。只有 12 個「否」，樣本太小。
+- **null 題目分得非常乾淨：** usable 為是 vs null 的 AUC 是 0.994，null 的平均機率只有 0.007。把 null 也算成「不夠」時，AUC 是 0.871。
+- **按題型：**
+
+  | 題型 | 題數 | usable | AUC |
+  |---|---|---|---|
+  | comparison | 36 | 32 | 0.891 |
+  | temporal | 23 | 15 | 0.633 |
+  | inference | 31 | 31 | 全部 usable，算不出 |
+
+  時間類題目分得最差，跟 #167 的疑點方向一致。
+
+**門檻的取捨**（非 null 90 題，null 10 題）：
+
+| 門檻 | 放行的非 null 題 | 放行裡 usable 的比例 | 被擋下的 usable | 放行的 null |
+|---|---|---|---|---|
+| 0.5 | 57 | 54/57 | 24 | 0/10 |
+| 0.8 | 47 | 45/47 | 33 | 0/10 |
+| 0.9 | 38 | 36/38 | 42 | 0/10 |
+
+**成本與延遲：**
+- 平均每題 1,049 個輸入 token，最多 1,346。這比原本估計的 3 到 5K 小很多，因為只有 8 段證據。
+- 100 題總共 $0.00208。
+- 延遲平均 0.74 秒，p50 0.63、p95 1.44，最大 2.75 秒。
+
+### 解讀
+
+- **它很少誤判證據已夠，但很常誤判證據不夠。** 門檻 0.5 時，放行的 57 題裡只有 3 題 reader 答錯，可是 78 題 usable 裡有 24 題被擋下。
+- **原因很可能是「看起來夠不夠」和「reader 答不答得出來」不一樣。** 例如 inference 題全部 usable，reader 會從證據推論出答案，decider 卻嚴格要求每個事實都要明寫。
+- **當作 loop 的 gate 來看：** 誤判不夠的代價是多跑一輪，只花成本，不會答錯。誤判已夠則會直接放行錯答。這個方向的偏差對 Lancet 的 fail-closed 原則是有利的。
+- **null 題的表現**表示 decider 很適合當「語料裡沒有」的判斷，也就是 `choice` 題型裡那個選項。
+
+### 限制
+
+- 只有一個 arm、一個 reader、100 題 dev，而且只有 12 題「否」。這是冒煙測試，不是結論。
+- 門檻和 instructions 都是在同一批題目上看出來的，沒有凍結。正式比較要在 dev 上凍結，再到 held-out 上確認。
+- 還沒試 `choice` 題型、flash 版本，也還沒跟 reader 自我判斷或 logprobs 比較。
+
+## 下一步
+
+- 正式比較時：用更大的 dev（例如合併 S3m 的兩個 ref run，或 S2X），凍結 instructions 和門檻，再對照 reader 自我判斷、DeepSeek logprobs 和 rerank 訊號。
+- 試 `choice` 題型（足夠、改寫查詢、換 graph、語料裡沒有），看「語料裡沒有」這個選項能不能接手 null 題。
 
 ## 來源
 
