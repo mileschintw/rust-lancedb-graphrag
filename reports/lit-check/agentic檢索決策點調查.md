@@ -155,3 +155,24 @@ Lancet 已經有一條 model-only 路徑：`allow_model_only`，回答時帶 `NO
 
 - 要不要開一個獨立議題做「不一定要檢索」？如果要做，資料集選哪個（RetrievalQA 或自己混合）？
 - OpenRouter 上的 reader 能不能拿到 logprobs，以決定第 4 點的便宜對照組是否可行？這可以免費驗證。
+
+## 附錄：logprobs 可行性驗證（2026-11-05 15:32 -0800）
+
+**方法。** 讀取 OpenRouter 免費的 endpoint metadata（`GET /api/v1/models/<model>/endpoints` 的 `supported_parameters`），沒有送出任何生成請求，所以沒有花錢。設定依據 main（251bf9c2）的 `config/config.toml`。
+
+**DeepSeek reader（`deepseek/deepseek-v4-flash-0731`，D-271 釘在 `wafer/us`，fallbacks 關閉）：**
+- **我們釘住的 `wafer/us`（nvfp4）宣告支援 `logprobs` 和 `top_logprobs`。** 用基於 token 不確定度的便宜對照組，在現有的 provider pin 下可行，不用換 provider。
+- **各 provider 支援不一。** 29 個 endpoint 裡約一半支援。S0 用過的 `sail-research` 不支援，baidu、deepinfra、nebius、chutes 等也不支援。所以 logprobs 會讓 provider pin 成為硬性前提：pin 一旦失效或改掉，對照組就會壞掉。
+- **Lancet 目前完全沒有用到 logprobs。** engine、gateway、eval 的程式碼裡都找不到 `logprob`，要用就得新增請求參數，並把回傳的 logprobs 寫進 journal。
+
+**Claude reader（Haiku 5.5、Sonnet 5.5、Opus 5.5）：**
+- **沒有任何 endpoint 支援 logprobs。** Haiku 有 10 個 endpoint、Sonnet 10 個、Opus 11 個，全部不支援。
+- **所以 Claude 當 reader 時，便宜對照組只能用其他作法。** 例如小分類器、自我評分（另一次呼叫，不算便宜），或檢索端的訊號（rerank 分數分布）。
+
+**尚未驗證：**
+- **metadata 宣告支援，不等於實際有回傳。** 要確認 `wafer/us` 真的回傳 logprobs，以及它在 reasoning 輸出和 content 上的行為，需要送一個極小的付費請求（約 0.0001 美元以下）。這要先得到業主同意。
+- **nvfp4 量化對 logprobs 校準的影響**未知。不確定度門檻要在 dev 上校準，不能沿用論文的數值。
+
+**對第 5 節第 4 點的影響：**
+- **DeepSeek reader 的便宜對照組可以用 logprobs 觸發。**
+- **跨 reader 一致的便宜對照組，應該優先考慮檢索端的訊號（rerank 分數分布）。** 這個訊號 Lancet 已經有，而且不依賴 provider 或 reader。
