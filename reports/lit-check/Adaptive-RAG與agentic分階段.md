@@ -99,3 +99,7 @@ Jeong, Baek, Cho, Hwang, Park（KAIST），NAACL 2024，arXiv [2403.14403](https
 
 - 要不要把 oracle 路由上界列進 S3 分析計畫的探索性分析（D-291 凍結前）？
 - grill agentic 時，Phase B 是否要寫成正式的條件式 phase，連同觸發門檻（例如每題平均輪數或成本超過多少）一起定下來？
+
+## 後續更新（2026-11-05）
+
+本文的分階段結論已經被 [`agentic檢索決策點調查.md`](agentic檢索決策點調查.md) 第 5 節修正：前置路由不再列為獨立的 Phase B，降級為第一個 agentic phase 的可能優化；「不一定要檢索」改列為獨立的後續議題。文獻調查和評測設計也都在那份文件裡。
