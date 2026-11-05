@@ -151,6 +151,10 @@ Lancet 已經有一條 model-only 路徑：`allow_model_only`，回答時帶 `NO
 3. **「不一定要檢索」列為獨立的後續議題。** 它需要新的混合資料集、閉卷標籤和新的預先註冊，還要改動 D-10/D-12 的 fail-closed 預設，工作量比 agentic loop 大一個等級。
 4. **評測的對照組要包含一個便宜的決策方法。** 根據 Moskvoretskii et al.，至少要有一個基於 token 不確定度（logprobs）的觸發，或一個小分類器。否則「agentic loop 比較好」的結論只贏過固定檢索，沒有贏過便宜的替代方案。
 
+## 相關文件
+
+- [`pplx-decider後置gate可行性.md`](pplx-decider後置gate可行性.md)：用非 reader 的 decision model（Perplexity 的 decisions API）當後置 gate 的可行性評估。結論是可行，主要成本在延遲；OpenRouter 價格和 provider pin 未確認。
+
 ## 待決事項
 
 - 要不要開一個獨立議題做「不一定要檢索」？如果要做，資料集選哪個（RetrievalQA 或自己混合）？
@@ -215,7 +219,7 @@ Lancet 已經有一條 model-only 路徑：`allow_model_only`，回答時帶 `NO
 | 引用覆蓋率 | **每題層級可推導，每個主張層級不行** | `len(structured_citations)` 和 `answer` 裡的 `[n]` 標記；每個主張層級要先把答案拆成主張 |
 | 自我一致性 | **只有 S2、S2X 的 reader arm 有** | `replicate` 欄位，K=2，但都是 temperature 0.0，差異只來自 provider 的不確定性，所以這個訊號很弱。S3m、S3h 的 engine arm 每題只有一個答案 |
 | 口頭信心分數 | **沒有存** | reader 的輸出 schema 沒有信心欄位，要用線上 arm 才能取得 |
-| 小型開源 judge 或 pplx-decider | **沒有存** | 線上呼叫才有；pplx-decider 的評估見 `pplx-decider後置gate可行性.md`（分叉 session 撰寫） |
+| 小型開源 judge 或 pplx-decider | **沒有存** | 線上呼叫才有；pplx-decider 的評估見 [`pplx-decider後置gate可行性.md`](pplx-decider後置gate可行性.md) |
 | DeepSeek logprobs（參考上界） | **沒有存** | Lancet 目前不送 logprobs 參數 |
 | **標籤 `answer_usable`** | **可推導，但沒有逐題存** | 由標準答案和 `answer` 計算（`metrics.py:258-267`），`report.json` 只存總數。S2 的逐題判定差異在 `eval/runs/2026-11-01-s2-multihop_rag_s2_dev/answer-judge.json` |
 
