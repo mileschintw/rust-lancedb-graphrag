@@ -189,3 +189,38 @@ Lancet 已經有一條 model-only 路徑：`allow_model_only`，回答時帶 `NO
 
 **尚未驗證：** 長答案和帶 Lancet 實際 prompt（含證據區塊）時的行為；nvfp4 對校準的影響。
 
+
+## 附錄：「證據夠不夠」訊號的可插拔設計與既有資料盤點（2026-11-05）
+
+這個設計來自分叉 session 的建議，欄位盤點則是唯讀查核 repo 的結果。
+
+### 設計原則
+
+- **把「證據夠不夠」的訊號做成可插拔的 port。** 這樣 gate 換訊號時不用改 loop。
+- **logprobs 不能當產品的主訊號。** Claude reader 拿不到 logprobs，所以它只能當研究用的參考上界。報告形式是：「與 API 無關的訊號 X 的 AUC，跟 DeepSeek 的 logprobs 只差 Y」。
+- **先做免費的離線階段。** 用既有 S2、S3 的 journal，逐題計算每個訊號預測 `answer_usable` 的 ROC-AUC。只把最好的一兩個訊號帶進付費的線上 arm。
+- **離線階段在 dev 上選訊號、定門檻，再到 held-out 上確認。** 用同一批題目既選又驗，結果會偏高。
+
+### 候選訊號與既有資料
+
+欄位依據：`RunRecord`（`eval/src/lancet_eval/journal.py:173-235`）、`context_export.jsonl`（`context_export.py:232-242`）、`lancet.proto`。S3h 的 run 目錄把這兩個檔都存成 `.gz`。
+
+| 訊號 | 能否離線取得 | 來源 |
+|---|---|---|
+| rerank 最高分 | **已存** | `snapshot.retrieved_chunks[0].score`。rerank 開啟時這是 reranker 的相關度分數（`engine/src/workflow/nodes/retrieve.rs:352-353`）。要先確認 `workflow_meta.rerank.outcome == "completed"`，降級時這個欄位存的是融合分數 |
+| 第 1、2 名分差 | **可推導** | `retrieved_chunks[0].score - [1].score` |
+| dense 和 BM25 的重疊 | **只能用名次推導** | `snapshot.pre_truncation_ranking[].vector_rank`、`bm25_rank`，涵蓋 32 個融合候選，原始分數沒有回傳。只有 engine 產生的紀錄才有這個欄位：S2X 800 筆裡只有 100 筆，S3m haiku1 是全部 100 筆 |
+| 不同文件數 | **可推導** | `retrieved_chunks[].document_id`（最終 8 筆），或 `pre_truncation_ranking[].document_id`（32 筆） |
+| reader 拒答或證據不足 | **可推導** | 比對 `answer` 的最後一行是不是「insufficient information」，跟 `null_abstention_correct` 的判斷方式相同（`metrics.py:270-279`）；或看 `notices[]` 的 NO_EVIDENCE、MODEL_NOTICE、MODEL_WARNING。`answer_basis` **沒有存**在 `RunRecord`，只在 `replay.pack_body` 的 reader 輸出 schema 裡 |
+| 引用覆蓋率 | **每題層級可推導，每個主張層級不行** | `len(structured_citations)` 和 `answer` 裡的 `[n]` 標記；每個主張層級要先把答案拆成主張 |
+| 自我一致性 | **只有 S2、S2X 的 reader arm 有** | `replicate` 欄位，K=2，但都是 temperature 0.0，差異只來自 provider 的不確定性，所以這個訊號很弱。S3m、S3h 的 engine arm 每題只有一個答案 |
+| 口頭信心分數 | **沒有存** | reader 的輸出 schema 沒有信心欄位，要用線上 arm 才能取得 |
+| 小型開源 judge 或 pplx-decider | **沒有存** | 線上呼叫才有；pplx-decider 的評估見 `pplx-decider後置gate可行性.md`（分叉 session 撰寫） |
+| DeepSeek logprobs（參考上界） | **沒有存** | Lancet 目前不送 logprobs 參數 |
+| **標籤 `answer_usable`** | **可推導，但沒有逐題存** | 由標準答案和 `answer` 計算（`metrics.py:258-267`），`report.json` 只存總數。S2 的逐題判定差異在 `eval/runs/2026-11-01-s2-multihop_rag_s2_dev/answer-judge.json` |
+
+### 缺口與建議
+
+- **免費離線階段做得了的：** rerank 最高分、分差、名次重疊、文件數、拒答、每題引用數。這只要寫一支讀 journal 的分析腳本，不用重跑。
+- **Claude reader 的 replay 紀錄是 `snapshot=None`。** 要用 `question_id` 對回 engine 紀錄，才拿得到檢索端訊號。
+- **之後的付費 run 可以順便補上缺的欄位：** 第 9 到 32 名候選的 rerank 分數、dense 和 BM25 的原始分數（`engine/src/retrieval/fusion.rs:168,180` 裡有，但被丟掉了）、`answer_basis`。這些要改 engine 或 journal，改之前要確認不影響已凍結的 S3 設定。
