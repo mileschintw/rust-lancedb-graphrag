@@ -57,3 +57,10 @@
 - 疑點：graph 事實區塊走 `PackCandidate::Graph(fact_block)`，看起來沒有掛 `DocMeta`，也就是不帶日期。這可能讓 graph 在時間類題目上吃虧。
 - 推測（未驗證）：Han et al. 在時間類題目上的提升，可能有一部分是因為 graph 那一側帶了時間、naive RAG 那一側沒有。
 - 已請 coordinator 併進缺口 c 的 issue 去驗證。修正本身要另開 issue，而且不能更動 S3 已凍結的設定。
+
+## 補充：Adaptive-RAG 與分階段規劃（2026-11-05）
+
+讀過 Adaptive-RAG（arXiv 2403.14403）之後的整理，放在 [`Adaptive-RAG與agentic分階段.md`](Adaptive-RAG與agentic分階段.md)。重點：
+
+- 前置分類器和後置 decision model 分成兩個 phase：先做 agentic loop，前置分類器列為有條件的後續 phase。
+- S3 凍結前可以考慮加一項免費的探索性分析：oracle 路由上界（graph 開或關逐題取答對者）。
